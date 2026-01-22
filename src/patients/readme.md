@@ -2,9 +2,6 @@
 # 🏥 Patient Management & Medical Records Module (Backend)
 
 ## Overview
-
-This pull request introduces a **comprehensive Patient Management and Medical Record system** built with **NestJS, TypeORM, and MySQL/MariaDB**, designed to meet real-world healthcare requirements around **data integrity, privacy, and safety**.
-
 The implementation focuses on:
 
 * Accurate patient identification
