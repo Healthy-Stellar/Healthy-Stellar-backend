@@ -86,6 +86,12 @@ export class DiagnosisController {
     return await this.diagnosisService.getPatientChronicConditions(patientId);
   }
 
+  @Get('patient/:patientId/treatment-plans')
+  @ApiOperation({ summary: 'Get patient diagnoses with associated treatment plans' })
+  async getPatientDiagnosesWithTreatmentPlans(@Param('patientId') patientId: string) {
+    return await this.diagnosisService.getPatientDiagnosesWithTreatmentPlans(patientId);
+  }
+
   @Get(':id/history')
   @ApiOperation({ summary: 'Get diagnosis change history' })
   @ApiParam({ name: 'id', description: 'Diagnosis UUID' })
@@ -95,6 +101,12 @@ export class DiagnosisController {
   })
   async getDiagnosisHistory(@Param('id') id: string) {
     return await this.diagnosisService.getDiagnosisHistory(id);
+  }
+
+  @Get(':id/treatment-plans')
+  @ApiOperation({ summary: 'Get treatment plans associated with this diagnosis' })
+  async getTreatmentPlansForDiagnosis(@Param('id') id: string) {
+    return await this.diagnosisService.getTreatmentPlansForDiagnosis(id);
   }
 
   @Get()

@@ -7,6 +7,7 @@ import { CarePlanTemplate } from './entities/care-plan-template.entity';
 import { TreatmentOutcome } from './entities/treatment-outcome.entity';
 import { ClinicalGuideline } from './entities/clinical-guideline.entity';
 import { DecisionSupportAlert } from './entities/decision-support-alert.entity';
+import { Diagnosis } from '../diagnosis/entities/diagnosis.entity';
 import { TreatmentPlanService } from './services/treatment-plan.service';
 import { MedicalProcedureService } from './services/medical-procedure.service';
 import { CarePlanTemplateService } from './services/care-plan-template.service';
@@ -30,6 +31,7 @@ import {
       TreatmentOutcome,
       ClinicalGuideline,
       DecisionSupportAlert,
+      Diagnosis,
     ]),
   ],
   controllers: [

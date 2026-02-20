@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Between } from 'typeorm';
 import { Prescription } from '../entities/prescription.entity';
 import { PrescriptionItem } from '../entities/prescription-item.entity';
 import { CreatePrescriptionDto } from '../dto/create-prescription.dto';
+import {
+  UpdatePrescriptionDto,
+  SearchPrescriptionsDto,
+} from '../dto/manage-prescription.dto';
 import { SafetyAlertService } from './safety-alert.service';
 import { PharmacyInventoryService } from './pharmacy-inventory.service';
 import { ControlledSubstanceService } from './controlled-substance.service';
@@ -177,5 +181,95 @@ export class PrescriptionService {
       relations: ['items', 'items.drug'],
       order: { createdAt: 'DESC' }
     });
+  }
+
+  async updatePrescription(id: string, updateDto: UpdatePrescriptionDto): Promise<Prescription> {
+    const prescription = await this.findOne(id);
+
+    if (prescription.status === 'dispensed' || prescription.status === 'cancelled') {
+      throw new BadRequestException('Cannot modify dispensed or cancelled prescriptions');
+    }
+
+    if (typeof updateDto.refillsAllowed === 'number') {
+      const alreadyUsed = Math.max(0, (prescription.refillsAllowed || 0) - (prescription.refillsRemaining || 0));
+      if (updateDto.refillsAllowed < alreadyUsed) {
+        throw new BadRequestException('refillsAllowed cannot be less than refills already used');
+      }
+      prescription.refillsAllowed = updateDto.refillsAllowed;
+      prescription.refillsRemaining = updateDto.refillsAllowed - alreadyUsed;
+    }
+
+    if (updateDto.notes !== undefined) {
+      prescription.notes = updateDto.notes;
+    }
+
+    if (updateDto.prescriptionDate) {
+      prescription.prescriptionDate = new Date(updateDto.prescriptionDate);
+    }
+
+    if (updateDto.items && updateDto.items.length > 0) {
+      for (const itemDto of updateDto.items) {
+        if (!itemDto.id) continue;
+        const item = prescription.items.find((existing) => existing.id === itemDto.id);
+        if (!item) {
+          throw new BadRequestException(`Prescription item not found: ${itemDto.id}`);
+        }
+
+        if (typeof itemDto.quantityPrescribed === 'number') item.quantityPrescribed = itemDto.quantityPrescribed;
+        if (itemDto.dosageInstructions !== undefined) item.dosageInstructions = itemDto.dosageInstructions;
+        if (typeof itemDto.daySupply === 'number') item.daySupply = itemDto.daySupply;
+        if (itemDto.drugId) item.drugId = itemDto.drugId;
+      }
+      await this.prescriptionItemRepository.save(prescription.items);
+    }
+
+    await this.prescriptionRepository.save(prescription);
+    return await this.findOne(id);
+  }
+
+  async searchPrescriptions(filters: SearchPrescriptionsDto): Promise<Prescription[]> {
+    const where: any = {};
+    if (filters.status) where.status = filters.status;
+    if (filters.prescriberId) where.prescriberId = filters.prescriberId;
+    if (filters.patientId) where.patientId = filters.patientId;
+
+    if (filters.startDate && filters.endDate) {
+      where.prescriptionDate = Between(new Date(filters.startDate), new Date(filters.endDate));
+    }
+
+    return await this.prescriptionRepository.find({
+      where,
+      relations: ['items', 'items.drug'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async addPrescriptionNote(id: string, note: string, authorId?: string): Promise<Prescription> {
+    const prescription = await this.findOne(id);
+    const createdAt = new Date().toISOString();
+    const author = authorId || 'system';
+    const nextNote = `[${createdAt}] (${author}) ${note}`;
+    prescription.notes = prescription.notes ? `${prescription.notes}\n${nextNote}` : nextNote;
+    return await this.prescriptionRepository.save(prescription);
+  }
+
+  async getPrescriptionNotes(id: string): Promise<Array<{ createdAt: string; authorId: string; note: string }>> {
+    const prescription = await this.findOne(id);
+    if (!prescription.notes) return [];
+
+    return prescription.notes
+      .split('\n')
+      .filter((line) => line.trim().length > 0)
+      .map((line) => {
+        const match = line.match(/^\[(.+?)\]\s+\((.+?)\)\s+([\s\S]+)$/);
+        if (!match) {
+          return { createdAt: '', authorId: 'unknown', note: line };
+        }
+        return {
+          createdAt: match[1],
+          authorId: match[2],
+          note: match[3],
+        };
+      });
   }
 }

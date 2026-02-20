@@ -12,6 +12,11 @@ import { CreatePrescriptionDto } from '../dto/create-prescription.dto';
 import { UpdateInventoryDto } from '../dto/update-inventory.dto';
 import { VerifyPrescriptionDto } from '../dto/verify-prescription.dto';
 import { DispensePrescriptionDto } from '../dto/dispense-prescription.dto';
+import {
+  AddPrescriptionNoteDto,
+  SearchPrescriptionsDto,
+  UpdatePrescriptionDto,
+} from '../dto/manage-prescription.dto';
 
 @Controller('pharmacy')
 // @UseGuards(JwtAuthGuard) // Add authentication
@@ -106,6 +111,11 @@ export class PharmacyController {
     return await this.prescriptionService.create(createDto);
   }
 
+  @Get('prescriptions')
+  async searchPrescriptions(@Query() filters: SearchPrescriptionsDto) {
+    return await this.prescriptionService.searchPrescriptions(filters);
+  }
+
   @Get('prescriptions/pending')
   async getPendingPrescriptions() {
     return await this.prescriptionService.getPendingPrescriptions();
@@ -119,6 +129,21 @@ export class PharmacyController {
   @Get('prescriptions/:id')
   async getPrescription(@Param('id') id: string) {
     return await this.prescriptionService.findOne(id);
+  }
+
+  @Patch('prescriptions/:id')
+  async updatePrescription(@Param('id') id: string, @Body() updateDto: UpdatePrescriptionDto) {
+    return await this.prescriptionService.updatePrescription(id, updateDto);
+  }
+
+  @Post('prescriptions/:id/notes')
+  async addPrescriptionNote(@Param('id') id: string, @Body() dto: AddPrescriptionNoteDto) {
+    return await this.prescriptionService.addPrescriptionNote(id, dto.note, dto.authorId);
+  }
+
+  @Get('prescriptions/:id/notes')
+  async getPrescriptionNotes(@Param('id') id: string) {
+    return await this.prescriptionService.getPrescriptionNotes(id);
   }
 
   @Post('prescriptions/:id/verify')

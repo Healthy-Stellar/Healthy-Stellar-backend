@@ -12,7 +12,17 @@ export class MedicalDataValidationPipe implements PipeTransform {
       throw new BadRequestException('Validation failed: No data provided');
     }
 
-    const object = plainToInstance(metadata.type, value);
+    // Some route arguments expose primitive metatypes (String/Boolean/etc.); validate only class-based DTOs.
+    const metatype = metadata.metatype as any;
+    const shouldValidate =
+      metatype &&
+      ![String, Boolean, Number, Array, Object].includes(metatype);
+
+    if (!shouldValidate) {
+      return this.sanitizer.sanitizeObject(value);
+    }
+
+    const object = plainToInstance(metatype, value);
     const errors = await validate(object);
 
     if (errors.length > 0) {

@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { LabAnalytics, MetricType, MetricPeriod } from '../entities/lab-analytics.entity';
-import { LabOrder } from '../entities/lab-order.entity';
-import { LabResult } from '../entities/lab-result.entity';
+import { LabOrder, OrderStatus } from '../entities/lab-order.entity';
+import { LabResult, ResultStatus } from '../entities/lab-result.entity';
 
 @Injectable()
 export class LabAnalyticsService {
@@ -20,16 +20,15 @@ export class LabAnalyticsService {
         const orders = await this.labOrderRepository.find({
             where: {
                 createdAt: Between(startDate, endDate),
-                status: 'completed'
+                status: OrderStatus.COMPLETED
             },
-            relations: ['results']
         });
 
         const turnaroundTimes = orders
-            .filter(order => order.results?.length > 0)
+            .filter(order => order.completedDate)
             .map(order => {
                 const orderDate = new Date(order.createdAt);
-                const completedDate = new Date(Math.max(...order.results.map(r => new Date(r.reportedAt).getTime())));
+                const completedDate = new Date(order.completedDate);
                 return (completedDate.getTime() - orderDate.getTime()) / (1000 * 60 * 60); // in hours
             });
 
@@ -57,7 +56,7 @@ export class LabAnalyticsService {
     async calculateThroughput(period: MetricPeriod, startDate: Date, endDate: Date): Promise<LabAnalytics> {
         const totalTests = await this.labResultRepository.count({
             where: {
-                reportedAt: Between(startDate, endDate)
+                performedDate: Between(startDate, endDate)
             }
         });
 
@@ -83,15 +82,15 @@ export class LabAnalyticsService {
     async calculateErrorRate(period: MetricPeriod, startDate: Date, endDate: Date): Promise<LabAnalytics> {
         const totalResults = await this.labResultRepository.count({
             where: {
-                reportedAt: Between(startDate, endDate)
+                performedDate: Between(startDate, endDate)
             }
         });
 
         // Simulate error detection logic
         const errorResults = await this.labResultRepository.count({
             where: {
-                reportedAt: Between(startDate, endDate),
-                status: 'rejected' // Assuming there's a status field
+                performedDate: Between(startDate, endDate),
+                status: ResultStatus.CANCELLED
             }
         });
 
@@ -172,13 +171,13 @@ export class LabAnalyticsService {
             order: { periodStart: 'ASC' }
         });
 
-        const groupedMetrics = metrics.reduce((acc, metric) => {
+        const groupedMetrics = metrics.reduce<Record<string, LabAnalytics[]>>((acc, metric) => {
             if (!acc[metric.metricType]) acc[metric.metricType] = [];
             acc[metric.metricType].push(metric);
             return acc;
         }, {});
 
-        return Object.keys(groupedMetrics).reduce((trends, metricType) => {
+        return Object.keys(groupedMetrics).reduce<Record<string, any>>((trends, metricType) => {
             const values = groupedMetrics[metricType].map(m => m.metricValue);
             const trend = values.length > 1 
                 ? values[values.length - 1] - values[0] 
