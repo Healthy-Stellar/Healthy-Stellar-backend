@@ -56,3 +56,18 @@ Thumbs.db
 # Database
 *.sqlite
 *.db
+
+# Benchmark and Performance Reports
+benchmark-*.txt
+explain-*.txt
+performance-report-*.json
+
+# Backup files
+*.backup
+*.bak
+backup_*.sql
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

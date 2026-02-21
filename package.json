@@ -22,7 +22,9 @@
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/config/database.config.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/config/database.config.ts",
-    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/config/database.config.ts"
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/config/database.config.ts",
+    "benchmark:db": "ts-node scripts/benchmark-database-performance.ts",
+    "explain:queries": "ts-node scripts/explain-query-plans.ts"
   },
   "repository": {
     "type": "git",
