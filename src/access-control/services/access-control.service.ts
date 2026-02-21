@@ -1,8 +1,15 @@
-import { Injectable, ConflictException, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AccessGrant, GrantStatus } from '../entities/access-grant.entity';
 import { CreateAccessGrantDto } from '../dto/create-access-grant.dto';
+import { NotificationsService } from '../../notifications/services/notifications.service';
+import { SorobanQueueService } from './soroban-queue.service';
 
 @Injectable()
 export class AccessControlService {
@@ -11,23 +18,18 @@ export class AccessControlService {
   constructor(
     @InjectRepository(AccessGrant)
     private grantRepository: Repository<AccessGrant>,
+    private readonly notificationsService: NotificationsService,
+    private readonly sorobanQueueService: SorobanQueueService,
   ) {}
 
   async grantAccess(patientId: string, dto: CreateAccessGrantDto): Promise<AccessGrant> {
-    // Check for duplicate active grant
-    for (const recordId of dto.recordIds) {
-      const existing = await this.grantRepository.findOne({
-        where: {
-          patientId,
-          granteeId: dto.granteeId,
-          recordIds: recordId as any,
-          status: GrantStatus.ACTIVE,
-        },
-      });
+    const grantInputs = await this.findRelevantActiveGrants(patientId, dto.granteeId);
 
-      if (existing) {
+    for (const grant of grantInputs) {
+      const hasMatchingRecord = grant.recordIds.some((recordId) => dto.recordIds.includes(recordId));
+      if (hasMatchingRecord) {
         throw new ConflictException(
-          `Active grant already exists for patient ${patientId}, grantee ${dto.granteeId}, and record ${recordId}`
+          `Active grant already exists for patient ${patientId}, grantee ${dto.granteeId}, and record overlap`,
         );
       }
     }
@@ -42,11 +44,24 @@ export class AccessControlService {
     });
 
     const saved = await this.grantRepository.save(grant);
-    
-    // TODO: Dispatch Soroban tx via BullMQ
-    this.logger.log(`Access granted: ${saved.id} for patient ${patientId}`);
-    
-    return saved;
+
+    const sorobanTxHash = await this.sorobanQueueService.dispatchGrant(saved);
+    saved.sorobanTxHash = sorobanTxHash;
+
+    const updated = await this.grantRepository.save(saved);
+
+    this.notificationsService.emitAccessGranted(patientId, updated.id, {
+      patientId,
+      granteeId: updated.granteeId,
+      grantId: updated.id,
+      recordIds: updated.recordIds,
+      accessLevel: updated.accessLevel,
+      sorobanTxHash: updated.sorobanTxHash,
+    });
+
+    this.logger.log(`Access granted: ${updated.id} for patient ${patientId}`);
+
+    return updated;
   }
 
   async revokeAccess(grantId: string, patientId: string, reason?: string): Promise<AccessGrant> {
@@ -54,7 +69,7 @@ export class AccessControlService {
       where: { id: grantId, patientId },
     });
 
-    if (!grant) {
+    if (!grant || grant.status === GrantStatus.REVOKED) {
       throw new NotFoundException(`Grant ${grantId} not found`);
     }
 
@@ -64,23 +79,68 @@ export class AccessControlService {
     grant.revocationReason = reason;
 
     const saved = await this.grantRepository.save(grant);
-    
-    // TODO: Dispatch revocation tx via BullMQ
+
+    const sorobanTxHash = await this.sorobanQueueService.dispatchRevoke(saved);
+    saved.sorobanTxHash = sorobanTxHash;
+
+    const finalGrant = await this.grantRepository.save(saved);
+
+    this.notificationsService.emitAccessRevoked(patientId, finalGrant.id, {
+      patientId,
+      granteeId: finalGrant.granteeId,
+      grantId: finalGrant.id,
+      revocationReason: finalGrant.revocationReason,
+      sorobanTxHash: finalGrant.sorobanTxHash,
+    });
+
     this.logger.log(`Access revoked: ${grantId} by patient ${patientId}`);
-    
-    return saved;
+
+    return finalGrant;
   }
 
   async getPatientGrants(patientId: string): Promise<AccessGrant[]> {
-    return this.grantRepository.find({
+    const grants = await this.grantRepository.find({
       where: { patientId, status: GrantStatus.ACTIVE },
       order: { createdAt: 'DESC' },
     });
+
+    const now = new Date();
+    const activeGrants = grants.filter((grant) => !grant.expiresAt || grant.expiresAt > now);
+
+    for (const grant of grants) {
+      if (grant.expiresAt && grant.expiresAt <= now && grant.status !== GrantStatus.EXPIRED) {
+        await this.grantRepository.update(grant.id, { status: GrantStatus.EXPIRED });
+      }
+    }
+
+    return activeGrants;
   }
 
   async getReceivedGrants(granteeId: string): Promise<AccessGrant[]> {
-    return this.grantRepository.find({
+    const grants = await this.grantRepository.find({
       where: { granteeId, status: GrantStatus.ACTIVE },
+      order: { createdAt: 'DESC' },
+    });
+
+    const now = new Date();
+    const activeGrants = grants.filter((grant) => !grant.expiresAt || grant.expiresAt > now);
+
+    for (const grant of grants) {
+      if (grant.expiresAt && grant.expiresAt <= now && grant.status !== GrantStatus.EXPIRED) {
+        await this.grantRepository.update(grant.id, { status: GrantStatus.EXPIRED });
+      }
+    }
+
+    return activeGrants;
+  }
+
+  private async findRelevantActiveGrants(patientId: string, granteeId: string): Promise<AccessGrant[]> {
+    return this.grantRepository.find({
+      where: {
+        patientId,
+        granteeId,
+        status: GrantStatus.ACTIVE,
+      },
       order: { createdAt: 'DESC' },
     });
   }
