@@ -23,6 +23,7 @@ import { MedicalEmergencyErrorFilter } from './common/errors/medical-emergency-e
 import { MedicalDataValidationPipe } from './common/validation/medical-data.validator.pipe';
 import { AuditLogEntity } from './common/audit/audit-log.entity';
 import { NotificationsModule } from './notifications/notifications.module';
+import { QueueModule } from './queues/queue.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ValidationModule,
     InfectionControlModule,
     NotificationsModule,
+    QueueModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

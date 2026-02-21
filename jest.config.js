@@ -42,6 +42,7 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^@test/(.*)$': '<rootDir>/test/$1',
     '^uuid$': 'uuid',
+    '^@nestjs/bullmq$': '<rootDir>/node_modules/@nestjs/bullmq',
   },
   setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
   globals: {
