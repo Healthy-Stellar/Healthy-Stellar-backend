@@ -51,6 +51,7 @@ export class AccessControlService {
     const updated = await this.grantRepository.save(saved);
 
     this.notificationsService.emitAccessGranted(patientId, updated.id, {
+      targetUserId: updated.granteeId,
       patientId,
       granteeId: updated.granteeId,
       grantId: updated.id,
@@ -86,6 +87,7 @@ export class AccessControlService {
     const finalGrant = await this.grantRepository.save(saved);
 
     this.notificationsService.emitAccessRevoked(patientId, finalGrant.id, {
+      targetUserId: finalGrant.granteeId,
       patientId,
       granteeId: finalGrant.granteeId,
       grantId: finalGrant.id,
