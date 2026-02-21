@@ -51,6 +51,7 @@ export class DiagnosisController {
   }
 
   @Get('patient/:patientId')
+  // Patient-scoped diagnosis list endpoint.
   @ApiOperation({ summary: 'Get all diagnoses for a patient' })
   @ApiParam({ name: 'patientId', description: 'Patient UUID' })
   @ApiResponse({

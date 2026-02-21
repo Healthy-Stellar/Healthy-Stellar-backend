@@ -14,6 +14,7 @@ import { TreatmentPlanningModule } from './treatment-planning/treatment-planning
 import { PharmacyModule } from './pharmacy/pharmacy.module';
 import { InfectionControlModule } from './infection-control/infection-control.module';
 import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
+import { AccessControlModule } from './access-control/access-control.module';
 import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -59,6 +60,7 @@ import { FhirModule } from './fhir/fhir.module';
     NotificationsModule,
     QueueModule,
     FhirModule,
+    AccessControlModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
