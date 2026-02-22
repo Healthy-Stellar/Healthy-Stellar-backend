@@ -19,6 +19,7 @@ import { DecisionSupportService } from '../services/decision-support.service';
 import {
   CreateTreatmentPlanDto,
   UpdateTreatmentPlanDto,
+  SearchTreatmentPlansDto,
   CreateMedicalProcedureDto,
   UpdateMedicalProcedureDto,
   CreateCarePlanTemplateDto,
@@ -40,6 +41,12 @@ export class TreatmentPlanController {
     return await this.treatmentPlanService.create(createDto);
   }
 
+  @Get()
+  @ApiOperation({ summary: 'Search treatment plans with filters' })
+  async search(@Query() searchDto: SearchTreatmentPlansDto) {
+    return await this.treatmentPlanService.search(searchDto);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get treatment plan by ID' })
   @ApiParam({ name: 'id', description: 'Treatment plan UUID' })
@@ -54,6 +61,12 @@ export class TreatmentPlanController {
     return await this.treatmentPlanService.findByPatientId(patientId);
   }
 
+  @Get('diagnosis/:diagnosisId')
+  @ApiOperation({ summary: 'Get treatment plans associated with a diagnosis' })
+  async findByDiagnosisId(@Param('diagnosisId') diagnosisId: string) {
+    return await this.treatmentPlanService.findByDiagnosisId(diagnosisId);
+  }
+
   @Get('patient/:patientId/active')
   @ApiOperation({ summary: 'Get active treatment plans for a patient' })
   @ApiParam({ name: 'patientId', description: 'Patient UUID' })
@@ -66,6 +79,12 @@ export class TreatmentPlanController {
   @ApiParam({ name: 'id', description: 'Treatment plan UUID' })
   async getVersionHistory(@Param('id') id: string) {
     return await this.treatmentPlanService.getVersionHistory(id);
+  }
+
+  @Get(':id/progress')
+  @ApiOperation({ summary: 'Get care-plan progress and tracking metrics' })
+  async getProgress(@Param('id') id: string) {
+    return await this.treatmentPlanService.getProgress(id);
   }
 
   @Patch(':id')
@@ -158,6 +177,15 @@ export class MedicalProcedureController {
   @ApiParam({ name: 'id', description: 'Procedure UUID' })
   async recordOutcome(@Param('id') id: string, @Body() body: { outcome: any; updatedBy?: string }) {
     return await this.procedureService.recordOutcome(id, body.outcome, body.updatedBy);
+  }
+
+  @Post(':id/cancel')
+  @ApiOperation({ summary: 'Cancel a procedure' })
+  async cancel(
+    @Param('id') id: string,
+    @Body() body: { reason?: string; updatedBy?: string },
+  ) {
+    return await this.procedureService.cancel(id, body.reason, body.updatedBy);
   }
 
   @Delete(':id')

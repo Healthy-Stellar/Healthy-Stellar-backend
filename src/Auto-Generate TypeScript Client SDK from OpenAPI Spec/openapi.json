@@ -1,0 +1,434 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "MedChain API",
+    "description": "Blockchain-based medical records management API",
+    "version": "1.0.0",
+    "contact": {
+      "name": "MedChain Team"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.medchain.io/v1",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:3000/v1",
+      "description": "Local development"
+    }
+  ],
+  "security": [
+    { "bearerAuth": [] }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "LoginRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": { "type": "string", "example": "alice@hospital.org" },
+          "password": { "type": "string", "format": "password" }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string", "description": "JWT access token" },
+          "expiresIn": { "type": "integer", "description": "Token TTL in seconds" },
+          "userId": { "type": "string" }
+        }
+      },
+      "RefreshRequest": {
+        "type": "object",
+        "required": ["refreshToken"],
+        "properties": {
+          "refreshToken": { "type": "string" }
+        }
+      },
+      "MedicalRecord": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "patientId": { "type": "string" },
+          "uploaderId": { "type": "string" },
+          "contentHash": { "type": "string", "description": "SHA-256 hash of the record file" },
+          "ipfsCid": { "type": "string", "description": "IPFS Content Identifier" },
+          "metadata": { "$ref": "#/components/schemas/RecordMetadata" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "RecordMetadata": {
+        "type": "object",
+        "properties": {
+          "recordType": {
+            "type": "string",
+            "enum": ["LAB_RESULT", "IMAGING", "PRESCRIPTION", "CLINICAL_NOTE", "DISCHARGE_SUMMARY"]
+          },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "UploadRecordRequest": {
+        "type": "object",
+        "required": ["patientId", "metadata"],
+        "properties": {
+          "patientId": { "type": "string" },
+          "metadata": { "$ref": "#/components/schemas/RecordMetadata" }
+        }
+      },
+      "AccessGrant": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "recordId": { "type": "string" },
+          "grantorId": { "type": "string" },
+          "granteeId": { "type": "string" },
+          "permissions": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["READ", "WRITE", "SHARE"] }
+          },
+          "expiresAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "GrantAccessRequest": {
+        "type": "object",
+        "required": ["recordId", "granteeId", "permissions"],
+        "properties": {
+          "recordId": { "type": "string" },
+          "granteeId": { "type": "string" },
+          "permissions": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["READ", "WRITE", "SHARE"] }
+          },
+          "expiresAt": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "RevokeAccessRequest": {
+        "type": "object",
+        "required": ["grantId"],
+        "properties": {
+          "grantId": { "type": "string" }
+        }
+      },
+      "AuditLog": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "action": { "type": "string" },
+          "actorId": { "type": "string" },
+          "resourceId": { "type": "string" },
+          "resourceType": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "metadata": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "PaginatedRecords": {
+        "type": "object",
+        "properties": {
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/MedicalRecord" } },
+          "total": { "type": "integer" },
+          "page": { "type": "integer" },
+          "pageSize": { "type": "integer" }
+        }
+      },
+      "PaginatedAccessGrants": {
+        "type": "object",
+        "properties": {
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/AccessGrant" } },
+          "total": { "type": "integer" },
+          "page": { "type": "integer" },
+          "pageSize": { "type": "integer" }
+        }
+      },
+      "PaginatedAuditLogs": {
+        "type": "object",
+        "properties": {
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/AuditLog" } },
+          "total": { "type": "integer" },
+          "page": { "type": "integer" },
+          "pageSize": { "type": "integer" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" },
+          "message": { "type": "string" },
+          "statusCode": { "type": "integer" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "operationId": "login",
+        "summary": "Authenticate and obtain JWT token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful authentication",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": ["Auth"],
+        "operationId": "refreshToken",
+        "summary": "Refresh access token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RefreshRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New token issued",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "operationId": "logout",
+        "summary": "Invalidate current token",
+        "responses": {
+          "204": { "description": "Logged out successfully" }
+        }
+      }
+    },
+    "/records": {
+      "get": {
+        "tags": ["Records"],
+        "operationId": "listRecords",
+        "summary": "List medical records accessible to the caller",
+        "parameters": [
+          { "name": "patientId", "in": "query", "schema": { "type": "string" } },
+          { "name": "recordType", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of records",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaginatedRecords" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Records"],
+        "operationId": "uploadRecord",
+        "summary": "Upload a new medical record",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file", "patientId", "metadata"],
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "patientId": { "type": "string" },
+                  "metadata": { "type": "string", "description": "JSON-encoded RecordMetadata" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Record created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MedicalRecord" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/records/{recordId}": {
+      "get": {
+        "tags": ["Records"],
+        "operationId": "getRecord",
+        "summary": "Fetch a specific medical record",
+        "parameters": [
+          { "name": "recordId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Record details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MedicalRecord" }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Records"],
+        "operationId": "deleteRecord",
+        "summary": "Delete (soft-delete) a medical record",
+        "parameters": [
+          { "name": "recordId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Record deleted" }
+        }
+      }
+    },
+    "/records/{recordId}/download": {
+      "get": {
+        "tags": ["Records"],
+        "operationId": "downloadRecord",
+        "summary": "Download the raw file for a record",
+        "parameters": [
+          { "name": "recordId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "File binary stream",
+            "content": {
+              "application/octet-stream": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/access/grants": {
+      "get": {
+        "tags": ["Access"],
+        "operationId": "listGrants",
+        "summary": "List access grants for the caller",
+        "parameters": [
+          { "name": "recordId", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated access grants",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaginatedAccessGrants" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Access"],
+        "operationId": "grantAccess",
+        "summary": "Grant access to a record for another user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GrantAccessRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Access grant created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccessGrant" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/access/grants/{grantId}": {
+      "delete": {
+        "tags": ["Access"],
+        "operationId": "revokeAccess",
+        "summary": "Revoke an access grant",
+        "parameters": [
+          { "name": "grantId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Grant revoked" }
+        }
+      }
+    },
+    "/audit/logs": {
+      "get": {
+        "tags": ["Audit"],
+        "operationId": "listAuditLogs",
+        "summary": "Retrieve audit trail logs",
+        "parameters": [
+          { "name": "actorId", "in": "query", "schema": { "type": "string" } },
+          { "name": "resourceId", "in": "query", "schema": { "type": "string" } },
+          { "name": "action", "in": "query", "schema": { "type": "string" } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 50 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated audit logs",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaginatedAuditLogs" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

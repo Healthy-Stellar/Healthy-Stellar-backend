@@ -275,6 +275,44 @@ The application uses a global exception filter (`HttpExceptionFilter`) that:
 - Provides detailed error information in development
 - Sanitizes error messages in production
 
+## Clinical Workflow APIs (#68)
+
+The backend now includes an integrated clinical workflow surface across diagnosis, treatment planning, pharmacy, and documentation modules.
+
+### Implemented API capabilities
+
+- Diagnosis and treatment planning integration:
+  - Get treatment plans by diagnosis
+  - Get patient diagnoses with linked treatment plans
+  - Validate diagnosis IDs on treatment plan create/update
+- Prescription and medication workflow improvements:
+  - Search prescriptions by status/patient/prescriber/date
+  - Update eligible prescriptions
+  - Add and retrieve prescription note history
+- Clinical documentation enhancements:
+  - Dedicated `clinical-notes` endpoints
+  - SOAP/progress/discharge/consultation note support
+  - Note completeness checks and signing workflow
+- Procedure/care tracking and decision support:
+  - Procedure cancellation endpoint
+  - Auto decision-support alerts on treatment/procedure lifecycle changes
+  - Treatment plan progress endpoint for care coordination dashboards
+
+### Key endpoint groups
+
+- `GET /diagnosis/:id/treatment-plans`
+- `GET /diagnosis/patient/:patientId/treatment-plans`
+- `GET /treatment-plans` (search filters)
+- `GET /treatment-plans/:id/progress`
+- `GET /pharmacy/prescriptions` (search filters)
+- `PATCH /pharmacy/prescriptions/:id`
+- `POST /pharmacy/prescriptions/:id/notes`
+- `GET /pharmacy/prescriptions/:id/notes`
+- `POST /clinical-notes`
+- `GET /clinical-notes`
+- `POST /clinical-notes/:id/sign`
+- `GET /clinical-notes/:id/completeness`
+
 ## Testing
 
 ### Running Tests

@@ -1,5 +1,6 @@
 import { Controller, Post, Get, UseGuards, Body, Req, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { MfaService } from '../services/mfa.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
@@ -56,6 +57,7 @@ export class MfaController {
    */
   @Post('verify')
   @UseGuards(JwtAuthGuard)
+  @Throttle({ user: { limit: 5, ttl: 60 } })
   @ApiOperation({ summary: 'Verify MFA code and enable MFA' })
   @ApiResponse({ status: 200, description: 'MFA enabled successfully' })
   async verifyMfa(@Body() mfaEnableDto: MfaEnableDto, @Req() req: Request): Promise<any> {
@@ -94,6 +96,7 @@ export class MfaController {
    */
   @Post('verify-code')
   @UseGuards(JwtAuthGuard)
+  @Throttle({ user: { limit: 5, ttl: 60 }, ip: { limit: 20, ttl: 60 } })
   @ApiOperation({ summary: 'Verify MFA code' })
   @ApiResponse({ status: 200, description: 'MFA code verified' })
   async verifyCode(@Body() mfaVerifyDto: MfaVerifyDto, @Req() req: Request): Promise<any> {

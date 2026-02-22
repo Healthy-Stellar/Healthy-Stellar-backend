@@ -1,3 +1,6 @@
+import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -35,12 +38,37 @@ import { AuditLogEntity } from './common/audit/audit-log.entity';
       useClass: DatabaseConfig,
     }),
     // Rate limiting and throttling for security
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000, // 1 minute
-        limit: 100, // 100 requests per minute
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const redisUrl = config.get<string>('REDIS_URL');
+        const baseOptions = {
+          ignoreUserAgents: [],
+          skipIf: () => false,
+          setHeaders: true,
+          throttlers: [
+            {
+              name: 'ip',
+              ttl: 60,
+              limit: 100,
+              getTracker: (req) => req.ip || req.connection?.remoteAddress || 'unknown-ip',
+              skipIf: (context) => hasBearerAuthUser(context.switchToHttp().getRequest()),
+            },
+            {
+              name: 'user',
+              ttl: 60,
+              limit: 200,
+              getTracker: (req) => getUserTrackerFromRequest(req),
+              skipIf: (context) => !hasBearerAuthUser(context.switchToHttp().getRequest()),
+            },
+          ],
+          storage: redisUrl ? new ThrottlerStorageRedisService(redisUrl) : undefined,
+        } as any;
+
+        return baseOptions;
       },
-    ]),
+    }),
     // Application modules
     TenantModule,
     CommonModule,
@@ -52,8 +80,14 @@ import { AuditLogEntity } from './common/audit/audit-log.entity';
     DiagnosisModule,
     TreatmentPlanningModule,
     PharmacyModule,
+    EmergencyOperationsModule,
     ValidationModule,
     InfectionControlModule,
+    NotificationsModule,
+    QueueModule,
+    FhirModule,
+    AccessControlModule,
+    StellarModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
@@ -64,12 +98,16 @@ import { AuditLogEntity } from './common/audit/audit-log.entity';
     },
     {
       provide: APP_FILTER,
-      useClass: MedicalEmergencyErrorFilter
+      useClass: MedicalEmergencyErrorFilter,
     },
     {
       provide: APP_PIPE,
-      useClass: MedicalDataValidationPipe
-    }
+      useClass: MedicalDataValidationPipe,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}

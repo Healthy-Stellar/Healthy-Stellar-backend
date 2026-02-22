@@ -188,12 +188,12 @@ export class LabTestsService {
     ): Promise<LabTestParameter> {
         const labTest = await this.findOne(testId);
 
-        const parameter = this.parameterRepository.create({
+        const parameter: LabTestParameter = this.parameterRepository.create({
             ...parameterDto,
             labTestId: testId,
             createdBy: userId,
             updatedBy: userId,
-        });
+        } as Partial<LabTestParameter>);
 
         const saved = await this.parameterRepository.save(parameter);
         this.logger.log(`Parameter added to test ${testId}: ${saved.id}`);
@@ -217,7 +217,7 @@ export class LabTestsService {
         Object.assign(parameter, updateDto);
         parameter.updatedBy = userId;
 
-        const saved = await this.parameterRepository.save(parameter);
+        const saved = await this.parameterRepository.save(parameter as LabTestParameter);
         this.logger.log(`Parameter updated: ${saved.id}`);
 
         return saved;

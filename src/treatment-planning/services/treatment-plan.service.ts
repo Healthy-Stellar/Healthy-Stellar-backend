@@ -1,10 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere } from 'typeorm';
+import { Repository, FindOptionsWhere, Between } from 'typeorm';
 import { TreatmentPlan } from '../entities/treatment-plan.entity';
 import { TreatmentPlanVersion } from '../entities/treatment-plan-version.entity';
-import { CreateTreatmentPlanDto, UpdateTreatmentPlanDto } from '../dto/treatment-planning.dto';
+import {
+  CreateTreatmentPlanDto,
+  UpdateTreatmentPlanDto,
+  SearchTreatmentPlansDto,
+} from '../dto/treatment-planning.dto';
 import { TreatmentPlanStatus } from '../../common/enums';
+import { Diagnosis } from '../../diagnosis/entities/diagnosis.entity';
+import { DecisionSupportService } from './decision-support.service';
 
 @Injectable()
 export class TreatmentPlanService {
@@ -13,14 +19,21 @@ export class TreatmentPlanService {
     private readonly treatmentPlanRepository: Repository<TreatmentPlan>,
     @InjectRepository(TreatmentPlanVersion)
     private readonly versionRepository: Repository<TreatmentPlanVersion>,
+    @InjectRepository(Diagnosis)
+    private readonly diagnosisRepository: Repository<Diagnosis>,
+    private readonly decisionSupportService: DecisionSupportService,
   ) {}
 
   async create(createDto: CreateTreatmentPlanDto): Promise<TreatmentPlan> {
+    await this.validateDiagnosisIds(createDto.diagnosisIds);
     const plan = this.treatmentPlanRepository.create(createDto);
     const savedPlan = await this.treatmentPlanRepository.save(plan);
 
     // Create initial version
     await this.createVersion(savedPlan, 'Initial plan created', createDto.createdBy);
+    if (savedPlan.diagnosisIds?.length) {
+      await this.decisionSupportService.evaluateTreatmentPlan(savedPlan.id, savedPlan.diagnosisIds);
+    }
 
     return savedPlan;
   }
@@ -47,6 +60,7 @@ export class TreatmentPlanService {
 
   async update(id: string, updateDto: UpdateTreatmentPlanDto): Promise<TreatmentPlan> {
     const plan = await this.findById(id);
+    await this.validateDiagnosisIds(updateDto.diagnosisIds);
 
     // Create new version before updating
     if (updateDto.changeNotes || this.hasSignificantChanges(updateDto)) {
@@ -55,7 +69,60 @@ export class TreatmentPlanService {
     }
 
     Object.assign(plan, updateDto);
-    return await this.treatmentPlanRepository.save(plan);
+    const updated = await this.treatmentPlanRepository.save(plan);
+    if (updated.diagnosisIds?.length) {
+      await this.decisionSupportService.evaluateTreatmentPlan(updated.id, updated.diagnosisIds);
+    }
+    return updated;
+  }
+
+  async findByDiagnosisId(diagnosisId: string): Promise<TreatmentPlan[]> {
+    return await this.treatmentPlanRepository
+      .createQueryBuilder('plan')
+      .where(':diagnosisId = ANY(string_to_array(plan.diagnosisIds, \',\'))', { diagnosisId })
+      .orderBy('plan.createdAt', 'DESC')
+      .getMany();
+  }
+
+  async search(searchDto: SearchTreatmentPlansDto): Promise<TreatmentPlan[]> {
+    const queryBuilder = this.treatmentPlanRepository.createQueryBuilder('plan');
+
+    if (searchDto.patientId) {
+      queryBuilder.andWhere('plan.patientId = :patientId', { patientId: searchDto.patientId });
+    }
+
+    if (searchDto.primaryProviderId) {
+      queryBuilder.andWhere('plan.primaryProviderId = :primaryProviderId', {
+        primaryProviderId: searchDto.primaryProviderId,
+      });
+    }
+
+    if (searchDto.status) {
+      queryBuilder.andWhere('plan.status = :status', { status: searchDto.status });
+    }
+
+    if (searchDto.diagnosisId) {
+      queryBuilder.andWhere(':diagnosisId = ANY(string_to_array(plan.diagnosisIds, \',\'))', {
+        diagnosisId: searchDto.diagnosisId,
+      });
+    }
+
+    if (searchDto.startDateFrom && searchDto.startDateTo) {
+      queryBuilder.andWhere('plan.startDate BETWEEN :startDateFrom AND :startDateTo', {
+        startDateFrom: new Date(searchDto.startDateFrom),
+        startDateTo: new Date(searchDto.startDateTo),
+      });
+    } else if (searchDto.startDateFrom) {
+      queryBuilder.andWhere('plan.startDate >= :startDateFrom', {
+        startDateFrom: new Date(searchDto.startDateFrom),
+      });
+    } else if (searchDto.startDateTo) {
+      queryBuilder.andWhere('plan.startDate <= :startDateTo', {
+        startDateTo: new Date(searchDto.startDateTo),
+      });
+    }
+
+    return await queryBuilder.orderBy('plan.createdAt', searchDto.sortOrder || 'DESC').getMany();
   }
 
   async updateStatus(
@@ -96,6 +163,40 @@ export class TreatmentPlanService {
     });
   }
 
+  async getProgress(planId: string): Promise<{
+    progressPercentage: number;
+    objectives: { total: number; completed: number };
+    goals: { total: number; achieved: number };
+    procedures: { total: number; completed: number };
+    outcomesRecorded: number;
+  }> {
+    const plan = await this.findById(planId);
+    const totalObjectives = plan.objectives?.length || 0;
+    const completedObjectives =
+      plan.objectives?.filter((objective) => objective.status === 'completed').length || 0;
+    const totalGoals = plan.goals?.length || 0;
+    const achievedGoals = plan.goals?.filter((goal) => goal.achieved).length || 0;
+    const totalProcedures = plan.procedures?.length || 0;
+    const completedProcedures =
+      plan.procedures?.filter((procedure) => procedure.status === 'completed').length || 0;
+    const outcomesRecorded = plan.outcomes?.length || 0;
+
+    const objectiveScore = totalObjectives > 0 ? completedObjectives / totalObjectives : 0;
+    const goalScore = totalGoals > 0 ? achievedGoals / totalGoals : 0;
+    const procedureScore = totalProcedures > 0 ? completedProcedures / totalProcedures : 0;
+    const progressPercentage = Math.round(
+      ((objectiveScore + goalScore + procedureScore) / 3) * 100,
+    );
+
+    return {
+      progressPercentage,
+      objectives: { total: totalObjectives, completed: completedObjectives },
+      goals: { total: totalGoals, achieved: achievedGoals },
+      procedures: { total: totalProcedures, completed: completedProcedures },
+      outcomesRecorded,
+    };
+  }
+
   private async createVersion(
     plan: TreatmentPlan,
     changeNotes?: string,
@@ -134,5 +235,22 @@ export class TreatmentPlanService {
       updateDto.medications ||
       updateDto.status
     );
+  }
+
+  private async validateDiagnosisIds(diagnosisIds?: string[]): Promise<void> {
+    if (!diagnosisIds || diagnosisIds.length === 0) {
+      return;
+    }
+
+    const found = await this.diagnosisRepository.find({
+      where: diagnosisIds.map((id) => ({ id })),
+      select: ['id'],
+    });
+
+    if (found.length !== diagnosisIds.length) {
+      const foundIds = new Set(found.map((item) => item.id));
+      const missing = diagnosisIds.filter((id) => !foundIds.has(id));
+      throw new BadRequestException(`Invalid diagnosis IDs: ${missing.join(', ')}`);
+    }
   }
 }

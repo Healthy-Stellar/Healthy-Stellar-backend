@@ -10,6 +10,7 @@ import {
   MaxLength,
   IsInt,
   Min,
+  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
@@ -107,6 +108,43 @@ export class UpdateTreatmentPlanDto extends PartialType(CreateTreatmentPlanDto) 
   @IsOptional()
   @IsString()
   changeNotes?: string;
+}
+
+export class SearchTreatmentPlansDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  patientId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  diagnosisId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  primaryProviderId?: string;
+
+  @ApiPropertyOptional({ enum: TreatmentPlanStatus })
+  @IsOptional()
+  @IsEnum(TreatmentPlanStatus)
+  status?: TreatmentPlanStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  startDateFrom?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  startDateTo?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsIn(['ASC', 'DESC'])
+  sortOrder?: 'ASC' | 'DESC';
 }
 
 // Medical Procedure DTOs

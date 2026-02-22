@@ -6,6 +6,7 @@ import { DiagnosisHistory } from '../entities/diagnosis-history.entity';
 import { CreateDiagnosisDto, UpdateDiagnosisDto, SearchDiagnosisDto } from '../dto/diagnosis.dto';
 import { MedicalCodeService } from '../../billing/services/medical-code.service';
 import { CodeType } from '../../common/enums';
+import { TreatmentPlan } from '../../treatment-planning/entities/treatment-plan.entity';
 
 @Injectable()
 export class DiagnosisService {
@@ -14,6 +15,8 @@ export class DiagnosisService {
     private readonly diagnosisRepository: Repository<Diagnosis>,
     @InjectRepository(DiagnosisHistory)
     private readonly diagnosisHistoryRepository: Repository<DiagnosisHistory>,
+    @InjectRepository(TreatmentPlan)
+    private readonly treatmentPlanRepository: Repository<TreatmentPlan>,
     private readonly medicalCodeService: MedicalCodeService,
   ) {}
 
@@ -174,6 +177,32 @@ export class DiagnosisService {
       where: { diagnosisId },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  async getTreatmentPlansForDiagnosis(diagnosisId: string): Promise<TreatmentPlan[]> {
+    await this.findById(diagnosisId);
+    return await this.treatmentPlanRepository
+      .createQueryBuilder('plan')
+      .where(':diagnosisId = ANY(string_to_array(plan.diagnosisIds, \',\'))', { diagnosisId })
+      .orderBy('plan.createdAt', 'DESC')
+      .getMany();
+  }
+
+  async getPatientDiagnosesWithTreatmentPlans(patientId: string): Promise<
+    Array<{
+      diagnosis: Diagnosis;
+      treatmentPlans: TreatmentPlan[];
+    }>
+  > {
+    const diagnoses = await this.findByPatientId(patientId);
+    const results: Array<{ diagnosis: Diagnosis; treatmentPlans: TreatmentPlan[] }> = [];
+
+    for (const diagnosis of diagnoses) {
+      const plans = await this.getTreatmentPlansForDiagnosis(diagnosis.id);
+      results.push({ diagnosis, treatmentPlans: plans });
+    }
+
+    return results;
   }
 
   private async createHistoryEntry(

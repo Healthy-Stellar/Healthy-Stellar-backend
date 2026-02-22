@@ -7,12 +7,15 @@ import {
   UpdateMedicalProcedureDto,
 } from '../dto/treatment-planning.dto';
 import { ProcedureStatus } from '../../common/enums';
+import { DecisionSupportService } from './decision-support.service';
+import { AlertSeverity, AlertType } from '../../common/enums';
 
 @Injectable()
 export class MedicalProcedureService {
   constructor(
     @InjectRepository(MedicalProcedure)
     private readonly procedureRepository: Repository<MedicalProcedure>,
+    private readonly decisionSupportService: DecisionSupportService,
   ) {}
 
   async create(createDto: CreateMedicalProcedureDto): Promise<MedicalProcedure> {
@@ -28,7 +31,21 @@ export class MedicalProcedureService {
     }
 
     const procedure = this.procedureRepository.create(createDto);
-    return await this.procedureRepository.save(procedure);
+    const saved = await this.procedureRepository.save(procedure);
+
+    await this.decisionSupportService.createAlert(
+      AlertType.GUIDELINE_RECOMMENDATION,
+      AlertSeverity.INFO,
+      'Procedure scheduled',
+      `Procedure "${saved.procedureName}" has been scheduled.`,
+      {
+        patientId: saved.patientId,
+        treatmentPlanId: saved.treatmentPlanId,
+        triggeredBy: { type: 'procedure_create', procedureId: saved.id },
+      },
+    );
+
+    return saved;
   }
 
   async findById(id: string): Promise<MedicalProcedure> {
@@ -82,7 +99,19 @@ export class MedicalProcedureService {
     }
 
     Object.assign(procedure, updateDto);
-    return await this.procedureRepository.save(procedure);
+    const updated = await this.procedureRepository.save(procedure);
+    await this.decisionSupportService.createAlert(
+      AlertType.GUIDELINE_RECOMMENDATION,
+      AlertSeverity.INFO,
+      'Procedure updated',
+      `Procedure "${updated.procedureName}" status is now ${updated.status}.`,
+      {
+        patientId: updated.patientId,
+        treatmentPlanId: updated.treatmentPlanId,
+        triggeredBy: { type: 'procedure_update', procedureId: updated.id },
+      },
+    );
+    return updated;
   }
 
   async updateStatus(
@@ -102,7 +131,19 @@ export class MedicalProcedureService {
       procedure.actualEndTime = new Date();
     }
 
-    return await this.procedureRepository.save(procedure);
+    const updated = await this.procedureRepository.save(procedure);
+    await this.decisionSupportService.createAlert(
+      AlertType.GUIDELINE_RECOMMENDATION,
+      status === ProcedureStatus.CANCELLED ? AlertSeverity.WARNING : AlertSeverity.INFO,
+      'Procedure status changed',
+      `Procedure "${updated.procedureName}" status changed to ${status}.`,
+      {
+        patientId: updated.patientId,
+        treatmentPlanId: updated.treatmentPlanId,
+        triggeredBy: { type: 'procedure_status', procedureId: updated.id, status },
+      },
+    );
+    return updated;
   }
 
   async recordOutcome(id: string, outcome: any, updatedBy?: string): Promise<MedicalProcedure> {
@@ -116,6 +157,26 @@ export class MedicalProcedureService {
     }
 
     return await this.procedureRepository.save(procedure);
+  }
+
+  async cancel(id: string, reason?: string, updatedBy?: string): Promise<MedicalProcedure> {
+    const procedure = await this.findById(id);
+    procedure.status = ProcedureStatus.CANCELLED;
+    procedure.updatedBy = updatedBy;
+    procedure.cancellationReason = reason;
+    const cancelled = await this.procedureRepository.save(procedure);
+    await this.decisionSupportService.createAlert(
+      AlertType.GUIDELINE_RECOMMENDATION,
+      AlertSeverity.WARNING,
+      'Procedure cancelled',
+      `Procedure "${cancelled.procedureName}" has been cancelled.`,
+      {
+        patientId: cancelled.patientId,
+        treatmentPlanId: cancelled.treatmentPlanId,
+        triggeredBy: { type: 'procedure_cancel', procedureId: cancelled.id, reason },
+      },
+    );
+    return cancelled;
   }
 
   async getSchedule(

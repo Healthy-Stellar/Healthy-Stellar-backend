@@ -22,16 +22,17 @@ export class AuditLogService {
   ) {}
 
   async log(entry: AuditLogEntry): Promise<AuditLogEntity> {
-    const auditLog = this.auditLogRepository.create({
+    const payload: Partial<AuditLogEntity> = {
       userId: entry.userId,
       action: entry.action,
       entity: entry.entity,
       entityId: entry.entityId,
-      details: JSON.stringify(entry.details),
+      details: entry.details,
       severity: entry.severity,
       timestamp: entry.timestamp || new Date(),
       ipAddress: entry.ipAddress
-    });
+    };
+    const auditLog = this.auditLogRepository.create(payload);
 
     return this.auditLogRepository.save(auditLog);
   }
