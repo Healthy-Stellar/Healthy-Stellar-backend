@@ -146,6 +146,7 @@ const getUserTrackerFromRequest = (req: any): string => {
     QueueModule,
     FhirModule,
     AccessControlModule,
+    StellarModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
