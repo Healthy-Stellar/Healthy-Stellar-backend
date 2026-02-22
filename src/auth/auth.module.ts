@@ -21,11 +21,14 @@ import { AuditService } from '../common/audit/audit.service';
 // Controllers
 import { AuthController } from './controllers/auth.controller';
 import { MfaController } from './controllers/mfa.controller';
+import { ProvidersController } from './controllers/providers.controller';
 
 // Guards
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { MfaVerifiedGuard } from './guards/mfa-verified.guard';
+import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
+import { ProviderDirectoryService } from './services/provider-directory.service';
 
 @Module({
   imports: [
@@ -50,11 +53,13 @@ import { MfaVerifiedGuard } from './guards/mfa-verified.guard';
     MfaService,
     SessionManagementService,
     AuditService,
+    ProviderDirectoryService,
     JwtAuthGuard,
+    OptionalJwtAuthGuard,
     RolesGuard,
     MfaVerifiedGuard,
   ],
-  controllers: [AuthController, MfaController],
+  controllers: [AuthController, MfaController, ProvidersController],
   exports: [
     AuthService,
     PasswordValidationService,
@@ -62,7 +67,9 @@ import { MfaVerifiedGuard } from './guards/mfa-verified.guard';
     MfaService,
     SessionManagementService,
     AuditService,
+    ProviderDirectoryService,
     JwtAuthGuard,
+    OptionalJwtAuthGuard,
     RolesGuard,
     MfaVerifiedGuard,
   ],
