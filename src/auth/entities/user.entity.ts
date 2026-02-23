@@ -29,6 +29,9 @@ export class User {
   @Column({ nullable: true })
   lastName: string;
 
+  @Column({ nullable: true, length: 200 })
+  displayName: string;
+
   @Column({ type: 'enum', enum: UserRole, default: UserRole.PATIENT })
   role: UserRole;
 
@@ -64,6 +67,20 @@ export class User {
 
   @Column({ type: 'text', nullable: true })
   specialization: string;
+
+  @Column({ default: true })
+  emergencyAccessEnabled: boolean;
+  @Column({ nullable: true, length: 255 })
+  specialty: string;
+
+  @Column({ nullable: true, length: 255 })
+  institution: string;
+
+  @Column({ nullable: true, length: 255, select: false })
+  stellarPublicKey: string;
+
+  @Column({ type: 'tsvector', nullable: true, select: false })
+  search_vector: string;
 
   @Column({ type: 'simple-array', nullable: true })
   permissions: string[];

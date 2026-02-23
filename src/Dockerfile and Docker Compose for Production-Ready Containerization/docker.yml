@@ -1,0 +1,48 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: production
+          tags: nestapp:ci
+          load: true          # load into local daemon so we can inspect it
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify image size < 200 MB
+        run: |
+          SIZE_BYTES=$(docker image inspect nestapp:ci \
+            --format '{{.Size}}')
+          SIZE_MB=$(echo "scale=2; $SIZE_BYTES / 1048576" | bc)
+          echo "Image size: ${SIZE_MB} MB"
+          if [ "$SIZE_BYTES" -ge $((200 * 1048576)) ]; then
+            echo "❌ Image exceeds 200 MB limit (${SIZE_MB} MB)"
+            exit 1
+          fi
+          echo "✅ Image is within size limit (${SIZE_MB} MB)"
+
+      - name: Run Compose smoke-test (staging profile)
+        run: |
+          docker compose -f docker-compose.yml up -d
+          # Wait for app health
+          timeout 90 bash -c \
+            'until docker compose ps app | grep -q "healthy"; do sleep 3; done'
+          docker compose ps
+          docker compose down -v

@@ -7,6 +7,7 @@ import { ClinicalNoteTemplate } from './entities/clinical-note-template.entity';
 import { MedicalAttachment } from './entities/medical-attachment.entity';
 import { MedicalRecordConsent } from './entities/medical-record-consent.entity';
 import { ClinicalNote } from './entities/clinical-note.entity';
+import { AccessControlModule } from '../access-control/access-control.module';
 
 import { MedicalRecordsService } from './services/medical-records.service';
 import { ClinicalTemplatesService } from './services/clinical-templates.service';
@@ -24,6 +25,7 @@ import { ClinicalNotesController } from './controllers/clinical-notes.controller
 
 @Module({
   imports: [
+    AccessControlModule,
     TypeOrmModule.forFeature([
       MedicalRecord,
       MedicalRecordVersion,

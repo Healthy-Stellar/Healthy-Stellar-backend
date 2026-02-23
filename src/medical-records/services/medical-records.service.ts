@@ -12,6 +12,8 @@ import { MedicalHistory, HistoryEventType } from '../entities/medical-history.en
 import { CreateMedicalRecordDto } from '../dto/create-medical-record.dto';
 import { UpdateMedicalRecordDto } from '../dto/update-medical-record.dto';
 import { SearchMedicalRecordsDto } from '../dto/search-medical-records.dto';
+import { AccessControlService } from '../../access-control/services/access-control.service';
+import { AuditLogService } from '../../common/services/audit-log.service';
 
 @Injectable()
 export class MedicalRecordsService {
@@ -24,6 +26,8 @@ export class MedicalRecordsService {
     private versionRepository: Repository<MedicalRecordVersion>,
     @InjectRepository(MedicalHistory)
     private historyRepository: Repository<MedicalHistory>,
+    private readonly accessControlService: AccessControlService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async create(
@@ -401,5 +405,26 @@ export class MedicalRecordsService {
       ipAddress,
       userAgent,
     );
+
+    const emergencyGrant = await this.accessControlService.findActiveEmergencyGrant(
+      patientId,
+      userId,
+      recordId,
+    );
+
+    await this.auditLogService.create({
+      operation: emergencyGrant ? 'EMERGENCY_ACCESS' : 'RECORD_READ',
+      entityType: 'medical_records',
+      entityId: recordId,
+      userId,
+      ipAddress,
+      userAgent,
+      status: 'success',
+      changes: {
+        patientId,
+        isEmergency: Boolean(emergencyGrant),
+        emergencyGrantId: emergencyGrant?.id,
+      },
+    });
   }
 }

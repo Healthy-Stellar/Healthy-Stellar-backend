@@ -21,6 +21,7 @@ export enum GrantStatus {
 @Entity('access_grants')
 @Index(['patientId', 'granteeId', 'status'])
 @Index(['granteeId', 'status'])
+@Index(['isEmergency', 'expiresAt', 'status'])
 export class AccessGrant {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -48,6 +49,12 @@ export class AccessGrant {
     default: GrantStatus.ACTIVE,
   })
   status: GrantStatus;
+
+  @Column({ default: false })
+  isEmergency: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  emergencyReason: string;
 
   @Column({ type: 'timestamp', nullable: true })
   expiresAt: Date;

@@ -5,6 +5,8 @@ import { AccessGrant, AccessLevel, GrantStatus } from '../entities/access-grant.
 import { AccessControlService } from './access-control.service';
 import { SorobanQueueService } from './soroban-queue.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { User } from '../../auth/entities/user.entity';
+import { AuditLogService } from '../../common/services/audit-log.service';
 
 describe('AccessControlService', () => {
   let service: AccessControlService;
@@ -15,9 +17,19 @@ describe('AccessControlService', () => {
     findOne: jest.Mock;
     update: jest.Mock;
   };
+  let userRepository: {
+    findOne: jest.Mock;
+    save: jest.Mock;
+  };
 
-  let notificationsService: { emitAccessGranted: jest.Mock; emitAccessRevoked: jest.Mock };
+  let notificationsService: {
+    emitAccessGranted: jest.Mock;
+    emitAccessRevoked: jest.Mock;
+    emitEmergencyAccess: jest.Mock;
+    sendPatientEmailNotification: jest.Mock;
+  };
   let sorobanQueueService: { dispatchGrant: jest.Mock; dispatchRevoke: jest.Mock };
+  let auditLogService: { create: jest.Mock };
 
   const patientId = 'a1a1a1a1-1111-1111-1111-111111111111';
   const granteeId = 'b2b2b2b2-2222-2222-2222-222222222222';
@@ -30,23 +42,34 @@ describe('AccessControlService', () => {
       findOne: jest.fn(),
       update: jest.fn(),
     };
+    userRepository = {
+      findOne: jest.fn(),
+      save: jest.fn(),
+    };
 
     notificationsService = {
       emitAccessGranted: jest.fn(),
       emitAccessRevoked: jest.fn(),
+      emitEmergencyAccess: jest.fn(),
+      sendPatientEmailNotification: jest.fn(),
     };
 
     sorobanQueueService = {
       dispatchGrant: jest.fn().mockResolvedValue('tx-grant-1'),
       dispatchRevoke: jest.fn().mockResolvedValue('tx-revoke-1'),
     };
+    auditLogService = {
+      create: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AccessControlService,
         { provide: getRepositoryToken(AccessGrant), useValue: repository },
+        { provide: getRepositoryToken(User), useValue: userRepository },
         { provide: NotificationsService, useValue: notificationsService },
         { provide: SorobanQueueService, useValue: sorobanQueueService },
+        { provide: AuditLogService, useValue: auditLogService },
       ],
     }).compile();
 
@@ -158,5 +181,43 @@ describe('AccessControlService', () => {
     repository.findOne.mockResolvedValue(null);
 
     await expect(service.revokeAccess('missing-id', patientId, 'reason')).rejects.toThrow(NotFoundException);
+  });
+
+  it('creates emergency grant, notifies patient, and logs audit entry', async () => {
+    userRepository.findOne.mockResolvedValue({
+      id: patientId,
+      emergencyAccessEnabled: true,
+    });
+    repository.findOne.mockResolvedValue(null);
+
+    const emergencyGrant = {
+      id: 'd4d4d4d4-4444-4444-4444-444444444444',
+      patientId,
+      granteeId,
+      recordIds: ['*'],
+      accessLevel: AccessLevel.READ_WRITE,
+      status: GrantStatus.ACTIVE,
+      isEmergency: true,
+      emergencyReason: 'Emergency override justified by critical trauma response with immediate life-saving need.',
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as AccessGrant;
+
+    repository.create.mockReturnValue(emergencyGrant);
+    repository.save.mockResolvedValue(emergencyGrant);
+
+    const result = await service.createEmergencyAccess(granteeId, {
+      patientId,
+      emergencyReason:
+        'Emergency override justified by critical trauma response with immediate life-saving need.',
+    });
+
+    expect(result.isEmergency).toBe(true);
+    expect(notificationsService.sendPatientEmailNotification).toHaveBeenCalled();
+    expect(notificationsService.emitEmergencyAccess).toHaveBeenCalled();
+    expect(auditLogService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: 'EMERGENCY_ACCESS' }),
+    );
   });
 });

@@ -1,0 +1,65 @@
+version: "3.9"
+
+# Development overrides — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  # ── Application (hot-reload) ─────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      target: builder          # use builder stage so devDeps are available
+    image: nestapp:dev
+    command: npm run start:dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - .:/app                 # mount source for hot-reload
+      - /app/node_modules      # preserve container node_modules
+    ports:
+      - "${APP_PORT:-3000}:3000"
+      - "${APP_DEBUG_PORT:-9229}:9229"   # Node inspector
+
+  # ── pgAdmin ──────────────────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/misc/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── Bull Board ───────────────────────────────────────────────────────────────
+  # Bull Board is served as part of the NestJS app at /queues.
+  # The block below exposes it via a dedicated lightweight proxy so devs can
+  # reach it independently. Adjust the upstream path to match your mount point.
+  bull-board:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "${BULL_BOARD_PORT:-3001}:80"
+    volumes:
+      - ./docker/nginx/bull-board.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pgadmin_data:
