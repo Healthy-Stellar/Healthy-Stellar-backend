@@ -30,7 +30,17 @@
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/config/database.config.ts",
     "seed": "ts-node -r tsconfig-paths/register src/database/seeder.ts",
     "benchmark:db": "ts-node scripts/benchmark-database-performance.ts",
-    "explain:queries": "ts-node scripts/explain-query-plans.ts"
+    "explain:queries": "ts-node scripts/explain-query-plans.ts",
+    "load-test:smoke": "TEST_TYPE=smoke k6 run load-tests/comprehensive-test.js",
+    "load-test:load": "TEST_TYPE=load k6 run load-tests/comprehensive-test.js",
+    "load-test:stress": "TEST_TYPE=stress k6 run load-tests/comprehensive-test.js",
+    "load-test:soak": "TEST_TYPE=soak k6 run load-tests/comprehensive-test.js",
+    "load-test:auth": "k6 run load-tests/scenarios/auth-flow.js",
+    "load-test:upload": "k6 run load-tests/scenarios/record-upload.js",
+    "load-test:fetch": "k6 run load-tests/scenarios/record-fetch.js",
+    "load-test:access": "k6 run load-tests/scenarios/access-control.js",
+    "load-test:baseline": "TEST_TYPE=load k6 run load-tests/comprehensive-test.js && cp load-tests/results/comprehensive-load-latest.json load-tests/baselines/load-baseline.json",
+    "load-test:compare": "TEST_TYPE=load k6 run load-tests/comprehensive-test.js && node load-tests/scripts/compare-baseline.js load comprehensive-load-latest.json"
   },
   "repository": {
     "type": "git",

@@ -1,0 +1,81 @@
+{
+  "dashboard": {
+    "title": "Healthy-Stellar k6 Load Test Dashboard",
+    "tags": ["k6", "load-testing", "performance"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Virtual Users",
+        "type": "graph",
+        "targets": [
+          {
+            "measurement": "vus",
+            "select": [[{"type": "field", "params": ["value"]}, {"type": "mean", "params": []}]],
+            "groupBy": [{"type": "time", "params": ["$__interval"]}, {"type": "fill", "params": ["null"]}]
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "measurement": "http_reqs",
+            "select": [[{"type": "field", "params": ["value"]}, {"type": "mean", "params": []}]],
+            "groupBy": [{"type": "time", "params": ["$__interval"]}, {"type": "fill", "params": ["null"]}]
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Response Time (P95)",
+        "type": "graph",
+        "targets": [
+          {
+            "measurement": "http_req_duration",
+            "select": [[{"type": "field", "params": ["value"]}, {"type": "percentile", "params": [95]}]],
+            "groupBy": [{"type": "time", "params": ["$__interval"]}, {"type": "tag", "params": ["scenario"]}]
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "measurement": "http_req_failed",
+            "select": [[{"type": "field", "params": ["value"]}, {"type": "mean", "params": []}]],
+            "groupBy": [{"type": "time", "params": ["$__interval"]}, {"type": "fill", "params": ["null"]}]
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "Data Transfer",
+        "type": "graph",
+        "targets": [
+          {
+            "measurement": "data_sent",
+            "select": [[{"type": "field", "params": ["value"]}, {"type": "sum", "params": []}]],
+            "groupBy": [{"type": "time", "params": ["$__interval"]}]
+          },
+          {
+            "measurement": "data_received",
+            "select": [[{"type": "field", "params": ["value"]}, {"type": "sum", "params": []}]],
+            "groupBy": [{"type": "time", "params": ["$__interval"]}]
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}
+      }
+    ],
+    "refresh": "5s",
+    "time": {"from": "now-15m", "to": "now"}
+  }
+}
