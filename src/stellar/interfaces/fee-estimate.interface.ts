@@ -56,6 +56,7 @@ export const StellarOperation = {
   ANCHOR_RECORD: 'anchorRecord',
   GRANT_ACCESS: 'grantAccess',
   REVOKE_ACCESS: 'revokeAccess',
+  VERIFY_ACCESS: 'verifyAccess',
 } as const;
 
-export type StellarOperation = typeof StellarOperation[keyof typeof StellarOperation];
+export type StellarOperation = (typeof StellarOperation)[keyof typeof StellarOperation];

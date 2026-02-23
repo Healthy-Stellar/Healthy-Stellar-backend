@@ -1,0 +1,16 @@
+# Test Results Directory
+
+This directory stores load test results.
+
+## Result Files
+
+- `*-summary.json` - Individual scenario results
+- `comprehensive-*-latest.json` - Latest comprehensive test results
+- `comprehensive-*-<timestamp>.json` - Historical test results
+- `comparison-*-<timestamp>.txt` - Baseline comparison reports
+
+## Retention
+
+- Keep latest results for each test type
+- Archive historical results monthly
+- Keep comparison reports for audit trail

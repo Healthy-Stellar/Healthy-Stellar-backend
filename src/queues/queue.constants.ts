@@ -2,6 +2,7 @@ export const QUEUE_NAMES = {
   STELLAR_TRANSACTIONS: 'stellar-transactions',
   IPFS_UPLOADS: 'ipfs-uploads',
   EMAIL_NOTIFICATIONS: 'email-notifications',
+  FHIR_BULK_EXPORT: 'fhir-bulk-export',
 } as const;
 
 export const JOB_TYPES = {

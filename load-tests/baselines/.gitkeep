@@ -1,0 +1,37 @@
+# Baseline Results Directory
+
+This directory stores baseline performance test results for comparison.
+
+## Creating Baselines
+
+Run the baseline script to create a new baseline:
+
+```bash
+npm run load-test:baseline
+```
+
+This will:
+1. Run the load test
+2. Save results to `load-tests/results/comprehensive-load-latest.json`
+3. Copy results to `load-tests/baselines/load-baseline.json`
+
+## Baseline Files
+
+- `load-baseline.json` - Load test baseline
+- `stress-baseline.json` - Stress test baseline (optional)
+- `soak-baseline.json` - Soak test baseline (optional)
+
+## When to Update Baselines
+
+Update baselines when:
+- Infrastructure changes (new servers, database upgrades)
+- Major performance optimizations are implemented
+- API changes that affect performance
+- After validating that new performance is acceptable
+
+## Baseline Format
+
+Baselines are k6 JSON output files containing:
+- HTTP request metrics (duration, failure rate)
+- Custom metrics (auth duration, upload duration, etc.)
+- Test metadata (duration, VUs, etc.)

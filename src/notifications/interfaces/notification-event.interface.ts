@@ -3,6 +3,7 @@ export enum NotificationEventType {
   ACCESS_GRANTED = 'access.granted',
   ACCESS_REVOKED = 'access.revoked',
   RECORD_UPLOADED = 'record.uploaded',
+  EMERGENCY_ACCESS = 'emergency-access',
 }
 
 export interface NotificationEvent {

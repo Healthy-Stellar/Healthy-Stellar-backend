@@ -1,109 +1,105 @@
-import { Injectable, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, FindOptionsWhere, Between } from 'typeorm';
 import { Record } from '../entities/record.entity';
-import { AccessControlService } from '../../access-control/services/access-control.service';
-import { StellarService } from '../../stellar/services/stellar.service';
-import { IpfsService } from '../../stellar/services/ipfs.service';
-import { MedicalCacheService } from '../../performance/medical-cache/medical-cache.service';
-import { AuditLogService } from '../../common/audit/audit-log.service';
-import { RecordResponseDto } from '../dto/record-response.dto';
+import { CreateRecordDto } from '../dto/create-record.dto';
+import { PaginationQueryDto } from '../dto/pagination-query.dto';
+import { PaginatedRecordsResponseDto, PaginationMeta } from '../dto/paginated-response.dto';
+import { IpfsService } from './ipfs.service';
+import { StellarService } from './stellar.service';
 
 @Injectable()
 export class RecordsService {
-  private readonly logger = new Logger(RecordsService.name);
-  private readonly ACCESS_CACHE_TTL = 60_000; // 60 seconds
-
   constructor(
     @InjectRepository(Record)
-    private readonly recordRepository: Repository<Record>,
-    private readonly accessControlService: AccessControlService,
-    private readonly stellarService: StellarService,
-    private readonly ipfsService: IpfsService,
-    private readonly cacheService: MedicalCacheService,
-    private readonly auditLogService: AuditLogService,
+    private recordRepository: Repository<Record>,
+    private ipfsService: IpfsService,
+    private stellarService: StellarService,
   ) {}
 
-  async getRecord(recordId: string, requesterId: string): Promise<RecordResponseDto> {
-    this.logger.log(`Fetching record ${recordId} for requester ${requesterId}`);
-
-    // Fetch record from database
-    const record = await this.recordRepository.findOne({
-      where: { id: recordId },
-    });
-
-    if (!record) {
-      throw new NotFoundException(`Record ${recordId} not found`);
-    }
-
-    // Check access permission with caching
-    const cacheKey = `access:${requesterId}:${recordId}`;
-    const hasAccess = await this.cacheService.getOrSet(
-      cacheKey,
-      async () => {
-        // First check database grants
-        const dbAccess = await this.accessControlService.verifyAccess(requesterId, recordId);
-        
-        if (!dbAccess) {
-          return false;
-        }
-
-        // Then verify on-chain
-        const onChainResult = await this.stellarService.verifyAccessOnChain(requesterId, recordId);
-        return onChainResult.hasAccess;
-      },
-      {
-        ttlMs: this.ACCESS_CACHE_TTL,
-        category: 'access-control',
-        priority: 'high',
-        tags: [`requester:${requesterId}`, `record:${recordId}`],
-      },
+  async uploadRecord(
+    dto: CreateRecordDto,
+    encryptedBuffer: Buffer,
+  ): Promise<{ recordId: string; cid: string; stellarTxHash: string }> {
+    const cid = await this.ipfsService.upload(encryptedBuffer);
+    const stellarTxHash = await this.stellarService.anchorCid(
+      dto.patientId,
+      cid,
     );
 
-    if (!hasAccess) {
-      // Emit audit event for unauthorized access attempt
-      await this.auditLogService.log({
-        userId: requesterId,
-        action: 'UNAUTHORIZED_ACCESS_ATTEMPT',
-        entity: 'Record',
-        entityId: recordId,
-        details: {
-          recordId,
-          requesterId,
-          timestamp: new Date().toISOString(),
-        },
-        severity: 'HIGH',
-      });
-
-      throw new ForbiddenException('Access denied to this record');
-    }
-
-    // Fetch encrypted blob from IPFS
-    const ipfsBlob = await this.ipfsService.fetch(record.cid);
-
-    // Log successful access
-    await this.auditLogService.log({
-      userId: requesterId,
-      action: 'RECORD_ACCESSED',
-      entity: 'Record',
-      entityId: recordId,
-      details: {
-        recordId,
-        requesterId,
-        cid: record.cid,
-        timestamp: new Date().toISOString(),
-      },
-      severity: 'LOW',
+    const record = this.recordRepository.create({
+      patientId: dto.patientId,
+      cid,
+      stellarTxHash,
+      recordType: dto.recordType,
+      description: dto.description,
     });
 
+    const savedRecord = await this.recordRepository.save(record);
+
     return {
-      cid: ipfsBlob.cid,
-      encryptedPayload: ipfsBlob.encryptedPayload,
-      metadata: {
-        ...record.metadata,
-        ...ipfsBlob.metadata,
-      },
-      stellarTxHash: record.stellarTxHash,
+      recordId: savedRecord.id,
+      cid: savedRecord.cid,
+      stellarTxHash: savedRecord.stellarTxHash,
     };
+  }
+
+  async findAll(query: PaginationQueryDto): Promise<PaginatedRecordsResponseDto> {
+    const { page = 1, limit = 20, recordType, fromDate, toDate, sortBy = 'createdAt', order = 'desc', patientId } = query;
+
+    // Build where clause
+    const where: FindOptionsWhere<Record> = {};
+
+    if (recordType) {
+      where.recordType = recordType;
+    }
+
+    if (patientId) {
+      where.patientId = patientId;
+    }
+
+    if (fromDate && toDate) {
+      where.createdAt = Between(new Date(fromDate), new Date(toDate));
+    } else if (fromDate) {
+      where.createdAt = Between(new Date(fromDate), new Date());
+    } else if (toDate) {
+      where.createdAt = Between(new Date(0), new Date(toDate));
+    }
+
+    // Calculate pagination
+    const skip = (page - 1) * limit;
+
+    // Execute query
+    const [data, total] = await this.recordRepository.findAndCount({
+      where,
+      order: {
+        [sortBy]: order.toUpperCase(),
+      },
+      take: limit,
+      skip,
+    });
+
+    // Calculate metadata
+    const totalPages = Math.ceil(total / limit);
+    const hasNextPage = page < totalPages;
+    const hasPreviousPage = page > 1;
+
+    const meta: PaginationMeta = {
+      total,
+      page,
+      limit,
+      totalPages,
+      hasNextPage,
+      hasPreviousPage,
+    };
+
+    return {
+      data,
+      meta,
+    };
+  }
+
+  async findOne(id: string): Promise<Record> {
+    return this.recordRepository.findOne({ where: { id } });
   }
 }

@@ -3,6 +3,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from './auth/auth.module';
 import { BillingModule } from './billing/billing.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
@@ -14,6 +15,9 @@ import { DiagnosisModule } from './diagnosis/diagnosis.module';
 import { TreatmentPlanningModule } from './treatment-planning/treatment-planning.module';
 import { PharmacyModule } from './pharmacy/pharmacy.module';
 import { InfectionControlModule } from './infection-control/infection-control.module';
+import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
+import { AccessControlModule } from './access-control/access-control.module';
+import { ReportsModule } from './reports/reports.module';
 import { TenantModule } from './tenant/tenant.module';
 import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -24,12 +28,76 @@ import { StellarModule } from './stellar/stellar.module';
 import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { HealthController } from './health.controller';
+import { HealthModule } from './health/health.module';
 import { ValidationModule } from './common/validation/validation.module';
 import { MedicalEmergencyErrorFilter } from './common/errors/medical-emergency-error.filter';
 import { MedicalDataValidationPipe } from './common/validation/medical-data.validator.pipe';
+import { NotificationsModule } from './notifications/notifications.module';
+import { QueueModule } from './queues/queue.module';
+import { TenantConfigModule } from './tenant-config/tenant-config.module';
+
+const hasBearerAuthUser = (req: any): boolean => {
+  const authHeader = req?.headers?.authorization;
+  if (!authHeader || Array.isArray(authHeader)) {
+    return false;
+  }
+
+  if (!authHeader.startsWith('Bearer ')) {
+    return false;
+  }
+
+  const token = authHeader.slice('Bearer '.length);
+  if (!token) {
+    return false;
+  }
+
+  const parts = token.split('.');
+  if (parts.length < 2) {
+    return false;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, any>;
+    return Boolean(payload?.userId);
+  } catch {
+    return false;
+  }
+};
+
+const getUserTrackerFromRequest = (req: any): string => {
+  const authHeader = req?.headers?.authorization;
+  if (!authHeader || Array.isArray(authHeader)) {
+    return req?.ip || 'unknown-ip';
+  }
+
+  if (!authHeader.startsWith('Bearer ')) {
+    return req?.ip || 'unknown-ip';
+  }
+
+  const token = authHeader.slice('Bearer '.length);
+  const parts = token.split('.');
+  if (parts.length < 2) {
+    return req?.ip || 'unknown-ip';
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, any>;
+    if (payload?.userId) {
+      return `user:${payload.userId}`;
+    }
+
+    if (payload?.publicKey) {
+      return `publicKey:${payload.publicKey}`;
+    }
+  } catch {
+    // If we can't decode payload, fall back to IP.
+  }
+
+  return req?.ip || 'unknown-ip';
+};
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
-import { AuditLogEntity } from './common/audit/audit-log.entity';
+import { JobsModule } from './jobs/jobs.module';
+import { AuditModule } from './common/audit/audit.module';
 
 @Module({
   imports: [
@@ -41,37 +109,12 @@ import { AuditLogEntity } from './common/audit/audit-log.entity';
     TypeOrmModule.forRootAsync({
       useClass: DatabaseConfig,
     }),
+    // Rate limiting with Redis-backed storage
+    ScheduleModule.forRoot(),
     // Rate limiting and throttling for security
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
-        const redisUrl = config.get<string>('REDIS_URL');
-        const baseOptions = {
-          ignoreUserAgents: [],
-          skipIf: () => false,
-          setHeaders: true,
-          throttlers: [
-            {
-              name: 'ip',
-              ttl: 60,
-              limit: 100,
-              getTracker: (req) => req.ip || req.connection?.remoteAddress || 'unknown-ip',
-              skipIf: (context) => hasBearerAuthUser(context.switchToHttp().getRequest()),
-            },
-            {
-              name: 'user',
-              ttl: 60,
-              limit: 200,
-              getTracker: (req) => getUserTrackerFromRequest(req),
-              skipIf: (context) => !hasBearerAuthUser(context.switchToHttp().getRequest()),
-            },
-          ],
-          storage: redisUrl ? new ThrottlerStorageRedisService(redisUrl) : undefined,
-        } as any;
-
-        return baseOptions;
-      },
+      useClass: ThrottlerConfigService,
     }),
     // Application modules
     TenantModule,
@@ -88,13 +131,18 @@ import { AuditLogEntity } from './common/audit/audit-log.entity';
     EmergencyOperationsModule,
     ValidationModule,
     InfectionControlModule,
+    HealthModule,
     NotificationsModule,
     QueueModule,
     FhirModule,
     AccessControlModule,
+    JobsModule,
     StellarModule,
+    AuditModule,
+    ReportsModule,
+    TenantConfigModule,
   ],
-  controllers: [AppController, HealthController],
+  controllers: [AppController],
   providers: [
     AppService,
     {
@@ -111,8 +159,8 @@ import { AuditLogEntity } from './common/audit/audit-log.entity';
     },
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: CustomThrottlerGuard,
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }

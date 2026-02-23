@@ -1,34 +1,26 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  Index,
-} from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
+import { RecordType } from '../dto/create-record.dto';
 
 @Entity('records')
-@Index(['patientId'])
 export class Record {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
-  @Index()
+  @Column()
   patientId: string;
 
-  @Column({ type: 'varchar', length: 255 })
+  @Column()
   cid: string;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ nullable: true })
   stellarTxHash: string;
 
-  @Column({ type: 'jsonb', nullable: true })
-  metadata: Record<string, any>;
+  @Column({ type: 'enum', enum: RecordType })
+  recordType: RecordType;
+
+  @Column({ nullable: true })
+  description: string;
 
   @CreateDateColumn()
   createdAt: Date;
-
-  @UpdateDateColumn()
-  updatedAt: Date;
 }

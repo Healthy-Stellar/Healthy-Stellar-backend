@@ -7,6 +7,7 @@ import { DataEncryptionService } from './services/data-encryption.service';
 import { AuditSubscriber } from './subscribers/audit.subscriber';
 import { RequestContextMiddleware } from './middleware/request-context.middleware';
 import { AuditContextGuard } from './guards/audit-context.guard';
+import { RedisLockService } from './utils/redis-lock.service';
 
 @Global()
 @Module({
@@ -21,8 +22,9 @@ import { AuditContextGuard } from './guards/audit-context.guard';
     },
     AuditSubscriber,
     AuditContextGuard,
+    RedisLockService,
   ],
-  exports: [AuditLogService, DataEncryptionService, AuditSubscriber, AuditContextGuard],
+  exports: [AuditLogService, DataEncryptionService, AuditSubscriber, AuditContextGuard, RedisLockService],
 })
 export class CommonModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

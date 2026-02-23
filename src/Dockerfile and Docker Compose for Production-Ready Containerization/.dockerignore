@@ -1,0 +1,39 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Test & coverage
+coverage
+**/*.spec.ts
+**/*.test.ts
+
+# Version control
+.git
+.gitignore
+
+# Editor / OS
+.DS_Store
+.vscode
+.idea
+*.swp
+*.swo
+
+# Docker files (not needed inside image)
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# CI
+.github

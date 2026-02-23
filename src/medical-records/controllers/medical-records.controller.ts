@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   UseGuards,
+  UseInterceptors,
   Req,
   HttpCode,
   HttpStatus,
@@ -17,8 +18,11 @@ import { MedicalRecordsService } from '../services/medical-records.service';
 import { CreateMedicalRecordDto } from '../dto/create-medical-record.dto';
 import { UpdateMedicalRecordDto } from '../dto/update-medical-record.dto';
 import { SearchMedicalRecordsDto } from '../dto/search-medical-records.dto';
+import { AuditInterceptor } from '../../common/audit/audit.interceptor';
 
 @ApiTags('Medical Records')
+@ApiBearerAuth()
+@UseInterceptors(AuditInterceptor)
 @Controller('medical-records')
 export class MedicalRecordsController {
   constructor(private readonly medicalRecordsService: MedicalRecordsService) {}
@@ -61,13 +65,22 @@ export class MedicalRecordsController {
   async findOne(
     @Param('id') id: string,
     @Query('patientId') patientId?: string,
+    @Req() req?: any,
   ) {
     const record = await this.medicalRecordsService.findOne(id, patientId);
     
     // Record view for audit trail
     if (patientId) {
-      // In a real app, get userId from auth context
-      await this.medicalRecordsService.recordView(id, patientId, '00000000-0000-0000-0000-000000000000');
+      const userId = req?.user?.userId || req?.user?.id || '00000000-0000-0000-0000-000000000000';
+      const userName = req?.user?.email || 'System';
+      await this.medicalRecordsService.recordView(
+        id,
+        patientId,
+        userId,
+        userName,
+        req?.ip,
+        req?.headers?.['user-agent'],
+      );
     }
     
     return record;

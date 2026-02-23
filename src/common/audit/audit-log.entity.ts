@@ -80,6 +80,9 @@ export class AuditLogEntity {
   @Column({ nullable: true })
   resourceType: string;
 
+  @Column({ nullable: true })
+  stellarTxHash: string;
+
   @Column({ default: false })
   requiresInvestigation: boolean;
 
