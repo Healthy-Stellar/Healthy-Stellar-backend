@@ -2,7 +2,7 @@
 
 ## Overview
 
-Comprehensive load testing suite for the Healthy-Stellar backend API using k6. Tests critical endpoints under various load conditions to ensure system reliability and performance.
+Comprehensive load testing suite for the Healthy-Stellar backend API using k6. Tests critical endpoints under various load conditions to ensure system reliability, performance, and scalability.
 
 ## Table of Contents
 
