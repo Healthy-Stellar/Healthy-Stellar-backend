@@ -1,7 +1,11 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, VERSION_NEUTRAL } from '@nestjs/common';
 import { AppService } from './app.service';
 
-@Controller()
+/**
+ * Root application controller — version-neutral.
+ * Accessible at / regardless of API version prefix.
+ */
+@Controller({ path: '', version: VERSION_NEUTRAL })
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
