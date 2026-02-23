@@ -1,6 +1,6 @@
 import { Controller, Post, Body, UseGuards, Get, Req, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { AuthService, AuthResponse } from '../services/auth.service';
 import { MfaService } from '../services/mfa.service';
@@ -11,6 +11,7 @@ import { JwtPayload } from '../services/auth-token.service';
 import { RegisterDto, LoginDto, ChangePasswordDto } from '../dto/auth.dto';
 import { RefreshTokenDto } from '../dto/session.dto';
 import { User, UserRole } from '../entities/user.entity';
+import { AuthRateLimit, VerifyRateLimit } from '../../common/throttler/throttler.decorator';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -26,7 +27,7 @@ export class AuthController {
    * Register new user (healthcare staff or patient)
    */
   @Post('register')
-  @Throttle({ ip: { limit: 10, ttl: 60 }, user: { limit: 10, ttl: 60 } })
+  @AuthRateLimit() // 10 requests per minute
   @ApiOperation({ summary: 'Register new user' })
   @ApiResponse({ status: 201, description: 'User registered successfully' })
   @ApiResponse({ status: 400, description: 'Invalid input' })
@@ -39,7 +40,7 @@ export class AuthController {
    * Register healthcare staff
    */
   @Post('register/staff')
-  @Throttle({ ip: { limit: 10, ttl: 60 }, user: { limit: 10, ttl: 60 } })
+  @AuthRateLimit() // 10 requests per minute
   @ApiOperation({ summary: 'Register healthcare staff with role' })
   @ApiResponse({ status: 201, description: 'Staff registered successfully' })
   async registerStaff(
@@ -65,7 +66,7 @@ export class AuthController {
    * Login user
    */
   @Post('login')
-  @Throttle({ ip: { limit: 10, ttl: 60 }, user: { limit: 10, ttl: 60 } })
+  @AuthRateLimit() // 10 requests per minute
   @ApiOperation({ summary: 'Login user' })
   @ApiResponse({ status: 200, description: 'Login successful' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
@@ -77,7 +78,7 @@ export class AuthController {
    * Refresh access token
    */
   @Post('refresh')
-  @Throttle({ ip: { limit: 10, ttl: 60 }, user: { limit: 10, ttl: 60 } })
+  @AuthRateLimit() // 10 requests per minute
   @ApiOperation({ summary: 'Refresh access token' })
   @ApiResponse({ status: 200, description: 'Token refreshed successfully' })
   async refreshToken(@Body() refreshTokenDto: RefreshTokenDto): Promise<{ accessToken: string; expiresIn: number }> {

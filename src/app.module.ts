@@ -1,3 +1,4 @@
+import { APP_FILTER, APP_GUARD, APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -6,7 +7,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER, APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { BillingModule } from './billing/billing.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
@@ -107,38 +109,12 @@ import { AuditModule } from './common/audit/audit.module';
     TypeOrmModule.forRootAsync({
       useClass: DatabaseConfig,
     }),
+    // Rate limiting with Redis-backed storage
     ScheduleModule.forRoot(),
     // Rate limiting and throttling for security
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
-        const redisUrl = config.get<string>('REDIS_URL');
-        const baseOptions = {
-          ignoreUserAgents: [],
-          skipIf: () => false,
-          setHeaders: true,
-          throttlers: [
-            {
-              name: 'ip',
-              ttl: 60,
-              limit: 100,
-              getTracker: (req) => req.ip || req.connection?.remoteAddress || 'unknown-ip',
-              skipIf: (context) => hasBearerAuthUser(context.switchToHttp().getRequest()),
-            },
-            {
-              name: 'user',
-              ttl: 60,
-              limit: 200,
-              getTracker: (req) => getUserTrackerFromRequest(req),
-              skipIf: (context) => !hasBearerAuthUser(context.switchToHttp().getRequest()),
-            },
-          ],
-          storage: redisUrl ? new ThrottlerStorageRedisService(redisUrl) : undefined,
-        } as any;
-
-        return baseOptions;
-      },
+      useClass: ThrottlerConfigService,
     }),
     // Application modules
     TenantModule,
@@ -182,7 +158,7 @@ import { AuditModule } from './common/audit/audit.module';
     },
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: CustomThrottlerGuard,
     },
   ],
 })
