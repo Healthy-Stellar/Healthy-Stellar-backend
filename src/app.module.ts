@@ -29,6 +29,13 @@ import { MedicalDataValidationPipe } from './common/validation/medical-data.vali
 import { NotificationsModule } from './notifications/notifications.module';
 import { QueueModule } from './queues/queue.module';
 import { TenantConfigModule } from './tenant-config/tenant-config.module';
+import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
+import { JobsModule } from './jobs/jobs.module';
+import { AuditModule } from './common/audit/audit.module';
+import { FhirModule } from './fhir/fhir.module';
+import { StellarModule } from './stellar/stellar.module';
+import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
+import { ThrottlerConfigService } from './common/throttler/throttler-config.service';
 
 const hasBearerAuthUser = (req: any): boolean => {
   const authHeader = req?.headers?.authorization;
@@ -89,9 +96,6 @@ const getUserTrackerFromRequest = (req: any): string => {
 
   return req?.ip || 'unknown-ip';
 };
-import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
-import { JobsModule } from './jobs/jobs.module';
-import { AuditModule } from './common/audit/audit.module';
 
 @Module({
   imports: [

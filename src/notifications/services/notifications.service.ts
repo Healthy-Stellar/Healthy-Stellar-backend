@@ -7,7 +7,6 @@ export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(private gateway: NotificationsGateway) {}
-  constructor(private gateway: NotificationsGateway) { }
 
   emitRecordAccessed(actorId: string, resourceId: string, metadata?: Record<string, any>): void {
     this.emitEvent({
