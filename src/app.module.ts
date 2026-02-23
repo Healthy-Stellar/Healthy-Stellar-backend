@@ -3,7 +3,9 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER, APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
 import { BillingModule } from './billing/billing.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
@@ -14,8 +16,7 @@ import { DiagnosisModule } from './diagnosis/diagnosis.module';
 import { TreatmentPlanningModule } from './treatment-planning/treatment-planning.module';
 import { PharmacyModule } from './pharmacy/pharmacy.module';
 import { InfectionControlModule } from './infection-control/infection-control.module';
-import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
-import { AccessControlModule } from './access-control/access-control.module';
+import { TenantModule } from './tenant/tenant.module';
 import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -86,6 +87,8 @@ const getUserTrackerFromRequest = (req: any): string => {
 
   return req?.ip || 'unknown-ip';
 };
+import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
+import { AuditLogEntity } from './common/audit/audit-log.entity';
 
 @Module({
   imports: [
@@ -130,6 +133,7 @@ const getUserTrackerFromRequest = (req: any): string => {
       },
     }),
     // Application modules
+    TenantModule,
     CommonModule,
     AuthModule,
     BillingModule,
@@ -151,6 +155,10 @@ const getUserTrackerFromRequest = (req: any): string => {
   controllers: [AppController, HealthController],
   providers: [
     AppService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantInterceptor
+    },
     {
       provide: APP_FILTER,
       useClass: MedicalEmergencyErrorFilter,
