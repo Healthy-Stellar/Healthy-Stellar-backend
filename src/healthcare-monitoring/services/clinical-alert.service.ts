@@ -1,7 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ClinicalAlert, AlertType, AlertPriority, AlertStatus } from '../entities/clinical-alert.entity';
+import {
+  ClinicalAlert,
+  AlertType,
+  AlertPriority,
+  AlertStatus,
+} from '../entities/clinical-alert.entity';
 import { NotificationService } from './notification.service';
 
 @Injectable()
@@ -32,15 +37,19 @@ export class ClinicalAlertService {
     });
 
     const savedAlert = await this.clinicalAlertRepository.save(alert);
-    
+
     // Send notifications
     await this.notificationService.sendAlertNotification(savedAlert);
-    
+
     this.logger.log(`Clinical alert created: ${savedAlert.id} - ${savedAlert.title}`);
     return savedAlert;
   }
 
-  async createSystemAlert(title: string, message: string, priority: string): Promise<ClinicalAlert> {
+  async createSystemAlert(
+    title: string,
+    message: string,
+    priority: string,
+  ): Promise<ClinicalAlert> {
     return this.createAlert({
       alertType: AlertType.EQUIPMENT_MALFUNCTION,
       priority: priority as AlertPriority,
@@ -50,7 +59,10 @@ export class ClinicalAlertService {
     });
   }
 
-  async createCriticalVitalsAlert(patientId: string, vitals: Record<string, any>): Promise<ClinicalAlert> {
+  async createCriticalVitalsAlert(
+    patientId: string,
+    vitals: Record<string, any>,
+  ): Promise<ClinicalAlert> {
     return this.createAlert({
       alertType: AlertType.CRITICAL_VITALS,
       priority: AlertPriority.CRITICAL,
@@ -61,7 +73,11 @@ export class ClinicalAlertService {
     });
   }
 
-  async createMedicationAlert(patientId: string, medication: string, room: string): Promise<ClinicalAlert> {
+  async createMedicationAlert(
+    patientId: string,
+    medication: string,
+    room: string,
+  ): Promise<ClinicalAlert> {
     return this.createAlert({
       alertType: AlertType.MEDICATION_DUE,
       priority: AlertPriority.HIGH,
@@ -72,7 +88,11 @@ export class ClinicalAlertService {
     });
   }
 
-  async createEquipmentAlert(equipmentId: string, issue: string, department: string): Promise<ClinicalAlert> {
+  async createEquipmentAlert(
+    equipmentId: string,
+    issue: string,
+    department: string,
+  ): Promise<ClinicalAlert> {
     return this.createAlert({
       alertType: AlertType.EQUIPMENT_MALFUNCTION,
       priority: AlertPriority.HIGH,
@@ -95,11 +115,15 @@ export class ClinicalAlertService {
 
     const updatedAlert = await this.clinicalAlertRepository.save(alert);
     this.logger.log(`Alert acknowledged: ${alertId} by ${userId}`);
-    
+
     return updatedAlert;
   }
 
-  async resolveAlert(alertId: string, userId: string, resolutionNotes?: string): Promise<ClinicalAlert> {
+  async resolveAlert(
+    alertId: string,
+    userId: string,
+    resolutionNotes?: string,
+  ): Promise<ClinicalAlert> {
     const alert = await this.clinicalAlertRepository.findOne({ where: { id: alertId } });
     if (!alert) {
       throw new Error('Alert not found');
@@ -112,7 +136,7 @@ export class ClinicalAlertService {
 
     const updatedAlert = await this.clinicalAlertRepository.save(alert);
     this.logger.log(`Alert resolved: ${alertId} by ${userId}`);
-    
+
     return updatedAlert;
   }
 
@@ -123,8 +147,8 @@ export class ClinicalAlertService {
   }): Promise<ClinicalAlert[]> {
     const query = this.clinicalAlertRepository
       .createQueryBuilder('alert')
-      .where('alert.status IN (:...statuses)', { 
-        statuses: [AlertStatus.ACTIVE, AlertStatus.ACKNOWLEDGED] 
+      .where('alert.status IN (:...statuses)', {
+        statuses: [AlertStatus.ACTIVE, AlertStatus.ACKNOWLEDGED],
       })
       .orderBy('alert.priority', 'DESC')
       .addOrderBy('alert.createdAt', 'ASC');
@@ -162,13 +186,13 @@ export class ClinicalAlertService {
     let totalResolutionTime = 0;
     let resolvedCount = 0;
 
-    alerts.forEach(alert => {
+    alerts.forEach((alert) => {
       // Count by type
       metrics.byType[alert.alertType] = (metrics.byType[alert.alertType] || 0) + 1;
-      
+
       // Count by priority
       metrics.byPriority[alert.priority] = (metrics.byPriority[alert.priority] || 0) + 1;
-      
+
       // Count by status
       metrics.byStatus[alert.status] = (metrics.byStatus[alert.status] || 0) + 1;
 
@@ -194,15 +218,15 @@ export class ClinicalAlertService {
 
   private getNotificationChannels(priority: AlertPriority): string[] {
     const channels = ['dashboard'];
-    
+
     if (priority === AlertPriority.HIGH || priority === AlertPriority.CRITICAL) {
       channels.push('email', 'sms');
     }
-    
+
     if (priority === AlertPriority.CRITICAL) {
       channels.push('pager', 'phone');
     }
-    
+
     return channels;
   }
 }

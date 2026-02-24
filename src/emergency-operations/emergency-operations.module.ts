@@ -9,10 +9,7 @@ import {
 } from './entities/critical-care-monitoring.entity';
 import { EmergencyResource } from './entities/emergency-resource.entity';
 import { RapidResponseEvent } from './entities/rapid-response-event.entity';
-import {
-  DisasterIncident,
-  EmergencyChartNote,
-} from './entities/emergency-documentation.entity';
+import { DisasterIncident, EmergencyChartNote } from './entities/emergency-documentation.entity';
 
 @Module({
   imports: [

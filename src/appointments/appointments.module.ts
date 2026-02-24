@@ -19,30 +19,16 @@ import { ConsultationController } from './controllers/consultation.controller';
 import { DoctorAvailabilityController } from './controllers/doctor-availability.controller';
 
 @Module({
-    imports: [
-        TypeOrmModule.forFeature([
-            Appointment,
-            DoctorAvailability,
-            ConsultationNote,
-            AppointmentReminder,
-        ]),
-    ],
-    controllers: [
-        AppointmentController,
-        ConsultationController,
-        DoctorAvailabilityController,
-    ],
-    providers: [
-        AppointmentService,
-        ConsultationService,
-        ReminderService,
-        DoctorAvailabilityService,
-    ],
-    exports: [
-        AppointmentService,
-        ConsultationService,
-        ReminderService,
-        DoctorAvailabilityService,
-    ],
+  imports: [
+    TypeOrmModule.forFeature([
+      Appointment,
+      DoctorAvailability,
+      ConsultationNote,
+      AppointmentReminder,
+    ]),
+  ],
+  controllers: [AppointmentController, ConsultationController, DoctorAvailabilityController],
+  providers: [AppointmentService, ConsultationService, ReminderService, DoctorAvailabilityService],
+  exports: [AppointmentService, ConsultationService, ReminderService, DoctorAvailabilityService],
 })
 export class AppointmentsModule {}

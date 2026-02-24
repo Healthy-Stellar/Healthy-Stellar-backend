@@ -40,10 +40,7 @@ export class HipaaHeadersMiddleware implements NestMiddleware {
     res.setHeader('X-Content-Type-Options', 'nosniff');
 
     // HSTS - enforce HTTPS for 1 year
-    res.setHeader(
-      'Strict-Transport-Security',
-      'max-age=31536000; includeSubDomains; preload',
-    );
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
 
     // Prevent referrer leaking PHI in URLs
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -51,14 +48,9 @@ export class HipaaHeadersMiddleware implements NestMiddleware {
     // Permissions Policy - restrict browser features
     res.setHeader(
       'Permissions-Policy',
-      [
-        'camera=()',
-        'microphone=()',
-        'geolocation=()',
-        'payment=()',
-        'usb=()',
-        'bluetooth=()',
-      ].join(', '),
+      ['camera=()', 'microphone=()', 'geolocation=()', 'payment=()', 'usb=()', 'bluetooth=()'].join(
+        ', ',
+      ),
     );
 
     // Remove server identification headers
@@ -69,7 +61,8 @@ export class HipaaHeadersMiddleware implements NestMiddleware {
     res.setHeader('X-Healthcare-Security', 'HIPAA-Compliant');
 
     // Correlation ID for audit trails
-    const correlationId = req.headers['x-correlation-id'] as string ||
+    const correlationId =
+      (req.headers['x-correlation-id'] as string) ||
       `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     res.setHeader('X-Correlation-ID', correlationId);
     (req as Request & { correlationId: string }).correlationId = correlationId;

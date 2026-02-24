@@ -5,11 +5,11 @@
 export const SUPPORTED_CONFIG_KEYS = {
   // Audit and Compliance
   AUDIT_RETENTION_DAYS: 'audit_retention_days',
-  
+
   // Data Management
   MAX_RECORD_SIZE_MB: 'max_record_size_mb',
   ALLOWED_RECORD_TYPES: 'allowed_record_types',
-  
+
   // Feature Flags
   EMERGENCY_ACCESS_ENABLED: 'emergency_access_enabled',
   FHIR_EXPORT_ENABLED: 'fhir_export_enabled',
@@ -19,16 +19,16 @@ export const SUPPORTED_CONFIG_KEYS = {
   LAB_INTEGRATION_ENABLED: 'lab_integration_enabled',
   IMAGING_INTEGRATION_ENABLED: 'imaging_integration_enabled',
   BILLING_INTEGRATION_ENABLED: 'billing_integration_enabled',
-  
+
   // Security Settings
   SESSION_TIMEOUT_MINUTES: 'session_timeout_minutes',
   PASSWORD_EXPIRATION_DAYS: 'password_expiration_days',
   MAX_LOGIN_ATTEMPTS: 'max_login_attempts',
-  
+
   // Data Retention
   MEDICAL_RECORD_RETENTION_DAYS: 'medical_record_retention_days',
   BACKUP_RETENTION_DAYS: 'backup_retention_days',
-  
+
   // Integration Settings
   HL7_INTEGRATION_ENABLED: 'hl7_integration_enabled',
   DICOM_INTEGRATION_ENABLED: 'dicom_integration_enabled',

@@ -1,11 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import {
-  OverviewMetrics,
-  DailyActivityPoint,
-  TopProvider,
-} from './dto/activity-query.dto';
+import { OverviewMetrics, DailyActivityPoint, TopProvider } from './dto/activity-query.dto';
 
 @Injectable()
 export class AnalyticsRepository {
@@ -57,10 +53,7 @@ export class AnalyticsRepository {
    * Generates a complete date spine via generate_series so days with zero events
    * are included (no gaps). Two CTEs are UNION-joined in one round-trip.
    */
-  async getDailyActivity(
-    from: Date,
-    to: Date,
-  ): Promise<DailyActivityPoint[]> {
+  async getDailyActivity(from: Date, to: Date): Promise<DailyActivityPoint[]> {
     const rows = await this.dataSource.query<
       Array<{ day: string; record_uploads: string; access_events: string }>
     >(

@@ -5,10 +5,18 @@ export class AddProviderDirectorySearch1741000000000 implements MigrationInterfa
   public transaction = false;
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "displayName" varchar(200)`);
-    await queryRunner.query(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "institution" varchar(255)`);
-    await queryRunner.query(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "specialty" varchar(255)`);
-    await queryRunner.query(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "stellarPublicKey" varchar(255)`);
+    await queryRunner.query(
+      `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "displayName" varchar(200)`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "institution" varchar(255)`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "specialty" varchar(255)`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "stellarPublicKey" varchar(255)`,
+    );
 
     await queryRunner.query(`
       UPDATE "users"

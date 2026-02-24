@@ -91,20 +91,24 @@ export class QueryOptimizerService {
 
     // Check for missing WHERE clause on healthcare data tables
     const healthcareTables = [
-      'patient', 'medical_record', 'appointment', 'lab_result',
-      'prescription', 'billing', 'diagnosis', 'treatment',
-      'medication_administration', 'infection_control',
+      'patient',
+      'medical_record',
+      'appointment',
+      'lab_result',
+      'prescription',
+      'billing',
+      'diagnosis',
+      'treatment',
+      'medication_administration',
+      'infection_control',
     ];
 
     for (const table of healthcareTables) {
-      const tablePattern = new RegExp(
-        `FROM\\s+["']?${table}["']?\\s*(?:$|ORDER|GROUP|LIMIT)`,
-        'i',
-      );
+      const tablePattern = new RegExp(`FROM\\s+["']?${table}["']?\\s*(?:$|ORDER|GROUP|LIMIT)`, 'i');
       if (tablePattern.test(query)) {
         suggestions.push(
           `[CRITICAL] Query on "${table}" without WHERE clause detected. ` +
-          'This is a full table scan on healthcare data – add filtering to improve performance.',
+            'This is a full table scan on healthcare data – add filtering to improve performance.',
         );
       }
     }

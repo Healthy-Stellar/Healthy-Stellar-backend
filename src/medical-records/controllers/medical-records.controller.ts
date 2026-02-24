@@ -31,10 +31,7 @@ export class MedicalRecordsController {
   @ApiOperation({ summary: 'Create a new medical record' })
   @ApiResponse({ status: 201, description: 'Medical record created successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  async create(
-    @Body() createDto: CreateMedicalRecordDto,
-    @Req() req: any,
-  ) {
+  async create(@Body() createDto: CreateMedicalRecordDto, @Req() req: any) {
     // Use a valid UUID format for system user, or get from auth
     const userId = req.user?.id || '00000000-0000-0000-0000-000000000000';
     const userName = req.user?.name || 'System';
@@ -51,10 +48,7 @@ export class MedicalRecordsController {
   @Get('timeline/:patientId')
   @ApiOperation({ summary: 'Get medical history timeline for a patient' })
   @ApiResponse({ status: 200, description: 'Timeline retrieved successfully' })
-  async getTimeline(
-    @Param('patientId') patientId: string,
-    @Query('limit') limit?: number,
-  ) {
+  async getTimeline(@Param('patientId') patientId: string, @Query('limit') limit?: number) {
     return this.medicalRecordsService.getTimeline(patientId, limit || 50);
   }
 
@@ -62,13 +56,9 @@ export class MedicalRecordsController {
   @ApiOperation({ summary: 'Get a medical record by ID' })
   @ApiResponse({ status: 200, description: 'Medical record retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Medical record not found' })
-  async findOne(
-    @Param('id') id: string,
-    @Query('patientId') patientId?: string,
-    @Req() req?: any,
-  ) {
+  async findOne(@Param('id') id: string, @Query('patientId') patientId?: string, @Req() req?: any) {
     const record = await this.medicalRecordsService.findOne(id, patientId);
-    
+
     // Record view for audit trail
     if (patientId) {
       const userId = req?.user?.userId || req?.user?.id || '00000000-0000-0000-0000-000000000000';
@@ -82,7 +72,7 @@ export class MedicalRecordsController {
         req?.headers?.['user-agent'],
       );
     }
-    
+
     return record;
   }
 

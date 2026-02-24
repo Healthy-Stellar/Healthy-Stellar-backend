@@ -7,56 +7,56 @@ import { GdprRequest, GdprRequestType, GdprRequestStatus } from '../entities/gdp
 
 @Injectable()
 export class GdprService {
-    private readonly logger = new Logger(GdprService.name);
+  private readonly logger = new Logger(GdprService.name);
 
-    constructor(
-        @InjectRepository(GdprRequest)
-        private readonly gdprRequestRepository: Repository<GdprRequest>,
-        @InjectQueue('gdpr') private gdprQueue: Queue,
-    ) { }
+  constructor(
+    @InjectRepository(GdprRequest)
+    private readonly gdprRequestRepository: Repository<GdprRequest>,
+    @InjectQueue('gdpr') private gdprQueue: Queue,
+  ) {}
 
-    async createExportRequest(userId: string): Promise<GdprRequest> {
-        const request = this.gdprRequestRepository.create({
-            userId,
-            type: GdprRequestType.EXPORT,
-            status: GdprRequestStatus.PENDING,
-        });
+  async createExportRequest(userId: string): Promise<GdprRequest> {
+    const request = this.gdprRequestRepository.create({
+      userId,
+      type: GdprRequestType.EXPORT,
+      status: GdprRequestStatus.PENDING,
+    });
 
-        await this.gdprRequestRepository.save(request);
+    await this.gdprRequestRepository.save(request);
 
-        // Add to BullMQ
-        await this.gdprQueue.add('export-data', {
-            requestId: request.id,
-            userId,
-        });
+    // Add to BullMQ
+    await this.gdprQueue.add('export-data', {
+      requestId: request.id,
+      userId,
+    });
 
-        this.logger.log(`Export request ${request.id} queued for user ${userId}`);
-        return request;
-    }
+    this.logger.log(`Export request ${request.id} queued for user ${userId}`);
+    return request;
+  }
 
-    async createErasureRequest(userId: string): Promise<GdprRequest> {
-        const request = this.gdprRequestRepository.create({
-            userId,
-            type: GdprRequestType.ERASURE,
-            status: GdprRequestStatus.PENDING,
-        });
+  async createErasureRequest(userId: string): Promise<GdprRequest> {
+    const request = this.gdprRequestRepository.create({
+      userId,
+      type: GdprRequestType.ERASURE,
+      status: GdprRequestStatus.PENDING,
+    });
 
-        await this.gdprRequestRepository.save(request);
+    await this.gdprRequestRepository.save(request);
 
-        // Add to BullMQ
-        await this.gdprQueue.add('erase-data', {
-            requestId: request.id,
-            userId,
-        });
+    // Add to BullMQ
+    await this.gdprQueue.add('erase-data', {
+      requestId: request.id,
+      userId,
+    });
 
-        this.logger.log(`Erasure request ${request.id} queued for user ${userId}`);
-        return request;
-    }
+    this.logger.log(`Erasure request ${request.id} queued for user ${userId}`);
+    return request;
+  }
 
-    async getRequestsByUser(userId: string): Promise<GdprRequest[]> {
-        return this.gdprRequestRepository.find({
-            where: { userId },
-            order: { createdAt: 'DESC' },
-        });
-    }
+  async getRequestsByUser(userId: string): Promise<GdprRequest[]> {
+    return this.gdprRequestRepository.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+  }
 }

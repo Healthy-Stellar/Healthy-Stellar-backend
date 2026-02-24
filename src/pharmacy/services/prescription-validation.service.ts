@@ -39,23 +39,25 @@ export class PrescriptionValidationService {
   ) {}
 
   async validatePrescription(
-    prescriptionId: string, 
-    patientFactors: PatientFactors
+    prescriptionId: string,
+    patientFactors: PatientFactors,
   ): Promise<ValidationResult> {
     const prescription = await this.prescriptionRepository.findOne({
       where: { id: prescriptionId },
-      relations: ['items', 'items.drug']
+      relations: ['items', 'items.drug'],
     });
 
     if (!prescription) {
       return {
         isValid: false,
-        alerts: [{
-          type: 'prescription-not-found',
-          severity: 'critical',
-          message: 'Prescription not found',
-          recommendation: 'Verify prescription ID'
-        }]
+        alerts: [
+          {
+            type: 'prescription-not-found',
+            severity: 'critical',
+            message: 'Prescription not found',
+            recommendation: 'Verify prescription ID',
+          },
+        ],
       };
     }
 
@@ -77,7 +79,11 @@ export class PrescriptionValidationService {
 
       // Hepatic function validation
       if (patientFactors.hepaticFunction && patientFactors.hepaticFunction !== 'normal') {
-        const hepaticAlerts = this.validateHepaticDosing(drug, patientFactors.hepaticFunction, item);
+        const hepaticAlerts = this.validateHepaticDosing(
+          drug,
+          patientFactors.hepaticFunction,
+          item,
+        );
         alerts.push(...hepaticAlerts);
       }
 
@@ -100,7 +106,11 @@ export class PrescriptionValidationService {
       }
 
       // Medical condition contraindications
-      const conditionAlerts = this.validateMedicalConditions(drug, patientFactors.medicalConditions, item);
+      const conditionAlerts = this.validateMedicalConditions(
+        drug,
+        patientFactors.medicalConditions,
+        item,
+      );
       alerts.push(...conditionAlerts);
 
       // Dosage form and route validation
@@ -112,12 +122,12 @@ export class PrescriptionValidationService {
     const overallAlerts = this.validateOverallPrescription(prescription, patientFactors);
     alerts.push(...overallAlerts);
 
-    const criticalAlerts = alerts.filter(alert => alert.severity === 'critical');
+    const criticalAlerts = alerts.filter((alert) => alert.severity === 'critical');
     const isValid = criticalAlerts.length === 0;
 
     return {
       isValid,
-      alerts
+      alerts,
     };
   }
 
@@ -127,12 +137,16 @@ export class PrescriptionValidationService {
     // Pediatric considerations (< 18 years)
     if (age < 18) {
       // Check for pediatric contraindications
-      if (drug.contraindications?.some(ci => ci.toLowerCase().includes('pediatric') || ci.toLowerCase().includes('children'))) {
+      if (
+        drug.contraindications?.some(
+          (ci) => ci.toLowerCase().includes('pediatric') || ci.toLowerCase().includes('children'),
+        )
+      ) {
         alerts.push({
           type: 'pediatric-contraindication',
           severity: 'critical',
           message: `${drug.genericName} is contraindicated in pediatric patients`,
-          recommendation: 'Contact prescriber for alternative therapy'
+          recommendation: 'Contact prescriber for alternative therapy',
         });
       }
 
@@ -142,7 +156,7 @@ export class PrescriptionValidationService {
           type: 'reye-syndrome-risk',
           severity: 'critical',
           message: 'Aspirin use in children under 2 years increases Reye syndrome risk',
-          recommendation: 'Do not dispense. Contact prescriber immediately.'
+          recommendation: 'Do not dispense. Contact prescriber immediately.',
         });
       }
     }
@@ -151,26 +165,39 @@ export class PrescriptionValidationService {
     if (age >= 65) {
       // Beers Criteria medications (simplified examples)
       const beersListDrugs = [
-        'diphenhydramine', 'hydroxyzine', 'promethazine', 'diazepam', 'lorazepam',
-        'alprazolam', 'zolpidem', 'eszopiclone', 'amitriptyline', 'doxepin'
+        'diphenhydramine',
+        'hydroxyzine',
+        'promethazine',
+        'diazepam',
+        'lorazepam',
+        'alprazolam',
+        'zolpidem',
+        'eszopiclone',
+        'amitriptyline',
+        'doxepin',
       ];
 
-      if (beersListDrugs.some(beers => drug.genericName.toLowerCase().includes(beers.toLowerCase()))) {
+      if (
+        beersListDrugs.some((beers) => drug.genericName.toLowerCase().includes(beers.toLowerCase()))
+      ) {
         alerts.push({
           type: 'beers-criteria',
           severity: 'major',
           message: `${drug.genericName} is potentially inappropriate for elderly patients (Beers Criteria)`,
-          recommendation: 'Consider alternative therapy or reduced dosing'
+          recommendation: 'Consider alternative therapy or reduced dosing',
         });
       }
 
       // High-dose warnings for elderly
-      if (drug.genericName.toLowerCase().includes('morphine') && this.extractDoseAmount(item.dosageInstructions) > 30) {
+      if (
+        drug.genericName.toLowerCase().includes('morphine') &&
+        this.extractDoseAmount(item.dosageInstructions) > 30
+      ) {
         alerts.push({
           type: 'geriatric-high-dose',
           severity: 'major',
           message: 'High-dose opioid in elderly patient',
-          recommendation: 'Verify dose appropriateness with prescriber'
+          recommendation: 'Verify dose appropriateness with prescriber',
         });
       }
     }
@@ -183,33 +210,44 @@ export class PrescriptionValidationService {
 
     // Drugs requiring renal dose adjustment (simplified list)
     const renalAdjustmentDrugs = [
-      'metformin', 'gabapentin', 'pregabalin', 'atenolol', 'digoxin',
-      'lithium', 'vancomycin', 'gentamicin', 'tobramycin', 'amikacin'
+      'metformin',
+      'gabapentin',
+      'pregabalin',
+      'atenolol',
+      'digoxin',
+      'lithium',
+      'vancomycin',
+      'gentamicin',
+      'tobramycin',
+      'amikacin',
     ];
 
-    const requiresAdjustment = renalAdjustmentDrugs.some(renalDrug => 
-      drug.genericName.toLowerCase().includes(renalDrug.toLowerCase())
+    const requiresAdjustment = renalAdjustmentDrugs.some((renalDrug) =>
+      drug.genericName.toLowerCase().includes(renalDrug.toLowerCase()),
     );
 
     if (requiresAdjustment) {
-      const severity = renalFunction === 'severe' || renalFunction === 'dialysis' ? 'critical' : 'major';
-      
+      const severity =
+        renalFunction === 'severe' || renalFunction === 'dialysis' ? 'critical' : 'major';
+
       alerts.push({
         type: 'renal-dose-adjustment',
         severity,
         message: `${drug.genericName} requires dose adjustment in ${renalFunction} renal impairment`,
-        recommendation: 'Verify dose is appropriate for renal function'
+        recommendation: 'Verify dose is appropriate for renal function',
       });
     }
 
     // Contraindicated in severe renal impairment
-    if ((renalFunction === 'severe' || renalFunction === 'dialysis') && 
-        drug.genericName.toLowerCase().includes('metformin')) {
+    if (
+      (renalFunction === 'severe' || renalFunction === 'dialysis') &&
+      drug.genericName.toLowerCase().includes('metformin')
+    ) {
       alerts.push({
         type: 'renal-contraindication',
         severity: 'critical',
         message: 'Metformin is contraindicated in severe renal impairment',
-        recommendation: 'Do not dispense. Contact prescriber for alternative.'
+        recommendation: 'Do not dispense. Contact prescriber for alternative.',
       });
     }
 
@@ -221,34 +259,42 @@ export class PrescriptionValidationService {
 
     // Drugs requiring hepatic dose adjustment
     const hepaticAdjustmentDrugs = [
-      'warfarin', 'phenytoin', 'carbamazepine', 'valproic acid', 'propranolol',
-      'morphine', 'codeine', 'tramadol', 'acetaminophen'
+      'warfarin',
+      'phenytoin',
+      'carbamazepine',
+      'valproic acid',
+      'propranolol',
+      'morphine',
+      'codeine',
+      'tramadol',
+      'acetaminophen',
     ];
 
-    const requiresAdjustment = hepaticAdjustmentDrugs.some(hepaticDrug => 
-      drug.genericName.toLowerCase().includes(hepaticDrug.toLowerCase())
+    const requiresAdjustment = hepaticAdjustmentDrugs.some((hepaticDrug) =>
+      drug.genericName.toLowerCase().includes(hepaticDrug.toLowerCase()),
     );
 
     if (requiresAdjustment) {
       const severity = hepaticFunction === 'severe' ? 'critical' : 'major';
-      
+
       alerts.push({
         type: 'hepatic-dose-adjustment',
         severity,
         message: `${drug.genericName} requires dose adjustment in ${hepaticFunction} hepatic impairment`,
-        recommendation: 'Verify dose is appropriate for hepatic function'
+        recommendation: 'Verify dose is appropriate for hepatic function',
       });
     }
 
     // Acetaminophen daily dose limit in hepatic impairment
     if (drug.genericName.toLowerCase().includes('acetaminophen') && hepaticFunction !== 'normal') {
       const dailyDose = this.calculateDailyAcetaminophenDose(item.dosageInstructions);
-      if (dailyDose > 2000) { // 2g limit in hepatic impairment
+      if (dailyDose > 2000) {
+        // 2g limit in hepatic impairment
         alerts.push({
           type: 'hepatic-dose-limit',
           severity: 'critical',
           message: `Acetaminophen daily dose (${dailyDose}mg) exceeds safe limit for hepatic impairment (2000mg)`,
-          recommendation: 'Reduce dose or contact prescriber'
+          recommendation: 'Reduce dose or contact prescriber',
         });
       }
     }
@@ -261,31 +307,49 @@ export class PrescriptionValidationService {
 
     // Pregnancy category X drugs (contraindicated)
     const categoryXDrugs = [
-      'warfarin', 'isotretinoin', 'thalidomide', 'methotrexate', 'misoprostol',
-      'finasteride', 'dutasteride', 'atorvastatin', 'simvastatin'
+      'warfarin',
+      'isotretinoin',
+      'thalidomide',
+      'methotrexate',
+      'misoprostol',
+      'finasteride',
+      'dutasteride',
+      'atorvastatin',
+      'simvastatin',
     ];
 
-    if (categoryXDrugs.some(catX => drug.genericName.toLowerCase().includes(catX.toLowerCase()))) {
+    if (
+      categoryXDrugs.some((catX) => drug.genericName.toLowerCase().includes(catX.toLowerCase()))
+    ) {
       alerts.push({
         type: 'pregnancy-contraindicated',
         severity: 'critical',
         message: `${drug.genericName} is contraindicated in pregnancy`,
-        recommendation: 'Do not dispense. Contact prescriber immediately for alternative.'
+        recommendation: 'Do not dispense. Contact prescriber immediately for alternative.',
       });
     }
 
     // Pregnancy category D drugs (risk but may be necessary)
     const categoryDDrugs = [
-      'phenytoin', 'carbamazepine', 'valproic acid', 'lithium', 'atenolol',
-      'lisinopril', 'losartan', 'tetracycline', 'doxycycline'
+      'phenytoin',
+      'carbamazepine',
+      'valproic acid',
+      'lithium',
+      'atenolol',
+      'lisinopril',
+      'losartan',
+      'tetracycline',
+      'doxycycline',
     ];
 
-    if (categoryDDrugs.some(catD => drug.genericName.toLowerCase().includes(catD.toLowerCase()))) {
+    if (
+      categoryDDrugs.some((catD) => drug.genericName.toLowerCase().includes(catD.toLowerCase()))
+    ) {
       alerts.push({
         type: 'pregnancy-risk',
         severity: 'major',
         message: `${drug.genericName} has known pregnancy risks`,
-        recommendation: 'Verify risk/benefit assessment with prescriber'
+        recommendation: 'Verify risk/benefit assessment with prescriber',
       });
     }
 
@@ -297,16 +361,25 @@ export class PrescriptionValidationService {
 
     // Drugs contraindicated in breastfeeding
     const contraindicatedInBF = [
-      'lithium', 'amiodarone', 'chloramphenicol', 'tetracycline', 'ciprofloxacin',
-      'metronidazole', 'ergotamine', 'bromocriptine'
+      'lithium',
+      'amiodarone',
+      'chloramphenicol',
+      'tetracycline',
+      'ciprofloxacin',
+      'metronidazole',
+      'ergotamine',
+      'bromocriptine',
     ];
 
-    if (contraindicatedInBF.some(bf => drug.genericName.toLowerCase().includes(bf.toLowerCase()))) {
+    if (
+      contraindicatedInBF.some((bf) => drug.genericName.toLowerCase().includes(bf.toLowerCase()))
+    ) {
       alerts.push({
         type: 'breastfeeding-contraindicated',
         severity: 'major',
         message: `${drug.genericName} is not recommended during breastfeeding`,
-        recommendation: 'Discuss alternatives with prescriber or temporary cessation of breastfeeding'
+        recommendation:
+          'Discuss alternatives with prescriber or temporary cessation of breastfeeding',
       });
     }
 
@@ -320,13 +393,14 @@ export class PrescriptionValidationService {
     if (drug.genericName.toLowerCase().includes('enoxaparin')) {
       const dose = this.extractDoseAmount(item.dosageInstructions);
       const expectedDose = weight * 1; // 1 mg/kg for treatment dose
-      
-      if (Math.abs(dose - expectedDose) > expectedDose * 0.2) { // 20% variance
+
+      if (Math.abs(dose - expectedDose) > expectedDose * 0.2) {
+        // 20% variance
         alerts.push({
           type: 'weight-based-dosing',
           severity: 'major',
           message: `Enoxaparin dose (${dose}mg) may not be appropriate for weight (${weight}kg, expected ~${expectedDose}mg)`,
-          recommendation: 'Verify weight-based dosing calculation'
+          recommendation: 'Verify weight-based dosing calculation',
         });
       }
     }
@@ -337,18 +411,18 @@ export class PrescriptionValidationService {
   private validateMedicalConditions(drug: Drug, conditions: string[], item: any): any[] {
     const alerts = [];
 
-    conditions.forEach(condition => {
+    conditions.forEach((condition) => {
       const lowerCondition = condition.toLowerCase();
 
       // Heart failure contraindications
       if (lowerCondition.includes('heart failure') || lowerCondition.includes('chf')) {
         const hfContraindicated = ['verapamil', 'diltiazem', 'nifedipine', 'ibuprofen', 'naproxen'];
-        if (hfContraindicated.some(hf => drug.genericName.toLowerCase().includes(hf))) {
+        if (hfContraindicated.some((hf) => drug.genericName.toLowerCase().includes(hf))) {
           alerts.push({
             type: 'heart-failure-contraindication',
             severity: 'major',
             message: `${drug.genericName} may worsen heart failure`,
-            recommendation: 'Consider alternative therapy'
+            recommendation: 'Consider alternative therapy',
           });
         }
       }
@@ -356,12 +430,14 @@ export class PrescriptionValidationService {
       // Asthma/COPD contraindications
       if (lowerCondition.includes('asthma') || lowerCondition.includes('copd')) {
         const respiratoryContraindicated = ['propranolol', 'atenolol', 'metoprolol', 'aspirin'];
-        if (respiratoryContraindicated.some(resp => drug.genericName.toLowerCase().includes(resp))) {
+        if (
+          respiratoryContraindicated.some((resp) => drug.genericName.toLowerCase().includes(resp))
+        ) {
           alerts.push({
             type: 'respiratory-contraindication',
             severity: 'major',
             message: `${drug.genericName} may worsen respiratory condition`,
-            recommendation: 'Verify appropriateness with prescriber'
+            recommendation: 'Verify appropriateness with prescriber',
           });
         }
       }
@@ -369,12 +445,12 @@ export class PrescriptionValidationService {
       // Diabetes considerations
       if (lowerCondition.includes('diabetes')) {
         const diabetesWarnings = ['prednisone', 'prednisolone', 'hydrochlorothiazide'];
-        if (diabetesWarnings.some(dm => drug.genericName.toLowerCase().includes(dm))) {
+        if (diabetesWarnings.some((dm) => drug.genericName.toLowerCase().includes(dm))) {
           alerts.push({
             type: 'diabetes-monitoring',
             severity: 'moderate',
             message: `${drug.genericName} may affect blood glucose control`,
-            recommendation: 'Counsel patient to monitor blood glucose closely'
+            recommendation: 'Counsel patient to monitor blood glucose closely',
           });
         }
       }
@@ -392,14 +468,17 @@ export class PrescriptionValidationService {
         type: 'route-mismatch',
         severity: 'critical',
         message: `Route mismatch: ${drug.genericName} is formulated for ${drug.route} but prescribed for oral use`,
-        recommendation: 'Verify intended route with prescriber'
+        recommendation: 'Verify intended route with prescriber',
       });
     }
 
     return alerts;
   }
 
-  private validateOverallPrescription(prescription: Prescription, patientFactors: PatientFactors): any[] {
+  private validateOverallPrescription(
+    prescription: Prescription,
+    patientFactors: PatientFactors,
+  ): any[] {
     const alerts = [];
 
     // Check for polypharmacy in elderly
@@ -408,7 +487,7 @@ export class PrescriptionValidationService {
         type: 'polypharmacy',
         severity: 'moderate',
         message: `Multiple medications (${prescription.items.length}) in elderly patient`,
-        recommendation: 'Review for potential drug interactions and medication optimization'
+        recommendation: 'Review for potential drug interactions and medication optimization',
       });
     }
 
@@ -423,11 +502,13 @@ export class PrescriptionValidationService {
 
   private calculateDailyAcetaminophenDose(dosageInstructions: string): number {
     const doseMatch = dosageInstructions.match(/(\d+(?:\.\d+)?)\s*mg/i);
-    const frequencyMatch = dosageInstructions.match(/(\d+)\s*times?\s*(?:per\s*)?day|every\s*(\d+)\s*hours?/i);
-    
+    const frequencyMatch = dosageInstructions.match(
+      /(\d+)\s*times?\s*(?:per\s*)?day|every\s*(\d+)\s*hours?/i,
+    );
+
     const dose = doseMatch ? parseFloat(doseMatch[1]) : 0;
     let frequency = 1;
-    
+
     if (frequencyMatch) {
       if (frequencyMatch[1]) {
         frequency = parseInt(frequencyMatch[1]);
@@ -435,7 +516,7 @@ export class PrescriptionValidationService {
         frequency = 24 / parseInt(frequencyMatch[2]);
       }
     }
-    
+
     return dose * frequency;
   }
 }

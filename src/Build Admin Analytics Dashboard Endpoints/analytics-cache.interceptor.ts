@@ -1,10 +1,4 @@
-import {
-  Injectable,
-  NestInterceptor,
-  ExecutionContext,
-  CallHandler,
-  Inject,
-} from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Inject } from '@nestjs/common';
 import { Observable, of } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { Cache } from 'cache-manager';
@@ -17,10 +11,7 @@ const ANALYTICS_TTL = 300; // 5 minutes in seconds
 export class AnalyticsCacheInterceptor implements NestInterceptor {
   constructor(@Inject(CACHE_MANAGER) private readonly cache: Cache) {}
 
-  async intercept(
-    context: ExecutionContext,
-    next: CallHandler,
-  ): Promise<Observable<any>> {
+  async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
     const req: Request = context.switchToHttp().getRequest();
     const cacheKey = `analytics:${req.path}:${new URLSearchParams(
       req.query as Record<string, string>,

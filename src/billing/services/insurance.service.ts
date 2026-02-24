@@ -25,12 +25,8 @@ export class InsuranceService {
     const insurance = this.insuranceRepository.create({
       ...createDto,
       effectiveDate: new Date(createDto.effectiveDate),
-      terminationDate: createDto.terminationDate
-        ? new Date(createDto.terminationDate)
-        : undefined,
-      subscriberDob: createDto.subscriberDob
-        ? new Date(createDto.subscriberDob)
-        : undefined,
+      terminationDate: createDto.terminationDate ? new Date(createDto.terminationDate) : undefined,
+      subscriberDob: createDto.subscriberDob ? new Date(createDto.subscriberDob) : undefined,
     });
 
     return this.insuranceRepository.save(insurance);
@@ -98,9 +94,7 @@ export class InsuranceService {
     return this.insuranceRepository.save(insurance);
   }
 
-  async verifyEligibility(
-    verifyDto: VerifyInsuranceDto,
-  ): Promise<InsuranceVerification> {
+  async verifyEligibility(verifyDto: VerifyInsuranceDto): Promise<InsuranceVerification> {
     const insurance = await this.findById(verifyDto.insuranceId);
 
     const transactionId = `270-${uuidv4().substring(0, 8).toUpperCase()}`;
@@ -145,9 +139,12 @@ export class InsuranceService {
       if (inNetwork.deductible !== undefined) insurance.deductible = inNetwork.deductible;
       if (inNetwork.deductibleMet !== undefined) insurance.deductibleMet = inNetwork.deductibleMet;
       if (inNetwork.copay !== undefined) insurance.copay = inNetwork.copay;
-      if (inNetwork.coinsurance !== undefined) insurance.coinsurancePercentage = inNetwork.coinsurance;
-      if (inNetwork.outOfPocketMax !== undefined) insurance.outOfPocketMax = inNetwork.outOfPocketMax;
-      if (inNetwork.outOfPocketMet !== undefined) insurance.outOfPocketMet = inNetwork.outOfPocketMet;
+      if (inNetwork.coinsurance !== undefined)
+        insurance.coinsurancePercentage = inNetwork.coinsurance;
+      if (inNetwork.outOfPocketMax !== undefined)
+        insurance.outOfPocketMax = inNetwork.outOfPocketMax;
+      if (inNetwork.outOfPocketMet !== undefined)
+        insurance.outOfPocketMet = inNetwork.outOfPocketMet;
     }
     await this.insuranceRepository.save(insurance);
 
@@ -188,12 +185,9 @@ export class InsuranceService {
   }> {
     const today = new Date();
     const effectiveDate = new Date(insurance.effectiveDate);
-    const terminationDate = insurance.terminationDate
-      ? new Date(insurance.terminationDate)
-      : null;
+    const terminationDate = insurance.terminationDate ? new Date(insurance.terminationDate) : null;
 
-    const isEligible =
-      today >= effectiveDate && (!terminationDate || today <= terminationDate);
+    const isEligible = today >= effectiveDate && (!terminationDate || today <= terminationDate);
 
     return {
       isEligible,
@@ -222,15 +216,18 @@ export class InsuranceService {
         { serviceType: 'Preventive Care', covered: true, requiresAuth: false },
         { serviceType: 'Specialist Visit', covered: true, requiresAuth: false },
         { serviceType: 'Surgery', covered: true, requiresAuth: true },
-        { serviceType: 'Imaging', covered: true, requiresAuth: true, limitations: 'Prior auth required for MRI/CT' },
+        {
+          serviceType: 'Imaging',
+          covered: true,
+          requiresAuth: true,
+          limitations: 'Prior auth required for MRI/CT',
+        },
         { serviceType: 'Lab Work', covered: true, requiresAuth: false },
       ],
     };
   }
 
-  async requestAuthorization(
-    authDto: RequestAuthorizationDto,
-  ): Promise<InsuranceVerification> {
+  async requestAuthorization(authDto: RequestAuthorizationDto): Promise<InsuranceVerification> {
     const insurance = await this.findById(authDto.insuranceId);
 
     const transactionId = `278-${uuidv4().substring(0, 8).toUpperCase()}`;
@@ -305,9 +302,7 @@ export class InsuranceService {
     });
   }
 
-  async getLatestVerification(
-    insuranceId: string,
-  ): Promise<InsuranceVerification | null> {
+  async getLatestVerification(insuranceId: string): Promise<InsuranceVerification | null> {
     return this.verificationRepository.findOne({
       where: { insuranceId },
       order: { createdAt: 'DESC' },

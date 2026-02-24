@@ -27,7 +27,7 @@ export class NotificationQueueService implements OnModuleInit, OnModuleDestroy {
   async queueEvent(userId: string, event: NotificationEvent): Promise<void> {
     const key = `notifications:${userId}`;
     const eventData = JSON.stringify(event);
-    
+
     await this.redis
       .multi()
       .lpush(key, eventData)
@@ -40,6 +40,6 @@ export class NotificationQueueService implements OnModuleInit, OnModuleDestroy {
     const key = `notifications:${userId}`;
     const events = await this.redis.lrange(key, 0, -1);
     await this.redis.del(key);
-    return events.map(e => JSON.parse(e)).reverse();
+    return events.map((e) => JSON.parse(e)).reverse();
   }
 }

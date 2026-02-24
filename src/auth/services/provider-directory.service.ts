@@ -35,7 +35,10 @@ export class ProviderDirectoryService {
     private readonly usersRepository: Repository<User>,
   ) {}
 
-  async searchProviders(query: ProviderDirectoryQueryDto, includeSensitiveData: boolean): Promise<ProviderDirectoryResult> {
+  async searchProviders(
+    query: ProviderDirectoryQueryDto,
+    includeSensitiveData: boolean,
+  ): Promise<ProviderDirectoryResult> {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 20;
     const offset = (page - 1) * limit;
@@ -46,7 +49,10 @@ export class ProviderDirectoryService {
       .andWhere('u."isActive" = :isActive', { isActive: true })
       .andWhere('u."deletedAt" IS NULL')
       .select('u.id', 'id')
-      .addSelect(`COALESCE(NULLIF(u."displayName", ''), TRIM(CONCAT(COALESCE(u."firstName", ''), ' ', COALESCE(u."lastName", ''))))`, 'displayName')
+      .addSelect(
+        `COALESCE(NULLIF(u."displayName", ''), TRIM(CONCAT(COALESCE(u."firstName", ''), ' ', COALESCE(u."lastName", ''))))`,
+        'displayName',
+      )
       .addSelect('u.role', 'role')
       .addSelect(`COALESCE(NULLIF(u."specialty", ''), NULLIF(u."specialization", ''))`, 'specialty')
       .addSelect('u."institution"', 'institution');
@@ -66,7 +72,9 @@ export class ProviderDirectoryService {
     }
 
     if (query.search) {
-      qb.andWhere(`u.search_vector @@ plainto_tsquery('english', :search)`, { search: query.search });
+      qb.andWhere(`u.search_vector @@ plainto_tsquery('english', :search)`, {
+        search: query.search,
+      });
       qb.orderBy(`ts_rank(u.search_vector, plainto_tsquery('english', :search))`, 'DESC');
       qb.addOrderBy('u."createdAt"', 'DESC');
     } else {

@@ -39,12 +39,12 @@ export class TenantConfigController {
   async getTenantConfig(@Param('id', ParseUUIDPipe) tenantId: string, @Request() req) {
     // Validate tenant access (prevent IDOR)
     this.validateTenantAccess(req.user, tenantId);
-    
+
     this.logger.log(`Fetching config for tenant: ${this.sanitizeTenantId(tenantId)}`);
-    
+
     try {
       const configs = await this.tenantConfigService.getAllForTenant(tenantId);
-      
+
       return {
         tenantId,
         configs: configs.map((config) => ({
@@ -76,12 +76,12 @@ export class TenantConfigController {
   ) {
     this.validateTenantAccess(req.user, tenantId);
     this.validateConfigKey(key);
-    
+
     this.logger.log(`Fetching config key "${key}" for tenant: ${this.sanitizeTenantId(tenantId)}`);
-    
+
     try {
       const value = await this.tenantConfigService.get(tenantId, key);
-      
+
       return {
         tenantId,
         key,
@@ -108,9 +108,9 @@ export class TenantConfigController {
   ) {
     this.validateTenantAccess(req.user, tenantId);
     this.validateConfigKey(updateDto.key);
-    
+
     const userId = req.user?.userId || req.user?.id;
-    
+
     this.logger.log(
       `Updating config for tenant ${this.sanitizeTenantId(tenantId)}: ${updateDto.key}`,
     );
@@ -156,17 +156,17 @@ export class TenantConfigController {
     @Request() req,
   ) {
     this.validateTenantAccess(req.user, tenantId);
-    
+
     // Validate all keys before processing
-    bulkUpdateDto.configs.forEach(config => this.validateConfigKey(config.key));
-    
+    bulkUpdateDto.configs.forEach((config) => this.validateConfigKey(config.key));
+
     // Limit bulk update size
     if (bulkUpdateDto.configs.length > 50) {
       throw new BadRequestException('Bulk update limited to 50 configurations at once');
     }
-    
+
     const userId = req.user?.userId || req.user?.id;
-    
+
     this.logger.log(
       `Bulk updating ${bulkUpdateDto.configs.length} configs for tenant ${this.sanitizeTenantId(tenantId)}`,
     );
@@ -209,11 +209,11 @@ export class TenantConfigController {
   ) {
     this.validateTenantAccess(req.user, tenantId);
     this.validateConfigKey(key);
-    
+
     const userId = req.user?.userId || req.user?.id;
-    
+
     this.logger.log(`Deleting config key "${key}" for tenant: ${this.sanitizeTenantId(tenantId)}`);
-    
+
     try {
       await this.tenantConfigService.delete(tenantId, key, userId);
 
@@ -241,14 +241,13 @@ export class TenantConfigController {
   ) {
     this.validateTenantAccess(req.user, tenantId);
     this.validateConfigKey(featureKey);
-    
-    this.logger.log(`Checking feature "${featureKey}" for tenant: ${this.sanitizeTenantId(tenantId)}`);
-    
+
+    this.logger.log(
+      `Checking feature "${featureKey}" for tenant: ${this.sanitizeTenantId(tenantId)}`,
+    );
+
     try {
-      const isEnabled = await this.tenantConfigService.isFeatureEnabled(
-        tenantId,
-        featureKey,
-      );
+      const isEnabled = await this.tenantConfigService.isFeatureEnabled(tenantId, featureKey);
 
       return {
         tenantId,
@@ -269,7 +268,7 @@ export class TenantConfigController {
     // TODO: Implement proper tenant isolation
     // For now, only admins can access any tenant
     // In production, check if user belongs to the tenant's organization
-    
+
     if (!user) {
       throw new BadRequestException('User not authenticated');
     }

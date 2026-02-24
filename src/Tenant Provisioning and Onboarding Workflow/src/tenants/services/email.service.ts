@@ -1,5 +1,5 @@
-import { Injectable, Logger } from "@nestjs/common";
-import * as nodemailer from "nodemailer";
+import { Injectable, Logger } from '@nestjs/common';
+import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class EmailService {
@@ -9,8 +9,8 @@ export class EmailService {
   constructor() {
     this.transporter = nodemailer.createTransport({
       host: process.env.MAIL_HOST,
-      port: parseInt(process.env.MAIL_PORT || "587"),
-      secure: process.env.MAIL_PORT === "465",
+      port: parseInt(process.env.MAIL_PORT || '587'),
+      secure: process.env.MAIL_PORT === '465',
       auth: {
         user: process.env.MAIL_USER,
         pass: process.env.MAIL_PASSWORD,
@@ -48,7 +48,7 @@ export class EmailService {
       `;
 
       const mailOptions = {
-        from: process.env.MAIL_FROM || "noreply@healthcare.local",
+        from: process.env.MAIL_FROM || 'noreply@healthcare.local',
         to: adminEmail,
         subject,
         html: htmlContent,
@@ -57,9 +57,7 @@ export class EmailService {
       await this.transporter.sendMail(mailOptions);
       this.logger.log(`Welcome email sent successfully to ${adminEmail}`);
     } catch (error) {
-      this.logger.error(
-        `Failed to send welcome email to ${adminEmail}: ${error.message}`,
-      );
+      this.logger.error(`Failed to send welcome email to ${adminEmail}: ${error.message}`);
       throw error;
     }
   }
@@ -88,7 +86,7 @@ export class EmailService {
       `;
 
       const mailOptions = {
-        from: process.env.MAIL_FROM || "noreply@healthcare.local",
+        from: process.env.MAIL_FROM || 'noreply@healthcare.local',
         to: adminEmail,
         subject,
         html: htmlContent,
@@ -97,9 +95,7 @@ export class EmailService {
       await this.transporter.sendMail(mailOptions);
       this.logger.log(`Error email sent successfully to ${adminEmail}`);
     } catch (error) {
-      this.logger.error(
-        `Failed to send error email to ${adminEmail}: ${error.message}`,
-      );
+      this.logger.error(`Failed to send error email to ${adminEmail}: ${error.message}`);
       // Don't throw - we don't want email failures to fail the entire provisioning
     }
   }

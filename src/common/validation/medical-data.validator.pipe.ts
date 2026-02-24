@@ -14,9 +14,7 @@ export class MedicalDataValidationPipe implements PipeTransform {
 
     // Some route arguments expose primitive metatypes (String/Boolean/etc.); validate only class-based DTOs.
     const metatype = metadata.metatype as any;
-    const shouldValidate =
-      metatype &&
-      ![String, Boolean, Number, Array, Object].includes(metatype);
+    const shouldValidate = metatype && ![String, Boolean, Number, Array, Object].includes(metatype);
 
     if (!shouldValidate) {
       return this.sanitizer.sanitizeObject(value);
@@ -26,16 +24,15 @@ export class MedicalDataValidationPipe implements PipeTransform {
     const errors = await validate(object);
 
     if (errors.length > 0) {
-      const messages = errors
-        .map(error => ({
-          field: error.property,
-          message: 'Medical data validation failed'
-        }));
-      
+      const messages = errors.map((error) => ({
+        field: error.property,
+        message: 'Medical data validation failed',
+      }));
+
       throw new BadRequestException({
         statusCode: 400,
         message: 'Medical data validation failed',
-        errors: messages
+        errors: messages,
       });
     }
 

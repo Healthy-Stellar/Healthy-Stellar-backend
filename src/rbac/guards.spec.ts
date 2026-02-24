@@ -6,13 +6,15 @@ import { DeviceAuthGuard } from '../device-auth.guard';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction } from '../../entities/audit-log.entity';
 
-const makeContext = (overrides: Partial<{
-  user: { id: string; role: string };
-  path: string;
-  method: string;
-  headers: Record<string, string>;
-  ip: string;
-}> = {}): ExecutionContext => {
+const makeContext = (
+  overrides: Partial<{
+    user: { id: string; role: string };
+    path: string;
+    method: string;
+    headers: Record<string, string>;
+    ip: string;
+  }> = {},
+): ExecutionContext => {
   const req = {
     user: overrides.user,
     path: overrides.path || '/patients/123',
@@ -108,9 +110,7 @@ describe('HipaaAccessGuard', () => {
       await guard.canActivate(ctx);
     } catch {}
 
-    expect(auditService.log).toHaveBeenCalledWith(
-      expect.objectContaining({ userRole: 'viewer' }),
-    );
+    expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ userRole: 'viewer' }));
   });
 });
 

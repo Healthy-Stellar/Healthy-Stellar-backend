@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Body,
-  Param,
-  Query,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { DenialService } from '../services/denial.service';
 import {
@@ -39,7 +31,12 @@ export class DenialController {
 
   @Get('upcoming-deadlines')
   @ApiOperation({ summary: 'Get denials with upcoming appeal deadlines' })
-  @ApiQuery({ name: 'days', required: false, type: Number, description: 'Days to look ahead (default: 30)' })
+  @ApiQuery({
+    name: 'days',
+    required: false,
+    type: Number,
+    description: 'Days to look ahead (default: 30)',
+  })
   @ApiResponse({ status: 200, description: 'Denials with upcoming deadlines retrieved' })
   async getUpcomingDeadlines(@Query('days') days?: number) {
     return this.denialService.getUpcomingDeadlines(days);
@@ -54,10 +51,7 @@ export class DenialController {
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
-    return this.denialService.getDenialAnalytics(
-      new Date(startDate),
-      new Date(endDate),
-    );
+    return this.denialService.getDenialAnalytics(new Date(startDate), new Date(endDate));
   }
 
   @Get(':id')
@@ -81,7 +75,10 @@ export class DenialController {
   @ApiOperation({ summary: 'Create an appeal for a denial' })
   @ApiParam({ name: 'id', description: 'Denial ID' })
   @ApiResponse({ status: 201, description: 'Appeal created successfully' })
-  async createAppeal(@Param('id') id: string, @Body() createDto: Omit<CreateAppealDto, 'denialId'>) {
+  async createAppeal(
+    @Param('id') id: string,
+    @Body() createDto: Omit<CreateAppealDto, 'denialId'>,
+  ) {
     return this.denialService.createAppeal({ ...createDto, denialId: id });
   }
 }

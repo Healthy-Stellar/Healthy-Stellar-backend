@@ -3,13 +3,13 @@ export class EmergencyProtocolDto {
   protocolName: string;
   code: string;
   emergencyType:
-    | "code-blue"
-    | "code-red"
-    | "code-yellow"
-    | "code-black"
-    | "mass-casualty"
-    | "natural-disaster";
-  severity: "low" | "medium" | "high" | "critical";
+    | 'code-blue'
+    | 'code-red'
+    | 'code-yellow'
+    | 'code-black'
+    | 'mass-casualty'
+    | 'natural-disaster';
+  severity: 'low' | 'medium' | 'high' | 'critical';
   description: string;
   activationCriteria: string[];
   responseTeam: ResponseTeamDto[];

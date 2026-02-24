@@ -4,7 +4,7 @@ import { Injectable } from '@nestjs/common';
 export class MedicalDataSanitizerService {
   sanitizeText(text: string): string {
     if (!text || typeof text !== 'string') return '';
-    
+
     return text
       .trim()
       .replace(/<[^>]*>/g, '') // Remove HTML tags
@@ -14,7 +14,7 @@ export class MedicalDataSanitizerService {
 
   sanitizeCode(code: string): string {
     if (!code || typeof code !== 'string') return '';
-    
+
     return code
       .trim()
       .toUpperCase()
@@ -24,7 +24,7 @@ export class MedicalDataSanitizerService {
 
   sanitizeMRN(mrn: string): string {
     if (!mrn || typeof mrn !== 'string') return '';
-    
+
     return mrn
       .trim()
       .toUpperCase()
@@ -33,7 +33,7 @@ export class MedicalDataSanitizerService {
 
   sanitizeEmail(email: string): string {
     if (!email || typeof email !== 'string') return '';
-    
+
     return email
       .trim()
       .toLowerCase()
@@ -42,18 +42,18 @@ export class MedicalDataSanitizerService {
 
   sanitizePhoneNumber(phone: string): string {
     if (!phone || typeof phone !== 'string') return '';
-    
+
     return phone.trim().replace(/[^0-9+\-\(\) ]/g, '');
   }
 
   sanitizeObject(obj: any): any {
     if (obj === null || obj === undefined) return obj;
     if (typeof obj !== 'object') return this.sanitizeText(String(obj));
-    
+
     if (Array.isArray(obj)) {
-      return obj.map(item => this.sanitizeObject(item));
+      return obj.map((item) => this.sanitizeObject(item));
     }
-    
+
     const sanitized: any = {};
     for (const [key, value] of Object.entries(obj)) {
       if (this.isPHIField(key)) {
@@ -71,6 +71,6 @@ export class MedicalDataSanitizerService {
 
   private isPHIField(fieldName: string): boolean {
     const phiFields = ['ssn', 'creditCard', 'bankAccount', 'password'];
-    return phiFields.some(field => fieldName.toLowerCase().includes(field));
+    return phiFields.some((field) => fieldName.toLowerCase().includes(field));
   }
 }

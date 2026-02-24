@@ -2,72 +2,72 @@ import { IsString, IsUUID, IsEnum, IsOptional, IsDateString } from 'class-valida
 import { MolecularTestType } from '../entities/molecular-test.entity';
 
 export class CreateMolecularTestDto {
-    @IsUUID()
-    pathologyCaseId: string;
+  @IsUUID()
+  pathologyCaseId: string;
 
-    @IsEnum(MolecularTestType)
-    testType: MolecularTestType;
+  @IsEnum(MolecularTestType)
+  testType: MolecularTestType;
 
-    @IsString()
-    testName: string;
+  @IsString()
+  testName: string;
 
-    @IsString()
-    @IsOptional()
-    geneMarker?: string;
+  @IsString()
+  @IsOptional()
+  geneMarker?: string;
 
-    @IsString()
-    methodology: string;
+  @IsString()
+  methodology: string;
 
-    @IsString()
-    specimenType: string;
+  @IsString()
+  specimenType: string;
 
-    @IsString()
-    indication: string;
+  @IsString()
+  indication: string;
 
-    @IsDateString()
-    @IsOptional()
-    orderedDate?: string;
+  @IsDateString()
+  @IsOptional()
+  orderedDate?: string;
 
-    @IsString()
-    @IsOptional()
-    externalLab?: string;
+  @IsString()
+  @IsOptional()
+  externalLab?: string;
 
-    @IsString()
-    @IsOptional()
-    notes?: string;
+  @IsString()
+  @IsOptional()
+  notes?: string;
 
-    @IsOptional()
-    metadata?: Record<string, any>;
+  @IsOptional()
+  metadata?: Record<string, any>;
 }
 
 export class UpdateMolecularTestResultDto {
-    @IsString()
-    result: string;
+  @IsString()
+  result: string;
 
-    @IsString()
-    @IsOptional()
-    interpretation?: string;
+  @IsString()
+  @IsOptional()
+  interpretation?: string;
 
-    @IsOptional()
-    referenceRanges?: Record<string, any>;
+  @IsOptional()
+  referenceRanges?: Record<string, any>;
 
-    @IsUUID()
-    @IsOptional()
-    technologistId?: string;
+  @IsUUID()
+  @IsOptional()
+  technologistId?: string;
 
-    @IsString()
-    @IsOptional()
-    technologistName?: string;
+  @IsString()
+  @IsOptional()
+  technologistName?: string;
 
-    @IsUUID()
-    @IsOptional()
-    reviewingPathologistId?: string;
+  @IsUUID()
+  @IsOptional()
+  reviewingPathologistId?: string;
 
-    @IsString()
-    @IsOptional()
-    reviewingPathologistName?: string;
+  @IsString()
+  @IsOptional()
+  reviewingPathologistName?: string;
 
-    @IsString()
-    @IsOptional()
-    notes?: string;
+  @IsString()
+  @IsOptional()
+  notes?: string;
 }

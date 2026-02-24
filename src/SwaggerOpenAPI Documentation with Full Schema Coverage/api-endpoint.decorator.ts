@@ -1,11 +1,6 @@
 // src/common/decorators/api-endpoint.decorator.ts
 import { applyDecorators, HttpStatus } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiOperationOptions,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiOperationOptions } from '@nestjs/swagger';
 import { ErrorResponseDto } from '../dto/error-response.dto';
 
 interface ApiEndpointOptions extends ApiOperationOptions {

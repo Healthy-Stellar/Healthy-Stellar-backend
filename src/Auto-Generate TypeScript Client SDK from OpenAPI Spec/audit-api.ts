@@ -29,7 +29,7 @@ export class AuditApi extends BaseAPI {
    */
   public listAuditLogs(
     params: ListAuditLogsParams = {},
-    options?: AxiosRequestConfig
+    options?: AxiosRequestConfig,
   ): AxiosPromise<PaginatedAuditLogs> {
     return this.axios.get<PaginatedAuditLogs>('/audit/logs', {
       params,

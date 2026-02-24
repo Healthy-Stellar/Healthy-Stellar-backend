@@ -7,7 +7,7 @@ import { AuditSubscriber } from '../common/subscribers/audit.subscriber';
 /**
  * TypeORM Database Configuration
  * HIPAA-Compliant PostgreSQL Configuration
- * 
+ *
  * Security Requirements:
  * - synchronize: false in ALL environments (schema changes via migrations only)
  * - SSL/TLS encryption for production
@@ -61,6 +61,7 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       // Migrations should be run manually with proper audit trail
       migrationsRun: false,
 
+      // Logging configuration for audit trail
       // Logging configuration for audit trail and query profiling
       logging: isProduction
         ? ['error', 'warn', 'migration']
@@ -105,15 +106,15 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
 /**
  * DataSource configuration for TypeORM CLI (migrations)
  * Used by: npm run migration:generate, migration:run, migration:revert
- * 
+ *
  * Configuration is loaded from environment variables via DATABASE_URL or individual vars
  */
 export const dataSourceOptions: DataSourceOptions = {
   type: 'postgres',
-  
+
   // Support DATABASE_URL for simplified configuration
   url: process.env.DATABASE_URL,
-  
+
   // Fallback to individual environment variables
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432', 10),
@@ -139,6 +140,9 @@ export const dataSourceOptions: DataSourceOptions = {
 
   // CRITICAL: synchronize MUST be false
   synchronize: false,
+
+  // Enable logging in development
+  logging: process.env.NODE_ENV !== 'production',
   
   // Enable detailed logging in development for profiling
   logging:

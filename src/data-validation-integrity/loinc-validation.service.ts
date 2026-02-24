@@ -139,11 +139,7 @@ export class LoincValidationService {
     return computedCheck === checkDigit;
   }
 
-  private validateReferenceRange(
-    code: string,
-    value: number,
-    unit?: string,
-  ): string[] {
+  private validateReferenceRange(code: string, value: number, unit?: string): string[] {
     const warnings: string[] = [];
     const range = LOINC_REFERENCE_RANGES[code];
 

@@ -15,7 +15,13 @@ import { BulkExportJob } from './entities/bulk-export-job.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Patient, MedicalRecord, MedicalRecordConsent, MedicalHistory, BulkExportJob]),
+    TypeOrmModule.forFeature([
+      Patient,
+      MedicalRecord,
+      MedicalRecordConsent,
+      MedicalHistory,
+      BulkExportJob,
+    ]),
     BullModule.registerQueue({ name: 'fhir-bulk-export' }),
     ScheduleModule.forRoot(),
   ],

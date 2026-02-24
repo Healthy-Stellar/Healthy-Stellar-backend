@@ -6,9 +6,9 @@ export class InsuranceProviderDto {
   phoneNumber: string;
   email: string;
   address: string;
-  payerType: "government" | "private" | "corporate";
+  payerType: 'government' | 'private' | 'corporate';
   acceptedPlans: InsurancePlanDto[];
-  claimSubmissionMethod: "electronic" | "paper" | "both";
+  claimSubmissionMethod: 'electronic' | 'paper' | 'both';
   averageProcessingDays: number;
   isActive: boolean;
 }
@@ -16,7 +16,7 @@ export class InsuranceProviderDto {
 export class InsurancePlanDto {
   planId: string;
   planName: string;
-  planType: "HMO" | "PPO" | "EPO" | "POS";
+  planType: 'HMO' | 'PPO' | 'EPO' | 'POS';
   coveragePercentage: number;
   deductible: number;
   copayAmount: number;
@@ -30,10 +30,10 @@ export class BillingConfigDto {
   hospitalId: string;
   taxRate: number;
   currency: string;
-  paymentMethods: ("cash" | "card" | "insurance" | "check" | "online")[];
+  paymentMethods: ('cash' | 'card' | 'insurance' | 'check' | 'online')[];
   invoicePrefix: string;
   invoiceNumberSequence: number;
-  billingCycle: "daily" | "weekly" | "monthly";
+  billingCycle: 'daily' | 'weekly' | 'monthly';
   lateFeePercentage: number;
   gracePeriodDays: number;
   acceptedInsuranceProviders: string[];

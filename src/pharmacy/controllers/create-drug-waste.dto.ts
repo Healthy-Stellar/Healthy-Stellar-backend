@@ -1,4 +1,13 @@
-import { IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+} from 'class-validator';
 import { DisposalMethod, WasteReason } from '../entities/drug-waste.entity';
 
 export class CreateDrugWasteDto {

@@ -66,7 +66,10 @@ export class InfectionControlService {
     return this.isolationPrecautionRepository.find();
   }
 
-  async updateIsolationPrecaution(id: string, dto: UpdateIsolationPrecautionDto): Promise<IsolationPrecaution> {
+  async updateIsolationPrecaution(
+    id: string,
+    dto: UpdateIsolationPrecautionDto,
+  ): Promise<IsolationPrecaution> {
     await this.isolationPrecautionRepository.update(id, dto);
     const precaution = await this.isolationPrecautionRepository.findOne({ where: { id } });
     if (!precaution) throw new NotFoundException(`Isolation precaution with ID ${id} not found`);
@@ -74,7 +77,9 @@ export class InfectionControlService {
   }
 
   // Antibiotic Resistance
-  async createAntibioticResistance(dto: CreateAntibioticResistanceDto): Promise<AntibioticResistance> {
+  async createAntibioticResistance(
+    dto: CreateAntibioticResistanceDto,
+  ): Promise<AntibioticResistance> {
     const resistance = this.antibioticResistanceRepository.create(dto);
     return this.antibioticResistanceRepository.save(resistance);
   }
@@ -93,7 +98,10 @@ export class InfectionControlService {
     return this.policyRepository.find({ where: { isActive: true } });
   }
 
-  async updatePolicy(id: string, dto: UpdateInfectionControlPolicyDto): Promise<InfectionControlPolicy> {
+  async updatePolicy(
+    id: string,
+    dto: UpdateInfectionControlPolicyDto,
+  ): Promise<InfectionControlPolicy> {
     await this.policyRepository.update(id, dto);
     const policy = await this.policyRepository.findOne({ where: { id } });
     if (!policy) throw new NotFoundException(`Policy with ID ${id} not found`);

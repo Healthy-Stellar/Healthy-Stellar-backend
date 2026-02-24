@@ -1,5 +1,5 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { DataSource } from "typeorm";
+import { Injectable, Logger } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 
 @Injectable()
 export class DatabaseService {
@@ -20,9 +20,7 @@ export class DatabaseService {
       await this.dataSource.query(query);
       this.logger.log(`Schema created successfully: ${schemaName}`);
     } catch (error) {
-      this.logger.error(
-        `Failed to create schema ${schemaName}: ${error.message}`,
-      );
+      this.logger.error(`Failed to create schema ${schemaName}: ${error.message}`);
       throw error;
     }
   }
@@ -39,9 +37,7 @@ export class DatabaseService {
       await this.dataSource.query(query);
       this.logger.log(`Schema dropped successfully: ${schemaName}`);
     } catch (error) {
-      this.logger.error(
-        `Failed to drop schema ${schemaName}: ${error.message}`,
-      );
+      this.logger.error(`Failed to drop schema ${schemaName}: ${error.message}`);
       throw error;
     }
   }
@@ -84,9 +80,7 @@ export class DatabaseService {
       await this.dataSource.query(query);
       this.logger.log(`Migrations completed for schema: ${schemaName}`);
     } catch (error) {
-      this.logger.error(
-        `Failed to run migrations for schema ${schemaName}: ${error.message}`,
-      );
+      this.logger.error(`Failed to run migrations for schema ${schemaName}: ${error.message}`);
       throw error;
     }
   }
@@ -107,9 +101,7 @@ export class DatabaseService {
       await this.dataSource.query(rolesQuery);
       this.logger.log(`Roles seeded for schema: ${schemaName}`);
     } catch (error) {
-      this.logger.error(
-        `Failed to seed data for schema ${schemaName}: ${error.message}`,
-      );
+      this.logger.error(`Failed to seed data for schema ${schemaName}: ${error.message}`);
       throw error;
     }
   }
@@ -131,7 +123,7 @@ export class DatabaseService {
       const adminRoleId = result[0]?.id;
 
       if (!adminRoleId) {
-        throw new Error("Admin role not found");
+        throw new Error('Admin role not found');
       }
 
       const createUserQuery = `
@@ -153,9 +145,7 @@ export class DatabaseService {
       this.logger.log(`Admin user created in schema ${schemaName}: ${userId}`);
       return userId;
     } catch (error) {
-      this.logger.error(
-        `Failed to create admin user in schema ${schemaName}: ${error.message}`,
-      );
+      this.logger.error(`Failed to create admin user in schema ${schemaName}: ${error.message}`);
       throw error;
     }
   }

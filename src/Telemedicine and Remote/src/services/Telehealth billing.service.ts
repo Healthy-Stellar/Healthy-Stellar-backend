@@ -1,15 +1,7 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Between } from "typeorm";
-import {
-  TelehealthBilling,
-  BillingStatus,
-  PayerType,
-} from "../entities/telehealth-billing.entity";
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between } from 'typeorm';
+import { TelehealthBilling, BillingStatus, PayerType } from '../entities/telehealth-billing.entity';
 
 export interface CreateBillingDto {
   patientId: string;
@@ -37,17 +29,14 @@ export class TelehealthBillingService {
     this.validateTelemedicineCodes(dto.cptCodes);
 
     // Calculate charges
-    const totalCharges = dto.cptCodes.reduce(
-      (sum, cpt) => sum + cpt.totalPrice,
-      0,
-    );
+    const totalCharges = dto.cptCodes.reduce((sum, cpt) => sum + cpt.totalPrice, 0);
 
     // Validate compliance
     const complianceChecks = this.performComplianceChecks(dto);
 
     const billing = this.billingRepository.create({
       ...dto,
-      placeOfService: "02", // Telemedicine code
+      placeOfService: '02', // Telemedicine code
       totalCharges,
       balanceDue: totalCharges,
       status: BillingStatus.PENDING,
@@ -62,7 +51,7 @@ export class TelehealthBillingService {
     const billing = await this.findOne(billingId);
 
     if (billing.status !== BillingStatus.PENDING) {
-      throw new BadRequestException("Claim has already been submitted");
+      throw new BadRequestException('Claim has already been submitted');
     }
 
     // Validate all required fields
@@ -88,8 +77,7 @@ export class TelehealthBillingService {
   ): Promise<TelehealthBilling> {
     const billing = await this.findOne(billingId);
 
-    const adjustments =
-      billing.totalCharges - insurancePayment - patientResponsibility;
+    const adjustments = billing.totalCharges - insurancePayment - patientResponsibility;
 
     billing.status = BillingStatus.APPROVED;
     billing.insurancePayment = insurancePayment;
@@ -114,14 +102,11 @@ export class TelehealthBillingService {
     return this.billingRepository.save(billing);
   }
 
-  async appealClaim(
-    billingId: string,
-    appealReason: string,
-  ): Promise<TelehealthBilling> {
+  async appealClaim(billingId: string, appealReason: string): Promise<TelehealthBilling> {
     const billing = await this.findOne(billingId);
 
     if (billing.status !== BillingStatus.DENIED) {
-      throw new BadRequestException("Only denied claims can be appealed");
+      throw new BadRequestException('Only denied claims can be appealed');
     }
 
     billing.status = BillingStatus.APPEALED;
@@ -136,7 +121,7 @@ export class TelehealthBillingService {
     billingId: string,
     amount: number,
     paymentMethod: string,
-    paidBy: "insurance" | "patient",
+    paidBy: 'insurance' | 'patient',
     transactionId?: string,
   ): Promise<TelehealthBilling> {
     const billing = await this.findOne(billingId);
@@ -167,7 +152,7 @@ export class TelehealthBillingService {
   async getPatientBilling(patientId: string): Promise<TelehealthBilling[]> {
     return this.billingRepository.find({
       where: { patientId },
-      order: { serviceDate: "DESC" },
+      order: { serviceDate: 'DESC' },
     });
   }
 
@@ -184,30 +169,19 @@ export class TelehealthBillingService {
 
     return this.billingRepository.find({
       where: whereClause,
-      order: { serviceDate: "DESC" },
+      order: { serviceDate: 'DESC' },
     });
   }
 
   async getOutstandingClaims(): Promise<TelehealthBilling[]> {
     return this.billingRepository.find({
-      where: [
-        { status: BillingStatus.SUBMITTED },
-        { status: BillingStatus.APPEALED },
-      ],
-      order: { claimSubmittedDate: "ASC" },
+      where: [{ status: BillingStatus.SUBMITTED }, { status: BillingStatus.APPEALED }],
+      order: { claimSubmittedDate: 'ASC' },
     });
   }
 
-  async generateRevenueReport(
-    providerId: string,
-    startDate: Date,
-    endDate: Date,
-  ): Promise<any> {
-    const billings = await this.getProviderBilling(
-      providerId,
-      startDate,
-      endDate,
-    );
+  async generateRevenueReport(providerId: string, startDate: Date, endDate: Date): Promise<any> {
+    const billings = await this.getProviderBilling(providerId, startDate, endDate);
 
     const report = {
       period: { startDate, endDate },
@@ -228,8 +202,7 @@ export class TelehealthBillingService {
       report.outstandingBalance += Number(billing.balanceDue);
 
       // Count by status
-      report.claimsByStatus[billing.status] =
-        (report.claimsByStatus[billing.status] || 0) + 1;
+      report.claimsByStatus[billing.status] = (report.claimsByStatus[billing.status] || 0) + 1;
 
       // Sum by payer type
       if (!report.payerBreakdown[billing.payerType]) {
@@ -240,18 +213,12 @@ export class TelehealthBillingService {
         };
       }
       report.payerBreakdown[billing.payerType].count++;
-      report.payerBreakdown[billing.payerType].charges += Number(
-        billing.totalCharges,
-      );
-      report.payerBreakdown[billing.payerType].payments += Number(
-        billing.amountPaid,
-      );
+      report.payerBreakdown[billing.payerType].charges += Number(billing.totalCharges);
+      report.payerBreakdown[billing.payerType].payments += Number(billing.amountPaid);
     });
 
     report.averageReimbursementRate =
-      report.totalCharges > 0
-        ? (report.totalPayments / report.totalCharges) * 100
-        : 0;
+      report.totalCharges > 0 ? (report.totalPayments / report.totalCharges) * 100 : 0;
 
     return report;
   }
@@ -276,35 +243,34 @@ export class TelehealthBillingService {
         deductible: 500,
         deductibleMet: 300,
       },
-      message: "Patient is eligible for telemedicine services",
+      message: 'Patient is eligible for telemedicine services',
     };
   }
 
   private validateTelemedicineCodes(cptCodes: any[]): void {
     // Common telemedicine CPT codes
     const validTelemedicineCodes = [
-      "99441",
-      "99442",
-      "99443", // Telephone E/M
-      "99421",
-      "99422",
-      "99423", // Online digital E/M
-      "99201",
-      "99202",
-      "99203",
-      "99204",
-      "99205", // New patient E/M (with modifier)
-      "99211",
-      "99212",
-      "99213",
-      "99214",
-      "99215", // Established patient E/M (with modifier)
+      '99441',
+      '99442',
+      '99443', // Telephone E/M
+      '99421',
+      '99422',
+      '99423', // Online digital E/M
+      '99201',
+      '99202',
+      '99203',
+      '99204',
+      '99205', // New patient E/M (with modifier)
+      '99211',
+      '99212',
+      '99213',
+      '99214',
+      '99215', // Established patient E/M (with modifier)
     ];
 
     cptCodes.forEach((cpt) => {
       // Check if code exists or has proper modifier
-      const hasTelemedicineModifier =
-        cpt.modifier?.includes("95") || cpt.modifier?.includes("GT");
+      const hasTelemedicineModifier = cpt.modifier?.includes('95') || cpt.modifier?.includes('GT');
       const isTelemedicineCode = validTelemedicineCodes.includes(cpt.code);
 
       if (!isTelemedicineCode && !hasTelemedicineModifier) {
@@ -329,9 +295,7 @@ export class TelehealthBillingService {
 
     // Verify modifiers
     const hasProperModifiers = dto.cptCodes.every(
-      (cpt) =>
-        cpt.modifier &&
-        (cpt.modifier.includes("95") || cpt.modifier.includes("GT")),
+      (cpt) => cpt.modifier && (cpt.modifier.includes('95') || cpt.modifier.includes('GT')),
     );
     checks.appropriateModifiersUsed = hasProperModifiers;
 
@@ -342,24 +306,19 @@ export class TelehealthBillingService {
 
   private validateClaimSubmission(billing: TelehealthBilling): void {
     if (!billing.cptCodes || billing.cptCodes.length === 0) {
-      throw new BadRequestException("CPT codes are required");
+      throw new BadRequestException('CPT codes are required');
     }
 
     if (!billing.diagnosisCodes || billing.diagnosisCodes.length === 0) {
-      throw new BadRequestException("Diagnosis codes are required");
+      throw new BadRequestException('Diagnosis codes are required');
     }
 
-    if (
-      billing.payerType === PayerType.INSURANCE &&
-      !billing.insuranceCompany
-    ) {
-      throw new BadRequestException("Insurance company is required");
+    if (billing.payerType === PayerType.INSURANCE && !billing.insuranceCompany) {
+      throw new BadRequestException('Insurance company is required');
     }
 
     if (!billing.isTelemedicineCompliant) {
-      throw new BadRequestException(
-        "Billing does not meet telemedicine compliance requirements",
-      );
+      throw new BadRequestException('Billing does not meet telemedicine compliance requirements');
     }
   }
 
@@ -379,10 +338,7 @@ export class TelehealthBillingService {
     return billing;
   }
 
-  async updateBilling(
-    id: string,
-    updates: Partial<TelehealthBilling>,
-  ): Promise<TelehealthBilling> {
+  async updateBilling(id: string, updates: Partial<TelehealthBilling>): Promise<TelehealthBilling> {
     const billing = await this.findOne(id);
 
     Object.assign(billing, updates);

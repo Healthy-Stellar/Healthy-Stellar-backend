@@ -41,16 +41,26 @@ export class DatabaseOptimizationService implements OnModuleInit {
   private async initializePerformanceMonitoring(): Promise<void> {
     try {
       // Enable pg_stat_statements for query performance tracking
-      await this.dataSource.query(`
+      await this.dataSource
+        .query(
+          `
         CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-      `).catch(() => {
-        this.logger.warn('pg_stat_statements extension not available - using fallback monitoring');
-      });
+      `,
+        )
+        .catch(() => {
+          this.logger.warn(
+            'pg_stat_statements extension not available - using fallback monitoring',
+          );
+        });
 
       // Set up statement-level statistics
-      await this.dataSource.query(`
+      await this.dataSource
+        .query(
+          `
         SET track_activities = on;
-      `).catch(() => {});
+      `,
+        )
+        .catch(() => {});
 
       this.logger.log('✅ Performance monitoring initialized');
     } catch (error) {
@@ -87,7 +97,8 @@ export class DatabaseOptimizationService implements OnModuleInit {
   private async analyzeTable(tableName: string): Promise<void> {
     try {
       // Get table statistics
-      const stats = await this.dataSource.query(`
+      const stats = await this.dataSource.query(
+        `
         SELECT 
           reltuples::bigint AS estimated_rows,
           pg_size_pretty(pg_total_relation_size(quote_ident($1))) AS total_size,
@@ -95,12 +106,14 @@ export class DatabaseOptimizationService implements OnModuleInit {
           pg_size_pretty(pg_indexes_size(quote_ident($1))) AS index_size
         FROM pg_class
         WHERE relname = $1;
-      `, [tableName]);
+      `,
+        [tableName],
+      );
 
       if (stats.length > 0 && stats[0].estimated_rows > 10000) {
         this.logger.log(
           `📊 Table "${tableName}": ${stats[0].estimated_rows} rows, ` +
-          `Data: ${stats[0].data_size}, Indexes: ${stats[0].index_size}`,
+            `Data: ${stats[0].data_size}, Indexes: ${stats[0].index_size}`,
         );
       }
     } catch (error) {
@@ -194,9 +207,7 @@ export class DatabaseOptimizationService implements OnModuleInit {
   /**
    * Get slow query report for healthcare operations analysis.
    */
-  async getSlowQueryReport(
-    hours: number = 24,
-  ): Promise<{
+  async getSlowQueryReport(hours: number = 24): Promise<{
     totalSlowQueries: number;
     averageExecutionTimeMs: number;
     topSlowQueries: QueryPerformanceLog[];

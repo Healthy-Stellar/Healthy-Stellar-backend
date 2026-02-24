@@ -33,7 +33,7 @@ export class PatientCounselingService {
   async logCounselingSession(sessionDto: CounselingSessionDto): Promise<PatientCounselingLog> {
     // Verify prescription exists
     const prescription = await this.prescriptionRepository.findOne({
-      where: { id: sessionDto.prescriptionId }
+      where: { id: sessionDto.prescriptionId },
     });
 
     if (!prescription) {
@@ -48,23 +48,23 @@ export class PatientCounselingService {
     return await this.counselingRepository.find({
       where: { patientId },
       relations: ['prescription'],
-      order: { counselingDate: 'DESC' }
+      order: { counselingDate: 'DESC' },
     });
   }
 
   async getCounselingByPrescription(prescriptionId: string): Promise<PatientCounselingLog[]> {
     return await this.counselingRepository.find({
       where: { prescriptionId },
-      order: { counselingDate: 'DESC' }
+      order: { counselingDate: 'DESC' },
     });
   }
 
   async isPrescriptionCounseled(prescriptionId: string): Promise<boolean> {
     const counselingLog = await this.counselingRepository.findOne({
-      where: { 
+      where: {
         prescriptionId,
-        status: 'completed'
-      }
+        status: 'completed',
+      },
     });
 
     return !!counselingLog;
@@ -73,7 +73,7 @@ export class PatientCounselingService {
   async getRequiredCounselingTopics(prescriptionId: string): Promise<string[]> {
     const prescription = await this.prescriptionRepository.findOne({
       where: { id: prescriptionId },
-      relations: ['items', 'items.drug']
+      relations: ['items', 'items.drug'],
     });
 
     if (!prescription) {
@@ -131,7 +131,7 @@ export class PatientCounselingService {
     missingTopics: string[];
   }> {
     const prescription = await this.prescriptionRepository.findOne({
-      where: { id: prescriptionId }
+      where: { id: prescriptionId },
     });
 
     if (!prescription) {
@@ -140,28 +140,31 @@ export class PatientCounselingService {
 
     const isRequired = prescription.requiresCounseling;
     const requiredTopics = await this.getRequiredCounselingTopics(prescriptionId);
-    
+
     const counselingLogs = await this.getCounselingByPrescription(prescriptionId);
-    const completedLogs = counselingLogs.filter(log => log.status === 'completed');
-    
+    const completedLogs = counselingLogs.filter((log) => log.status === 'completed');
+
     const completedTopics = new Set<string>();
-    completedLogs.forEach(log => {
-      log.counselingTopics.forEach(topic => completedTopics.add(topic));
+    completedLogs.forEach((log) => {
+      log.counselingTopics.forEach((topic) => completedTopics.add(topic));
     });
 
     const completedTopicsArray = Array.from(completedTopics);
-    const missingTopics = requiredTopics.filter(topic => !completedTopics.has(topic));
+    const missingTopics = requiredTopics.filter((topic) => !completedTopics.has(topic));
 
     return {
       isRequired,
       isCompleted: isRequired ? missingTopics.length === 0 : true,
       requiredTopics,
       completedTopics: completedTopicsArray,
-      missingTopics
+      missingTopics,
     };
   }
 
-  async getCounselingStatistics(startDate?: Date, endDate?: Date): Promise<{
+  async getCounselingStatistics(
+    startDate?: Date,
+    endDate?: Date,
+  ): Promise<{
     totalSessions: number;
     completedSessions: number;
     refusedSessions: number;
@@ -174,24 +177,24 @@ export class PatientCounselingService {
     if (startDate && endDate) {
       query = query.where('counseling.counselingDate BETWEEN :startDate AND :endDate', {
         startDate,
-        endDate
+        endDate,
       });
     }
 
     const sessions = await query.getMany();
 
     const totalSessions = sessions.length;
-    const completedSessions = sessions.filter(s => s.status === 'completed').length;
-    const refusedSessions = sessions.filter(s => s.status === 'refused').length;
-    const deferredSessions = sessions.filter(s => s.status === 'deferred').length;
+    const completedSessions = sessions.filter((s) => s.status === 'completed').length;
+    const refusedSessions = sessions.filter((s) => s.status === 'refused').length;
+    const deferredSessions = sessions.filter((s) => s.status === 'deferred').length;
 
     const totalDuration = sessions.reduce((sum, s) => sum + s.durationMinutes, 0);
     const averageDuration = totalSessions > 0 ? totalDuration / totalSessions : 0;
 
     // Count counseling topics
     const topicCounts = new Map<string, number>();
-    sessions.forEach(session => {
-      session.counselingTopics.forEach(topic => {
+    sessions.forEach((session) => {
+      session.counselingTopics.forEach((topic) => {
         topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
       });
     });
@@ -207,7 +210,7 @@ export class PatientCounselingService {
       refusedSessions,
       deferredSessions,
       averageDuration,
-      topCounselingTopics
+      topCounselingTopics,
     };
   }
 }

@@ -8,10 +8,7 @@ import {
   IncidentSeverity,
   IncidentStatus,
 } from '../../entities/security-incident.entity';
-import {
-  BreachNotification,
-  NotificationStatus,
-} from '../../entities/breach-notification.entity';
+import { BreachNotification, NotificationStatus } from '../../entities/breach-notification.entity';
 
 const makeIncident = (overrides: Partial<SecurityIncident> = {}): SecurityIncident => ({
   id: 'incident-uuid-1',
@@ -182,11 +179,13 @@ describe('IncidentService', () => {
         affectedPatientsCount: 600,
       });
 
-      const savedNotifications = notificationRepo.save.mock.calls[0][0] as Array<Partial<BreachNotification>>;
-      const hhsNotification = savedNotifications.find(n => n.channel === 'HHS_PORTAL');
+      const savedNotifications = notificationRepo.save.mock.calls[0][0] as Array<
+        Partial<BreachNotification>
+      >;
+      const hhsNotification = savedNotifications.find((n) => n.channel === 'HHS_PORTAL');
       expect(hhsNotification).toBeDefined();
 
-      const mediaNotification = savedNotifications.find(n => n.channel === 'MEDIA');
+      const mediaNotification = savedNotifications.find((n) => n.channel === 'MEDIA');
       expect(mediaNotification).toBeDefined();
     });
 
@@ -205,7 +204,9 @@ describe('IncidentService', () => {
         affectedPatientsCount: 5,
       });
 
-      const savedNotifications = notificationRepo.save.mock.calls[0][0] as Array<Partial<BreachNotification>>;
+      const savedNotifications = notificationRepo.save.mock.calls[0][0] as Array<
+        Partial<BreachNotification>
+      >;
       for (const n of savedNotifications) {
         expect(n.deadlineAt).toBeDefined();
         const days = (n.deadlineAt!.getTime() - before.getTime()) / (1000 * 60 * 60 * 24);
@@ -236,7 +237,9 @@ describe('IncidentService', () => {
 
   describe('updateIncident', () => {
     it('should update incident status and append timeline', async () => {
-      const incident = makeIncident({ timeline: [{ timestamp: new Date(), event: 'Created', actor: 'SYSTEM' }] });
+      const incident = makeIncident({
+        timeline: [{ timestamp: new Date(), event: 'Created', actor: 'SYSTEM' }],
+      });
       incidentRepo.findOneOrFail.mockResolvedValue(incident);
       incidentRepo.save.mockResolvedValue({ ...incident, status: IncidentStatus.CONTAINED });
 
@@ -261,7 +264,11 @@ describe('IncidentService', () => {
       incidentRepo.findOneOrFail.mockResolvedValue(incident);
       incidentRepo.save.mockResolvedValue(incident);
 
-      await service.updateIncident('incident-uuid-1', { status: IncidentStatus.CONTAINED }, 'actor');
+      await service.updateIncident(
+        'incident-uuid-1',
+        { status: IncidentStatus.CONTAINED },
+        'actor',
+      );
 
       expect(incidentRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ containedAt: expect.any(Date) }),
@@ -273,7 +280,11 @@ describe('IncidentService', () => {
       incidentRepo.findOneOrFail.mockResolvedValue(incident);
       incidentRepo.save.mockResolvedValue(incident);
 
-      await service.updateIncident('incident-uuid-1', { status: IncidentStatus.REMEDIATED }, 'actor');
+      await service.updateIncident(
+        'incident-uuid-1',
+        { status: IncidentStatus.REMEDIATED },
+        'actor',
+      );
 
       expect(incidentRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ remediatedAt: expect.any(Date) }),

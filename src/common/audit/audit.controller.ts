@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  Query,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { AuditService } from './audit.service';
@@ -73,11 +67,8 @@ export class AuditController {
 
     const csv = this.auditService.toCsv(data);
 
-    res!.setHeader('Content-Type', 'text/csv');
-    res!.setHeader(
-      'Content-Disposition',
-      `attachment; filename="audit_${Date.now()}.csv"`,
-    );
-    res!.send(csv);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="audit_${Date.now()}.csv"`);
+    res.send(csv);
   }
 }

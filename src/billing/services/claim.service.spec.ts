@@ -64,9 +64,7 @@ describe('ClaimService', () => {
       serviceStartDate: '2024-01-15',
       serviceEndDate: '2024-01-15',
       diagnosisCodes: [{ code: 'J06.9', sequence: 1 }],
-      procedureCodes: [
-        { code: '99213', units: 1, charge: 150, diagnosisPointers: [1] },
-      ],
+      procedureCodes: [{ code: '99213', units: 1, charge: 150, diagnosisPointers: [1] }],
       provider: { npi: '1234567890', name: 'Dr. Smith', taxId: '123456789' },
       subscriber: { memberId: 'ABC123', name: 'John Doe', dob: '1980-01-01', gender: 'M' },
     };

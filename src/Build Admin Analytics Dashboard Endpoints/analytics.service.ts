@@ -1,10 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { AnalyticsRepository } from './analytics.repository';
-import {
-  OverviewMetrics,
-  ActivityMetrics,
-  TopProvider,
-} from './dto/activity-query.dto';
+import { OverviewMetrics, ActivityMetrics, TopProvider } from './dto/activity-query.dto';
 
 const DEFAULT_RANGE_DAYS = 30;
 
@@ -20,21 +16,16 @@ export class AnalyticsService {
     const toDate = to ? new Date(to) : new Date();
     const fromDate = from
       ? new Date(from)
-      : new Date(
-          Date.now() - DEFAULT_RANGE_DAYS * 24 * 60 * 60 * 1000,
-        );
+      : new Date(Date.now() - DEFAULT_RANGE_DAYS * 24 * 60 * 60 * 1000);
 
     if (fromDate > toDate) {
       throw new BadRequestException('`from` must be before `to`');
     }
 
     // Guard against absurdly wide ranges that would blow the SLA
-    const diffDays =
-      (toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24);
+    const diffDays = (toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24);
     if (diffDays > 366) {
-      throw new BadRequestException(
-        'Date range cannot exceed 366 days. Use a narrower window.',
-      );
+      throw new BadRequestException('Date range cannot exceed 366 days. Use a narrower window.');
     }
 
     const series = await this.repo.getDailyActivity(fromDate, toDate);

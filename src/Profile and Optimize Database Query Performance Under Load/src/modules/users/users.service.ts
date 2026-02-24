@@ -1,7 +1,7 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { User } from "./entities/user.entity";
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { User } from './entities/user.entity';
 
 /**
  * Users Service
@@ -78,15 +78,12 @@ export class UsersService {
    * OPTIMIZED:
    * - Uses indexed status column
    */
-  async findActive(
-    page: number = 1,
-    limit: number = 20,
-  ): Promise<{ data: User[]; total: number }> {
+  async findActive(page: number = 1, limit: number = 20): Promise<{ data: User[]; total: number }> {
     const startTime = Date.now();
 
     const [data, total] = await this.userRepository.findAndCount({
-      where: { status: "active" },
-      order: { createdAt: "DESC" },
+      where: { status: 'active' },
+      order: { createdAt: 'DESC' },
       take: limit,
       skip: (page - 1) * limit,
     });

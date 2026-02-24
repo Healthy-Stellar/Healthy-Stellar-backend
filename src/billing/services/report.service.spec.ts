@@ -93,7 +93,9 @@ describe('ReportService', () => {
           providerId: 'prov-1',
           providerName: 'Dr. Smith',
           totalPayments: 700,
-          lineItems: [{ cptCode: '99213', cptDescription: 'Office visit', totalCharge: 150, paidAmount: 100 }],
+          lineItems: [
+            { cptCode: '99213', cptDescription: 'Office visit', totalCharge: 150, paidAmount: 100 },
+          ],
         },
       ];
       const mockClaims = [
@@ -107,9 +109,7 @@ describe('ReportService', () => {
           insurance: { payerName: 'BCBS', payerType: 'commercial' },
         },
       ];
-      const mockPayments = [
-        { amount: 800, status: PaymentStatus.COMPLETED },
-      ];
+      const mockPayments = [{ amount: 800, status: PaymentStatus.COMPLETED }];
       const mockDenials = [
         { primaryReason: DenialReason.NOT_MEDICALLY_NECESSARY, deniedAmount: 200 },
       ];
@@ -142,9 +142,27 @@ describe('ReportService', () => {
   describe('getARAgingReport', () => {
     it('should return AR aging breakdown', async () => {
       const mockBillings = [
-        { id: '1', patientId: 'p1', invoiceNumber: 'INV-001', serviceDate: new Date(), balance: 100 },
-        { id: '2', patientId: 'p2', invoiceNumber: 'INV-002', serviceDate: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000), balance: 200 },
-        { id: '3', patientId: 'p3', invoiceNumber: 'INV-003', serviceDate: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000), balance: 300 },
+        {
+          id: '1',
+          patientId: 'p1',
+          invoiceNumber: 'INV-001',
+          serviceDate: new Date(),
+          balance: 100,
+        },
+        {
+          id: '2',
+          patientId: 'p2',
+          invoiceNumber: 'INV-002',
+          serviceDate: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000),
+          balance: 200,
+        },
+        {
+          id: '3',
+          patientId: 'p3',
+          invoiceNumber: 'INV-003',
+          serviceDate: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000),
+          balance: 300,
+        },
       ];
       mockBillingRepository.find.mockResolvedValue(mockBillings);
 

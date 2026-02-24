@@ -1,5 +1,5 @@
-import { Injectable } from "@nestjs/common";
-import * as crypto from "crypto";
+import { Injectable } from '@nestjs/common';
+import * as crypto from 'crypto';
 
 export interface HipaaAuditLog {
   resourceType: string;
@@ -21,34 +21,33 @@ export interface PatientConsent {
 
 @Injectable()
 export class HipaaComplianceService {
-  private encryptionKey =
-    process.env.ENCRYPTION_KEY || "default-key-change-in-production";
+  private encryptionKey = process.env.ENCRYPTION_KEY || 'default-key-change-in-production';
   private auditLogs: HipaaAuditLog[] = []; // In production: use database
   private patientConsents: Map<string, PatientConsent[]> = new Map();
 
   // Encryption/Decryption for PHI
   encryptPHI(data: any): string {
-    const algorithm = "aes-256-cbc";
-    const key = crypto.scryptSync(this.encryptionKey, "salt", 32);
+    const algorithm = 'aes-256-cbc';
+    const key = crypto.scryptSync(this.encryptionKey, 'salt', 32);
     const iv = crypto.randomBytes(16);
 
     const cipher = crypto.createCipheriv(algorithm, key, iv);
-    let encrypted = cipher.update(JSON.stringify(data), "utf8", "hex");
-    encrypted += cipher.final("hex");
+    let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'hex');
+    encrypted += cipher.final('hex');
 
-    return `${iv.toString("hex")}:${encrypted}`;
+    return `${iv.toString('hex')}:${encrypted}`;
   }
 
   decryptPHI(encryptedData: string): any {
-    const algorithm = "aes-256-cbc";
-    const key = crypto.scryptSync(this.encryptionKey, "salt", 32);
+    const algorithm = 'aes-256-cbc';
+    const key = crypto.scryptSync(this.encryptionKey, 'salt', 32);
 
-    const [ivHex, encrypted] = encryptedData.split(":");
-    const iv = Buffer.from(ivHex, "hex");
+    const [ivHex, encrypted] = encryptedData.split(':');
+    const iv = Buffer.from(ivHex, 'hex');
 
     const decipher = crypto.createDecipheriv(algorithm, key, iv);
-    let decrypted = decipher.update(encrypted, "hex", "utf8");
-    decrypted += decipher.final("utf8");
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
 
     return JSON.parse(decrypted);
   }
@@ -101,17 +100,17 @@ export class HipaaComplianceService {
     this.patientConsents.set(consent.patientId, consents);
 
     await this.logAccess({
-      resourceType: "PatientConsent",
+      resourceType: 'PatientConsent',
       resourceId: consent.patientId,
-      action: "CONSENT_RECORDED",
-      userId: "system",
+      action: 'CONSENT_RECORDED',
+      userId: 'system',
       timestamp: new Date(),
     });
   }
 
   async verifyPatientConsent(
     patientId: string,
-    consentType: string = "telemedicine",
+    consentType: string = 'telemedicine',
   ): Promise<boolean> {
     const consents = this.patientConsents.get(patientId) || [];
 
@@ -145,22 +144,22 @@ export class HipaaComplianceService {
 
     // Remove direct identifiers (HIPAA Safe Harbor method)
     const identifiers = [
-      "name",
-      "address",
-      "dateOfBirth",
-      "phoneNumber",
-      "email",
-      "ssn",
-      "medicalRecordNumber",
-      "accountNumber",
-      "certificateNumber",
-      "vehicleIdentifier",
-      "deviceIdentifier",
-      "webUrl",
-      "ipAddress",
-      "biometricIdentifier",
-      "facePhoto",
-      "otherUniqueIdentifier",
+      'name',
+      'address',
+      'dateOfBirth',
+      'phoneNumber',
+      'email',
+      'ssn',
+      'medicalRecordNumber',
+      'accountNumber',
+      'certificateNumber',
+      'vehicleIdentifier',
+      'deviceIdentifier',
+      'webUrl',
+      'ipAddress',
+      'biometricIdentifier',
+      'facePhoto',
+      'otherUniqueIdentifier',
     ];
 
     identifiers.forEach((identifier) => {
@@ -171,7 +170,7 @@ export class HipaaComplianceService {
 
     // Age over 89 should be aggregated
     if (deidentified.age && deidentified.age > 89) {
-      deidentified.age = "90+";
+      deidentified.age = '90+';
     }
 
     // Dates should be limited to year only
@@ -227,10 +226,10 @@ export class HipaaComplianceService {
       if (count > 100) {
         // Threshold
         breaches.push({
-          type: "UNUSUAL_ACCESS_VOLUME",
+          type: 'UNUSUAL_ACCESS_VOLUME',
           userId,
           accessCount: count,
-          severity: "HIGH",
+          severity: 'HIGH',
         });
       }
     });
@@ -240,10 +239,10 @@ export class HipaaComplianceService {
       const hour = log.timestamp.getHours();
       if (hour < 6 || hour > 22) {
         breaches.push({
-          type: "AFTER_HOURS_ACCESS",
+          type: 'AFTER_HOURS_ACCESS',
           userId: log.userId,
           timestamp: log.timestamp,
-          severity: "MEDIUM",
+          severity: 'MEDIUM',
         });
       }
     });
@@ -256,12 +255,7 @@ export class HipaaComplianceService {
 
   // Generate HIPAA Compliance Report
   async generateComplianceReport(startDate: Date, endDate: Date): Promise<any> {
-    const logs = await this.getAuditLogs(
-      undefined,
-      undefined,
-      startDate,
-      endDate,
-    );
+    const logs = await this.getAuditLogs(undefined, undefined, startDate, endDate);
 
     const report = {
       period: { startDate, endDate },
@@ -280,8 +274,7 @@ export class HipaaComplianceService {
       report.accessByResourceType[log.resourceType] =
         (report.accessByResourceType[log.resourceType] || 0) + 1;
 
-      report.accessByAction[log.action] =
-        (report.accessByAction[log.action] || 0) + 1;
+      report.accessByAction[log.action] = (report.accessByAction[log.action] || 0) + 1;
     });
 
     // Detect breaches
@@ -321,12 +314,12 @@ export class HipaaComplianceService {
     reason: string,
   ): Promise<{ accessGranted: boolean; accessToken: string }> {
     // Generate temporary access token
-    const accessToken = crypto.randomBytes(32).toString("hex");
+    const accessToken = crypto.randomBytes(32).toString('hex');
 
     await this.logAccess({
-      resourceType: "EmergencyAccess",
+      resourceType: 'EmergencyAccess',
       resourceId: patientId,
-      action: "EMERGENCY_ACCESS_GRANTED",
+      action: 'EMERGENCY_ACCESS_GRANTED',
       userId,
       timestamp: new Date(),
     });
@@ -341,11 +334,11 @@ export class HipaaComplianceService {
   // Patient Rights Management
   async recordPatientRightsRequest(
     patientId: string,
-    requestType: "access" | "amendment" | "restriction" | "accounting",
+    requestType: 'access' | 'amendment' | 'restriction' | 'accounting',
     details: any,
   ): Promise<void> {
     await this.logAccess({
-      resourceType: "PatientRights",
+      resourceType: 'PatientRights',
       resourceId: patientId,
       action: `PATIENT_REQUEST_${requestType.toUpperCase()}`,
       userId: patientId,
@@ -358,16 +351,16 @@ export class HipaaComplianceService {
   // Security Risk Assessment
   async performRiskAssessment(): Promise<any> {
     return {
-      encryptionStatus: "COMPLIANT",
-      accessControlStatus: "COMPLIANT",
-      auditLogStatus: "COMPLIANT",
-      dataBackupStatus: "COMPLIANT",
-      incidentResponseStatus: "COMPLIANT",
+      encryptionStatus: 'COMPLIANT',
+      accessControlStatus: 'COMPLIANT',
+      auditLogStatus: 'COMPLIANT',
+      dataBackupStatus: 'COMPLIANT',
+      incidentResponseStatus: 'COMPLIANT',
       vulnerabilities: [],
       recommendations: [
-        "Implement multi-factor authentication for all users",
-        "Conduct quarterly security awareness training",
-        "Review and update incident response plan",
+        'Implement multi-factor authentication for all users',
+        'Conduct quarterly security awareness training',
+        'Review and update incident response plan',
       ],
     };
   }

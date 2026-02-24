@@ -1,4 +1,13 @@
-import { Controller, Post, Body, UseGuards, Get, Req, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  UseGuards,
+  Get,
+  Req,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Request } from 'express';
@@ -33,7 +42,12 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Invalid input' })
   @ApiResponse({ status: 409, description: 'Email already registered' })
   async register(@Body() registerDto: RegisterDto, @Req() req: Request): Promise<AuthResponse> {
-    return this.authService.register(registerDto, UserRole.PATIENT, this.getIpAddress(req), req.get('user-agent'));
+    return this.authService.register(
+      registerDto,
+      UserRole.PATIENT,
+      this.getIpAddress(req),
+      req.get('user-agent'),
+    );
   }
 
   /**
@@ -56,7 +70,12 @@ export class AuthController {
       throw new BadRequestException('Use /register endpoint for patient registration');
     }
 
-    const result = await this.authService.register(body, body.role, this.getIpAddress(req), req.get('user-agent'));
+    const result = await this.authService.register(
+      body,
+      body.role,
+      this.getIpAddress(req),
+      req.get('user-agent'),
+    );
 
     // Staff requires MFA setup immediately
     return result;
@@ -81,7 +100,9 @@ export class AuthController {
   @AuthRateLimit() // 10 requests per minute
   @ApiOperation({ summary: 'Refresh access token' })
   @ApiResponse({ status: 200, description: 'Token refreshed successfully' })
-  async refreshToken(@Body() refreshTokenDto: RefreshTokenDto): Promise<{ accessToken: string; expiresIn: number }> {
+  async refreshToken(
+    @Body() refreshTokenDto: RefreshTokenDto,
+  ): Promise<{ accessToken: string; expiresIn: number }> {
     const payload = this.authTokenService.verifyRefreshToken(refreshTokenDto.refreshToken);
 
     if (!payload) {
@@ -103,7 +124,11 @@ export class AuthController {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     const refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    const tokens = this.authTokenService.generateTokenPair(user, payload.sessionId, user.mfaEnabled);
+    const tokens = this.authTokenService.generateTokenPair(
+      user,
+      payload.sessionId,
+      user.mfaEnabled,
+    );
 
     await this.sessionManagementService.refreshSession(
       payload.sessionId,
@@ -126,7 +151,10 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Change user password' })
   @ApiResponse({ status: 200, description: 'Password changed successfully' })
-  async changePassword(@Body() changePasswordDto: ChangePasswordDto, @Req() req: Request): Promise<{ message: string }> {
+  async changePassword(
+    @Body() changePasswordDto: ChangePasswordDto,
+    @Req() req: Request,
+  ): Promise<{ message: string }> {
     const user = req.user as JwtPayload;
     await this.authService.changePassword(user.userId, changePasswordDto, this.getIpAddress(req));
     return { message: 'Password changed successfully' };

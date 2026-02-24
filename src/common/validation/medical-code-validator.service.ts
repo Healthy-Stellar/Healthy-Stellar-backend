@@ -36,33 +36,33 @@ export class MedicalCodeValidatorService {
 
   validateICD10Code(code: string): { valid: boolean; description?: string } {
     const normalized = code.trim().toUpperCase();
-    
+
     if (this.icd10Codes.has(normalized)) {
       return {
         valid: true,
-        description: this.icd10Codes.get(normalized)
+        description: this.icd10Codes.get(normalized),
       };
     }
 
     const icd10Pattern = /^[A-Z][0-9][A-Z0-9](\.[A-Z0-9]{1,2})?$/;
     return {
-      valid: icd10Pattern.test(normalized)
+      valid: icd10Pattern.test(normalized),
     };
   }
 
   validateCPTCode(code: string): { valid: boolean; description?: string } {
     const normalized = code.trim();
-    
+
     if (this.cptCodes.has(normalized)) {
       return {
         valid: true,
-        description: this.cptCodes.get(normalized)
+        description: this.cptCodes.get(normalized),
       };
     }
 
     const cptPattern = /^[0-9]{5}$/;
     return {
-      valid: cptPattern.test(normalized)
+      valid: cptPattern.test(normalized),
     };
   }
 

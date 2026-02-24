@@ -7,13 +7,7 @@ import { MedicalDevice } from './entities/medical-device.entity';
 @Global()
 @Module({
   imports: [TypeOrmModule.forFeature([MedicalDevice])],
-  providers: [
-    DeviceIntegrationService,
-    DevicePerformanceService,
-  ],
-  exports: [
-    DeviceIntegrationService,
-    DevicePerformanceService,
-  ],
+  providers: [DeviceIntegrationService, DevicePerformanceService],
+  exports: [DeviceIntegrationService, DevicePerformanceService],
 })
 export class DeviceIntegrationModule {}

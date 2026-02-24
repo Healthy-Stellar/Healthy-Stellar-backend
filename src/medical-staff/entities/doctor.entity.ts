@@ -1,4 +1,14 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne, ManyToMany, JoinTable } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  OneToMany,
+  ManyToOne,
+  ManyToMany,
+  JoinTable,
+} from 'typeorm';
 
 export enum SpecializationType {
   CARDIOLOGY = 'cardiology',
@@ -10,7 +20,7 @@ export enum SpecializationType {
   GENERAL_PRACTICE = 'general_practice',
   EMERGENCY_MEDICINE = 'emergency_medicine',
   ONCOLOGY = 'oncology',
-  RADIOLOGY = 'radiology'
+  RADIOLOGY = 'radiology',
 }
 
 export enum LicenseStatus {
@@ -18,14 +28,14 @@ export enum LicenseStatus {
   EXPIRED = 'expired',
   SUSPENDED = 'suspended',
   REVOKED = 'revoked',
-  PENDING_RENEWAL = 'pending_renewal'
+  PENDING_RENEWAL = 'pending_renewal',
 }
 
 export enum StaffStatus {
   ACTIVE = 'active',
   ON_LEAVE = 'on_leave',
   SUSPENDED = 'suspended',
-  TERMINATED = 'terminated'
+  TERMINATED = 'terminated',
 }
 
 @Entity('doctors')
@@ -82,19 +92,19 @@ export class Doctor {
     graduationYear: number;
   }[];
 
-  @ManyToOne(() => Department, department => department.doctors)
+  @ManyToOne(() => Department, (department) => department.doctors)
   department: Department;
 
-  @OneToMany(() => Schedule, schedule => schedule.doctor)
+  @OneToMany(() => Schedule, (schedule) => schedule.doctor)
   schedules: Schedule[];
 
-  @OneToMany(() => PerformanceMetric, metric => metric.doctor)
+  @OneToMany(() => PerformanceMetric, (metric) => metric.doctor)
   performanceMetrics: PerformanceMetric[];
 
-  @OneToMany(() => ContinuingEducation, education => education.doctor)
+  @OneToMany(() => ContinuingEducation, (education) => education.doctor)
   continuingEducation: ContinuingEducation[];
 
-  @ManyToMany(() => Specialty, specialty => specialty.doctors)
+  @ManyToMany(() => Specialty, (specialty) => specialty.doctors)
   @JoinTable()
   specialties: Specialty[];
 

@@ -1,4 +1,14 @@
-import { IsString, IsOptional, IsDateString, IsEnum, IsEmail, IsArray, IsUUID, Length, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsDateString,
+  IsEnum,
+  IsEmail,
+  IsArray,
+  IsUUID,
+  Length,
+  MaxLength,
+} from 'class-validator';
 
 export class CreatePatientDto {
   // -----------------------------

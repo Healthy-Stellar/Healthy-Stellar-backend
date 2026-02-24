@@ -48,7 +48,8 @@ export class IndexManagerService {
         tableName: 'patient',
         columnNames: ['mrn'],
         indexType: 'btree',
-        reason: 'Medical Record Number is the primary patient identifier used in all hospital operations',
+        reason:
+          'Medical Record Number is the primary patient identifier used in all hospital operations',
         priority: 'critical',
         ddlStatement: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_patient_mrn ON patient(mrn);',
       },
@@ -58,7 +59,8 @@ export class IndexManagerService {
         indexType: 'btree',
         reason: 'Patient name search is the most common lookup in clinical workflows',
         priority: 'high',
-        ddlStatement: 'CREATE INDEX IF NOT EXISTS idx_patient_name ON patient(last_name, first_name);',
+        ddlStatement:
+          'CREATE INDEX IF NOT EXISTS idx_patient_name ON patient(last_name, first_name);',
       },
       {
         tableName: 'patient',
@@ -83,7 +85,8 @@ export class IndexManagerService {
         indexType: 'btree',
         reason: 'National ID is used for unique patient identification and deduplication',
         priority: 'high',
-        ddlStatement: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_patient_national_id ON patient(national_id) WHERE national_id IS NOT NULL;',
+        ddlStatement:
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_patient_national_id ON patient(national_id) WHERE national_id IS NOT NULL;',
       },
 
       // Medical records indexes
@@ -160,7 +163,10 @@ export class IndexManagerService {
 
     // Check which indexes already exist
     for (const recommendation of healthcareIndexes) {
-      const exists = await this.checkIndexExists(recommendation.tableName, recommendation.columnNames);
+      const exists = await this.checkIndexExists(
+        recommendation.tableName,
+        recommendation.columnNames,
+      );
       if (!exists) {
         recommendations.push(recommendation);
       }

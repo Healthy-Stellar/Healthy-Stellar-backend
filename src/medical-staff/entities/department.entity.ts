@@ -12,7 +12,7 @@ export class Department {
   @Column({ nullable: true })
   headOfDepartment: string;
 
-  @OneToMany(() => Doctor, doctor => doctor.department)
+  @OneToMany(() => Doctor, (doctor) => doctor.department)
   doctors: Doctor[];
 
   @CreateDateColumn()

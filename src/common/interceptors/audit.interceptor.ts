@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  NestInterceptor,
-  ExecutionContext,
-  CallHandler,
-} from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
 import { Observable, throwError } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { AuditLogService } from '../services/audit-log.service';
@@ -98,7 +93,7 @@ export class AuditInterceptor implements NestInterceptor {
   private extractEntityId(url: string, response: any): string | undefined {
     const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
     const match = url.match(uuidRegex);
-    
+
     if (match) {
       return match[0];
     }

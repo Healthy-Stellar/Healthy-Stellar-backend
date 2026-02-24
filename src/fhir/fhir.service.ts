@@ -14,7 +14,7 @@ export class FhirService {
     @InjectRepository(Patient) private patientRepo: Repository<Patient>,
     @InjectRepository(MedicalRecord) private recordRepo: Repository<MedicalRecord>,
     @InjectRepository(MedicalRecordConsent) private consentRepo: Repository<MedicalRecordConsent>,
-    @InjectRepository(MedicalHistory) private historyRepo: Repository<MedicalHistory>
+    @InjectRepository(MedicalHistory) private historyRepo: Repository<MedicalHistory>,
   ) {}
 
   getCapabilityStatement(): FhirCapabilityStatement {
@@ -25,15 +25,17 @@ export class FhirService {
       kind: 'instance',
       fhirVersion: '4.0.1',
       format: ['application/fhir+json'],
-      rest: [{
-        mode: 'server',
-        resource: [
-          { type: 'Patient', interaction: [{ code: 'read' }, { code: 'search-type' }] },
-          { type: 'DocumentReference', interaction: [{ code: 'read' }, { code: 'search-type' }] },
-          { type: 'Consent', interaction: [{ code: 'read' }] },
-          { type: 'Provenance', interaction: [{ code: 'search-type' }] }
-        ]
-      }]
+      rest: [
+        {
+          mode: 'server',
+          resource: [
+            { type: 'Patient', interaction: [{ code: 'read' }, { code: 'search-type' }] },
+            { type: 'DocumentReference', interaction: [{ code: 'read' }, { code: 'search-type' }] },
+            { type: 'Consent', interaction: [{ code: 'read' }] },
+            { type: 'Provenance', interaction: [{ code: 'search-type' }] },
+          ],
+        },
+      ],
     };
   }
 
@@ -45,7 +47,11 @@ export class FhirService {
 
   async getPatientDocuments(patientId: string) {
     const records = await this.recordRepo.find({ where: { patientId } });
-    return { resourceType: 'Bundle', type: 'searchset', entry: records.map(r => ({ resource: FhirMapper.toDocumentReference(r) })) };
+    return {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: records.map((r) => ({ resource: FhirMapper.toDocumentReference(r) })),
+    };
   }
 
   async getDocumentReference(id: string) {
@@ -63,6 +69,10 @@ export class FhirService {
   async getProvenance(target: string) {
     const recordId = target.replace('DocumentReference/', '');
     const history = await this.historyRepo.find({ where: { medicalRecordId: recordId } });
-    return { resourceType: 'Bundle', type: 'searchset', entry: FhirMapper.toProvenance(history).map(p => ({ resource: p })) };
+    return {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: FhirMapper.toProvenance(history).map((p) => ({ resource: p })),
+    };
   }
 }

@@ -1,4 +1,12 @@
-import { IsOptional, IsInt, IsString, IsBoolean, IsDateString, IsDecimal, Min } from 'class-validator';
+import {
+  IsOptional,
+  IsInt,
+  IsString,
+  IsBoolean,
+  IsDateString,
+  IsDecimal,
+  Min,
+} from 'class-validator';
 
 export class UpdateInventoryDto {
   @IsOptional()

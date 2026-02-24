@@ -2,7 +2,10 @@ import { IsOptional, IsArray, IsIn } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class BulkExportQueryDto {
-  @ApiPropertyOptional({ description: 'Resource types to export', example: 'Patient,DocumentReference' })
+  @ApiPropertyOptional({
+    description: 'Resource types to export',
+    example: 'Patient,DocumentReference',
+  })
   @IsOptional()
   @IsArray()
   @IsIn(['Patient', 'DocumentReference', 'Consent', 'Provenance'], { each: true })

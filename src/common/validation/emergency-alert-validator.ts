@@ -14,10 +14,8 @@ export interface EmergencyAlert {
 export class EmergencyAlertValidator {
   validateAndProcessEmergencyAlert(data: any): EmergencyAlert | null {
     const text = (data.description || '').toUpperCase();
-    
-    const matchedKeyword = EMERGENCY_ALERT_KEYWORDS.find(keyword =>
-      text.includes(keyword)
-    );
+
+    const matchedKeyword = EMERGENCY_ALERT_KEYWORDS.find((keyword) => text.includes(keyword));
 
     if (!matchedKeyword) {
       return null;
@@ -29,19 +27,14 @@ export class EmergencyAlertValidator {
       severity: this.determineSeverity(matchedKeyword),
       description: data.description,
       triggeredBy: data.triggeredBy || 'SYSTEM',
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
     return alert;
   }
 
   private determineSeverity(keyword: string): 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' {
-    const criticalKeywords = [
-      'MYOCARDIAL_INFARCTION',
-      'STROKE',
-      'SEPSIS',
-      'ANAPHYLAXIS'
-    ];
+    const criticalKeywords = ['MYOCARDIAL_INFARCTION', 'STROKE', 'SEPSIS', 'ANAPHYLAXIS'];
 
     return criticalKeywords.includes(keyword) ? 'CRITICAL' : 'HIGH';
   }
@@ -54,9 +47,9 @@ export class EmergencyAlertValidator {
       vitals.systolicBP < 90 || vitals.systolicBP > 180,
       vitals.respiratoryRate < 10 || vitals.respiratoryRate > 30,
       vitals.oxygenSaturation < 85,
-      vitals.temperature < 35 || vitals.temperature > 40
+      vitals.temperature < 35 || vitals.temperature > 40,
     ];
 
-    return criticalConditions.some(condition => condition === true);
+    return criticalConditions.some((condition) => condition === true);
   }
 }

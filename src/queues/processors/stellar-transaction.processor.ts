@@ -13,9 +13,7 @@ export class StellarTransactionProcessor extends WorkerHost {
   async process(job: Job<StellarTransactionJobDto>): Promise<any> {
     const { operationType, params, initiatedBy, correlationId } = job.data;
 
-    this.logger.log(
-      `Processing ${operationType} job ${job.id} (correlation: ${correlationId})`,
-    );
+    this.logger.log(`Processing ${operationType} job ${job.id} (correlation: ${correlationId})`);
 
     try {
       switch (operationType) {
@@ -29,10 +27,7 @@ export class StellarTransactionProcessor extends WorkerHost {
           throw new Error(`Unknown operation type: ${operationType}`);
       }
     } catch (error) {
-      this.logger.error(
-        `Job ${job.id} failed: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Job ${job.id} failed: ${error.message}`, error.stack);
       throw error;
     }
   }

@@ -6,17 +6,7 @@ import { CacheWarmupService } from './cache-warmup.service';
 
 @Global()
 @Module({
-  providers: [
-    MedicalCacheService,
-    PatientCacheService,
-    RealTimeDataService,
-    CacheWarmupService,
-  ],
-  exports: [
-    MedicalCacheService,
-    PatientCacheService,
-    RealTimeDataService,
-    CacheWarmupService,
-  ],
+  providers: [MedicalCacheService, PatientCacheService, RealTimeDataService, CacheWarmupService],
+  exports: [MedicalCacheService, PatientCacheService, RealTimeDataService, CacheWarmupService],
 })
 export class MedicalCacheModule {}

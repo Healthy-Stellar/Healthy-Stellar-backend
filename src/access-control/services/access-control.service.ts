@@ -34,7 +34,9 @@ export class AccessControlService {
     const grantInputs = await this.findRelevantActiveGrants(patientId, dto.granteeId);
 
     for (const grant of grantInputs) {
-      const hasMatchingRecord = grant.recordIds.some((recordId) => dto.recordIds.includes(recordId));
+      const hasMatchingRecord = grant.recordIds.some((recordId) =>
+        dto.recordIds.includes(recordId),
+      );
       if (hasMatchingRecord) {
         throw new ConflictException(
           `Active grant already exists for patient ${patientId}, grantee ${dto.granteeId}, and record overlap`,
@@ -108,7 +110,10 @@ export class AccessControlService {
     return finalGrant;
   }
 
-  async createEmergencyAccess(requestedBy: string, dto: CreateEmergencyAccessDto): Promise<AccessGrant> {
+  async createEmergencyAccess(
+    requestedBy: string,
+    dto: CreateEmergencyAccessDto,
+  ): Promise<AccessGrant> {
     if (!dto.emergencyReason || dto.emergencyReason.trim().length < 50) {
       throw new BadRequestException('emergencyReason must be at least 50 characters');
     }
@@ -181,7 +186,9 @@ export class AccessControlService {
       },
     });
 
-    this.logger.warn(`Emergency access granted: ${saved.id} for patient ${dto.patientId} by ${requestedBy}`);
+    this.logger.warn(
+      `Emergency access granted: ${saved.id} for patient ${dto.patientId} by ${requestedBy}`,
+    );
     return saved;
   }
 
@@ -310,7 +317,10 @@ export class AccessControlService {
     return activeGrants;
   }
 
-  private async findRelevantActiveGrants(patientId: string, granteeId: string): Promise<AccessGrant[]> {
+  private async findRelevantActiveGrants(
+    patientId: string,
+    granteeId: string,
+  ): Promise<AccessGrant[]> {
     return this.grantRepository.find({
       where: {
         patientId,

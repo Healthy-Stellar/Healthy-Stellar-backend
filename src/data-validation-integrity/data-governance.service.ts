@@ -216,12 +216,12 @@ export class DataGovernanceService {
     // HIPAA: Medical records must be retained for 6 years from date of creation
     // or last effective date, whichever is later
     const retentionPeriods: Record<string, number> = {
-      encounter: 6 * 365,    // 6 years
-      lab_result: 6 * 365,   // 6 years
-      medication: 6 * 365,   // 6 years
-      imaging: 7 * 365,      // 7 years
+      encounter: 6 * 365, // 6 years
+      lab_result: 6 * 365, // 6 years
+      medication: 6 * 365, // 6 years
+      imaging: 7 * 365, // 7 years
       mental_health: 7 * 365, // often longer for mental health
-      pediatric: 21 * 365,   // until patient turns 21
+      pediatric: 21 * 365, // until patient turns 21
     };
 
     const retentionDays = retentionPeriods[recordType] || retentionPeriods.encounter;

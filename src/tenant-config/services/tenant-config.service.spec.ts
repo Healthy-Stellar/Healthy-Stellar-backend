@@ -75,9 +75,7 @@ describe('TenantConfigService', () => {
     }).compile();
 
     service = module.get<TenantConfigService>(TenantConfigService);
-    repository = module.get<Repository<TenantConfig>>(
-      getRepositoryToken(TenantConfig),
-    );
+    repository = module.get<Repository<TenantConfig>>(getRepositoryToken(TenantConfig));
     auditLogService = module.get<AuditLogService>(AuditLogService);
     configService = module.get<ConfigService>(ConfigService);
 
@@ -101,10 +99,7 @@ describe('TenantConfigService', () => {
 
       mockRepository.findOne.mockResolvedValueOnce(mockConfig);
 
-      const result = await service.get(
-        mockTenantId,
-        SUPPORTED_CONFIG_KEYS.AUDIT_RETENTION_DAYS,
-      );
+      const result = await service.get(mockTenantId, SUPPORTED_CONFIG_KEYS.AUDIT_RETENTION_DAYS);
 
       expect(result).toBe(365);
       expect(mockRepository.findOne).toHaveBeenCalledWith({
@@ -125,10 +120,7 @@ describe('TenantConfigService', () => {
         .mockResolvedValueOnce(null) // Tenant config not found
         .mockResolvedValueOnce(mockGlobalConfig); // Global config found
 
-      const result = await service.get(
-        mockTenantId,
-        SUPPORTED_CONFIG_KEYS.AUDIT_RETENTION_DAYS,
-      );
+      const result = await service.get(mockTenantId, SUPPORTED_CONFIG_KEYS.AUDIT_RETENTION_DAYS);
 
       expect(result).toBe(2555);
       expect(mockRepository.findOne).toHaveBeenCalledTimes(2);
@@ -137,10 +129,7 @@ describe('TenantConfigService', () => {
     it('should fallback to hardcoded default when no config found', async () => {
       mockRepository.findOne.mockResolvedValue(null);
 
-      const result = await service.get(
-        mockTenantId,
-        SUPPORTED_CONFIG_KEYS.AUDIT_RETENTION_DAYS,
-      );
+      const result = await service.get(mockTenantId, SUPPORTED_CONFIG_KEYS.AUDIT_RETENTION_DAYS);
 
       expect(result).toBe(DEFAULT_CONFIG_VALUES[SUPPORTED_CONFIG_KEYS.AUDIT_RETENTION_DAYS]);
     });
@@ -156,10 +145,7 @@ describe('TenantConfigService', () => {
 
       mockRepository.findOne.mockResolvedValueOnce(mockConfig);
 
-      const result = await service.get(
-        mockTenantId,
-        SUPPORTED_CONFIG_KEYS.FHIR_EXPORT_ENABLED,
-      );
+      const result = await service.get(mockTenantId, SUPPORTED_CONFIG_KEYS.FHIR_EXPORT_ENABLED);
 
       expect(result).toBe(true);
     });
@@ -175,10 +161,7 @@ describe('TenantConfigService', () => {
 
       mockRepository.findOne.mockResolvedValueOnce(mockConfig);
 
-      const result = await service.get(
-        mockTenantId,
-        SUPPORTED_CONFIG_KEYS.ALLOWED_RECORD_TYPES,
-      );
+      const result = await service.get(mockTenantId, SUPPORTED_CONFIG_KEYS.ALLOWED_RECORD_TYPES);
 
       expect(result).toEqual(['medical_record', 'lab_result']);
     });
@@ -250,9 +233,9 @@ describe('TenantConfigService', () => {
     });
 
     it('should throw BadRequestException for unsupported key', async () => {
-      await expect(
-        service.set(mockTenantId, 'invalid_key', 'value', mockUserId),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.set(mockTenantId, 'invalid_key', 'value', mockUserId)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should handle boolean values correctly', async () => {
@@ -280,7 +263,7 @@ describe('TenantConfigService', () => {
 
     it('should handle array values correctly', async () => {
       const arrayValue = ['type1', 'type2', 'type3'];
-      
+
       mockRepository.findOne.mockResolvedValueOnce(null);
       mockRepository.create.mockReturnValue({});
       mockRepository.save.mockResolvedValue({

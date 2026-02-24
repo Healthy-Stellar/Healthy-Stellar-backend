@@ -17,14 +17,14 @@ export enum TemplateCategory {
   PROGRESS_NOTE = 'PROGRESS_NOTE',
   DISCHARGE_SUMMARY = 'DISCHARGE_SUMMARY',
   CONSULTATION = 'CONSULTATION',
-  PROCEDURE_NOTE = 'PROCEDURE_NOTE'
+  PROCEDURE_NOTE = 'PROCEDURE_NOTE',
 }
 
 export class TemplateField {
   @ApiProperty({
     description: 'Field identifier (FHIR-compatible)',
     example: 'chief_complaint',
-    pattern: '^[a-z_]+$'
+    pattern: '^[a-z_]+$',
   })
   @IsString()
   @IsNotEmpty()
@@ -33,7 +33,7 @@ export class TemplateField {
   @ApiProperty({
     description: 'Human-readable field label',
     example: 'Chief Complaint',
-    maxLength: 100
+    maxLength: 100,
   })
   @IsString()
   @IsNotEmpty()
@@ -43,14 +43,14 @@ export class TemplateField {
   @ApiProperty({
     description: 'Field data type',
     enum: ['text', 'number', 'date', 'select', 'multiselect', 'boolean'],
-    example: 'text'
+    example: 'text',
   })
   @IsEnum(['text', 'number', 'date', 'select', 'multiselect', 'boolean'])
   fieldType: string;
 
   @ApiPropertyOptional({
     description: 'Field validation rules',
-    example: { required: true, maxLength: 500 }
+    example: { required: true, maxLength: 500 },
   })
   @IsObject()
   @IsOptional()
@@ -58,7 +58,7 @@ export class TemplateField {
 
   @ApiPropertyOptional({
     description: 'Default field value',
-    example: 'Patient reports...'
+    example: 'Patient reports...',
   })
   @IsOptional()
   defaultValue?: any;
@@ -68,7 +68,7 @@ export class CreateClinicalTemplateDto {
   @ApiProperty({
     description: 'Template name (medical standard compliant)',
     example: 'Internal Medicine Consultation Template',
-    maxLength: 200
+    maxLength: 200,
   })
   @IsString()
   @IsNotEmpty()
@@ -77,8 +77,9 @@ export class CreateClinicalTemplateDto {
 
   @ApiPropertyOptional({
     description: 'Template description and usage guidelines',
-    example: 'Standardized template for internal medicine consultations following HL7 FHIR guidelines',
-    maxLength: 1000
+    example:
+      'Standardized template for internal medicine consultations following HL7 FHIR guidelines',
+    maxLength: 1000,
   })
   @IsString()
   @IsOptional()
@@ -89,7 +90,7 @@ export class CreateClinicalTemplateDto {
     enum: TemplateCategory,
     description: 'Clinical template category (HL7 document types)',
     example: TemplateCategory.CONSULTATION,
-    enumName: 'TemplateCategory'
+    enumName: 'TemplateCategory',
   })
   @IsEnum(TemplateCategory)
   @IsNotEmpty()
@@ -103,15 +104,15 @@ export class CreateClinicalTemplateDto {
         fieldId: 'chief_complaint',
         label: 'Chief Complaint',
         fieldType: 'text',
-        validation: { required: true, maxLength: 500 }
+        validation: { required: true, maxLength: 500 },
       },
       {
         fieldId: 'history_present_illness',
         label: 'History of Present Illness',
         fieldType: 'text',
-        validation: { required: true, maxLength: 2000 }
-      }
-    ]
+        validation: { required: true, maxLength: 2000 },
+      },
+    ],
   })
   @IsArray()
   @ValidateNested({ each: true })
@@ -122,7 +123,7 @@ export class CreateClinicalTemplateDto {
   @ApiPropertyOptional({
     description: 'Medical coding standards used (ICD-10, SNOMED CT, CPT)',
     example: ['ICD-10', 'SNOMED-CT'],
-    type: [String]
+    type: [String],
   })
   @IsArray()
   @IsString({ each: true })
@@ -135,8 +136,8 @@ export class CreateClinicalTemplateDto {
       fhirVersion: 'R4',
       specialty: 'internal-medicine',
       version: '1.0',
-      lastUpdated: '2024-01-15'
-    }
+      lastUpdated: '2024-01-15',
+    },
   })
   @IsObject()
   @IsOptional()

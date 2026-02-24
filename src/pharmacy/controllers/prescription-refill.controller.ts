@@ -5,9 +5,7 @@ import { RefillPrescriptionDto } from '../dto/refill-prescription.dto';
 @Controller('pharmacy/refills')
 // @UseGuards(JwtAuthGuard)
 export class PrescriptionRefillController {
-  constructor(
-    private refillService: PrescriptionRefillService,
-  ) {}
+  constructor(private refillService: PrescriptionRefillService) {}
 
   @Post()
   async createRefill(@Body() refillDto: RefillPrescriptionDto) {

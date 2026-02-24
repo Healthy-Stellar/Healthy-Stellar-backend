@@ -1,38 +1,42 @@
 import { Validate, ValidationOptions, registerDecorator } from 'class-validator';
-import { IsValidICD10Constraint, IsValidCPTConstraint, IsValidMRNConstraint } from './medical-data.validator';
+import {
+  IsValidICD10Constraint,
+  IsValidCPTConstraint,
+  IsValidMRNConstraint,
+} from './medical-data.validator';
 
 export function IsValidICD10(validationOptions?: ValidationOptions) {
-  return function (target: Object, propertyName: string) {
+  return function (target: object, propertyName: string) {
     registerDecorator({
       target: target.constructor,
       propertyName: propertyName,
       options: validationOptions,
       constraints: [],
-      validator: IsValidICD10Constraint
+      validator: IsValidICD10Constraint,
     });
   };
 }
 
 export function IsValidCPT(validationOptions?: ValidationOptions) {
-  return function (target: Object, propertyName: string) {
+  return function (target: object, propertyName: string) {
     registerDecorator({
       target: target.constructor,
       propertyName: propertyName,
       options: validationOptions,
       constraints: [],
-      validator: IsValidCPTConstraint
+      validator: IsValidCPTConstraint,
     });
   };
 }
 
 export function IsValidMRN(validationOptions?: ValidationOptions) {
-  return function (target: Object, propertyName: string) {
+  return function (target: object, propertyName: string) {
     registerDecorator({
       target: target.constructor,
       propertyName: propertyName,
       options: validationOptions,
       constraints: [],
-      validator: IsValidMRNConstraint
+      validator: IsValidMRNConstraint,
     });
   };
 }

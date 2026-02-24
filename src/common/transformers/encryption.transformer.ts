@@ -22,14 +22,11 @@ export class EncryptionTransformer implements ValueTransformer {
     try {
       const salt = randomBytes(this.saltLength);
       const iv = randomBytes(this.ivLength);
-      
+
       const key = scryptSync(this.encryptionKey, salt, this.keyLength);
       const cipher = createCipheriv(this.algorithm, key, iv);
-      
-      const encrypted = Buffer.concat([
-        cipher.update(value, 'utf8'),
-        cipher.final(),
-      ]);
+
+      const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
 
       const tag = cipher.getAuthTag();
       const result = Buffer.concat([salt, iv, tag, encrypted]);
@@ -52,18 +49,13 @@ export class EncryptionTransformer implements ValueTransformer {
         this.saltLength + this.ivLength,
         this.saltLength + this.ivLength + this.tagLength,
       );
-      const encrypted = data.subarray(
-        this.saltLength + this.ivLength + this.tagLength,
-      );
+      const encrypted = data.subarray(this.saltLength + this.ivLength + this.tagLength);
 
       const key = scryptSync(this.encryptionKey, salt, this.keyLength);
       const decipher = createDecipheriv(this.algorithm, key, iv);
       decipher.setAuthTag(tag);
 
-      const decrypted = Buffer.concat([
-        decipher.update(encrypted),
-        decipher.final(),
-      ]);
+      const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
 
       return decrypted.toString('utf8');
     } catch (error) {

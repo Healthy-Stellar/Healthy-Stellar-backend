@@ -10,10 +10,7 @@ import { BackupLog } from './entities/backup-log.entity';
 import { RecoveryTest } from './entities/recovery-test.entity';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([BackupLog, RecoveryTest]),
-    ScheduleModule.forRoot(),
-  ],
+  imports: [TypeOrmModule.forFeature([BackupLog, RecoveryTest]), ScheduleModule.forRoot()],
   controllers: [BackupController],
   providers: [
     BackupService,

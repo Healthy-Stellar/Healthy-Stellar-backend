@@ -1,7 +1,7 @@
-import { TypeOrmModuleOptions } from "@nestjs/typeorm";
-import { AuditLog } from "../modules/audit-log/entities/audit-log.entity";
-import { Record } from "../modules/records/entities/record.entity";
-import { User } from "../modules/users/entities/user.entity";
+import { TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { AuditLog } from '../modules/audit-log/entities/audit-log.entity';
+import { Record } from '../modules/records/entities/record.entity';
+import { User } from '../modules/users/entities/user.entity';
 
 /**
  * TypeORM configuration with performance optimization settings
@@ -10,21 +10,21 @@ import { User } from "../modules/users/entities/user.entity";
  * - Eager loading strategies to prevent N+1 query issues
  */
 export const getTypeOrmConfig = (): TypeOrmModuleOptions => {
-  const isDevelopment = process.env.NODE_ENV !== "production";
+  const isDevelopment = process.env.NODE_ENV !== 'production';
 
   return {
-    type: "postgres",
-    host: process.env.DB_HOST || "localhost",
-    port: parseInt(process.env.DB_PORT || "5432", 10),
-    username: process.env.DB_USERNAME || "postgres",
-    password: process.env.DB_PASSWORD || "password",
-    database: process.env.DB_NAME || "query_optimization_db",
+    type: 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    username: process.env.DB_USERNAME || 'postgres',
+    password: process.env.DB_PASSWORD || 'password',
+    database: process.env.DB_NAME || 'query_optimization_db',
     entities: [AuditLog, Record, User],
-    migrations: ["dist/migrations/*.js"],
+    migrations: ['dist/migrations/*.js'],
     migrationsRun: true,
     synchronize: isDevelopment,
-    logging: isDevelopment ? ["query", "error", "warn"] : ["error"],
-    logger: "advanced-console",
+    logging: isDevelopment ? ['query', 'error', 'warn'] : ['error'],
+    logger: 'advanced-console',
 
     /**
      * Query logging configuration
@@ -33,7 +33,7 @@ export const getTypeOrmConfig = (): TypeOrmModuleOptions => {
      */
     maxQueryExecutionTime: 100,
     cache: {
-      type: "database",
+      type: 'database',
       duration: 3600000, // 1 hour cache duration
     },
 
@@ -44,8 +44,8 @@ export const getTypeOrmConfig = (): TypeOrmModuleOptions => {
      * - Can be adjusted based on actual load test results
      */
     extra: {
-      max: parseInt(process.env.DB_POOL_MAX || "100", 10),
-      min: parseInt(process.env.DB_POOL_MIN || "50", 10),
+      max: parseInt(process.env.DB_POOL_MAX || '100', 10),
+      min: parseInt(process.env.DB_POOL_MIN || '50', 10),
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,
       // Enable query timeout in milliseconds
@@ -54,8 +54,8 @@ export const getTypeOrmConfig = (): TypeOrmModuleOptions => {
     },
 
     // Pooling configuration for better resource management under load
-    poolSize: parseInt(process.env.DB_POOL_SIZE || "10", 10),
-    ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
+    poolSize: parseInt(process.env.DB_POOL_SIZE || '10', 10),
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
   };
 };
 
@@ -66,7 +66,7 @@ export const getTypeOrmConfig = (): TypeOrmModuleOptions => {
 export const getProfilingConfig = (): TypeOrmModuleOptions => {
   return {
     ...getTypeOrmConfig(),
-    logging: ["query", "error", "warn", "migration"],
+    logging: ['query', 'error', 'warn', 'migration'],
     maxQueryExecutionTime: 50, // More aggressive profiling threshold
   };
 };

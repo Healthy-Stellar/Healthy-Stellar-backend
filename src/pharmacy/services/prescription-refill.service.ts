@@ -17,11 +17,13 @@ export class PrescriptionRefillService {
   async createRefill(refillDto: RefillPrescriptionDto): Promise<Prescription> {
     const originalPrescription = await this.prescriptionRepository.findOne({
       where: { id: refillDto.originalPrescriptionId },
-      relations: ['items', 'items.drug']
+      relations: ['items', 'items.drug'],
     });
 
     if (!originalPrescription) {
-      throw new NotFoundException(`Original prescription ${refillDto.originalPrescriptionId} not found`);
+      throw new NotFoundException(
+        `Original prescription ${refillDto.originalPrescriptionId} not found`,
+      );
     }
 
     // Validate refill eligibility
@@ -46,19 +48,19 @@ export class PrescriptionRefillService {
       refillsAllowed: 0, // Refills don't have additional refills
       refillsRemaining: 0,
       notes: `Refill #${refillDto.refillNumber} of prescription ${originalPrescription.prescriptionNumber}. ${refillDto.notes || ''}`,
-      requiresCounseling: originalPrescription.requiresCounseling
+      requiresCounseling: originalPrescription.requiresCounseling,
     });
 
     const savedRefillPrescription = await this.prescriptionRepository.save(refillPrescription);
 
     // Copy prescription items
-    const refillItems = originalPrescription.items.map(item => ({
+    const refillItems = originalPrescription.items.map((item) => ({
       prescriptionId: savedRefillPrescription.id,
       drugId: item.drugId,
       quantityPrescribed: item.quantityPrescribed,
       quantityDispensed: 0,
       dosageInstructions: item.dosageInstructions,
-      daySupply: item.daySupply
+      daySupply: item.daySupply,
     }));
 
     // Save items (assuming you have PrescriptionItem repository)
@@ -71,8 +73,10 @@ export class PrescriptionRefillService {
       refillNumber: refillDto.refillNumber,
       pharmacistId: refillDto.pharmacistId,
       pharmacistName: refillDto.pharmacistName,
-      patientRequestDate: refillDto.patientRequestDate ? new Date(refillDto.patientRequestDate) : null,
-      notes: refillDto.notes
+      patientRequestDate: refillDto.patientRequestDate
+        ? new Date(refillDto.patientRequestDate)
+        : null,
+      notes: refillDto.notes,
     });
 
     await this.refillRepository.save(refillLog);
@@ -93,7 +97,7 @@ export class PrescriptionRefillService {
   }> {
     const prescription = await this.prescriptionRepository.findOne({
       where: { id: prescriptionId },
-      relations: ['items', 'items.drug']
+      relations: ['items', 'items.drug'],
     });
 
     if (!prescription) {
@@ -102,7 +106,7 @@ export class PrescriptionRefillService {
         reason: 'Prescription not found',
         refillsRemaining: 0,
         daysSinceLastFill: 0,
-        isControlledSubstance: false
+        isControlledSubstance: false,
       };
     }
 
@@ -113,51 +117,54 @@ export class PrescriptionRefillService {
         reason: 'No refills remaining',
         refillsRemaining: prescription.refillsRemaining,
         daysSinceLastFill: 0,
-        isControlledSubstance: false
+        isControlledSubstance: false,
       };
     }
 
     // Check if prescription is expired (1 year from original date for most prescriptions)
-    const prescriptionAge = (new Date().getTime() - prescription.prescriptionDate.getTime()) / (1000 * 60 * 60 * 24);
-    const isControlledSubstance = prescription.items.some(item => 
-      item.drug.controlledSubstanceSchedule !== 'non-controlled'
+    const prescriptionAge =
+      (new Date().getTime() - prescription.prescriptionDate.getTime()) / (1000 * 60 * 60 * 24);
+    const isControlledSubstance = prescription.items.some(
+      (item) => item.drug.controlledSubstanceSchedule !== 'non-controlled',
     );
 
     // Controlled substances expire in 6 months, others in 1 year
     const expirationDays = isControlledSubstance ? 180 : 365;
-    
+
     if (prescriptionAge > expirationDays) {
       return {
         isEligible: false,
         reason: `Prescription expired (${Math.floor(prescriptionAge)} days old, limit: ${expirationDays} days)`,
         refillsRemaining: prescription.refillsRemaining,
         daysSinceLastFill: 0,
-        isControlledSubstance
+        isControlledSubstance,
       };
     }
 
     // Check days since last fill (for controlled substances, minimum 75% of day supply must pass)
     const lastRefill = await this.getLastRefill(prescriptionId);
     let daysSinceLastFill = 0;
-    
+
     if (lastRefill) {
-      daysSinceLastFill = (new Date().getTime() - lastRefill.refillDate.getTime()) / (1000 * 60 * 60 * 24);
+      daysSinceLastFill =
+        (new Date().getTime() - lastRefill.refillDate.getTime()) / (1000 * 60 * 60 * 24);
     } else if (prescription.dispensedAt) {
-      daysSinceLastFill = (new Date().getTime() - prescription.dispensedAt.getTime()) / (1000 * 60 * 60 * 24);
+      daysSinceLastFill =
+        (new Date().getTime() - prescription.dispensedAt.getTime()) / (1000 * 60 * 60 * 24);
     }
 
     // For controlled substances, check early refill restrictions
     if (isControlledSubstance && lastRefill) {
       const daySupply = prescription.items[0]?.daySupply || 30;
       const minimumDays = Math.floor(daySupply * 0.75); // 75% rule
-      
+
       if (daysSinceLastFill < minimumDays) {
         return {
           isEligible: false,
           reason: `Too early for controlled substance refill (${Math.floor(daysSinceLastFill)} days since last fill, minimum: ${minimumDays} days)`,
           refillsRemaining: prescription.refillsRemaining,
           daysSinceLastFill,
-          isControlledSubstance
+          isControlledSubstance,
         };
       }
     }
@@ -166,22 +173,22 @@ export class PrescriptionRefillService {
       isEligible: true,
       refillsRemaining: prescription.refillsRemaining,
       daysSinceLastFill,
-      isControlledSubstance
+      isControlledSubstance,
     };
   }
 
   async getRefillablePrescrptions(patientId: string): Promise<Prescription[]> {
     const prescriptions = await this.prescriptionRepository.find({
-      where: { 
+      where: {
         patientId,
-        status: 'dispensed'
+        status: 'dispensed',
       },
       relations: ['items', 'items.drug'],
-      order: { prescriptionDate: 'DESC' }
+      order: { prescriptionDate: 'DESC' },
     });
 
     const refillable = [];
-    
+
     for (const prescription of prescriptions) {
       const eligibility = await this.validateRefillEligibility(prescription.id);
       if (eligibility.isEligible) {
@@ -196,14 +203,14 @@ export class PrescriptionRefillService {
     return await this.refillRepository.find({
       where: { originalPrescriptionId: prescriptionId },
       relations: ['refillPrescription'],
-      order: { refillDate: 'DESC' }
+      order: { refillDate: 'DESC' },
     });
   }
 
   async getLastRefill(prescriptionId: string): Promise<PrescriptionRefill | null> {
     return await this.refillRepository.findOne({
       where: { originalPrescriptionId: prescriptionId },
-      order: { refillDate: 'DESC' }
+      order: { refillDate: 'DESC' },
     });
   }
 
@@ -217,7 +224,10 @@ export class PrescriptionRefillService {
       .getMany();
   }
 
-  async getRefillStatistics(startDate?: Date, endDate?: Date): Promise<{
+  async getRefillStatistics(
+    startDate?: Date,
+    endDate?: Date,
+  ): Promise<{
     totalRefills: number;
     refillsByDrug: Array<{ drugName: string; count: number }>;
     averageRefillInterval: number;
@@ -233,7 +243,7 @@ export class PrescriptionRefillService {
     if (startDate && endDate) {
       query = query.where('refill.refillDate BETWEEN :startDate AND :endDate', {
         startDate,
-        endDate
+        endDate,
       });
     }
 
@@ -244,8 +254,8 @@ export class PrescriptionRefillService {
     const drugCount = new Map<string, number>();
     let controlledSubstanceRefills = 0;
 
-    refills.forEach(refill => {
-      refill.originalPrescription.items.forEach(item => {
+    refills.forEach((refill) => {
+      refill.originalPrescription.items.forEach((item) => {
         const drugName = item.drug.genericName;
         drugCount.set(drugName, (drugCount.get(drugName) || 0) + 1);
 
@@ -262,15 +272,16 @@ export class PrescriptionRefillService {
 
     // Calculate average refill interval (simplified)
     const intervals = refills
-      .filter(refill => refill.refillNumber > 1)
-      .map(refill => {
+      .filter((refill) => refill.refillNumber > 1)
+      .map((refill) => {
         // This is a simplified calculation - in production, you'd track actual intervals
         return 30; // Assume 30-day average
       });
 
-    const averageRefillInterval = intervals.length > 0 
-      ? intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length 
-      : 0;
+    const averageRefillInterval =
+      intervals.length > 0
+        ? intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length
+        : 0;
 
     // Early refill rate (simplified - would need more complex logic in production)
     const earlyRefillRate = 0; // Placeholder
@@ -280,7 +291,7 @@ export class PrescriptionRefillService {
       refillsByDrug,
       averageRefillInterval,
       earlyRefillRate,
-      controlledSubstanceRefills
+      controlledSubstanceRefills,
     };
   }
 }

@@ -29,12 +29,8 @@ export class MedicalCodeService {
 
     const medicalCode = this.medicalCodeRepository.create({
       ...createDto,
-      effectiveDate: createDto.effectiveDate
-        ? new Date(createDto.effectiveDate)
-        : undefined,
-      terminationDate: createDto.terminationDate
-        ? new Date(createDto.terminationDate)
-        : undefined,
+      effectiveDate: createDto.effectiveDate ? new Date(createDto.effectiveDate) : undefined,
+      terminationDate: createDto.terminationDate ? new Date(createDto.terminationDate) : undefined,
     });
 
     return this.medicalCodeRepository.save(medicalCode);
@@ -131,9 +127,7 @@ export class MedicalCodeService {
       this.medicalCodeRepository.create({
         ...dto,
         effectiveDate: dto.effectiveDate ? new Date(dto.effectiveDate) : undefined,
-        terminationDate: dto.terminationDate
-          ? new Date(dto.terminationDate)
-          : undefined,
+        terminationDate: dto.terminationDate ? new Date(dto.terminationDate) : undefined,
       }),
     );
 

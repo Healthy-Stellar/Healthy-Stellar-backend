@@ -22,6 +22,6 @@ import { HandHygieneAudit } from './entities/hand-hygiene-audit.entity';
   ],
   controllers: [InfectionControlController],
   providers: [InfectionControlService],
-  exports: [InfectionControlService], 
+  exports: [InfectionControlService],
 })
 export class InfectionControlModule {}

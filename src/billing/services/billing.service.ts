@@ -145,9 +145,7 @@ export class BillingService {
       billingId,
       lineNumber: maxLineNumber + 1,
       serviceDate: new Date(lineItemDto.serviceDate),
-      serviceDateEnd: lineItemDto.serviceDateEnd
-        ? new Date(lineItemDto.serviceDateEnd)
-        : undefined,
+      serviceDateEnd: lineItemDto.serviceDateEnd ? new Date(lineItemDto.serviceDateEnd) : undefined,
       cptCode: lineItemDto.cptCode,
       cptDescription: lineItemDto.cptDescription,
       modifiers: lineItemDto.modifiers,
@@ -167,10 +165,7 @@ export class BillingService {
     return lineItem;
   }
 
-  async updateLineItem(
-    lineItemId: string,
-    updateDto: UpdateLineItemDto,
-  ): Promise<BillingLineItem> {
+  async updateLineItem(lineItemId: string, updateDto: UpdateLineItemDto): Promise<BillingLineItem> {
     const lineItem = await this.lineItemRepository.findOne({
       where: { id: lineItemId },
     });
@@ -181,9 +176,7 @@ export class BillingService {
 
     Object.assign(lineItem, {
       ...updateDto,
-      serviceDate: updateDto.serviceDate
-        ? new Date(updateDto.serviceDate)
-        : lineItem.serviceDate,
+      serviceDate: updateDto.serviceDate ? new Date(updateDto.serviceDate) : lineItem.serviceDate,
       serviceDateEnd: updateDto.serviceDateEnd
         ? new Date(updateDto.serviceDateEnd)
         : lineItem.serviceDateEnd,
@@ -218,18 +211,13 @@ export class BillingService {
   async recalculateTotals(billingId: string): Promise<Billing> {
     const billing = await this.findById(billingId);
 
-    const totalCharges = billing.lineItems.reduce(
-      (sum, item) => sum + Number(item.totalCharge),
-      0,
-    );
+    const totalCharges = billing.lineItems.reduce((sum, item) => sum + Number(item.totalCharge), 0);
     const totalAdjustments = billing.lineItems.reduce(
       (sum, item) => sum + Number(item.adjustmentAmount || 0),
       0,
     );
-    const totalPayments = billing.payments?.reduce(
-      (sum, payment) => sum + Number(payment.amount),
-      0,
-    ) || 0;
+    const totalPayments =
+      billing.payments?.reduce((sum, payment) => sum + Number(payment.amount), 0) || 0;
 
     billing.totalCharges = totalCharges;
     billing.totalAdjustments = totalAdjustments;
@@ -245,9 +233,10 @@ export class BillingService {
     return this.billingRepository.save(billing);
   }
 
-  async getOutstandingBalances(
-    options?: { minBalance?: number; maxDays?: number },
-  ): Promise<Billing[]> {
+  async getOutstandingBalances(options?: {
+    minBalance?: number;
+    maxDays?: number;
+  }): Promise<Billing[]> {
     const where: FindOptionsWhere<Billing> = {
       status: 'open',
     };
@@ -313,24 +302,23 @@ export class BillingService {
       };
     };
 
-    const [current, days30Result, days60Result, days90Result, days120Plus] =
-      await Promise.all([
-        calculateBucket(null, day30),
-        calculateBucket(day30, day60),
-        calculateBucket(day60, day90),
-        calculateBucket(day90, day120),
-        this.billingRepository
-          .createQueryBuilder('billing')
-          .where('billing.balance > 0')
-          .andWhere('billing.serviceDate < :day120', { day120 })
-          .select('COUNT(*)', 'count')
-          .addSelect('SUM(billing.balance)', 'total')
-          .getRawOne()
-          .then((r) => ({
-            count: parseInt(r?.count) || 0,
-            total: parseFloat(r?.total) || 0,
-          })),
-      ]);
+    const [current, days30Result, days60Result, days90Result, days120Plus] = await Promise.all([
+      calculateBucket(null, day30),
+      calculateBucket(day30, day60),
+      calculateBucket(day60, day90),
+      calculateBucket(day90, day120),
+      this.billingRepository
+        .createQueryBuilder('billing')
+        .where('billing.balance > 0')
+        .andWhere('billing.serviceDate < :day120', { day120 })
+        .select('COUNT(*)', 'count')
+        .addSelect('SUM(billing.balance)', 'total')
+        .getRawOne()
+        .then((r) => ({
+          count: parseInt(r?.count) || 0,
+          total: parseFloat(r?.total) || 0,
+        })),
+    ]);
 
     return {
       current,

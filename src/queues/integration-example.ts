@@ -40,7 +40,7 @@ export class MedicalRecordsIntegrationExample {
    */
   async grantRecordAccess(recordId: string, targetUserId: string, grantedBy: string) {
     const correlationId = uuidv4();
-    
+
     await this.queueService.dispatchStellarTransaction({
       operationType: JOB_TYPES.GRANT_ACCESS,
       params: { recordId, targetUserId },
@@ -59,7 +59,7 @@ export class MedicalRecordsIntegrationExample {
    */
   async revokeRecordAccess(recordId: string, targetUserId: string, revokedBy: string) {
     const correlationId = uuidv4();
-    
+
     await this.queueService.dispatchStellarTransaction({
       operationType: JOB_TYPES.REVOKE_ACCESS,
       params: { recordId, targetUserId },

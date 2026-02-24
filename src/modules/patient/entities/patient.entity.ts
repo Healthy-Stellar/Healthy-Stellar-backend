@@ -229,11 +229,11 @@ export class Patient {
     const birthDate = new Date(this.dateOfBirth);
     let age = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
-    
+
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
       age--;
     }
-    
+
     return age;
   }
 }
@@ -305,7 +305,16 @@ export class PatientAuditLog {
 }
 
 // src/modules/patient/dto/create-patient.dto.ts
-import { IsString, IsEmail, IsOptional, IsEnum, IsDateString, IsBoolean, Length, Matches } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsOptional,
+  IsEnum,
+  IsDateString,
+  IsBoolean,
+  Length,
+  Matches,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Gender, BloodType, MaritalStatus } from '../entities/patient.entity';
 
@@ -518,7 +527,7 @@ export class MrnGeneratorService {
   async generateMrn(): Promise<string> {
     const prefix = 'HHS';
     const year = new Date().getFullYear();
-    
+
     // Get the count of patients created this year
     const startOfYear = new Date(year, 0, 1);
     const count = await this.patientRepository
@@ -533,7 +542,9 @@ export class MrnGeneratorService {
     const exists = await this.patientRepository.findOne({ where: { mrn } });
     if (exists) {
       // Add random suffix if collision (extremely unlikely)
-      const randomSuffix = Math.floor(Math.random() * 99).toString().padStart(2, '0');
+      const randomSuffix = Math.floor(Math.random() * 99)
+        .toString()
+        .padStart(2, '0');
       return `${mrn}-${randomSuffix}`;
     }
 
@@ -618,22 +629,20 @@ export class DuplicateDetectionService {
     candidates.push(...byNameDob);
 
     // Remove duplicates and calculate scores
-    const uniqueCandidates = Array.from(
-      new Map(candidates.map(c => [c.id, c])).values(),
-    );
+    const uniqueCandidates = Array.from(new Map(candidates.map((c) => [c.id, c])).values());
 
     const matches: DuplicateMatch[] = uniqueCandidates
-      .map(candidate => {
+      .map((candidate) => {
         const score = this.calculateSimilarityScore(patientData, candidate);
         const matchingFields = this.getMatchingFields(patientData, candidate);
-        
+
         return {
           patient: candidate,
           score,
           matchingFields,
         };
       })
-      .filter(match => match.score >= this.THRESHOLD)
+      .filter((match) => match.score >= this.THRESHOLD)
       .sort((a, b) => b.score - a.score);
 
     // Log potential duplicates
@@ -653,19 +662,13 @@ export class DuplicateDetectionService {
 
     // Name similarity (weight: 30)
     if (patient1.firstName && patient2.firstName) {
-      const firstNameSimilarity = this.stringSimilarity(
-        patient1.firstName,
-        patient2.firstName,
-      );
+      const firstNameSimilarity = this.stringSimilarity(patient1.firstName, patient2.firstName);
       totalScore += firstNameSimilarity * 15;
       weightSum += 15;
     }
 
     if (patient1.lastName && patient2.lastName) {
-      const lastNameSimilarity = this.stringSimilarity(
-        patient1.lastName,
-        patient2.lastName,
-      );
+      const lastNameSimilarity = this.stringSimilarity(patient1.lastName, patient2.lastName);
       totalScore += lastNameSimilarity * 15;
       weightSum += 15;
     }
@@ -673,8 +676,7 @@ export class DuplicateDetectionService {
     // Date of birth (weight: 25)
     if (patient1.dateOfBirth && patient2.dateOfBirth) {
       const dobMatch =
-        new Date(patient1.dateOfBirth).getTime() ===
-        new Date(patient2.dateOfBirth).getTime();
+        new Date(patient1.dateOfBirth).getTime() === new Date(patient2.dateOfBirth).getTime();
       totalScore += dobMatch ? 25 : 0;
       weightSum += 25;
     }
@@ -710,9 +712,9 @@ export class DuplicateDetectionService {
     const s1 = str1.toLowerCase().trim();
     const s2 = str2.toLowerCase().trim();
     const maxLength = Math.max(s1.length, s2.length);
-    
+
     if (maxLength === 0) return 1;
-    
+
     const distance = levenshtein.get(s1, s2);
     return 1 - distance / maxLength;
   }
@@ -817,7 +819,7 @@ export class PatientService {
     if (duplicates.length > 0) {
       throw new ConflictException({
         message: 'Potential duplicate patient(s) detected',
-        duplicates: duplicates.map(d => ({
+        duplicates: duplicates.map((d) => ({
           id: d.patient.id,
           mrn: d.patient.mrn,
           fullName: d.patient.fullName,
@@ -996,8 +998,7 @@ export class PatientService {
     // Update last visit if duplicate is more recent
     if (
       duplicatePatient.lastVisitDate &&
-      (!masterPatient.lastVisitDate ||
-        duplicatePatient.lastVisitDate > masterPatient.lastVisitDate)
+      (!masterPatient.lastVisitDate || duplicatePatient.lastVisitDate > masterPatient.lastVisitDate)
     ) {
       masterPatient.lastVisitDate = duplicatePatient.lastVisitDate;
     }
@@ -1145,19 +1146,9 @@ import { MrnGeneratorService } from './services/mrn-generator.service';
 import { DuplicateDetectionService } from './services/duplicate-detection.service';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([
-      Patient,
-      PatientDuplicate,
-      PatientAuditLog,
-    ]),
-  ],
+  imports: [TypeOrmModule.forFeature([Patient, PatientDuplicate, PatientAuditLog])],
   controllers: [PatientController],
-  providers: [
-    PatientService,
-    MrnGeneratorService,
-    DuplicateDetectionService,
-  ],
+  providers: [PatientService, MrnGeneratorService, DuplicateDetectionService],
   exports: [PatientService],
 })
 export class PatientModule {}

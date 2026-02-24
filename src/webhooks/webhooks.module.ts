@@ -8,8 +8,6 @@ import { RawBodyMiddleware } from '../common/middleware/raw-body.middleware';
 })
 export class WebhooksModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(RawBodyMiddleware, WebhookSignatureMiddleware)
-      .forRoutes(WebhooksController);
+    consumer.apply(RawBodyMiddleware, WebhookSignatureMiddleware).forRoutes(WebhooksController);
   }
 }

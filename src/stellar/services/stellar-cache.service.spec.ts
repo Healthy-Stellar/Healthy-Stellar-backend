@@ -42,10 +42,10 @@ describe('StellarCacheService', () => {
       // Arrange
       const key = 'test-key';
       const data = { value: 'test-data' };
-      
+
       // Mock the cache TTL to be very short for testing
       service.set(key, data);
-      
+
       // Manually expire the cache entry
       const cacheEntry = (service as any).cache.get(key);
       cacheEntry.expiresAt = Date.now() - 1000; // Set to past
@@ -135,7 +135,7 @@ describe('StellarCacheService', () => {
       const key = 'test-key';
       const data = { value: 'test-data' };
       service.set(key, data);
-      
+
       // Manually expire the entry
       const cacheEntry = (service as any).cache.get(key);
       cacheEntry.expiresAt = Date.now() - 1;

@@ -19,7 +19,13 @@ export class HealthcareSecurityMiddleware implements NestMiddleware {
   private readonly logger = new Logger(HealthcareSecurityMiddleware.name);
 
   // Paths that access PHI - need extra scrutiny
-  private readonly PHI_PATHS = ['/patients', '/medical-records', '/prescriptions', '/lab-results', '/diagnoses'];
+  private readonly PHI_PATHS = [
+    '/patients',
+    '/medical-records',
+    '/prescriptions',
+    '/lab-results',
+    '/diagnoses',
+  ];
   private readonly AUTH_PATHS = ['/auth/login', '/auth/register', '/auth/forgot-password'];
   private readonly ADMIN_PATHS = ['/admin'];
 
@@ -51,7 +57,10 @@ export class HealthcareSecurityMiddleware implements NestMiddleware {
     const rateLimitResult = this.rateLimitingService.check(rateLimitKey, rateLimitProfile);
 
     // Set rate limit headers
-    res.setHeader('X-RateLimit-Limit', this.rateLimitingService.PROFILES[rateLimitProfile]?.maxRequests || 100);
+    res.setHeader(
+      'X-RateLimit-Limit',
+      this.rateLimitingService.PROFILES[rateLimitProfile]?.maxRequests || 100,
+    );
     res.setHeader('X-RateLimit-Remaining', rateLimitResult.remaining);
     res.setHeader('X-RateLimit-Reset', rateLimitResult.resetAt.toISOString());
 
@@ -102,7 +111,7 @@ export class HealthcareSecurityMiddleware implements NestMiddleware {
         ipAddress,
         requestMethod: req.method,
         requestPath: req.path,
-        userAgent: req.headers['user-agent'] as string,
+        userAgent: req.headers['user-agent'],
         correlationId: req.correlationId,
         deviceId: req.deviceId,
         sessionId: req.headers['x-session-id'] as string,
@@ -121,9 +130,9 @@ export class HealthcareSecurityMiddleware implements NestMiddleware {
   }
 
   private getRateLimitProfile(path: string): string {
-    if (this.AUTH_PATHS.some(p => path.startsWith(p))) return 'AUTH';
-    if (this.ADMIN_PATHS.some(p => path.startsWith(p))) return 'ADMIN';
-    if (this.PHI_PATHS.some(p => path.startsWith(p))) return 'PHI_ACCESS';
+    if (this.AUTH_PATHS.some((p) => path.startsWith(p))) return 'AUTH';
+    if (this.ADMIN_PATHS.some((p) => path.startsWith(p))) return 'ADMIN';
+    if (this.PHI_PATHS.some((p) => path.startsWith(p))) return 'PHI_ACCESS';
     if (path.startsWith('/audit')) return 'AUDIT_QUERY';
     if (path.startsWith('/incidents')) return 'INCIDENT_REPORT';
     if (path.startsWith('/devices/telemetry')) return 'DEVICE_TELEMETRY';
@@ -131,7 +140,7 @@ export class HealthcareSecurityMiddleware implements NestMiddleware {
   }
 
   private isPhiPath(path: string): boolean {
-    return this.PHI_PATHS.some(p => path.startsWith(p));
+    return this.PHI_PATHS.some((p) => path.startsWith(p));
   }
 
   private isSuspiciousRequest(req: Request): boolean {
@@ -148,7 +157,7 @@ export class HealthcareSecurityMiddleware implements NestMiddleware {
     ];
 
     const checkString = `${path}${JSON.stringify(req.query)}${JSON.stringify(req.body || {})}`;
-    return suspiciousPatterns.some(pattern => pattern.test(checkString));
+    return suspiciousPatterns.some((pattern) => pattern.test(checkString));
   }
 
   private getClientIp(req: Request): string {

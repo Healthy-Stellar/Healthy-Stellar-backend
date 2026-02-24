@@ -18,7 +18,7 @@ export class ControlledSubstanceService {
     prescriberName: string,
     prescriberDEA: string,
     pharmacistLicense: string,
-    pharmacistName?: string
+    pharmacistName?: string,
   ): Promise<ControlledSubstanceLog> {
     const runningBalance = await this.getRunningBalance(drugId);
 
@@ -32,7 +32,7 @@ export class ControlledSubstanceService {
       prescriberName,
       prescriberDEA,
       pharmacistName: pharmacistName || 'Unknown',
-      pharmacistLicense
+      pharmacistLicense,
     });
 
     return await this.logRepository.save(log);
@@ -43,7 +43,7 @@ export class ControlledSubstanceService {
     quantity: number,
     pharmacistLicense: string,
     pharmacistName: string,
-    notes?: string
+    notes?: string,
   ): Promise<ControlledSubstanceLog> {
     const runningBalance = await this.getRunningBalance(drugId);
 
@@ -57,7 +57,7 @@ export class ControlledSubstanceService {
       prescriberDEA: 'N/A',
       pharmacistName,
       pharmacistLicense,
-      notes
+      notes,
     });
 
     return await this.logRepository.save(log);
@@ -69,7 +69,7 @@ export class ControlledSubstanceService {
     pharmacistLicense: string,
     pharmacistName: string,
     witnessName: string,
-    reason: string
+    reason: string,
   ): Promise<ControlledSubstanceLog> {
     const runningBalance = await this.getRunningBalance(drugId);
 
@@ -84,7 +84,7 @@ export class ControlledSubstanceService {
       pharmacistName,
       pharmacistLicense,
       witnessName,
-      notes: `Wasted: ${reason}`
+      notes: `Wasted: ${reason}`,
     });
 
     return await this.logRepository.save(log);
@@ -93,13 +93,17 @@ export class ControlledSubstanceService {
   async getRunningBalance(drugId: string): Promise<number> {
     const latestLog = await this.logRepository.findOne({
       where: { drugId },
-      order: { transactionDate: 'DESC' }
+      order: { transactionDate: 'DESC' },
     });
 
     return latestLog ? latestLog.runningBalance : 0;
   }
 
-  async getLogsByDrug(drugId: string, startDate?: Date, endDate?: Date): Promise<ControlledSubstanceLog[]> {
+  async getLogsByDrug(
+    drugId: string,
+    startDate?: Date,
+    endDate?: Date,
+  ): Promise<ControlledSubstanceLog[]> {
     const query: any = { drugId };
 
     if (startDate && endDate) {
@@ -109,7 +113,7 @@ export class ControlledSubstanceService {
     return await this.logRepository.find({
       where: query,
       relations: ['drug', 'prescription'],
-      order: { transactionDate: 'DESC' }
+      order: { transactionDate: 'DESC' },
     });
   }
 
@@ -133,7 +137,7 @@ export class ControlledSubstanceService {
           transactions: [],
           totalDispensed: 0,
           totalReceived: 0,
-          totalWasted: 0
+          totalWasted: 0,
         };
       }
 

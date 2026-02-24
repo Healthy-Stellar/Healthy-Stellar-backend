@@ -98,9 +98,7 @@ describe('QueueService', () => {
       mockIpfsQueue.getJobs.mockResolvedValue([]);
       mockEmailQueue.getJobs.mockResolvedValue([]);
 
-      await expect(service.getJobStatus('invalid')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.getJobStatus('invalid')).rejects.toThrow(NotFoundException);
     });
 
     it('should map job states correctly', async () => {

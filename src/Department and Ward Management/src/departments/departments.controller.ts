@@ -1,8 +1,8 @@
-import { Controller, Get, Post, Body, Param } from "@nestjs/common";
-import { DepartmentsService } from "./departments.service";
-import { CreateDepartmentDto } from "./dto/create-department.dto";
+import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { DepartmentsService } from './departments.service';
+import { CreateDepartmentDto } from './dto/create-department.dto';
 
-@Controller("departments")
+@Controller('departments')
 export class DepartmentsController {
   constructor(private readonly departmentsService: DepartmentsService) {}
 
@@ -16,13 +16,13 @@ export class DepartmentsController {
     return this.departmentsService.findAll();
   }
 
-  @Get(":id")
-  async findOne(@Param("id") id: string) {
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
     return this.departmentsService.findOne(id);
   }
 
-  @Get(":id/metrics")
-  async getMetrics(@Param("id") id: string) {
+  @Get(':id/metrics')
+  async getMetrics(@Param('id') id: string) {
     return this.departmentsService.getPerformanceMetrics(id);
   }
 }

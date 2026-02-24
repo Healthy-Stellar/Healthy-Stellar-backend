@@ -2,46 +2,46 @@ import { IsString, IsEnum, IsOptional, IsBoolean, IsDateString, IsObject } from 
 import { ConsultationOutcome } from '../entities/consultation-note.entity';
 
 export class CreateConsultationNoteDto {
-    @IsString()
-    appointmentId: string;
+  @IsString()
+  appointmentId: string;
 
-    @IsString()
-    doctorId: string;
+  @IsString()
+  doctorId: string;
 
-    @IsString()
-    symptoms: string;
+  @IsString()
+  symptoms: string;
 
-    @IsString()
-    diagnosis: string;
+  @IsString()
+  diagnosis: string;
 
-    @IsOptional()
-    @IsString()
-    treatment?: string;
+  @IsOptional()
+  @IsString()
+  treatment?: string;
 
-    @IsOptional()
-    @IsString()
-    prescription?: string;
+  @IsOptional()
+  @IsString()
+  prescription?: string;
 
-    @IsEnum(ConsultationOutcome)
-    outcome: ConsultationOutcome;
+  @IsEnum(ConsultationOutcome)
+  outcome: ConsultationOutcome;
 
-    @IsOptional()
-    @IsString()
-    recommendations?: string;
+  @IsOptional()
+  @IsString()
+  recommendations?: string;
 
-    @IsOptional()
-    @IsBoolean()
-    followUpRequired?: boolean;
+  @IsOptional()
+  @IsBoolean()
+  followUpRequired?: boolean;
 
-    @IsOptional()
-    @IsDateString()
-    followUpDate?: string;
+  @IsOptional()
+  @IsDateString()
+  followUpDate?: string;
 
-    @IsOptional()
-    @IsString()
-    referredTo?: string;
+  @IsOptional()
+  @IsString()
+  referredTo?: string;
 
-    @IsOptional()
-    @IsObject()
-    vitals?: Record<string, any>;
+  @IsOptional()
+  @IsObject()
+  vitals?: Record<string, any>;
 }

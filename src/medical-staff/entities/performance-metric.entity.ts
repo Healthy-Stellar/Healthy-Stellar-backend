@@ -3,7 +3,7 @@ export class PerformanceMetric {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Doctor, doctor => doctor.performanceMetrics)
+  @ManyToOne(() => Doctor, (doctor) => doctor.performanceMetrics)
   doctor: Doctor;
 
   @Column({ type: 'date' })

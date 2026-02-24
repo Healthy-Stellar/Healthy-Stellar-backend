@@ -15,7 +15,9 @@ export const AuditCtx = createParamDecorator(
       userId: request.user?.id || 'anonymous',
       ipAddress: request.ip || request.connection?.remoteAddress,
       userAgent: request.headers['user-agent'] || 'unknown',
-      requestId: request.headers['x-request-id'] || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      requestId:
+        request.headers['x-request-id'] ||
+        `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       sessionId: request.session?.id,
     };
 
@@ -32,16 +34,12 @@ export const CurrentUser = createParamDecorator(
   },
 );
 
-export const IpAddress = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext): string => {
-    const request = ctx.switchToHttp().getRequest();
-    return request.ip || request.connection?.remoteAddress || 'unknown';
-  },
-);
+export const IpAddress = createParamDecorator((data: unknown, ctx: ExecutionContext): string => {
+  const request = ctx.switchToHttp().getRequest();
+  return request.ip || request.connection?.remoteAddress || 'unknown';
+});
 
-export const UserAgent = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext): string => {
-    const request = ctx.switchToHttp().getRequest();
-    return request.headers['user-agent'] || 'unknown';
-  },
-);
+export const UserAgent = createParamDecorator((data: unknown, ctx: ExecutionContext): string => {
+  const request = ctx.switchToHttp().getRequest();
+  return request.headers['user-agent'] || 'unknown';
+});

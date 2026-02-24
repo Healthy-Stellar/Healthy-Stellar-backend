@@ -1,6 +1,6 @@
 /**
  * Pharmacy Management System Demo
- * 
+ *
  * This file demonstrates the comprehensive pharmacy management system
  * with drug dispensing and safety features.
  */
@@ -8,7 +8,6 @@
 // Example usage of the pharmacy system
 
 export class PharmacyDemo {
-  
   /**
    * Demo: Complete prescription workflow
    */
@@ -34,7 +33,7 @@ export class PharmacyDemo {
       sideEffects: 'Muscle pain, liver enzyme elevation',
       requiresPrescription: true,
       isRefrigerated: false,
-      isHazardous: false
+      isHazardous: false,
     };
 
     // 2. Inventory Management
@@ -46,10 +45,10 @@ export class PharmacyDemo {
       reorderLevel: 100,
       reorderQuantity: 500,
       expirationDate: new Date('2025-12-31'),
-      unitCost: 2.50,
-      sellingPrice: 5.00,
+      unitCost: 2.5,
+      sellingPrice: 5.0,
       location: 'Shelf A-15',
-      status: 'available'
+      status: 'available',
     };
 
     // 3. Prescription Creation and Verification
@@ -66,35 +65,37 @@ export class PharmacyDemo {
       prescriberDEA: 'BJ1234567',
       prescriptionDate: new Date(),
       refillsAllowed: 5,
-      items: [{
-        drugId: 'drug-123',
-        quantityPrescribed: 30,
-        dosageInstructions: 'Take 1 tablet by mouth once daily with food',
-        daySupply: 30
-      }]
+      items: [
+        {
+          drugId: 'drug-123',
+          quantityPrescribed: 30,
+          dosageInstructions: 'Take 1 tablet by mouth once daily with food',
+          daySupply: 30,
+        },
+      ],
     };
 
     // 4. Safety Checks
     console.log('4. Performing safety checks...');
-    
+
     // Drug interaction checking
     const interactionCheck = {
       hasInteractions: false,
       interactions: [],
-      severity: 'none'
+      severity: 'none',
     };
 
     // Allergy screening
     const allergyCheck = {
       hasAllergies: false,
-      allergyAlerts: []
+      allergyAlerts: [],
     };
 
     // Clinical validation
     const clinicalValidation = {
       ageAppropriate: true,
       doseAppropriate: true,
-      noContraindications: true
+      noContraindications: true,
     };
 
     // 5. Patient Counseling
@@ -108,15 +109,15 @@ export class PharmacyDemo {
       pharmacistLicense: 'RPH54321',
       counselingTopics: [
         'Medication Purpose',
-        'Dosing Instructions', 
+        'Dosing Instructions',
         'Common Side Effects',
         'Drug Interactions',
-        'Storage Requirements'
+        'Storage Requirements',
       ],
       durationMinutes: 15,
       counselingNotes: 'Patient understands to take with food, monitor for muscle pain',
       patientUnderstood: true,
-      status: 'completed'
+      status: 'completed',
     };
 
     // 6. Controlled Substance Tracking (if applicable)
@@ -131,7 +132,7 @@ export class PharmacyDemo {
       prescriberName: 'Dr. Sarah Johnson',
       prescriberDEA: 'BJ1234567',
       pharmacistName: 'PharmD Lisa Chen',
-      pharmacistLicense: 'RPH54321'
+      pharmacistLicense: 'RPH54321',
     };
 
     // 7. Inventory Alerts
@@ -141,14 +142,14 @@ export class PharmacyDemo {
         type: 'low_stock',
         drugName: 'Metformin 500mg',
         message: 'Low stock: 45 units remaining (reorder at 50)',
-        severity: 'medium'
+        severity: 'medium',
       },
       {
         type: 'expiring',
         drugName: 'Amoxicillin 250mg',
         message: 'Expiring in 14 days (Lot: LOT2024002)',
-        severity: 'high'
-      }
+        severity: 'high',
+      },
     ];
 
     // 8. Medication Error Reporting
@@ -163,7 +164,7 @@ export class PharmacyDemo {
       contributingFactors: 'Similar packaging, inadequate verification',
       reportedBy: 'PharmD Mike Wilson',
       correctiveActions: 'Patient contacted, correct medication provided',
-      preventiveActions: 'Enhanced barcode scanning, packaging review'
+      preventiveActions: 'Enhanced barcode scanning, packaging review',
     };
 
     console.log('\n=== System Features Demonstrated ===');
@@ -194,7 +195,7 @@ export class PharmacyDemo {
       counselingData,
       controlledSubstanceLog,
       inventoryAlerts,
-      errorReport
+      errorReport,
     };
   }
 
@@ -210,7 +211,7 @@ export class PharmacyDemo {
       drug2: 'Ibuprofen',
       severity: 'major',
       clinicalEffects: 'Increased bleeding risk',
-      recommendation: 'Monitor INR closely, consider alternative analgesic'
+      recommendation: 'Monitor INR closely, consider alternative analgesic',
     };
 
     // Allergy alert example
@@ -219,7 +220,7 @@ export class PharmacyDemo {
       allergy: 'Penicillin',
       prescribedDrug: 'Amoxicillin',
       alertLevel: 'critical',
-      action: 'Do not dispense - contact prescriber'
+      action: 'Do not dispense - contact prescriber',
     };
 
     // Age-based dosing alert
@@ -227,7 +228,7 @@ export class PharmacyDemo {
       patient: 'Mary Johnson (age 78)',
       drug: 'Diphenhydramine',
       concern: 'Beers Criteria - inappropriate for elderly',
-      recommendation: 'Consider alternative antihistamine'
+      recommendation: 'Consider alternative antihistamine',
     };
 
     console.log('Critical Interaction:', criticalInteraction);
@@ -252,7 +253,7 @@ export class PharmacyDemo {
           type: 'received',
           quantity: 1000,
           supplier: 'Cardinal Health',
-          date: '2024-01-15'
+          date: '2024-01-15',
         },
         {
           type: 'dispensed',
@@ -260,18 +261,18 @@ export class PharmacyDemo {
           patient: 'John Doe',
           prescriber: 'Dr. Smith',
           pharmacist: 'PharmD Chen',
-          date: '2024-01-16'
+          date: '2024-01-16',
         },
         {
           type: 'wasted',
           quantity: 2,
           reason: 'Damaged tablets',
           witness: 'PharmD Wilson',
-          date: '2024-01-17'
-        }
+          date: '2024-01-17',
+        },
       ],
       auditTrail: 'Complete perpetual inventory maintained',
-      complianceStatus: 'Compliant with DEA requirements'
+      complianceStatus: 'Compliant with DEA requirements',
     };
 
     console.log('Controlled Substance Tracking:', controlledSubstanceExample);

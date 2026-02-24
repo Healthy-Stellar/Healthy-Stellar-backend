@@ -7,7 +7,7 @@ export class AuditContextGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    
+
     const userId = request.user?.id || 'anonymous';
     const ipAddress = request.ip || request.connection?.remoteAddress;
     const userAgent = request.headers['user-agent'];
@@ -15,20 +15,15 @@ export class AuditContextGuard implements CanActivate {
     const sessionId = request.session?.id;
 
     try {
-      await this.dataSource.query(
-        `SELECT set_config('app.current_user_id', $1, true)`,
-        [userId]
-      );
-      
-      await this.dataSource.query(
-        `SELECT set_config('app.current_ip_address', $1, true)`,
-        [ipAddress]
-      );
+      await this.dataSource.query(`SELECT set_config('app.current_user_id', $1, true)`, [userId]);
 
-      await this.dataSource.query(
-        `SELECT set_config('app.current_request_id', $1, true)`,
-        [requestId]
-      );
+      await this.dataSource.query(`SELECT set_config('app.current_ip_address', $1, true)`, [
+        ipAddress,
+      ]);
+
+      await this.dataSource.query(`SELECT set_config('app.current_request_id', $1, true)`, [
+        requestId,
+      ]);
     } catch (error) {
       console.error('[AUDIT CONTEXT] Failed to set context:', error.message);
     }

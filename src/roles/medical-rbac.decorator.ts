@@ -1,5 +1,10 @@
 import { createParamDecorator, ExecutionContext, SetMetadata } from '@nestjs/common';
-import { MedicalDepartment, MedicalPermission, MedicalRole, MedicalSpecialty } from '../enums/medical-roles.enum';
+import {
+  MedicalDepartment,
+  MedicalPermission,
+  MedicalRole,
+  MedicalSpecialty,
+} from '../enums/medical-roles.enum';
 
 export const MEDICAL_ROLES_KEY = 'medicalRoles';
 export const MEDICAL_PERMISSIONS_KEY = 'medicalPermissions';
@@ -12,8 +17,7 @@ export const AUDIT_RESOURCE_KEY = 'auditResource';
  * Restrict endpoint to specific medical roles.
  * @example @MedicalRoles(MedicalRole.DOCTOR, MedicalRole.NURSE)
  */
-export const MedicalRoles = (...roles: MedicalRole[]) =>
-  SetMetadata(MEDICAL_ROLES_KEY, roles);
+export const MedicalRoles = (...roles: MedicalRole[]) => SetMetadata(MEDICAL_ROLES_KEY, roles);
 
 /**
  * Restrict endpoint to users with specific permissions.
@@ -40,8 +44,7 @@ export const SpecialtyRequired = (...specialties: MedicalSpecialty[]) =>
  * Mark endpoint as supporting emergency override access.
  * When set, authenticated emergency override sessions gain access.
  */
-export const AllowEmergencyOverride = () =>
-  SetMetadata(EMERGENCY_OVERRIDE_KEY, true);
+export const AllowEmergencyOverride = () => SetMetadata(EMERGENCY_OVERRIDE_KEY, true);
 
 /**
  * Annotate the resource name for audit log entries.
@@ -53,19 +56,15 @@ export const AuditResource = (resourceName: string) =>
 /**
  * Extract the authenticated medical user from the request.
  */
-export const CurrentMedicalUser = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest();
-    return request.medicalUser;
-  },
-);
+export const CurrentMedicalUser = createParamDecorator((_data: unknown, ctx: ExecutionContext) => {
+  const request = ctx.switchToHttp().getRequest();
+  return request.medicalUser;
+});
 
 /**
  * Extract the emergency override context from the request (if active).
  */
-export const EmergencyContext = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest();
-    return request.emergencyOverrideContext ?? null;
-  },
-);
+export const EmergencyContext = createParamDecorator((_data: unknown, ctx: ExecutionContext) => {
+  const request = ctx.switchToHttp().getRequest();
+  return request.emergencyOverrideContext ?? null;
+});

@@ -1,7 +1,10 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { PatientCounselingService } from '../services/patient-counseling.service';
 import { MedicationErrorService, ReportErrorDto } from '../services/medication-error.service';
-import { PrescriptionValidationService, PatientFactors } from '../services/prescription-validation.service';
+import {
+  PrescriptionValidationService,
+  PatientFactors,
+} from '../services/prescription-validation.service';
 
 @Controller('pharmacy/safety')
 // @UseGuards(JwtAuthGuard)
@@ -79,18 +82,12 @@ export class MedicationSafetyController {
   }
 
   @Post('errors/:id/corrective-action')
-  async addCorrectiveAction(
-    @Param('id') id: string,
-    @Body('action') action: string,
-  ) {
+  async addCorrectiveAction(@Param('id') id: string, @Body('action') action: string) {
     return await this.errorService.addCorrectiveAction(id, action);
   }
 
   @Post('errors/:id/preventive-action')
-  async addPreventiveAction(
-    @Param('id') id: string,
-    @Body('action') action: string,
-  ) {
+  async addPreventiveAction(@Param('id') id: string, @Body('action') action: string) {
     return await this.errorService.addPreventiveAction(id, action);
   }
 
@@ -105,18 +102,12 @@ export class MedicationSafetyController {
   }
 
   @Post('errors/:id/report-fda')
-  async reportToFDA(
-    @Param('id') id: string,
-    @Body('fdaReportNumber') fdaReportNumber: string,
-  ) {
+  async reportToFDA(@Param('id') id: string, @Body('fdaReportNumber') fdaReportNumber: string) {
     return await this.errorService.reportToFDA(id, fdaReportNumber);
   }
 
   @Post('errors/:id/close')
-  async closeError(
-    @Param('id') id: string,
-    @Body('followUpActions') followUpActions?: string,
-  ) {
+  async closeError(@Param('id') id: string, @Body('followUpActions') followUpActions?: string) {
     return await this.errorService.closeError(id, followUpActions);
   }
 
@@ -133,9 +124,7 @@ export class MedicationSafetyController {
 
   @Get('errors/statistics/trends')
   async getErrorTrends(@Query('months') months?: string) {
-    return await this.errorService.getTrendAnalysis(
-      months ? parseInt(months) : 12,
-    );
+    return await this.errorService.getTrendAnalysis(months ? parseInt(months) : 12);
   }
 
   // Prescription Validation Endpoints

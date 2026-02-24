@@ -1,15 +1,8 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import {
-  VideoConferenceSession,
-  SessionStatus,
-} from "../entities/video-conference-session.entity";
-import * as crypto from "crypto";
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { VideoConferenceSession, SessionStatus } from '../entities/video-conference-session.entity';
+import * as crypto from 'crypto';
 
 export interface CreateSessionDto {
   virtualVisitId: string;
@@ -21,7 +14,7 @@ export interface CreateSessionDto {
 
 export interface JoinSessionDto {
   sessionId: string;
-  participantType: "patient" | "provider";
+  participantType: 'patient' | 'provider';
   participantId: string;
 }
 
@@ -41,7 +34,7 @@ export class VideoConferenceService {
 
     // Validate recording consent
     if (dto.recordingEnabled && !dto.patientConsentForRecording) {
-      throw new BadRequestException("Patient consent required for recording");
+      throw new BadRequestException('Patient consent required for recording');
     }
 
     const session = this.sessionRepository.create({
@@ -54,7 +47,7 @@ export class VideoConferenceService {
       recordingEnabled: dto.recordingEnabled || false,
       patientConsentForRecording: dto.patientConsentForRecording || false,
       isEncrypted: true,
-      encryptionAlgorithm: "AES-256",
+      encryptionAlgorithm: 'AES-256',
       hipaaCompliant: true,
     });
 
@@ -74,19 +67,17 @@ export class VideoConferenceService {
     const session = await this.findOne(dto.sessionId);
 
     if (session.status === SessionStatus.ENDED) {
-      throw new BadRequestException("Session has ended");
+      throw new BadRequestException('Session has ended');
     }
 
     // Verify participant token
     const validToken =
-      dto.participantType === "patient"
-        ? session.patientToken
-        : session.providerToken;
+      dto.participantType === 'patient' ? session.patientToken : session.providerToken;
 
     const now = new Date();
     const participants = session.participants || {};
 
-    if (dto.participantType === "patient") {
+    if (dto.participantType === 'patient') {
       participants.patientJoinedAt = now;
     } else {
       participants.providerJoinedAt = now;
@@ -138,14 +129,14 @@ export class VideoConferenceService {
 
   async leaveSession(
     sessionId: string,
-    participantType: "patient" | "provider",
+    participantType: 'patient' | 'provider',
   ): Promise<VideoConferenceSession> {
     const session = await this.findOne(sessionId);
 
     const participants = session.participants || {};
     const now = new Date();
 
-    if (participantType === "patient") {
+    if (participantType === 'patient') {
       participants.patientLeftAt = now;
     } else {
       participants.providerLeftAt = now;
@@ -161,10 +152,7 @@ export class VideoConferenceService {
     return this.sessionRepository.save(session);
   }
 
-  async recordQualityMetrics(
-    sessionId: string,
-    metrics: any,
-  ): Promise<VideoConferenceSession> {
+  async recordQualityMetrics(sessionId: string, metrics: any): Promise<VideoConferenceSession> {
     const session = await this.findOne(sessionId);
 
     session.qualityMetrics = {
@@ -175,10 +163,7 @@ export class VideoConferenceService {
     return this.sessionRepository.save(session);
   }
 
-  async reportDisconnection(
-    sessionId: string,
-    reason: string,
-  ): Promise<VideoConferenceSession> {
+  async reportDisconnection(sessionId: string, reason: string): Promise<VideoConferenceSession> {
     const session = await this.findOne(sessionId);
 
     session.disconnectionReason = reason;
@@ -187,10 +172,7 @@ export class VideoConferenceService {
     return this.sessionRepository.save(session);
   }
 
-  async logTechnicalIssue(
-    sessionId: string,
-    issue: any,
-  ): Promise<VideoConferenceSession> {
+  async logTechnicalIssue(sessionId: string, issue: any): Promise<VideoConferenceSession> {
     const session = await this.findOne(sessionId);
 
     const logs = session.technicalLogs || [];
@@ -204,15 +186,13 @@ export class VideoConferenceService {
     return this.sessionRepository.save(session);
   }
 
-  async getSessionByVisit(
-    virtualVisitId: string,
-  ): Promise<VideoConferenceSession> {
+  async getSessionByVisit(virtualVisitId: string): Promise<VideoConferenceSession> {
     const session = await this.sessionRepository.findOne({
       where: { virtualVisitId },
     });
 
     if (!session) {
-      throw new NotFoundException("Video session not found for this visit");
+      throw new NotFoundException('Video session not found for this visit');
     }
 
     return session;
@@ -238,17 +218,13 @@ export class VideoConferenceService {
 
     if (participants.patientJoinedAt && participants.patientLeftAt) {
       patientDuration = Math.floor(
-        (participants.patientLeftAt.getTime() -
-          participants.patientJoinedAt.getTime()) /
-          1000,
+        (participants.patientLeftAt.getTime() - participants.patientJoinedAt.getTime()) / 1000,
       );
     }
 
     if (participants.providerJoinedAt && participants.providerLeftAt) {
       providerDuration = Math.floor(
-        (participants.providerLeftAt.getTime() -
-          participants.providerJoinedAt.getTime()) /
-          1000,
+        (participants.providerLeftAt.getTime() - participants.providerJoinedAt.getTime()) / 1000,
       );
     }
 
@@ -267,17 +243,14 @@ export class VideoConferenceService {
 
   // Helper methods for token generation (in production, use proper video SDK)
   private generateSecureToken(): string {
-    return crypto.randomBytes(32).toString("hex");
+    return crypto.randomBytes(32).toString('hex');
   }
 
   private generateRoomId(): string {
-    return `room_${crypto.randomBytes(16).toString("hex")}`;
+    return `room_${crypto.randomBytes(16).toString('hex')}`;
   }
 
-  private generateAccessToken(
-    session: VideoConferenceSession,
-    participantType: string,
-  ): string {
+  private generateAccessToken(session: VideoConferenceSession, participantType: string): string {
     // In production: generate JWT with proper claims for video service
     const payload = {
       roomId: session.roomId,
@@ -286,7 +259,7 @@ export class VideoConferenceService {
       exp: Date.now() + 3600000, // 1 hour
     };
 
-    return Buffer.from(JSON.stringify(payload)).toString("base64");
+    return Buffer.from(JSON.stringify(payload)).toString('base64');
   }
 
   private generateStreamUrl(roomId: string): string {
@@ -300,9 +273,8 @@ export class VideoConferenceService {
 
     const checks = {
       isEncrypted: session.isEncrypted,
-      hasValidEncryption: session.encryptionAlgorithm === "AES-256",
-      recordingConsentValid:
-        !session.recordingEnabled || session.patientConsentForRecording,
+      hasValidEncryption: session.encryptionAlgorithm === 'AES-256',
+      recordingConsentValid: !session.recordingEnabled || session.patientConsentForRecording,
     };
 
     const isCompliant = Object.values(checks).every((check) => check === true);

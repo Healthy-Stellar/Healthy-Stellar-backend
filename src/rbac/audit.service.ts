@@ -158,7 +158,9 @@ export class AuditService {
     const isAnomaly = count > ANOMALY_THRESHOLD;
 
     if (isAnomaly) {
-      this.logger.warn(`Anomaly detected for user ${userId}: ${count} PHI accesses in ${windowMinutes}min`);
+      this.logger.warn(
+        `Anomaly detected for user ${userId}: ${count} PHI accesses in ${windowMinutes}min`,
+      );
       this.eventEmitter.emit('audit.anomaly', { userId, count, windowMinutes });
     }
 

@@ -70,14 +70,8 @@ export class HealthcareSecurityController {
   @Get('audit/report')
   @UseGuards(HipaaAccessGuard)
   @HipaaRoles('admin', 'compliance-officer')
-  async getAuditReport(
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
-  ) {
-    return this.auditService.generateActivityReport(
-      new Date(startDate),
-      new Date(endDate),
-    );
+  async getAuditReport(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
+    return this.auditService.generateActivityReport(new Date(startDate), new Date(endDate));
   }
 
   @Get('audit/anomalies/:userId')
@@ -100,7 +94,8 @@ export class HealthcareSecurityController {
   @HipaaRoles('admin', 'security-officer', 'physician')
   @HttpCode(HttpStatus.CREATED)
   async createIncident(
-    @Body() body: {
+    @Body()
+    body: {
       type: IncidentType;
       severity: IncidentSeverity;
       description: string;
@@ -136,7 +131,8 @@ export class HealthcareSecurityController {
   @HipaaRoles('admin', 'security-officer')
   async updateIncident(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: {
+    @Body()
+    body: {
       status?: IncidentStatus;
       assignedTo?: string;
       rootCause?: string;

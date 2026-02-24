@@ -26,7 +26,7 @@ export class RecordsApi extends BaseAPI {
    */
   public listRecords(
     params: ListRecordsParams = {},
-    options?: AxiosRequestConfig
+    options?: AxiosRequestConfig,
   ): AxiosPromise<PaginatedRecords> {
     return this.axios.get<PaginatedRecords>('/records', {
       params,
@@ -47,7 +47,7 @@ export class RecordsApi extends BaseAPI {
     file: Blob | Buffer,
     patientId: string,
     metadata: string,
-    options?: AxiosRequestConfig
+    options?: AxiosRequestConfig,
   ): AxiosPromise<MedicalRecord> {
     const formData = new FormData();
     formData.append('file', file as Blob);
@@ -63,33 +63,24 @@ export class RecordsApi extends BaseAPI {
   /**
    * Fetch a single medical record by ID.
    */
-  public getRecord(
-    recordId: string,
-    options?: AxiosRequestConfig
-  ): AxiosPromise<MedicalRecord> {
+  public getRecord(recordId: string, options?: AxiosRequestConfig): AxiosPromise<MedicalRecord> {
     return this.axios.get<MedicalRecord>(`/records/${encodeURIComponent(recordId)}`, options);
   }
 
   /**
    * Soft-delete a medical record.
    */
-  public deleteRecord(
-    recordId: string,
-    options?: AxiosRequestConfig
-  ): AxiosPromise<void> {
+  public deleteRecord(recordId: string, options?: AxiosRequestConfig): AxiosPromise<void> {
     return this.axios.delete<void>(`/records/${encodeURIComponent(recordId)}`, options);
   }
 
   /**
    * Download the raw file for a record. Returns an ArrayBuffer.
    */
-  public downloadRecord(
-    recordId: string,
-    options?: AxiosRequestConfig
-  ): AxiosPromise<ArrayBuffer> {
-    return this.axios.get<ArrayBuffer>(
-      `/records/${encodeURIComponent(recordId)}/download`,
-      { responseType: 'arraybuffer', ...options }
-    );
+  public downloadRecord(recordId: string, options?: AxiosRequestConfig): AxiosPromise<ArrayBuffer> {
+    return this.axios.get<ArrayBuffer>(`/records/${encodeURIComponent(recordId)}/download`, {
+      responseType: 'arraybuffer',
+      ...options,
+    });
   }
 }

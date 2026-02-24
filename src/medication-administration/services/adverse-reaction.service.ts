@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
-import { AdverseDrugReaction, ReactionSeverity, ReactionStatus } from '../entities/adverse-drug-reaction.entity';
+import {
+  AdverseDrugReaction,
+  ReactionSeverity,
+  ReactionStatus,
+} from '../entities/adverse-drug-reaction.entity';
 import { CreateAdverseReactionDto } from '../dto/create-adverse-reaction.dto';
 import { AlertService } from './alert.service';
 
@@ -23,7 +27,10 @@ export class AdverseReactionService {
     const savedAdr = await this.adrRepository.save(adr);
 
     // Send immediate alerts for severe reactions
-    if (adr.severity === ReactionSeverity.SEVERE || adr.severity === ReactionSeverity.LIFE_THREATENING) {
+    if (
+      adr.severity === ReactionSeverity.SEVERE ||
+      adr.severity === ReactionSeverity.LIFE_THREATENING
+    ) {
       await this.alertService.sendSevereAdverseReactionAlert(savedAdr);
     }
 
@@ -81,7 +88,7 @@ export class AdverseReactionService {
 
   async update(id: string, updateData: Partial<AdverseDrugReaction>): Promise<AdverseDrugReaction> {
     const adr = await this.findOne(id);
-    
+
     if (updateData.resolvedDate) {
       updateData.resolvedDate = new Date(updateData.resolvedDate as any);
     }
@@ -159,19 +166,21 @@ export class AdverseReactionService {
 
     const stats = {
       total: reactions.length,
-      mild: reactions.filter(r => r.severity === ReactionSeverity.MILD).length,
-      moderate: reactions.filter(r => r.severity === ReactionSeverity.MODERATE).length,
-      severe: reactions.filter(r => r.severity === ReactionSeverity.SEVERE).length,
-      lifeThreatening: reactions.filter(r => r.severity === ReactionSeverity.LIFE_THREATENING).length,
-      active: reactions.filter(r => r.status === ReactionStatus.ACTIVE).length,
-      resolved: reactions.filter(r => r.status === ReactionStatus.RESOLVED).length,
-      fdaReported: reactions.filter(r => r.fdaReported).length,
+      mild: reactions.filter((r) => r.severity === ReactionSeverity.MILD).length,
+      moderate: reactions.filter((r) => r.severity === ReactionSeverity.MODERATE).length,
+      severe: reactions.filter((r) => r.severity === ReactionSeverity.SEVERE).length,
+      lifeThreatening: reactions.filter((r) => r.severity === ReactionSeverity.LIFE_THREATENING)
+        .length,
+      active: reactions.filter((r) => r.status === ReactionStatus.ACTIVE).length,
+      resolved: reactions.filter((r) => r.status === ReactionStatus.RESOLVED).length,
+      fdaReported: reactions.filter((r) => r.fdaReported).length,
       medicationBreakdown: {} as Record<string, number>,
     };
 
     // Calculate medication breakdown
-    reactions.forEach(r => {
-      stats.medicationBreakdown[r.medicationName] = (stats.medicationBreakdown[r.medicationName] || 0) + 1;
+    reactions.forEach((r) => {
+      stats.medicationBreakdown[r.medicationName] =
+        (stats.medicationBreakdown[r.medicationName] || 0) + 1;
     });
 
     return stats;
@@ -179,14 +188,14 @@ export class AdverseReactionService {
 
   async getPatientAllergies(patientId: string): Promise<string[]> {
     const reactions = await this.adrRepository.find({
-      where: { 
+      where: {
         patientId,
         status: ReactionStatus.ACTIVE,
       },
       select: ['medicationName'],
     });
 
-    return [...new Set(reactions.map(r => r.medicationName))] as string[];
+    return [...new Set(reactions.map((r) => r.medicationName))] as string[];
   }
 
   async checkForDuplicateReaction(

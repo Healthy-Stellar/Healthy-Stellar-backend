@@ -15,17 +15,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import {
-  MedChainClient,
-  RecordMetadata,
-  Permission,
-} from '../src/index';
+import { MedChainClient, RecordMetadata, Permission } from '../src/index';
 
 const API_BASE = process.env.MEDCHAIN_API_URL ?? 'http://localhost:3000/v1';
 
 // ─── Credentials (load from env in production) ───────────────────────────────
 const UPLOADER = { username: 'nurse@hospital.org', password: 'nurse_pass' };
-const DOCTOR   = { username: 'doctor@hospital.org', password: 'doctor_pass' };
+const DOCTOR = { username: 'doctor@hospital.org', password: 'doctor_pass' };
 const PATIENT_ID = 'patient-uuid-1234';
 
 async function main() {
@@ -33,7 +29,7 @@ async function main() {
   console.log('\n[1] Logging in as uploader…');
   const uploaderClient = new MedChainClient({ basePath: API_BASE });
   const { data: authData } = await uploaderClient.auth.login(UPLOADER);
-  uploaderClient.setToken(authData.token!);
+  uploaderClient.setToken(authData.token);
   console.log(`    ✓ Token acquired (expires in ${authData.expiresIn}s)`);
 
   // ── Step 2: Upload a medical record ───────────────────────────────────────
@@ -50,7 +46,7 @@ async function main() {
   const { data: record } = await uploaderClient.records.uploadRecord(
     fileBuffer,
     PATIENT_ID,
-    JSON.stringify(metadata)
+    JSON.stringify(metadata),
   );
   console.log(`    ✓ Record created: ${record.id}`);
   console.log(`    ✓ IPFS CID: ${record.ipfsCid}`);
@@ -76,19 +72,19 @@ async function main() {
   console.log('\n[4] Logging in as doctor…');
   const doctorClient = new MedChainClient({ basePath: API_BASE });
   const { data: doctorAuth } = await doctorClient.auth.login(DOCTOR);
-  doctorClient.setToken(doctorAuth.token!);
+  doctorClient.setToken(doctorAuth.token);
   console.log('    ✓ Doctor token acquired');
 
   // ── Step 5: Fetch the record metadata ─────────────────────────────────────
   console.log('\n[5] Fetching record metadata…');
-  const { data: fetchedRecord } = await doctorClient.records.getRecord(record.id!);
+  const { data: fetchedRecord } = await doctorClient.records.getRecord(record.id);
   console.log(`    ✓ Record title: ${fetchedRecord.metadata?.title}`);
   console.log(`    ✓ Record type: ${fetchedRecord.metadata?.recordType}`);
   console.log(`    ✓ Tags: ${fetchedRecord.metadata?.tags?.join(', ')}`);
 
   // ── Step 6: Download the raw file ─────────────────────────────────────────
   console.log('\n[6] Downloading record file…');
-  const { data: fileData } = await doctorClient.records.downloadRecord(record.id!);
+  const { data: fileData } = await doctorClient.records.downloadRecord(record.id);
   const outPath = path.join(__dirname, 'downloaded-lab-result.pdf');
   fs.writeFileSync(outPath, Buffer.from(fileData));
   console.log(`    ✓ File saved to ${outPath} (${Buffer.from(fileData).length} bytes)`);
@@ -106,7 +102,7 @@ async function main() {
 
   // ── Step 8: Revoke access (cleanup) ───────────────────────────────────────
   console.log('\n[8] Revoking access grant…');
-  await uploaderClient.access.revokeAccess(grant.id!);
+  await uploaderClient.access.revokeAccess(grant.id);
   console.log('    ✓ Grant revoked');
 
   console.log('\n✅ Full upload → grant → fetch flow complete!\n');

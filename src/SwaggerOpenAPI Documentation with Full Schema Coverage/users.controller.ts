@@ -12,19 +12,8 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import {
-  ApiOperation,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
-  ApiBearerAuth,
-} from '@nestjs/swagger';
-import {
-  CreateUserDto,
-  UpdateUserDto,
-  UserDto,
-  UserQueryDto,
-} from './dto/user.dto';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { CreateUserDto, UpdateUserDto, UserDto, UserQueryDto } from './dto/user.dto';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { ApiEndpoint } from '../common/decorators/api-endpoint.decorator';
 import { PaginatedDto } from '../common/dto/paginated.dto';
@@ -147,10 +136,7 @@ export class UsersController {
     description: 'Unexpected server error.',
     type: ErrorResponseDto,
   })
-  update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateUserDto,
-  ): UserDto {
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto): UserDto {
     return {} as UserDto;
   }
 

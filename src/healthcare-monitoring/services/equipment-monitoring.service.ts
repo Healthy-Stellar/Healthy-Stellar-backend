@@ -2,7 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { EquipmentStatus, EquipmentType, EquipmentHealthStatus } from '../entities/equipment-status.entity';
+import {
+  EquipmentStatus,
+  EquipmentType,
+  EquipmentHealthStatus,
+} from '../entities/equipment-status.entity';
 import { ClinicalAlertService } from './clinical-alert.service';
 
 @Injectable()
@@ -19,7 +23,7 @@ export class EquipmentMonitoringService {
   async monitorEquipmentHealth(): Promise<void> {
     try {
       const equipment = await this.equipmentRepository.find({
-        where: { isActive: true }
+        where: { isActive: true },
       });
 
       for (const device of equipment) {
@@ -36,8 +40,8 @@ export class EquipmentMonitoringService {
       const today = new Date();
       const upcomingMaintenance = await this.equipmentRepository
         .createQueryBuilder('equipment')
-        .where('equipment.nextMaintenanceDate <= :date', { 
-          date: new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
+        .where('equipment.nextMaintenanceDate <= :date', {
+          date: new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
         })
         .andWhere('equipment.isActive = :active', { active: true })
         .getMany();
@@ -52,7 +56,7 @@ export class EquipmentMonitoringService {
 
   private async checkEquipmentStatus(equipment: EquipmentStatus): Promise<void> {
     const healthData = await this.getEquipmentHealthData(equipment.equipmentId);
-    
+
     let newStatus = equipment.status;
     const alerts = [];
 
@@ -92,15 +96,18 @@ export class EquipmentMonitoringService {
       equipment.alerts = alerts;
       equipment.performanceMetrics = healthData.metrics;
       equipment.operatingHours = healthData.operatingHours;
-      
+
       await this.equipmentRepository.save(equipment);
 
       // Create alerts for critical issues
-      if (newStatus === EquipmentHealthStatus.CRITICAL || newStatus === EquipmentHealthStatus.OFFLINE) {
+      if (
+        newStatus === EquipmentHealthStatus.CRITICAL ||
+        newStatus === EquipmentHealthStatus.OFFLINE
+      ) {
         await this.clinicalAlertService.createEquipmentAlert(
           equipment.equipmentId,
           alerts.join(', '),
-          equipment.department
+          equipment.department,
         );
       }
     }
@@ -126,15 +133,15 @@ export class EquipmentMonitoringService {
   }
 
   async updateEquipmentMaintenance(
-    equipmentId: string, 
+    equipmentId: string,
     maintenanceData: {
       lastMaintenanceDate: Date;
       nextMaintenanceDate: Date;
       maintenanceNotes?: string;
-    }
+    },
   ): Promise<EquipmentStatus> {
     const equipment = await this.equipmentRepository.findOne({
-      where: { equipmentId }
+      where: { equipmentId },
     });
 
     if (!equipment) {
@@ -152,13 +159,13 @@ export class EquipmentMonitoringService {
   async getEquipmentByDepartment(department: string): Promise<EquipmentStatus[]> {
     return await this.equipmentRepository.find({
       where: { department, isActive: true },
-      order: { equipmentName: 'ASC' }
+      order: { equipmentName: 'ASC' },
     });
   }
 
   async getEquipmentMetrics(): Promise<any> {
     const equipment = await this.equipmentRepository.find({
-      where: { isActive: true }
+      where: { isActive: true },
     });
 
     const metrics = {
@@ -172,13 +179,13 @@ export class EquipmentMonitoringService {
 
     const today = new Date();
 
-    equipment.forEach(device => {
+    equipment.forEach((device) => {
       // Count by status
       metrics.byStatus[device.status] = (metrics.byStatus[device.status] || 0) + 1;
-      
+
       // Count by type
       metrics.byType[device.equipmentType] = (metrics.byType[device.equipmentType] || 0) + 1;
-      
+
       // Count by department
       metrics.byDepartment[device.department] = (metrics.byDepartment[device.department] || 0) + 1;
 
@@ -198,7 +205,7 @@ export class EquipmentMonitoringService {
 
   private async createMaintenanceAlert(equipment: EquipmentStatus): Promise<void> {
     const daysUntilMaintenance = Math.ceil(
-      (equipment.nextMaintenanceDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      (equipment.nextMaintenanceDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
     );
 
     let message: string;
@@ -211,7 +218,7 @@ export class EquipmentMonitoringService {
     await this.clinicalAlertService.createEquipmentAlert(
       equipment.equipmentId,
       message,
-      equipment.department
+      equipment.department,
     );
   }
 

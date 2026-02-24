@@ -58,7 +58,12 @@ export class EmailQueueProducer {
   ): Promise<void> {
     const job = await this.emailQueue.add(
       EmailJobType.ACCESS_GRANTED,
-      { type: EmailJobType.ACCESS_GRANTED, patient, grantee, record } satisfies AccessGrantedJobData,
+      {
+        type: EmailJobType.ACCESS_GRANTED,
+        patient,
+        grantee,
+        record,
+      } satisfies AccessGrantedJobData,
       { priority: 1 }, // High priority
     );
     this.logger.log(`Queued access-granted email job ${job.id} for patient ${patient.id}`);
@@ -71,7 +76,12 @@ export class EmailQueueProducer {
   ): Promise<void> {
     const job = await this.emailQueue.add(
       EmailJobType.ACCESS_REVOKED,
-      { type: EmailJobType.ACCESS_REVOKED, patient, revokee, record } satisfies AccessRevokedJobData,
+      {
+        type: EmailJobType.ACCESS_REVOKED,
+        patient,
+        revokee,
+        record,
+      } satisfies AccessRevokedJobData,
       { priority: 1 },
     );
     this.logger.log(`Queued access-revoked email job ${job.id} for patient ${patient.id}`);
@@ -84,16 +94,18 @@ export class EmailQueueProducer {
   ): Promise<void> {
     const job = await this.emailQueue.add(
       EmailJobType.RECORD_UPLOADED,
-      { type: EmailJobType.RECORD_UPLOADED, patient, record, uploadedBy } satisfies RecordUploadedJobData,
+      {
+        type: EmailJobType.RECORD_UPLOADED,
+        patient,
+        record,
+        uploadedBy,
+      } satisfies RecordUploadedJobData,
       { priority: 2 },
     );
     this.logger.log(`Queued record-uploaded email job ${job.id} for patient ${patient.id}`);
   }
 
-  async queueSuspiciousAccessEmail(
-    patient: Patient,
-    event: SuspiciousAccessEvent,
-  ): Promise<void> {
+  async queueSuspiciousAccessEmail(patient: Patient, event: SuspiciousAccessEvent): Promise<void> {
     const job = await this.emailQueue.add(
       EmailJobType.SUSPICIOUS_ACCESS,
       { type: EmailJobType.SUSPICIOUS_ACCESS, patient, event } satisfies SuspiciousAccessJobData,

@@ -42,10 +42,7 @@ export class MarController {
 
   @Get('patient/:patientId/date/:date')
   @Roles(UserRole.NURSE, UserRole.PHYSICIAN)
-  findByPatientAndDate(
-    @Param('patientId') patientId: string,
-    @Param('date') date: string,
-  ) {
+  findByPatientAndDate(@Param('patientId') patientId: string, @Param('date') date: string) {
     return this.marService.findByPatientAndDate(patientId, date);
   }
 
@@ -69,10 +66,7 @@ export class MarController {
 
   @Get('due/:nurseId')
   @Roles(UserRole.NURSE)
-  getDueMedications(
-    @Param('nurseId') nurseId: string,
-    @Query('timeWindow') timeWindow?: number,
-  ) {
+  getDueMedications(@Param('nurseId') nurseId: string, @Query('timeWindow') timeWindow?: number) {
     return this.marService.getDueMedications(nurseId, timeWindow);
   }
 

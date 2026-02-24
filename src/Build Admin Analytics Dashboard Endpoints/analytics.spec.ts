@@ -36,10 +36,7 @@ describe('AnalyticsService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AnalyticsService,
-        { provide: AnalyticsRepository, useValue: repoMock },
-      ],
+      providers: [AnalyticsService, { provide: AnalyticsRepository, useValue: repoMock }],
     }).compile();
 
     service = module.get<AnalyticsService>(AnalyticsService);
@@ -76,15 +73,15 @@ describe('AnalyticsService', () => {
     });
 
     it('throws BadRequestException when from > to', async () => {
-      await expect(
-        service.getActivity('2024-02-01', '2024-01-01'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.getActivity('2024-02-01', '2024-01-01')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('throws BadRequestException when range exceeds 366 days', async () => {
-      await expect(
-        service.getActivity('2023-01-01', '2024-12-31'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.getActivity('2023-01-01', '2024-12-31')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('includes from/to in response envelope', async () => {

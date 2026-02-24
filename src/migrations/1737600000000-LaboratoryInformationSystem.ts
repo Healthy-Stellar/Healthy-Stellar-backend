@@ -1,11 +1,11 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class LaboratoryInformationSystem1737600000000 implements MigrationInterface {
-    name = 'LaboratoryInformationSystem1737600000000';
+  name = 'LaboratoryInformationSystem1737600000000';
 
-    public async up(queryRunner: QueryRunner): Promise<void> {
-        // Lab Workflows table
-        await queryRunner.query(`
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    // Lab Workflows table
+    await queryRunner.query(`
             CREATE TABLE "lab_workflows" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "name" character varying NOT NULL,
@@ -24,8 +24,8 @@ export class LaboratoryInformationSystem1737600000000 implements MigrationInterf
             )
         `);
 
-        // Lab Workflow Steps table
-        await queryRunner.query(`
+    // Lab Workflow Steps table
+    await queryRunner.query(`
             CREATE TABLE "lab_workflow_steps" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "workflow_id" uuid NOT NULL,
@@ -49,8 +49,8 @@ export class LaboratoryInformationSystem1737600000000 implements MigrationInterf
             )
         `);
 
-        // Lab Equipment table
-        await queryRunner.query(`
+    // Lab Equipment table
+    await queryRunner.query(`
             CREATE TABLE "lab_equipment" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "name" character varying NOT NULL,
@@ -76,8 +76,8 @@ export class LaboratoryInformationSystem1737600000000 implements MigrationInterf
             )
         `);
 
-        // Lab Equipment Interfaces table
-        await queryRunner.query(`
+    // Lab Equipment Interfaces table
+    await queryRunner.query(`
             CREATE TABLE "lab_equipment_interfaces" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "equipment_id" uuid NOT NULL,
@@ -99,8 +99,8 @@ export class LaboratoryInformationSystem1737600000000 implements MigrationInterf
             )
         `);
 
-        // Lab Reference Ranges table
-        await queryRunner.query(`
+    // Lab Reference Ranges table
+    await queryRunner.query(`
             CREATE TABLE "lab_reference_ranges" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "test_parameter_id" uuid NOT NULL,
@@ -123,8 +123,8 @@ export class LaboratoryInformationSystem1737600000000 implements MigrationInterf
             )
         `);
 
-        // Lab Report Templates table
-        await queryRunner.query(`
+    // Lab Report Templates table
+    await queryRunner.query(`
             CREATE TABLE "lab_report_templates" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "name" character varying NOT NULL,
@@ -144,8 +144,8 @@ export class LaboratoryInformationSystem1737600000000 implements MigrationInterf
             )
         `);
 
-        // Lab Reports table
-        await queryRunner.query(`
+    // Lab Reports table
+    await queryRunner.query(`
             CREATE TABLE "lab_reports" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "template_id" uuid NOT NULL,
@@ -166,8 +166,8 @@ export class LaboratoryInformationSystem1737600000000 implements MigrationInterf
             )
         `);
 
-        // Lab Analytics table
-        await queryRunner.query(`
+    // Lab Analytics table
+    await queryRunner.query(`
             CREATE TABLE "lab_analytics" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "metric_type" character varying NOT NULL,
@@ -189,8 +189,8 @@ export class LaboratoryInformationSystem1737600000000 implements MigrationInterf
             )
         `);
 
-        // Lab Accreditations table
-        await queryRunner.query(`
+    // Lab Accreditations table
+    await queryRunner.query(`
             CREATE TABLE "lab_accreditations" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "type" character varying NOT NULL,
@@ -213,8 +213,8 @@ export class LaboratoryInformationSystem1737600000000 implements MigrationInterf
             )
         `);
 
-        // Lab Compliance Records table
-        await queryRunner.query(`
+    // Lab Compliance Records table
+    await queryRunner.query(`
             CREATE TABLE "lab_compliance_records" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "accreditation_id" uuid NOT NULL,
@@ -239,81 +239,109 @@ export class LaboratoryInformationSystem1737600000000 implements MigrationInterf
             )
         `);
 
-        // Add foreign key constraints
-        await queryRunner.query(`
+    // Add foreign key constraints
+    await queryRunner.query(`
             ALTER TABLE "lab_workflow_steps" 
             ADD CONSTRAINT "FK_lab_workflow_steps_workflow" 
             FOREIGN KEY ("workflow_id") REFERENCES "lab_workflows"("id") ON DELETE CASCADE
         `);
 
-        await queryRunner.query(`
+    await queryRunner.query(`
             ALTER TABLE "lab_equipment_interfaces" 
             ADD CONSTRAINT "FK_lab_equipment_interfaces_equipment" 
             FOREIGN KEY ("equipment_id") REFERENCES "lab_equipment"("id") ON DELETE CASCADE
         `);
 
-        await queryRunner.query(`
+    await queryRunner.query(`
             ALTER TABLE "lab_reports" 
             ADD CONSTRAINT "FK_lab_reports_template" 
             FOREIGN KEY ("template_id") REFERENCES "lab_report_templates"("id")
         `);
 
-        await queryRunner.query(`
+    await queryRunner.query(`
             ALTER TABLE "lab_compliance_records" 
             ADD CONSTRAINT "FK_lab_compliance_records_accreditation" 
             FOREIGN KEY ("accreditation_id") REFERENCES "lab_accreditations"("id") ON DELETE CASCADE
         `);
 
-        // Create indexes for better performance
-        await queryRunner.query(`CREATE INDEX "IDX_lab_workflows_status" ON "lab_workflows" ("status")`);
-        await queryRunner.query(`CREATE INDEX "IDX_lab_workflows_assigned_to" ON "lab_workflows" ("assigned_to")`);
-        await queryRunner.query(`CREATE INDEX "IDX_lab_workflows_lab_order_id" ON "lab_workflows" ("lab_order_id")`);
-        
-        await queryRunner.query(`CREATE INDEX "IDX_lab_equipment_status" ON "lab_equipment" ("status")`);
-        await queryRunner.query(`CREATE INDEX "IDX_lab_equipment_type" ON "lab_equipment" ("type")`);
-        
-        await queryRunner.query(`CREATE INDEX "IDX_lab_analytics_metric_type" ON "lab_analytics" ("metric_type")`);
-        await queryRunner.query(`CREATE INDEX "IDX_lab_analytics_period" ON "lab_analytics" ("period")`);
-        await queryRunner.query(`CREATE INDEX "IDX_lab_analytics_period_start" ON "lab_analytics" ("period_start")`);
-        
-        await queryRunner.query(`CREATE INDEX "IDX_lab_accreditations_status" ON "lab_accreditations" ("status")`);
-        await queryRunner.query(`CREATE INDEX "IDX_lab_accreditations_expiry_date" ON "lab_accreditations" ("expiry_date")`);
-        
-        await queryRunner.query(`CREATE INDEX "IDX_lab_compliance_records_status" ON "lab_compliance_records" ("status")`);
-        await queryRunner.query(`CREATE INDEX "IDX_lab_compliance_records_type" ON "lab_compliance_records" ("type")`);
-    }
+    // Create indexes for better performance
+    await queryRunner.query(
+      `CREATE INDEX "IDX_lab_workflows_status" ON "lab_workflows" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_lab_workflows_assigned_to" ON "lab_workflows" ("assigned_to")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_lab_workflows_lab_order_id" ON "lab_workflows" ("lab_order_id")`,
+    );
 
-    public async down(queryRunner: QueryRunner): Promise<void> {
-        // Drop foreign key constraints
-        await queryRunner.query(`ALTER TABLE "lab_compliance_records" DROP CONSTRAINT "FK_lab_compliance_records_accreditation"`);
-        await queryRunner.query(`ALTER TABLE "lab_reports" DROP CONSTRAINT "FK_lab_reports_template"`);
-        await queryRunner.query(`ALTER TABLE "lab_equipment_interfaces" DROP CONSTRAINT "FK_lab_equipment_interfaces_equipment"`);
-        await queryRunner.query(`ALTER TABLE "lab_workflow_steps" DROP CONSTRAINT "FK_lab_workflow_steps_workflow"`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_lab_equipment_status" ON "lab_equipment" ("status")`,
+    );
+    await queryRunner.query(`CREATE INDEX "IDX_lab_equipment_type" ON "lab_equipment" ("type")`);
 
-        // Drop indexes
-        await queryRunner.query(`DROP INDEX "IDX_lab_compliance_records_type"`);
-        await queryRunner.query(`DROP INDEX "IDX_lab_compliance_records_status"`);
-        await queryRunner.query(`DROP INDEX "IDX_lab_accreditations_expiry_date"`);
-        await queryRunner.query(`DROP INDEX "IDX_lab_accreditations_status"`);
-        await queryRunner.query(`DROP INDEX "IDX_lab_analytics_period_start"`);
-        await queryRunner.query(`DROP INDEX "IDX_lab_analytics_period"`);
-        await queryRunner.query(`DROP INDEX "IDX_lab_analytics_metric_type"`);
-        await queryRunner.query(`DROP INDEX "IDX_lab_equipment_type"`);
-        await queryRunner.query(`DROP INDEX "IDX_lab_equipment_status"`);
-        await queryRunner.query(`DROP INDEX "IDX_lab_workflows_lab_order_id"`);
-        await queryRunner.query(`DROP INDEX "IDX_lab_workflows_assigned_to"`);
-        await queryRunner.query(`DROP INDEX "IDX_lab_workflows_status"`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_lab_analytics_metric_type" ON "lab_analytics" ("metric_type")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_lab_analytics_period" ON "lab_analytics" ("period")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_lab_analytics_period_start" ON "lab_analytics" ("period_start")`,
+    );
 
-        // Drop tables
-        await queryRunner.query(`DROP TABLE "lab_compliance_records"`);
-        await queryRunner.query(`DROP TABLE "lab_accreditations"`);
-        await queryRunner.query(`DROP TABLE "lab_analytics"`);
-        await queryRunner.query(`DROP TABLE "lab_reports"`);
-        await queryRunner.query(`DROP TABLE "lab_report_templates"`);
-        await queryRunner.query(`DROP TABLE "lab_reference_ranges"`);
-        await queryRunner.query(`DROP TABLE "lab_equipment_interfaces"`);
-        await queryRunner.query(`DROP TABLE "lab_equipment"`);
-        await queryRunner.query(`DROP TABLE "lab_workflow_steps"`);
-        await queryRunner.query(`DROP TABLE "lab_workflows"`);
-    }
+    await queryRunner.query(
+      `CREATE INDEX "IDX_lab_accreditations_status" ON "lab_accreditations" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_lab_accreditations_expiry_date" ON "lab_accreditations" ("expiry_date")`,
+    );
+
+    await queryRunner.query(
+      `CREATE INDEX "IDX_lab_compliance_records_status" ON "lab_compliance_records" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_lab_compliance_records_type" ON "lab_compliance_records" ("type")`,
+    );
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    // Drop foreign key constraints
+    await queryRunner.query(
+      `ALTER TABLE "lab_compliance_records" DROP CONSTRAINT "FK_lab_compliance_records_accreditation"`,
+    );
+    await queryRunner.query(`ALTER TABLE "lab_reports" DROP CONSTRAINT "FK_lab_reports_template"`);
+    await queryRunner.query(
+      `ALTER TABLE "lab_equipment_interfaces" DROP CONSTRAINT "FK_lab_equipment_interfaces_equipment"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "lab_workflow_steps" DROP CONSTRAINT "FK_lab_workflow_steps_workflow"`,
+    );
+
+    // Drop indexes
+    await queryRunner.query(`DROP INDEX "IDX_lab_compliance_records_type"`);
+    await queryRunner.query(`DROP INDEX "IDX_lab_compliance_records_status"`);
+    await queryRunner.query(`DROP INDEX "IDX_lab_accreditations_expiry_date"`);
+    await queryRunner.query(`DROP INDEX "IDX_lab_accreditations_status"`);
+    await queryRunner.query(`DROP INDEX "IDX_lab_analytics_period_start"`);
+    await queryRunner.query(`DROP INDEX "IDX_lab_analytics_period"`);
+    await queryRunner.query(`DROP INDEX "IDX_lab_analytics_metric_type"`);
+    await queryRunner.query(`DROP INDEX "IDX_lab_equipment_type"`);
+    await queryRunner.query(`DROP INDEX "IDX_lab_equipment_status"`);
+    await queryRunner.query(`DROP INDEX "IDX_lab_workflows_lab_order_id"`);
+    await queryRunner.query(`DROP INDEX "IDX_lab_workflows_assigned_to"`);
+    await queryRunner.query(`DROP INDEX "IDX_lab_workflows_status"`);
+
+    // Drop tables
+    await queryRunner.query(`DROP TABLE "lab_compliance_records"`);
+    await queryRunner.query(`DROP TABLE "lab_accreditations"`);
+    await queryRunner.query(`DROP TABLE "lab_analytics"`);
+    await queryRunner.query(`DROP TABLE "lab_reports"`);
+    await queryRunner.query(`DROP TABLE "lab_report_templates"`);
+    await queryRunner.query(`DROP TABLE "lab_reference_ranges"`);
+    await queryRunner.query(`DROP TABLE "lab_equipment_interfaces"`);
+    await queryRunner.query(`DROP TABLE "lab_equipment"`);
+    await queryRunner.query(`DROP TABLE "lab_workflow_steps"`);
+    await queryRunner.query(`DROP TABLE "lab_workflows"`);
+  }
 }

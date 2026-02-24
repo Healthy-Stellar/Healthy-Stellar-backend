@@ -272,7 +272,9 @@ describe('AccessControlService', () => {
   it('throws 404 on missing grant on revoke', async () => {
     repository.findOne.mockResolvedValue(null);
 
-    await expect(service.revokeAccess('missing-id', patientId, 'reason')).rejects.toThrow(NotFoundException);
+    await expect(service.revokeAccess('missing-id', patientId, 'reason')).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   it('creates emergency grant, notifies patient, and logs audit entry', async () => {
@@ -290,7 +292,8 @@ describe('AccessControlService', () => {
       accessLevel: AccessLevel.READ_WRITE,
       status: GrantStatus.ACTIVE,
       isEmergency: true,
-      emergencyReason: 'Emergency override justified by critical trauma response with immediate life-saving need.',
+      emergencyReason:
+        'Emergency override justified by critical trauma response with immediate life-saving need.',
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       createdAt: new Date(),
       updatedAt: new Date(),

@@ -18,10 +18,7 @@ describe('EncryptionService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        EncryptionService,
-        { provide: ConfigService, useValue: mockConfigService },
-      ],
+      providers: [EncryptionService, { provide: ConfigService, useValue: mockConfigService }],
     }).compile();
 
     service = module.get<EncryptionService>(EncryptionService);
@@ -197,7 +194,7 @@ describe('EncryptionService', () => {
   describe('initialization', () => {
     it('should throw if master key is too short', () => {
       const badConfig = {
-        get: jest.fn((key: string) => key === 'ENCRYPTION_MASTER_KEY' ? 'short' : undefined),
+        get: jest.fn((key: string) => (key === 'ENCRYPTION_MASTER_KEY' ? 'short' : undefined)),
       };
 
       expect(() => {

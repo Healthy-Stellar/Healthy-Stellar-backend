@@ -47,11 +47,7 @@ export class MedicalRbacController {
     @CurrentMedicalUser() user: MedicalUser,
     @Body() dto: EmergencyOverrideRequestDto,
   ) {
-    return this.emergencyOverrideService.activateOverride(
-      user,
-      dto.patientId,
-      dto.reason,
-    );
+    return this.emergencyOverrideService.activateOverride(user, dto.patientId, dto.reason);
   }
 
   @Get('emergency-override/pending')
@@ -70,11 +66,7 @@ export class MedicalRbacController {
     @CurrentMedicalUser() user: MedicalUser,
     @Body() dto: ReviewEmergencyOverrideDto,
   ) {
-    return this.emergencyOverrideService.reviewOverride(
-      dto.overrideId,
-      user.id,
-      dto.reviewNotes,
-    );
+    return this.emergencyOverrideService.reviewOverride(dto.overrideId, user.id, dto.reviewNotes);
   }
 
   // ─── Audit Logs ──────────────────────────────────────────────────────────────

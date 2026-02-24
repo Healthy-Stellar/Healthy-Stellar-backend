@@ -7,112 +7,116 @@ import { CreateLabWorkflowDto } from '../dto/create-lab-workflow.dto';
 
 @Injectable()
 export class LabWorkflowService {
-    constructor(
-        @InjectRepository(LabWorkflow)
-        private workflowRepository: Repository<LabWorkflow>,
-        @InjectRepository(LabWorkflowStep)
-        private workflowStepRepository: Repository<LabWorkflowStep>,
-    ) {}
+  constructor(
+    @InjectRepository(LabWorkflow)
+    private workflowRepository: Repository<LabWorkflow>,
+    @InjectRepository(LabWorkflowStep)
+    private workflowStepRepository: Repository<LabWorkflowStep>,
+  ) {}
 
-    async create(createWorkflowDto: CreateLabWorkflowDto): Promise<LabWorkflow> {
-        const workflow = this.workflowRepository.create(createWorkflowDto);
-        const savedWorkflow = await this.workflowRepository.save(workflow);
+  async create(createWorkflowDto: CreateLabWorkflowDto): Promise<LabWorkflow> {
+    const workflow = this.workflowRepository.create(createWorkflowDto);
+    const savedWorkflow = await this.workflowRepository.save(workflow);
 
-        if (createWorkflowDto.steps?.length) {
-            const steps = createWorkflowDto.steps.map(stepDto => 
-                this.workflowStepRepository.create({
-                    ...stepDto,
-                    workflowId: savedWorkflow.id
-                })
-            );
-            await this.workflowStepRepository.save(steps);
-        }
-
-        return this.findOne(savedWorkflow.id);
+    if (createWorkflowDto.steps?.length) {
+      const steps = createWorkflowDto.steps.map((stepDto) =>
+        this.workflowStepRepository.create({
+          ...stepDto,
+          workflowId: savedWorkflow.id,
+        }),
+      );
+      await this.workflowStepRepository.save(steps);
     }
 
-    async findAll(): Promise<LabWorkflow[]> {
-        return this.workflowRepository.find({
-            relations: ['labOrder', 'steps'],
-            order: { createdAt: 'DESC' }
-        });
+    return this.findOne(savedWorkflow.id);
+  }
+
+  async findAll(): Promise<LabWorkflow[]> {
+    return this.workflowRepository.find({
+      relations: ['labOrder', 'steps'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async findOne(id: string): Promise<LabWorkflow> {
+    const workflow = await this.workflowRepository.findOne({
+      where: { id },
+      relations: ['labOrder', 'steps'],
+    });
+
+    if (!workflow) {
+      throw new NotFoundException(`Workflow with ID ${id} not found`);
     }
 
-    async findOne(id: string): Promise<LabWorkflow> {
-        const workflow = await this.workflowRepository.findOne({
-            where: { id },
-            relations: ['labOrder', 'steps']
-        });
+    return workflow;
+  }
 
-        if (!workflow) {
-            throw new NotFoundException(`Workflow with ID ${id} not found`);
-        }
+  async startWorkflow(id: string, assignedTo?: string): Promise<LabWorkflow> {
+    const workflow = await this.findOne(id);
 
-        return workflow;
+    workflow.status = WorkflowStatus.IN_PROGRESS;
+    workflow.startedAt = new Date();
+    if (assignedTo) workflow.assignedTo = assignedTo;
+
+    return this.workflowRepository.save(workflow);
+  }
+
+  async completeWorkflow(id: string): Promise<LabWorkflow> {
+    const workflow = await this.findOne(id);
+
+    workflow.status = WorkflowStatus.COMPLETED;
+    workflow.completedAt = new Date();
+
+    if (workflow.startedAt) {
+      const duration = new Date().getTime() - workflow.startedAt.getTime();
+      workflow.actualDuration = Math.round(duration / (1000 * 60)); // in minutes
     }
 
-    async startWorkflow(id: string, assignedTo?: string): Promise<LabWorkflow> {
-        const workflow = await this.findOne(id);
-        
-        workflow.status = WorkflowStatus.IN_PROGRESS;
-        workflow.startedAt = new Date();
-        if (assignedTo) workflow.assignedTo = assignedTo;
+    return this.workflowRepository.save(workflow);
+  }
 
-        return this.workflowRepository.save(workflow);
+  async updateStepStatus(
+    stepId: string,
+    status: StepStatus,
+    results?: any,
+  ): Promise<LabWorkflowStep> {
+    const step = await this.workflowStepRepository.findOne({ where: { id: stepId } });
+
+    if (!step) {
+      throw new NotFoundException(`Workflow step with ID ${stepId} not found`);
     }
 
-    async completeWorkflow(id: string): Promise<LabWorkflow> {
-        const workflow = await this.findOne(id);
-        
-        workflow.status = WorkflowStatus.COMPLETED;
-        workflow.completedAt = new Date();
-        
-        if (workflow.startedAt) {
-            const duration = new Date().getTime() - workflow.startedAt.getTime();
-            workflow.actualDuration = Math.round(duration / (1000 * 60)); // in minutes
-        }
+    step.status = status;
+    if (results) step.results = results;
 
-        return this.workflowRepository.save(workflow);
+    if (status === StepStatus.IN_PROGRESS && !step.startedAt) {
+      step.startedAt = new Date();
     }
 
-    async updateStepStatus(stepId: string, status: StepStatus, results?: any): Promise<LabWorkflowStep> {
-        const step = await this.workflowStepRepository.findOne({ where: { id: stepId } });
-        
-        if (!step) {
-            throw new NotFoundException(`Workflow step with ID ${stepId} not found`);
-        }
-
-        step.status = status;
-        if (results) step.results = results;
-        
-        if (status === StepStatus.IN_PROGRESS && !step.startedAt) {
-            step.startedAt = new Date();
-        }
-        
-        if (status === StepStatus.COMPLETED && !step.completedAt) {
-            step.completedAt = new Date();
-            if (step.startedAt) {
-                const duration = new Date().getTime() - step.startedAt.getTime();
-                step.actualDuration = Math.round(duration / (1000 * 60));
-            }
-        }
-
-        return this.workflowStepRepository.save(step);
+    if (status === StepStatus.COMPLETED && !step.completedAt) {
+      step.completedAt = new Date();
+      if (step.startedAt) {
+        const duration = new Date().getTime() - step.startedAt.getTime();
+        step.actualDuration = Math.round(duration / (1000 * 60));
+      }
     }
 
-    async getWorkflowsByStatus(status: WorkflowStatus): Promise<LabWorkflow[]> {
-        return this.workflowRepository.find({
-            where: { status },
-            relations: ['labOrder', 'steps'],
-            order: { createdAt: 'DESC' }
-        });
-    }
+    return this.workflowStepRepository.save(step);
+  }
 
-    async getWorkflowsByAssignee(assignedTo: string): Promise<LabWorkflow[]> {
-        return this.workflowRepository.find({
-            where: { assignedTo },
-            relations: ['labOrder', 'steps'],
-            order: { createdAt: 'DESC' }
-        });
-    }
+  async getWorkflowsByStatus(status: WorkflowStatus): Promise<LabWorkflow[]> {
+    return this.workflowRepository.find({
+      where: { status },
+      relations: ['labOrder', 'steps'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getWorkflowsByAssignee(assignedTo: string): Promise<LabWorkflow[]> {
+    return this.workflowRepository.find({
+      where: { assignedTo },
+      relations: ['labOrder', 'steps'],
+      order: { createdAt: 'DESC' },
+    });
+  }
 }

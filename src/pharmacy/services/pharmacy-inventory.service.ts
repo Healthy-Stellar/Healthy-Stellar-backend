@@ -179,7 +179,10 @@ export class PharmacyInventoryService {
     }
 
     const totalQuantity = inventories.reduce((total, inv) => total + inv.quantity, 0);
-    const totalValue = inventories.reduce((total, inv) => total + inv.quantity * Number(inv.unitCost), 0);
+    const totalValue = inventories.reduce(
+      (total, inv) => total + inv.quantity * Number(inv.unitCost),
+      0,
+    );
     const averageUnitCost = totalQuantity > 0 ? totalValue / totalQuantity : 0;
 
     return {

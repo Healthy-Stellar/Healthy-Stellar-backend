@@ -1,16 +1,16 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { Repository } from "typeorm";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Tenant, TenantStatus } from "../entities/tenant.entity";
+import { Injectable, Logger } from '@nestjs/common';
+import { Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Tenant, TenantStatus } from '../entities/tenant.entity';
 import {
   ProvisioningLog,
   ProvisioningStep,
   ProvisioningStatus,
-} from "../entities/provisioning-log.entity";
-import { DatabaseService } from "./database.service";
-import { SorobanService } from "./soroban.service";
-import { EmailService } from "./email.service";
-import * as crypto from "crypto";
+} from '../entities/provisioning-log.entity';
+import { DatabaseService } from './database.service';
+import { SorobanService } from './soroban.service';
+import { EmailService } from './email.service';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class ProvisioningService {
@@ -60,17 +60,9 @@ export class ProvisioningService {
       this.logger.log(`Tenant record created with ID: ${tenant.id}`);
 
       // Step 2: Create PostgreSQL Schema
-      await this.logStep(
-        tenant.id,
-        ProvisioningStep.CREATE_SCHEMA,
-        ProvisioningStatus.IN_PROGRESS,
-      );
+      await this.logStep(tenant.id, ProvisioningStep.CREATE_SCHEMA, ProvisioningStatus.IN_PROGRESS);
       await this.databaseService.createTenantSchema(schemaName);
-      await this.logStep(
-        tenant.id,
-        ProvisioningStep.CREATE_SCHEMA,
-        ProvisioningStatus.COMPLETED,
-      );
+      await this.logStep(tenant.id, ProvisioningStep.CREATE_SCHEMA, ProvisioningStatus.COMPLETED);
       this.logger.log(`Schema created: ${schemaName}`);
 
       // Step 3: Run Migrations
@@ -80,11 +72,7 @@ export class ProvisioningService {
         ProvisioningStatus.IN_PROGRESS,
       );
       await this.databaseService.runTenantMigrations(schemaName);
-      await this.logStep(
-        tenant.id,
-        ProvisioningStep.RUN_MIGRATIONS,
-        ProvisioningStatus.COMPLETED,
-      );
+      await this.logStep(tenant.id, ProvisioningStep.RUN_MIGRATIONS, ProvisioningStatus.COMPLETED);
       this.logger.log(`Migrations completed for schema: ${schemaName}`);
 
       // Step 4: Seed Roles and Create Admin User
@@ -94,7 +82,7 @@ export class ProvisioningService {
         ProvisioningStatus.IN_PROGRESS,
       );
       await this.databaseService.seedTenantData(tenant.id, schemaName);
-      const hashedPassword = this.hashPassword("DefaultPassword123!"); // Admin should change this
+      const hashedPassword = this.hashPassword('DefaultPassword123!'); // Admin should change this
       const adminUserId = await this.databaseService.createAdminUser(
         schemaName,
         tenantData.adminEmail,
@@ -116,10 +104,7 @@ export class ProvisioningService {
         ProvisioningStep.DEPLOY_SOROBAN_CONTRACT,
         ProvisioningStatus.IN_PROGRESS,
       );
-      const contractId = await this.sorobanService.deployTenantContract(
-        tenant.id,
-        tenantData.name,
-      );
+      const contractId = await this.sorobanService.deployTenantContract(tenant.id, tenantData.name);
       await this.logStep(
         tenant.id,
         ProvisioningStep.DEPLOY_SOROBAN_CONTRACT,
@@ -166,9 +151,7 @@ export class ProvisioningService {
       // Update tenant to ACTIVE
       tenant.status = TenantStatus.ACTIVE;
       tenant = await this.tenantRepository.save(tenant);
-      this.logger.log(
-        `Tenant provisioning completed successfully: ${tenant.id}`,
-      );
+      this.logger.log(`Tenant provisioning completed successfully: ${tenant.id}`);
 
       return tenant;
     } catch (error) {
@@ -201,9 +184,7 @@ export class ProvisioningService {
               error.message,
             );
           } catch (emailError) {
-            this.logger.error(
-              `Failed to send error email: ${emailError.message}`,
-            );
+            this.logger.error(`Failed to send error email: ${emailError.message}`);
           }
         }
       }
@@ -217,13 +198,11 @@ export class ProvisioningService {
               tenantId,
               ProvisioningStep.CREATE_TENANT_RECORD,
               ProvisioningStatus.ROLLED_BACK,
-              "Schema rolled back",
+              'Schema rolled back',
             );
           }
         } catch (rollbackError) {
-          this.logger.error(
-            `Failed to rollback schema ${schemaName}: ${rollbackError.message}`,
-          );
+          this.logger.error(`Failed to rollback schema ${schemaName}: ${rollbackError.message}`);
         }
       }
     } catch (handlerError) {
@@ -259,7 +238,7 @@ export class ProvisioningService {
   async getProvisioningStatus(tenantId: string) {
     const tenant = await this.tenantRepository.findOne({
       where: { id: tenantId },
-      relations: ["provisioningLogs"],
+      relations: ['provisioningLogs'],
     });
 
     if (!tenant) {
@@ -274,8 +253,7 @@ export class ProvisioningService {
       createdAt: tenant.createdAt,
       updatedAt: tenant.updatedAt,
       completedAt:
-        tenant.status === TenantStatus.ACTIVE ||
-        tenant.status === TenantStatus.FAILED
+        tenant.status === TenantStatus.ACTIVE || tenant.status === TenantStatus.FAILED
           ? tenant.updatedAt
           : null,
     };
@@ -300,9 +278,7 @@ export class ProvisioningService {
 
       this.logger.log(`Tenant archived successfully: ${tenantId}`);
     } catch (error) {
-      this.logger.error(
-        `Failed to deprovision tenant ${tenantId}: ${error.message}`,
-      );
+      this.logger.error(`Failed to deprovision tenant ${tenantId}: ${error.message}`);
       throw error;
     }
   }
@@ -312,9 +288,9 @@ export class ProvisioningService {
     // Rules: starts with letter, contains only alphanumeric and underscores, lowercase
     let schemaName = tenantName
       .toLowerCase()
-      .replace(/[^a-z0-9]/g, "_")
-      .replace(/_+/g, "_")
-      .replace(/^_+|_+$/g, "");
+      .replace(/[^a-z0-9]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
 
     if (!schemaName || !/^[a-z]/.test(schemaName)) {
       schemaName = `tenant_${schemaName}`;
@@ -325,6 +301,6 @@ export class ProvisioningService {
   }
 
   private hashPassword(password: string): string {
-    return crypto.createHash("sha256").update(password).digest("hex");
+    return crypto.createHash('sha256').update(password).digest('hex');
   }
 }

@@ -7,7 +7,7 @@ export class PrescriptionItem {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Prescription, prescription => prescription.items)
+  @ManyToOne(() => Prescription, (prescription) => prescription.items)
   @JoinColumn({ name: 'prescription_id' })
   prescription: Prescription;
 

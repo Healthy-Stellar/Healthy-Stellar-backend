@@ -9,33 +9,33 @@ import { AuditLog } from '../../common/audit/audit-log.decorator';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class GdprController {
-    constructor(private readonly gdprService: GdprService) { }
+  constructor(private readonly gdprService: GdprService) {}
 
-    @Post('data-export-request')
-    @HttpCode(HttpStatus.ACCEPTED)
-    @ApiOperation({ summary: 'Request a full export of user data' })
-    @ApiResponse({ status: 202, description: 'Export request queued' })
-    @AuditLog('GDPR_EXPORT_REQUEST', 'GdprRequest')
-    async requestDataExport(@Req() req) {
-        const userId = req.user.id;
-        return this.gdprService.createExportRequest(userId);
-    }
+  @Post('data-export-request')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Request a full export of user data' })
+  @ApiResponse({ status: 202, description: 'Export request queued' })
+  @AuditLog('GDPR_EXPORT_REQUEST', 'GdprRequest')
+  async requestDataExport(@Req() req) {
+    const userId = req.user.id;
+    return this.gdprService.createExportRequest(userId);
+  }
 
-    @Post('erasure-request')
-    @HttpCode(HttpStatus.ACCEPTED)
-    @ApiOperation({ summary: 'Submit a right-to-erasure request' })
-    @ApiResponse({ status: 202, description: 'Erasure request queued' })
-    @AuditLog('GDPR_ERASURE_REQUEST', 'GdprRequest')
-    async requestErasure(@Req() req) {
-        const userId = req.user.id;
-        return this.gdprService.createErasureRequest(userId);
-    }
+  @Post('erasure-request')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Submit a right-to-erasure request' })
+  @ApiResponse({ status: 202, description: 'Erasure request queued' })
+  @AuditLog('GDPR_ERASURE_REQUEST', 'GdprRequest')
+  async requestErasure(@Req() req) {
+    const userId = req.user.id;
+    return this.gdprService.createErasureRequest(userId);
+  }
 
-    @Get('requests')
-    @ApiOperation({ summary: 'List all submitted GDPR requests and their status' })
-    @ApiResponse({ status: 200, description: 'List of GDPR requests' })
-    async getRequests(@Req() req) {
-        const userId = req.user.id;
-        return this.gdprService.getRequestsByUser(userId);
-    }
+  @Get('requests')
+  @ApiOperation({ summary: 'List all submitted GDPR requests and their status' })
+  @ApiResponse({ status: 200, description: 'List of GDPR requests' })
+  async getRequests(@Req() req) {
+    const userId = req.user.id;
+    return this.gdprService.getRequestsByUser(userId);
+  }
 }

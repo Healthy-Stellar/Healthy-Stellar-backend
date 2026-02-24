@@ -1,7 +1,11 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
-import { BarcodeVerification, VerificationType, VerificationStatus } from '../entities/barcode-verification.entity';
+import {
+  BarcodeVerification,
+  VerificationType,
+  VerificationStatus,
+} from '../entities/barcode-verification.entity';
 import { MedicationAdministrationRecord } from '../entities/medication-administration-record.entity';
 import { BarcodeScanDto } from '../dto/barcode-scan.dto';
 
@@ -40,38 +44,51 @@ export class BarcodeService {
     return savedVerification;
   }
 
-  private determineVerificationStatus(dto: BarcodeScanDto, mar: MedicationAdministrationRecord): VerificationStatus {
+  private determineVerificationStatus(
+    dto: BarcodeScanDto,
+    mar: MedicationAdministrationRecord,
+  ): VerificationStatus {
     switch (dto.verificationType) {
       case VerificationType.PATIENT_WRISTBAND:
         // In a real system, this would verify against patient ID
-        return dto.scannedBarcode === dto.expectedBarcode ? VerificationStatus.SUCCESS : VerificationStatus.FAILED;
-      
+        return dto.scannedBarcode === dto.expectedBarcode
+          ? VerificationStatus.SUCCESS
+          : VerificationStatus.FAILED;
+
       case VerificationType.MEDICATION_BARCODE:
-        return dto.scannedBarcode === mar.medicationBarcode ? VerificationStatus.SUCCESS : VerificationStatus.FAILED;
-      
+        return dto.scannedBarcode === mar.medicationBarcode
+          ? VerificationStatus.SUCCESS
+          : VerificationStatus.FAILED;
+
       case VerificationType.NURSE_BADGE:
         // In a real system, this would verify against nurse credentials
-        return dto.scannedBarcode === dto.expectedBarcode ? VerificationStatus.SUCCESS : VerificationStatus.FAILED;
-      
+        return dto.scannedBarcode === dto.expectedBarcode
+          ? VerificationStatus.SUCCESS
+          : VerificationStatus.FAILED;
+
       default:
         return VerificationStatus.FAILED;
     }
   }
 
-  private setVerificationFlags(verification: BarcodeVerification, dto: BarcodeScanDto, mar: MedicationAdministrationRecord): void {
+  private setVerificationFlags(
+    verification: BarcodeVerification,
+    dto: BarcodeScanDto,
+    mar: MedicationAdministrationRecord,
+  ): void {
     const isSuccess = verification.status === VerificationStatus.SUCCESS;
 
     switch (dto.verificationType) {
       case VerificationType.PATIENT_WRISTBAND:
         verification.patientIdVerified = isSuccess;
         break;
-      
+
       case VerificationType.MEDICATION_BARCODE:
         verification.medicationIdVerified = isSuccess;
         verification.doseVerified = isSuccess; // Assuming barcode contains dose info
         verification.routeVerified = isSuccess; // Assuming barcode contains route info
         break;
-      
+
       case VerificationType.NURSE_BADGE:
         // Nurse verification doesn't directly affect medication verification flags
         break;
@@ -86,25 +103,28 @@ export class BarcodeService {
     return timeDiff <= windowMinutes;
   }
 
-  private async updateMarVerificationStatus(mar: MedicationAdministrationRecord, verification: BarcodeVerification): Promise<void> {
+  private async updateMarVerificationStatus(
+    mar: MedicationAdministrationRecord,
+    verification: BarcodeVerification,
+  ): Promise<void> {
     const updates: Partial<MedicationAdministrationRecord> = {};
 
     if (verification.patientIdVerified !== undefined) {
       updates.patientVerified = verification.patientIdVerified;
     }
-    
+
     if (verification.medicationIdVerified !== undefined) {
       updates.medicationVerified = verification.medicationIdVerified;
     }
-    
+
     if (verification.doseVerified !== undefined) {
       updates.doseVerified = verification.doseVerified;
     }
-    
+
     if (verification.routeVerified !== undefined) {
       updates.routeVerified = verification.routeVerified;
     }
-    
+
     if (verification.timeVerified !== undefined) {
       updates.timeVerified = verification.timeVerified;
     }
@@ -134,7 +154,11 @@ export class BarcodeService {
     });
   }
 
-  async overrideVerification(verificationId: string, overrideReason: string, authorizedBy: string): Promise<BarcodeVerification> {
+  async overrideVerification(
+    verificationId: string,
+    overrideReason: string,
+    authorizedBy: string,
+  ): Promise<BarcodeVerification> {
     const verification = await this.barcodeRepository.findOne({
       where: { id: verificationId },
     });
@@ -175,7 +199,9 @@ export class BarcodeService {
       allVerified: false,
     };
 
-    result.allVerified = Object.values(result).slice(0, 5).every(v => v === true);
+    result.allVerified = Object.values(result)
+      .slice(0, 5)
+      .every((v) => v === true);
 
     return result;
   }

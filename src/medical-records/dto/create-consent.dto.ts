@@ -15,20 +15,20 @@ export enum ConsentType {
   SHARE = 'SHARE',
   DOWNLOAD = 'DOWNLOAD',
   MODIFY = 'MODIFY',
-  DELETE = 'DELETE'
+  DELETE = 'DELETE',
 }
 
 export enum ConsentStatus {
   ACTIVE = 'ACTIVE',
   REVOKED = 'REVOKED',
-  EXPIRED = 'EXPIRED'
+  EXPIRED = 'EXPIRED',
 }
 
 export class CreateConsentDto {
   @ApiProperty({
     description: 'Medical record identifier for consent',
     example: 'record-12345-anon',
-    pattern: '^[a-zA-Z0-9-]+$'
+    pattern: '^[a-zA-Z0-9-]+$',
   })
   @IsString()
   @IsNotEmpty()
@@ -38,7 +38,7 @@ export class CreateConsentDto {
   @ApiProperty({
     description: 'Patient granting consent (anonymized)',
     example: 'patient-67890-anon',
-    pattern: '^[a-zA-Z0-9-]+$'
+    pattern: '^[a-zA-Z0-9-]+$',
   })
   @IsString()
   @IsNotEmpty()
@@ -48,7 +48,7 @@ export class CreateConsentDto {
   @ApiProperty({
     description: 'Healthcare provider or organization receiving consent',
     example: 'provider-54321-anon',
-    pattern: '^[a-zA-Z0-9-]+$'
+    pattern: '^[a-zA-Z0-9-]+$',
   })
   @IsString()
   @IsNotEmpty()
@@ -60,7 +60,7 @@ export class CreateConsentDto {
     isArray: true,
     description: 'Types of access granted (HIPAA minimum necessary standard)',
     example: [ConsentType.VIEW, ConsentType.SHARE],
-    enumName: 'ConsentType'
+    enumName: 'ConsentType',
   })
   @IsArray()
   @IsEnum(ConsentType, { each: true })
@@ -70,7 +70,7 @@ export class CreateConsentDto {
   @ApiPropertyOptional({
     description: 'Consent expiration date (ISO 8601 format)',
     example: '2024-12-31T23:59:59Z',
-    format: 'date-time'
+    format: 'date-time',
   })
   @IsDateString()
   @IsOptional()
@@ -79,7 +79,7 @@ export class CreateConsentDto {
   @ApiPropertyOptional({
     description: 'Purpose of data sharing (required for HIPAA compliance)',
     example: 'Continuity of care - specialist consultation',
-    maxLength: 500
+    maxLength: 500,
   })
   @IsString()
   @IsOptional()
@@ -89,7 +89,7 @@ export class CreateConsentDto {
   @ApiPropertyOptional({
     description: 'Additional consent conditions or restrictions',
     example: 'Limited to cardiology consultation only',
-    maxLength: 1000
+    maxLength: 1000,
   })
   @IsString()
   @IsOptional()

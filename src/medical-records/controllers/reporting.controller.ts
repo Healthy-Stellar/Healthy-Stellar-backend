@@ -47,10 +47,7 @@ export class ReportingController {
   @Get('statistics')
   @ApiOperation({ summary: 'Get medical records statistics' })
   @ApiResponse({ status: 200, description: 'Statistics retrieved successfully' })
-  async getStatistics(
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-  ) {
+  async getStatistics(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
     return this.reportingService.getRecordStatistics(
       startDate ? new Date(startDate) : undefined,
       endDate ? new Date(endDate) : undefined,

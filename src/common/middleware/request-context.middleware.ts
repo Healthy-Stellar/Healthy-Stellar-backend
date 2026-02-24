@@ -10,13 +10,13 @@ export class RequestContextMiddleware implements NestMiddleware {
     const userId = (req as any).user?.id || 'anonymous';
     const ipAddress = req.ip || req.connection?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
-    const requestId = req.headers['x-request-id'] as string || this.generateRequestId();
+    const requestId = (req.headers['x-request-id'] as string) || this.generateRequestId();
     const sessionId = (req as any).session?.id;
 
     req.headers['x-request-id'] = requestId;
 
     const queryRunner = this.dataSource.createQueryRunner();
-    
+
     queryRunner.data = {
       userId,
       ipAddress,

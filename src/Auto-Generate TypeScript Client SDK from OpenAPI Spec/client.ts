@@ -52,7 +52,8 @@ export class MedChainClient {
     this._config.accessToken = token;
     // Re-create API instances with updated config so interceptors pick it up
     (this.auth as AuthApi & { configuration: Configuration }).configuration.accessToken = token;
-    (this.records as RecordsApi & { configuration: Configuration }).configuration.accessToken = token;
+    (this.records as RecordsApi & { configuration: Configuration }).configuration.accessToken =
+      token;
     (this.access as AccessApi & { configuration: Configuration }).configuration.accessToken = token;
     (this.audit as AuditApi & { configuration: Configuration }).configuration.accessToken = token;
   }

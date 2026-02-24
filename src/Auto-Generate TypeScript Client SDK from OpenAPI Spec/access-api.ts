@@ -6,11 +6,7 @@
  */
 import { AxiosPromise, AxiosRequestConfig } from 'axios';
 import { BaseAPI, Configuration } from '../base';
-import {
-  AccessGrant,
-  GrantAccessRequest,
-  PaginatedAccessGrants,
-} from '../models';
+import { AccessGrant, GrantAccessRequest, PaginatedAccessGrants } from '../models';
 
 export interface ListGrantsParams {
   recordId?: string;
@@ -28,7 +24,7 @@ export class AccessApi extends BaseAPI {
    */
   public listGrants(
     params: ListGrantsParams = {},
-    options?: AxiosRequestConfig
+    options?: AxiosRequestConfig,
   ): AxiosPromise<PaginatedAccessGrants> {
     return this.axios.get<PaginatedAccessGrants>('/access/grants', {
       params,
@@ -41,7 +37,7 @@ export class AccessApi extends BaseAPI {
    */
   public grantAccess(
     grantAccessRequest: GrantAccessRequest,
-    options?: AxiosRequestConfig
+    options?: AxiosRequestConfig,
   ): AxiosPromise<AccessGrant> {
     return this.axios.post<AccessGrant>('/access/grants', grantAccessRequest, options);
   }
@@ -49,10 +45,7 @@ export class AccessApi extends BaseAPI {
   /**
    * Revoke an existing access grant by its ID.
    */
-  public revokeAccess(
-    grantId: string,
-    options?: AxiosRequestConfig
-  ): AxiosPromise<void> {
+  public revokeAccess(grantId: string, options?: AxiosRequestConfig): AxiosPromise<void> {
     return this.axios.delete<void>(`/access/grants/${encodeURIComponent(grantId)}`, options);
   }
 }

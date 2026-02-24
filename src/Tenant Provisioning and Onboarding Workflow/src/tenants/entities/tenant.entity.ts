@@ -5,20 +5,20 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
-} from "typeorm";
-import { ProvisioningLog } from "./provisioning-log.entity";
+} from 'typeorm';
+import { ProvisioningLog } from './provisioning-log.entity';
 
 export enum TenantStatus {
-  PENDING = "PENDING",
-  PROVISIONING = "PROVISIONING",
-  ACTIVE = "ACTIVE",
-  FAILED = "FAILED",
-  ARCHIVED = "ARCHIVED",
+  PENDING = 'PENDING',
+  PROVISIONING = 'PROVISIONING',
+  ACTIVE = 'ACTIVE',
+  FAILED = 'FAILED',
+  ARCHIVED = 'ARCHIVED',
 }
 
-@Entity("tenants", { schema: "public" })
+@Entity('tenants', { schema: 'public' })
 export class Tenant {
-  @PrimaryGeneratedColumn("uuid")
+  @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ unique: true, length: 255 })
@@ -28,7 +28,7 @@ export class Tenant {
   schemaName: string;
 
   @Column({
-    type: "enum",
+    type: 'enum',
     enum: TenantStatus,
     default: TenantStatus.PENDING,
   })

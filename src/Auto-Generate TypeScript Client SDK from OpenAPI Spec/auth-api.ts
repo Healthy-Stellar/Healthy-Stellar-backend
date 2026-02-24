@@ -6,11 +6,7 @@
  */
 import { AxiosPromise, AxiosRequestConfig } from 'axios';
 import { BaseAPI, Configuration } from '../base';
-import {
-  LoginRequest,
-  LoginResponse,
-  RefreshRequest,
-} from '../models';
+import { LoginRequest, LoginResponse, RefreshRequest } from '../models';
 
 export class AuthApi extends BaseAPI {
   constructor(configuration?: Configuration, basePath?: string) {
@@ -24,7 +20,7 @@ export class AuthApi extends BaseAPI {
    */
   public login(
     loginRequest: LoginRequest,
-    options?: AxiosRequestConfig
+    options?: AxiosRequestConfig,
   ): AxiosPromise<LoginResponse> {
     return this.axios.post<LoginResponse>('/auth/login', loginRequest, options);
   }
@@ -36,7 +32,7 @@ export class AuthApi extends BaseAPI {
    */
   public refreshToken(
     refreshRequest: RefreshRequest,
-    options?: AxiosRequestConfig
+    options?: AxiosRequestConfig,
   ): AxiosPromise<LoginResponse> {
     return this.axios.post<LoginResponse>('/auth/refresh', refreshRequest, options);
   }

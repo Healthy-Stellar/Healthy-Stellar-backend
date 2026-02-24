@@ -2,41 +2,41 @@ import { IsString, IsEnum, IsDateString, IsOptional, IsObject, IsNumber } from '
 import { AccreditationType } from '../entities/lab-accreditation.entity';
 
 export class CreateLabAccreditationDto {
-    @IsEnum(AccreditationType)
-    type: AccreditationType;
+  @IsEnum(AccreditationType)
+  type: AccreditationType;
 
-    @IsString()
-    accreditationBody: string;
+  @IsString()
+  accreditationBody: string;
 
-    @IsString()
-    certificateNumber: string;
+  @IsString()
+  certificateNumber: string;
 
-    @IsDateString()
-    issuedDate: string;
+  @IsDateString()
+  issuedDate: string;
 
-    @IsDateString()
-    expiryDate: string;
+  @IsDateString()
+  expiryDate: string;
 
-    @IsString()
-    scopeOfAccreditation: string;
+  @IsString()
+  scopeOfAccreditation: string;
 
-    @IsOptional()
-    @IsString()
-    certificateFilePath?: string;
+  @IsOptional()
+  @IsString()
+  certificateFilePath?: string;
 
-    @IsOptional()
-    @IsDateString()
-    nextAssessmentDate?: string;
+  @IsOptional()
+  @IsDateString()
+  nextAssessmentDate?: string;
 
-    @IsOptional()
-    @IsNumber()
-    assessmentFrequency?: number;
+  @IsOptional()
+  @IsNumber()
+  assessmentFrequency?: number;
 
-    @IsOptional()
-    @IsObject()
-    requirements?: Record<string, any>;
+  @IsOptional()
+  @IsObject()
+  requirements?: Record<string, any>;
 
-    @IsOptional()
-    @IsString()
-    notes?: string;
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }

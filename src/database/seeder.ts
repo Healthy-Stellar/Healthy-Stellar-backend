@@ -1,21 +1,29 @@
 import { DataSource } from 'typeorm';
 import { User, UserRole } from '../auth/entities/user.entity';
-import { MedicalRecord, RecordType, MedicalRecordStatus } from '../medical-records/entities/medical-record.entity';
-import { AccessGrant, AccessLevel, GrantStatus } from '../access-control/entities/access-grant.entity';
+import {
+  MedicalRecord,
+  RecordType,
+  MedicalRecordStatus,
+} from '../medical-records/entities/medical-record.entity';
+import {
+  AccessGrant,
+  AccessLevel,
+  GrantStatus,
+} from '../access-control/entities/access-grant.entity';
 import * as argon2 from 'argon2';
 import { dataSourceOptions } from '../config/database.config';
 
 /**
  * Database Seeder for Local Development
- * 
+ *
  * Seeds the database with test data:
  * - Test patients, doctors, and medical staff
  * - Sample medical records
  * - Access grants for testing
- * 
+ *
  * Usage:
  *   npm run seed
- * 
+ *
  * WARNING: Only use in development environments!
  */
 
@@ -179,7 +187,8 @@ async function seed() {
       createdBy: physician1.id,
       recordType: RecordType.CONSULTATION,
       title: 'Annual Physical Examination',
-      description: 'Routine annual physical examination. Patient reports no major health concerns. Vital signs normal.',
+      description:
+        'Routine annual physical examination. Patient reports no major health concerns. Vital signs normal.',
       status: MedicalRecordStatus.ACTIVE,
       recordDate: new Date('2024-01-15'),
       metadata: {
@@ -255,7 +264,8 @@ async function seed() {
       createdBy: physician1.id,
       recordType: RecordType.TREATMENT,
       title: 'Hypertension Treatment Plan',
-      description: 'Treatment plan for newly diagnosed hypertension. Lifestyle modifications and medication.',
+      description:
+        'Treatment plan for newly diagnosed hypertension. Lifestyle modifications and medication.',
       status: MedicalRecordStatus.ACTIVE,
       recordDate: new Date('2024-02-10'),
       metadata: {
@@ -272,7 +282,8 @@ async function seed() {
       createdBy: nurse1.id,
       recordType: RecordType.CONSULTATION,
       title: 'Follow-up Visit - Blood Pressure Check',
-      description: 'Follow-up visit to monitor blood pressure. Patient responding well to treatment.',
+      description:
+        'Follow-up visit to monitor blood pressure. Patient responding well to treatment.',
       status: MedicalRecordStatus.ACTIVE,
       recordDate: new Date('2024-02-24'),
       metadata: {
@@ -325,7 +336,9 @@ async function seed() {
 
     console.log('\n✅ Database seeding completed successfully!');
     console.log('\n📊 Summary:');
-    console.log('  - Users: 10 (1 admin, 2 physicians, 2 nurses, 3 patients, 1 billing, 1 records)');
+    console.log(
+      '  - Users: 10 (1 admin, 2 physicians, 2 nurses, 3 patients, 1 billing, 1 records)',
+    );
     console.log('  - Medical Records: 6');
     console.log('  - Access Grants: 3');
     console.log('\n🔑 Test Credentials:');

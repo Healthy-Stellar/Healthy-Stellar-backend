@@ -74,7 +74,11 @@ export class WorkflowAutomationService {
         actions: [
           {
             type: 'notify',
-            params: { target: 'attending_physician', template: 'critical_lab_alert', priority: 'urgent' },
+            params: {
+              target: 'attending_physician',
+              template: 'critical_lab_alert',
+              priority: 'urgent',
+            },
             order: 1,
           },
           {
@@ -271,10 +275,7 @@ export class WorkflowAutomationService {
   /**
    * Check if conditions are met for a rule.
    */
-  private checkConditions(
-    conditions: Record<string, any>,
-    data: Record<string, any>,
-  ): boolean {
+  private checkConditions(conditions: Record<string, any>, data: Record<string, any>): boolean {
     for (const [key, expectedValue] of Object.entries(conditions)) {
       if (data[key] !== expectedValue) return false;
     }
@@ -290,7 +291,9 @@ export class WorkflowAutomationService {
   ): Promise<void> {
     // Actions are logged and tracked – actual execution is delegated
     // to the respective services via NestJS event emitter
-    this.logger.debug(`Executing automation action: ${action.type} with params: ${JSON.stringify(action.params)}`);
+    this.logger.debug(
+      `Executing automation action: ${action.type} with params: ${JSON.stringify(action.params)}`,
+    );
 
     // Simulate async action processing
     switch (action.type) {
@@ -298,7 +301,9 @@ export class WorkflowAutomationService {
         this.logger.log(`📢 Notification: ${action.params.template} → ${action.params.target}`);
         break;
       case 'create_task':
-        this.logger.log(`📝 Task created: ${action.params.type} (Priority: ${action.params.priority || 'normal'})`);
+        this.logger.log(
+          `📝 Task created: ${action.params.type} (Priority: ${action.params.priority || 'normal'})`,
+        );
         break;
       case 'escalate':
         this.logger.warn(`⬆️ Escalation triggered: ${action.params.template}`);

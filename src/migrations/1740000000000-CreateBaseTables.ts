@@ -2,7 +2,7 @@ import { MigrationInterface, QueryRunner, Table, TableForeignKey, TableIndex } f
 
 /**
  * Initial Migration - Create Base Tables
- * 
+ *
  * Creates all core tables for the Healthy Stellar healthcare system:
  * - users: User accounts with authentication
  * - sessions: User session management
@@ -10,7 +10,7 @@ import { MigrationInterface, QueryRunner, Table, TableForeignKey, TableIndex } f
  * - medical_records: Patient medical records
  * - access_grants: Access control for medical records
  * - audit_logs: Comprehensive audit trail (HIPAA compliance)
- * 
+ *
  * All schema changes MUST go through versioned migrations.
  * synchronize: false is enforced in all environments.
  */
@@ -398,7 +398,17 @@ export class CreateBaseTables1740000000000 implements MigrationInterface {
           {
             name: 'recordType',
             type: 'enum',
-            enum: ['consultation', 'diagnosis', 'treatment', 'lab_result', 'imaging', 'prescription', 'surgery', 'emergency', 'other'],
+            enum: [
+              'consultation',
+              'diagnosis',
+              'treatment',
+              'lab_result',
+              'imaging',
+              'prescription',
+              'surgery',
+              'emergency',
+              'other',
+            ],
             default: "'other'",
           },
           {
@@ -742,7 +752,13 @@ export class CreateBaseTables1740000000000 implements MigrationInterface {
     `);
 
     // Apply updated_at trigger to tables
-    const tablesWithUpdatedAt = ['users', 'sessions', 'mfa_devices', 'medical_records', 'access_grants'];
+    const tablesWithUpdatedAt = [
+      'users',
+      'sessions',
+      'mfa_devices',
+      'medical_records',
+      'access_grants',
+    ];
     for (const table of tablesWithUpdatedAt) {
       await queryRunner.query(`
         CREATE TRIGGER update_${table}_updated_at
@@ -785,7 +801,13 @@ export class CreateBaseTables1740000000000 implements MigrationInterface {
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     // Drop triggers
-    const tablesWithUpdatedAt = ['users', 'sessions', 'mfa_devices', 'medical_records', 'access_grants'];
+    const tablesWithUpdatedAt = [
+      'users',
+      'sessions',
+      'mfa_devices',
+      'medical_records',
+      'access_grants',
+    ];
     for (const table of tablesWithUpdatedAt) {
       await queryRunner.query(`DROP TRIGGER IF EXISTS update_${table}_updated_at ON ${table}`);
     }

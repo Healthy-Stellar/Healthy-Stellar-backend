@@ -75,9 +75,7 @@ export class PaymentService {
     const payment = await this.findById(paymentId);
 
     if (payment.status !== PaymentStatus.PENDING) {
-      throw new BadRequestException(
-        `Payment is already in ${payment.status} status`,
-      );
+      throw new BadRequestException(`Payment is already in ${payment.status} status`);
     }
 
     payment.status = PaymentStatus.PROCESSING;
@@ -203,10 +201,7 @@ export class PaymentService {
     }
 
     if (filters.startDate && filters.endDate) {
-      where.paymentDate = Between(
-        new Date(filters.startDate),
-        new Date(filters.endDate),
-      );
+      where.paymentDate = Between(new Date(filters.startDate), new Date(filters.endDate));
     }
 
     const [data, total] = await this.paymentRepository.findAndCount({
@@ -229,9 +224,7 @@ export class PaymentService {
 
     Object.assign(payment, {
       ...updateDto,
-      postedDate: updateDto.postedDate
-        ? new Date(updateDto.postedDate)
-        : payment.postedDate,
+      postedDate: updateDto.postedDate ? new Date(updateDto.postedDate) : payment.postedDate,
     });
 
     return this.paymentRepository.save(payment);
@@ -244,8 +237,7 @@ export class PaymentService {
       throw new BadRequestException('Can only refund completed payments');
     }
 
-    const maxRefundable =
-      Number(originalPayment.amount) - Number(originalPayment.refundedAmount);
+    const maxRefundable = Number(originalPayment.amount) - Number(originalPayment.refundedAmount);
 
     if (refundDto.refundAmount > maxRefundable) {
       throw new BadRequestException(

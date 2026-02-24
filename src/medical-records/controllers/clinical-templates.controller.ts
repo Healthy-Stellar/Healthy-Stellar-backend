@@ -1,14 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  Req,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ClinicalTemplatesService } from '../services/clinical-templates.service';
 import { CreateClinicalTemplateDto } from '../dto/create-clinical-template.dto';
@@ -45,10 +35,7 @@ export class ClinicalTemplatesController {
   @Put(':id')
   @ApiOperation({ summary: 'Update a clinical template' })
   @ApiResponse({ status: 200, description: 'Template updated successfully' })
-  async update(
-    @Param('id') id: string,
-    @Body() updateDto: Partial<CreateClinicalTemplateDto>,
-  ) {
+  async update(@Param('id') id: string, @Body() updateDto: Partial<CreateClinicalTemplateDto>) {
     return this.templatesService.update(id, updateDto);
   }
 

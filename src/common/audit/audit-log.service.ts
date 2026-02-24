@@ -18,7 +18,7 @@ export interface AuditLogEntry {
 export class AuditLogService {
   constructor(
     @InjectRepository(AuditLogEntity)
-    private auditLogRepository: Repository<AuditLogEntity>
+    private auditLogRepository: Repository<AuditLogEntity>,
   ) {}
 
   async log(entry: AuditLogEntry): Promise<AuditLogEntity> {
@@ -30,7 +30,7 @@ export class AuditLogService {
       details: entry.details,
       severity: entry.severity,
       timestamp: entry.timestamp || new Date(),
-      ipAddress: entry.ipAddress
+      ipAddress: entry.ipAddress,
     };
     const auditLog = this.auditLogRepository.create(payload);
 
@@ -42,7 +42,7 @@ export class AuditLogService {
       action: 'VALIDATION_FAILURE',
       entity: 'MedicalData',
       details: data,
-      severity: 'MEDIUM'
+      severity: 'MEDIUM',
     });
   }
 
@@ -51,7 +51,7 @@ export class AuditLogService {
       action: 'UNAUTHORIZED_ACCESS',
       entity: 'AccessControl',
       details: data,
-      severity: 'HIGH'
+      severity: 'HIGH',
     });
   }
 
@@ -60,7 +60,7 @@ export class AuditLogService {
       action: 'FORBIDDEN_ACCESS',
       entity: 'AccessControl',
       details: data,
-      severity: 'HIGH'
+      severity: 'HIGH',
     });
   }
 
@@ -69,7 +69,7 @@ export class AuditLogService {
       action: 'MEDICAL_RECORD_ERROR',
       entity: 'MedicalRecord',
       details: data,
-      severity: 'HIGH'
+      severity: 'HIGH',
     });
   }
 
@@ -78,7 +78,7 @@ export class AuditLogService {
       action: 'DATABASE_ERROR',
       entity: 'Database',
       details: data,
-      severity: 'CRITICAL'
+      severity: 'CRITICAL',
     });
   }
 
@@ -87,7 +87,7 @@ export class AuditLogService {
       action: 'EMERGENCY_ALERT',
       entity: 'Patient',
       details: data,
-      severity: 'CRITICAL'
+      severity: 'CRITICAL',
     });
   }
 

@@ -1,4 +1,10 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 export enum ErrorType {
   WRONG_DRUG = 'wrong_drug',
@@ -12,7 +18,7 @@ export enum ErrorType {
   ALLERGY = 'allergy',
   INTERACTION = 'interaction',
   LABELING = 'labeling',
-  OTHER = 'other'
+  OTHER = 'other',
 }
 
 export enum ErrorSeverity {
@@ -21,7 +27,7 @@ export enum ErrorSeverity {
   MINOR_HARM = 'minor_harm',
   MODERATE_HARM = 'moderate_harm',
   SEVERE_HARM = 'severe_harm',
-  DEATH = 'death'
+  DEATH = 'death',
 }
 
 @Entity('medication_error_logs')
@@ -34,13 +40,13 @@ export class MedicationErrorLog {
 
   @Column({
     type: 'enum',
-    enum: ErrorType
+    enum: ErrorType,
   })
   errorType: ErrorType;
 
   @Column({
     type: 'enum',
-    enum: ErrorSeverity
+    enum: ErrorSeverity,
   })
   severity: ErrorSeverity;
 

@@ -41,10 +41,7 @@ export class PurchaseOrderController {
   }
 
   @Post(':id/approve')
-  async approveOrder(
-    @Param('id') id: string,
-    @Body('approvedBy') approvedBy: string
-  ) {
+  async approveOrder(@Param('id') id: string, @Body('approvedBy') approvedBy: string) {
     return await this.purchaseOrderService.approveOrder(id, approvedBy);
   }
 
@@ -54,10 +51,7 @@ export class PurchaseOrderController {
   }
 
   @Post(':id/receive')
-  async receiveOrder(
-    @Param('id') id: string,
-    @Body('receivedItems') receivedItems: any[]
-  ) {
+  async receiveOrder(@Param('id') id: string, @Body('receivedItems') receivedItems: any[]) {
     return await this.purchaseOrderService.receiveOrder(id, receivedItems);
   }
 }

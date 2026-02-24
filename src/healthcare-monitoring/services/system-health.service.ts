@@ -32,8 +32,12 @@ export class SystemHealthService {
 
   private async collectCpuMetrics(): Promise<void> {
     const cpuUsage = await this.getCpuUsage();
-    const severity = cpuUsage > 90 ? MetricSeverity.CRITICAL : 
-                    cpuUsage > 75 ? MetricSeverity.WARNING : MetricSeverity.NORMAL;
+    const severity =
+      cpuUsage > 90
+        ? MetricSeverity.CRITICAL
+        : cpuUsage > 75
+          ? MetricSeverity.WARNING
+          : MetricSeverity.NORMAL;
 
     await this.recordMetric({
       metricType: MetricType.CPU_USAGE,
@@ -48,15 +52,19 @@ export class SystemHealthService {
       await this.clinicalAlertService.createSystemAlert(
         'High CPU Usage Detected',
         `System CPU usage is at ${cpuUsage}%`,
-        'critical'
+        'critical',
       );
     }
   }
 
   private async collectMemoryMetrics(): Promise<void> {
     const memoryUsage = await this.getMemoryUsage();
-    const severity = memoryUsage > 85 ? MetricSeverity.CRITICAL : 
-                    memoryUsage > 70 ? MetricSeverity.WARNING : MetricSeverity.NORMAL;
+    const severity =
+      memoryUsage > 85
+        ? MetricSeverity.CRITICAL
+        : memoryUsage > 70
+          ? MetricSeverity.WARNING
+          : MetricSeverity.NORMAL;
 
     await this.recordMetric({
       metricType: MetricType.MEMORY_USAGE,
@@ -70,8 +78,12 @@ export class SystemHealthService {
 
   private async collectDatabaseMetrics(): Promise<void> {
     const dbConnections = await this.getDatabaseConnections();
-    const severity = dbConnections > 80 ? MetricSeverity.CRITICAL : 
-                    dbConnections > 60 ? MetricSeverity.WARNING : MetricSeverity.NORMAL;
+    const severity =
+      dbConnections > 80
+        ? MetricSeverity.CRITICAL
+        : dbConnections > 60
+          ? MetricSeverity.WARNING
+          : MetricSeverity.NORMAL;
 
     await this.recordMetric({
       metricType: MetricType.DATABASE_CONNECTIONS,
@@ -85,8 +97,12 @@ export class SystemHealthService {
 
   private async collectApiMetrics(): Promise<void> {
     const responseTime = await this.getAverageApiResponseTime();
-    const severity = responseTime > 5000 ? MetricSeverity.CRITICAL : 
-                    responseTime > 2000 ? MetricSeverity.WARNING : MetricSeverity.NORMAL;
+    const severity =
+      responseTime > 5000
+        ? MetricSeverity.CRITICAL
+        : responseTime > 2000
+          ? MetricSeverity.WARNING
+          : MetricSeverity.NORMAL;
 
     await this.recordMetric({
       metricType: MetricType.API_RESPONSE_TIME,
@@ -140,9 +156,11 @@ export class SystemHealthService {
     }, {});
 
     for (const [type, metrics] of Object.entries(metricGroups)) {
-      const avgValue = (metrics as SystemMetric[]).reduce((sum, m) => sum + Number(m.value), 0) / (metrics as SystemMetric[]).length;
+      const avgValue =
+        (metrics as SystemMetric[]).reduce((sum, m) => sum + Number(m.value), 0) /
+        (metrics as SystemMetric[]).length;
       const latestMetric = (metrics as SystemMetric[])[0];
-      
+
       healthStatus.metrics[type] = {
         current: Number(latestMetric.value),
         average: avgValue,

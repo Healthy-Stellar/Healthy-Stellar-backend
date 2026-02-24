@@ -1,4 +1,12 @@
-import { IsUUID, IsString, IsEnum, IsDateString, IsOptional, IsBoolean, Length } from 'class-validator';
+import {
+  IsUUID,
+  IsString,
+  IsEnum,
+  IsDateString,
+  IsOptional,
+  IsBoolean,
+  Length,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { AdministrationRoute } from '../entities/medication-administration-record.entity';
 

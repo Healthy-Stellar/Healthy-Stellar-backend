@@ -48,12 +48,8 @@ async function exportOpenApi() {
   writeFileSync(outputPath, JSON.stringify(document, null, 2), 'utf8');
 
   console.log(`✅ OpenAPI spec written to ${outputPath}`);
-  console.log(
-    `   Paths documented: ${Object.keys(document.paths).length}`,
-  );
-  console.log(
-    `   Schemas exported: ${Object.keys(document.components?.schemas ?? {}).length}`,
-  );
+  console.log(`   Paths documented: ${Object.keys(document.paths).length}`);
+  console.log(`   Schemas exported: ${Object.keys(document.components?.schemas ?? {}).length}`);
 
   await app.close();
   process.exit(0);

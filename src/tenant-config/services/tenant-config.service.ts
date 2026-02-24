@@ -62,7 +62,7 @@ export class TenantConfigService {
     // Check cache first
     const cacheKey = this.getCacheKey(tenantId, key);
     const cachedValue = await this.getFromCache(cacheKey);
-    
+
     if (cachedValue !== null) {
       this.logger.debug(`Cache hit for ${cacheKey}`);
       return cachedValue as T;
@@ -114,7 +114,7 @@ export class TenantConfigService {
    */
   async getMultiple(tenantId: string, keys: string[]): Promise<Record<string, any>> {
     const result: Record<string, any> = {};
-    
+
     await Promise.all(
       keys.map(async (key) => {
         result[key] = await this.get(tenantId, key);
@@ -203,9 +203,7 @@ export class TenantConfigService {
       status: 'success',
     });
 
-    this.logger.log(
-      `Tenant config updated: tenant=${this.sanitizeForLog(tenantId)}, key=${key}`,
-    );
+    this.logger.log(`Tenant config updated: tenant=${this.sanitizeForLog(tenantId)}, key=${key}`);
 
     return config;
   }
@@ -358,11 +356,7 @@ export class TenantConfigService {
         checksum: this.generateChecksum(value),
         timestamp: Date.now(),
       };
-      await this.redisClient.setex(
-        key,
-        TENANT_CONFIG_CACHE_TTL,
-        JSON.stringify(cacheData),
-      );
+      await this.redisClient.setex(key, TENANT_CONFIG_CACHE_TTL, JSON.stringify(cacheData));
     } catch (error) {
       this.logger.error(`Cache write error for ${key}:`, error);
     }

@@ -55,7 +55,16 @@ export const CPT_CATEGORIES: Record<string, { range: [number, number]; descripti
 /**
  * LOINC component types for lab result validation
  */
-export const LOINC_SCALE_TYPES = ['Qn', 'Ord', 'OrdQn', 'Nom', 'Nar', 'Multi', 'Doc', 'Set'] as const;
+export const LOINC_SCALE_TYPES = [
+  'Qn',
+  'Ord',
+  'OrdQn',
+  'Nom',
+  'Nar',
+  'Multi',
+  'Doc',
+  'Set',
+] as const;
 export type LoincScaleType = (typeof LOINC_SCALE_TYPES)[number];
 
 /**

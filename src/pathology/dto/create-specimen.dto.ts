@@ -2,43 +2,43 @@ import { IsString, IsUUID, IsEnum, IsOptional, IsDateString, IsNumber } from 'cl
 import { SpecimenType, FixativeType } from '../entities/pathology-specimen.entity';
 
 export class CreateSpecimenDto {
-    @IsUUID()
-    pathologyCaseId: string;
+  @IsUUID()
+  pathologyCaseId: string;
 
-    @IsEnum(SpecimenType)
-    specimenType: SpecimenType;
+  @IsEnum(SpecimenType)
+  specimenType: SpecimenType;
 
-    @IsString()
-    description: string;
+  @IsString()
+  description: string;
 
-    @IsString()
-    @IsOptional()
-    site?: string;
+  @IsString()
+  @IsOptional()
+  site?: string;
 
-    @IsString()
-    @IsOptional()
-    containerType?: string;
+  @IsString()
+  @IsOptional()
+  containerType?: string;
 
-    @IsEnum(FixativeType)
-    @IsOptional()
-    fixative?: FixativeType;
+  @IsEnum(FixativeType)
+  @IsOptional()
+  fixative?: FixativeType;
 
-    @IsDateString()
-    @IsOptional()
-    collectionDate?: string;
+  @IsDateString()
+  @IsOptional()
+  collectionDate?: string;
 
-    @IsNumber()
-    @IsOptional()
-    timeInFixativeHours?: number;
+  @IsNumber()
+  @IsOptional()
+  timeInFixativeHours?: number;
 
-    @IsString()
-    @IsOptional()
-    processingProtocol?: string;
+  @IsString()
+  @IsOptional()
+  processingProtocol?: string;
 
-    @IsString()
-    @IsOptional()
-    notes?: string;
+  @IsString()
+  @IsOptional()
+  notes?: string;
 
-    @IsOptional()
-    metadata?: Record<string, any>;
+  @IsOptional()
+  metadata?: Record<string, any>;
 }

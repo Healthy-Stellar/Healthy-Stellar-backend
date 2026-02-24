@@ -1,10 +1,4 @@
-import {
-  IsString,
-  IsArray,
-  IsOptional,
-  IsNumber,
-  IsBoolean,
-} from "class-validator";
+import { IsString, IsArray, IsOptional, IsNumber, IsBoolean } from 'class-validator';
 
 export class CreateDepartmentDto {
   @IsString()

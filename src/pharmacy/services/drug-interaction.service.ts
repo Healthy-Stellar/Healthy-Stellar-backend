@@ -21,7 +21,7 @@ export class DrugInteractionService {
       return {
         hasInteractions: false,
         interactions: [],
-        severity: 'none'
+        severity: 'none',
       };
     }
 
@@ -38,7 +38,7 @@ export class DrugInteractionService {
       return {
         hasInteractions: false,
         interactions: [],
-        severity: 'none'
+        severity: 'none',
       };
     }
 
@@ -53,7 +53,7 @@ export class DrugInteractionService {
     return {
       hasInteractions: true,
       interactions,
-      severity: maxSeverity
+      severity: maxSeverity,
     };
   }
 
@@ -61,9 +61,9 @@ export class DrugInteractionService {
     return await this.interactionRepository.find({
       where: [
         { drug1Id, drug2Id },
-        { drug1Id: drug2Id, drug2Id: drug1Id }
+        { drug1Id: drug2Id, drug2Id: drug1Id },
       ],
-      relations: ['drug1', 'drug2']
+      relations: ['drug1', 'drug2'],
     });
   }
 }

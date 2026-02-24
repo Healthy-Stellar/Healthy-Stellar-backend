@@ -58,7 +58,10 @@ export class PasswordValidationService {
       errors.push('Password must contain at least one number');
     }
 
-    if (this.healthcarePolicy.requireSymbols && !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    if (
+      this.healthcarePolicy.requireSymbols &&
+      !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+    ) {
       errors.push('Password must contain at least one special character (!@#$%^&*)');
     }
 
@@ -69,7 +72,9 @@ export class PasswordValidationService {
     }
 
     if (this.containsTooManyRepeatedCharacters(password)) {
-      errors.push(`Password cannot contain more than ${this.healthcarePolicy.maxRepeatedCharacters} of the same character`);
+      errors.push(
+        `Password cannot contain more than ${this.healthcarePolicy.maxRepeatedCharacters} of the same character`,
+      );
     }
 
     // Check against common patterns
@@ -129,7 +134,9 @@ export class PasswordValidationService {
       charCounts[char] = (charCounts[char] || 0) + 1;
     }
 
-    return Object.values(charCounts).some((count) => count > this.healthcarePolicy.maxRepeatedCharacters);
+    return Object.values(charCounts).some(
+      (count) => count > this.healthcarePolicy.maxRepeatedCharacters,
+    );
   }
 
   /**

@@ -1,12 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Patch,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { EmergencyOperationsService } from '../services/emergency-operations.service';
 import {
   CreateDisasterIncidentDto,
@@ -54,10 +46,7 @@ export class EmergencyOperationsController {
     @Param('patientId') patientId: string,
     @Query('includeAcknowledged') includeAcknowledged?: string,
   ) {
-    return await this.emergencyService.getCriticalAlerts(
-      patientId,
-      includeAcknowledged === 'true',
-    );
+    return await this.emergencyService.getCriticalAlerts(patientId, includeAcknowledged === 'true');
   }
 
   @Patch('critical-care/alerts/:alertId/acknowledge')

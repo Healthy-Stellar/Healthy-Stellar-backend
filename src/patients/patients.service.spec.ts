@@ -80,11 +80,7 @@ describe('PatientsService', () => {
 
     it('should find all active patients', async () => {
       // Arrange
-      const patients = [
-        aPatient().build(),
-        aPatient().build(),
-        aPatient().build(),
-      ];
+      const patients = [aPatient().build(), aPatient().build(), aPatient().build()];
 
       mockRepository.find.mockResolvedValue(patients);
 
@@ -96,7 +92,7 @@ describe('PatientsService', () => {
       expect(mockRepository.find).toHaveBeenCalledWith({
         where: { isActive: true },
       });
-      result.forEach(patient => {
+      result.forEach((patient) => {
         expect(patient).toBeAnonymized();
       });
     });
@@ -105,7 +101,10 @@ describe('PatientsService', () => {
       // Arrange
       const patientId = 'test-patient-id';
       const updateData = { phone: '555-0123', email: 'test@example.com' };
-      const updatedPatient = aPatient().withId(patientId).withContact('555-0123', 'test@example.com').build();
+      const updatedPatient = aPatient()
+        .withId(patientId)
+        .withContact('555-0123', 'test@example.com')
+        .build();
 
       mockRepository.update.mockResolvedValue({ affected: 1 });
       mockRepository.findOneBy.mockResolvedValue(updatedPatient);
@@ -157,7 +156,7 @@ describe('PatientsService', () => {
       ];
 
       // Assert
-      patients.forEach(patient => {
+      patients.forEach((patient) => {
         expect(patient).toBeAnonymized();
       });
     });
@@ -184,10 +183,7 @@ describe('PatientsService', () => {
 
     it('should filter admitted patients', async () => {
       // Arrange
-      const admittedPatients = [
-        aPatient().admitted().build(),
-        aPatient().admitted().build(),
-      ];
+      const admittedPatients = [aPatient().admitted().build(), aPatient().admitted().build()];
 
       mockRepository.find.mockResolvedValue(admittedPatients);
 
@@ -196,7 +192,7 @@ describe('PatientsService', () => {
 
       // Assert
       expect(result).toHaveLength(2);
-      result.forEach(patient => {
+      result.forEach((patient) => {
         expect(patient.isAdmitted).toBe(true);
       });
     });
@@ -220,7 +216,7 @@ describe('PatientsService', () => {
 
       // Act & Assert
       await expect(service.create({ ...generatePatientDemographics(), mrn })).rejects.toThrow(
-        'Patient with MRN already exists'
+        'Patient with MRN already exists',
       );
     });
 

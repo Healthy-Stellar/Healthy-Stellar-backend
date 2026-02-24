@@ -1,4 +1,13 @@
-import { IsString, IsNotEmpty, IsDateString, IsArray, ValidateNested, IsInt, IsOptional, Min } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsDateString,
+  IsArray,
+  ValidateNested,
+  IsInt,
+  IsOptional,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 class PrescriptionItemDto {

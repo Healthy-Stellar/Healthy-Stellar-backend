@@ -164,18 +164,23 @@ export class ConnectionPoolService {
     maxIdleSeconds: number = 600,
   ): Promise<{ terminated: number; pids: number[] }> {
     try {
-      const result = await this.dataSource.query(`
+      const result = await this.dataSource.query(
+        `
         SELECT pg_terminate_backend(pid), pid
         FROM pg_stat_activity
         WHERE datname = current_database()
         AND state = 'idle in transaction'
         AND EXTRACT(EPOCH FROM (NOW() - state_change)) > $1
         AND pid != pg_backend_pid();
-      `, [maxIdleSeconds]);
+      `,
+        [maxIdleSeconds],
+      );
 
       const pids = result.map((r: any) => r.pid);
       if (pids.length > 0) {
-        this.logger.warn(`⚠️ Terminated ${pids.length} idle transactions (PIDs: ${pids.join(', ')})`);
+        this.logger.warn(
+          `⚠️ Terminated ${pids.length} idle transactions (PIDs: ${pids.join(', ')})`,
+        );
       }
 
       return { terminated: pids.length, pids };

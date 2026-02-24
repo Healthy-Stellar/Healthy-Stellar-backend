@@ -1,11 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { NotificationEvent, NotificationEventType } from '../interfaces/notification-event.interface';
+import {
+  NotificationEvent,
+  NotificationEventType,
+} from '../interfaces/notification-event.interface';
 import { NotificationsGateway } from '../notifications.gateway';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
+  constructor(private gateway: NotificationsGateway) {}
   constructor(private gateway: NotificationsGateway) {}
 
   emitRecordAccessed(actorId: string, resourceId: string, metadata?: Record<string, any>): void {
@@ -58,12 +62,21 @@ export class NotificationsService {
     });
   }
 
-  async sendPatientEmailNotification(patientId: string, subject: string, message: string): Promise<void> {
+  async sendPatientEmailNotification(
+    patientId: string,
+    subject: string,
+    message: string,
+  ): Promise<void> {
     // Placeholder until a dedicated mail transport is wired into the app.
     this.logger.log(`Email notification queued for patient ${patientId}: ${subject} - ${message}`);
   }
 
-  async sendEmail(to: string, subject: string, template: string, context: Record<string, any>): Promise<void> {
+  async sendEmail(
+    to: string,
+    subject: string,
+    template: string,
+    context: Record<string, any>,
+  ): Promise<void> {
     console.log(`[Mock Email] Sent to ${to}: ${subject}`);
     this.emitEvent({
       eventType: 'REPORT_READY' as any,

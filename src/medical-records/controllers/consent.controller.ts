@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Body,
-  Param,
-  Query,
-  Req,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ConsentService } from '../services/consent.service';
 import { MedicalRecordsService } from '../services/medical-records.service';
@@ -55,11 +46,7 @@ export class ConsentController {
     @Query('userId') userId: string,
     @Query('consentType') consentType: ConsentType,
   ) {
-    const hasConsent = await this.consentService.checkConsent(
-      recordId,
-      userId,
-      consentType,
-    );
+    const hasConsent = await this.consentService.checkConsent(recordId, userId, consentType);
     return { hasConsent };
   }
 
@@ -74,11 +61,7 @@ export class ConsentController {
   @Put(':id/revoke')
   @ApiOperation({ summary: 'Revoke a consent' })
   @ApiResponse({ status: 200, description: 'Consent revoked successfully' })
-  async revoke(
-    @Param('id') id: string,
-    @Body('reason') reason: string,
-    @Req() req: any,
-  ) {
+  async revoke(@Param('id') id: string, @Body('reason') reason: string, @Req() req: any) {
     const revokedBy = req.user?.id || '00000000-0000-0000-0000-000000000000';
     return this.consentService.revoke(id, revokedBy, reason);
   }

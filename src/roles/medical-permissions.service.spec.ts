@@ -1,4 +1,9 @@
-import { MedicalDepartment, MedicalPermission, MedicalRole, MedicalSpecialty } from '../enums/medical-roles.enum';
+import {
+  MedicalDepartment,
+  MedicalPermission,
+  MedicalRole,
+  MedicalSpecialty,
+} from '../enums/medical-roles.enum';
 import { MedicalUser } from '../interfaces/medical-rbac.interface';
 import { MedicalPermissionsService } from '../services/medical-permissions.service';
 

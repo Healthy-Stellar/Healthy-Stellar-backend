@@ -113,9 +113,7 @@ export class BackupVerificationService {
 
     // Verify backup is within retention policy
     const retentionDays = parseInt(process.env.BACKUP_RETENTION_DAYS || '90', 10);
-    const ageInDays = Math.floor(
-      (Date.now() - backup.startedAt.getTime()) / (1000 * 60 * 60 * 24),
-    );
+    const ageInDays = Math.floor((Date.now() - backup.startedAt.getTime()) / (1000 * 60 * 60 * 24));
 
     if (ageInDays > retentionDays) {
       this.logger.warn(`Backup ${backup.id} exceeds retention policy`);

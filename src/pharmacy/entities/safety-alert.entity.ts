@@ -8,7 +8,18 @@ export class SafetyAlert {
   @Column()
   prescriptionId: string;
 
-  @Column({ type: 'enum', enum: ['drug-interaction', 'allergy', 'duplicate-therapy', 'high-dose', 'contraindication', 'age-related', 'pregnancy'] })
+  @Column({
+    type: 'enum',
+    enum: [
+      'drug-interaction',
+      'allergy',
+      'duplicate-therapy',
+      'high-dose',
+      'contraindication',
+      'age-related',
+      'pregnancy',
+    ],
+  })
   alertType: string;
 
   @Column({ type: 'enum', enum: ['minor', 'moderate', 'major', 'critical'] })

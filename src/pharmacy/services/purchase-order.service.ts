@@ -134,8 +134,7 @@ export class PurchaseOrderService {
 
     return orders.filter(
       (order) =>
-        openStatuses.includes(order.status) &&
-        order.items.some((item) => item.drugId === drugId),
+        openStatuses.includes(order.status) && order.items.some((item) => item.drugId === drugId),
     );
   }
 

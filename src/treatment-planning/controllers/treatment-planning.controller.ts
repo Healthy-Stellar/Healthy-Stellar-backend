@@ -181,10 +181,7 @@ export class MedicalProcedureController {
 
   @Post(':id/cancel')
   @ApiOperation({ summary: 'Cancel a procedure' })
-  async cancel(
-    @Param('id') id: string,
-    @Body() body: { reason?: string; updatedBy?: string },
-  ) {
+  async cancel(@Param('id') id: string, @Body() body: { reason?: string; updatedBy?: string }) {
     return await this.procedureService.cancel(id, body.reason, body.updatedBy);
   }
 

@@ -82,13 +82,33 @@ export class CptValidationService {
     return result;
   }
 
-  async validateModifier(cptCode: string, modifier: string): Promise<{
+  async validateModifier(
+    cptCode: string,
+    modifier: string,
+  ): Promise<{
     isValid: boolean;
     warnings: string[];
   }> {
     const validModifiers = [
-      '25', '26', '59', '91', 'TC', 'GT', '95', '99', 'GA', 'GX',
-      '50', '51', '52', '53', '54', '55', '56', '57', '58',
+      '25',
+      '26',
+      '59',
+      '91',
+      'TC',
+      'GT',
+      '95',
+      '99',
+      'GA',
+      'GX',
+      '50',
+      '51',
+      '52',
+      '53',
+      '54',
+      '55',
+      '56',
+      '57',
+      '58',
     ];
 
     const warnings: string[] = [];

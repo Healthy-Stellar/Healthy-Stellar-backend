@@ -79,7 +79,7 @@ export class TreatmentPlanService {
   async findByDiagnosisId(diagnosisId: string): Promise<TreatmentPlan[]> {
     return await this.treatmentPlanRepository
       .createQueryBuilder('plan')
-      .where(':diagnosisId = ANY(string_to_array(plan.diagnosisIds, \',\'))', { diagnosisId })
+      .where(":diagnosisId = ANY(string_to_array(plan.diagnosisIds, ','))", { diagnosisId })
       .orderBy('plan.createdAt', 'DESC')
       .getMany();
   }
@@ -102,7 +102,7 @@ export class TreatmentPlanService {
     }
 
     if (searchDto.diagnosisId) {
-      queryBuilder.andWhere(':diagnosisId = ANY(string_to_array(plan.diagnosisIds, \',\'))', {
+      queryBuilder.andWhere(":diagnosisId = ANY(string_to_array(plan.diagnosisIds, ','))", {
         diagnosisId: searchDto.diagnosisId,
       });
     }

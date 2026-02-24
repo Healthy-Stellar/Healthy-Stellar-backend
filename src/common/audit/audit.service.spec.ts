@@ -38,10 +38,7 @@ describe('AuditService', () => {
     repo = makeRepo();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AuditService,
-        { provide: getRepositoryToken(AuditLogEntity), useValue: repo },
-      ],
+      providers: [AuditService, { provide: getRepositoryToken(AuditLogEntity), useValue: repo }],
     }).compile();
 
     service = module.get<AuditService>(AuditService);
@@ -86,9 +83,7 @@ describe('AuditService', () => {
 
     it('defaults stellarTxHash to null when not provided', async () => {
       await service.log({ actorId: 'actor-3', action: AuditEventAction.RECORD_WRITE });
-      expect(repo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ stellarTxHash: null }),
-      );
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ stellarTxHash: null }));
     });
   });
 
@@ -118,10 +113,12 @@ describe('AuditService', () => {
         },
       ];
 
-      const csv = service.toCsv(rows as AuditLogEntity[]);
+      const csv = service.toCsv(rows);
       const lines = csv.split('\n');
 
-      expect(lines[0]).toBe('id,actorId,action,resourceId,resourceType,ipAddress,userAgent,timestamp,stellarTxHash');
+      expect(lines[0]).toBe(
+        'id,actorId,action,resourceId,resourceType,ipAddress,userAgent,timestamp,stellarTxHash',
+      );
       expect(lines[1]).toContain('uuid-1');
       expect(lines[1]).toContain('2024-01-01T00:00:00.000Z');
     });
@@ -135,7 +132,7 @@ describe('AuditService', () => {
           timestamp: new Date('2024-01-01T00:00:00.000Z'),
         },
       ];
-      const csv = service.toCsv(rows as AuditLogEntity[]);
+      const csv = service.toCsv(rows);
       expect(csv).toContain('"a,b"');
     });
   });

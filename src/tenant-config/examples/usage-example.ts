@@ -1,6 +1,6 @@
 /**
  * Tenant Configuration System - Usage Examples
- * 
+ *
  * This file demonstrates various ways to use the tenant configuration system
  * in your NestJS services and controllers.
  */
@@ -95,11 +95,7 @@ export class FhirExportController {
 export class EmergencyAccessService {
   constructor(private readonly tenantConfigService: TenantConfigService) {}
 
-  async grantEmergencyAccess(
-    tenantId: string,
-    userId: string,
-    patientId: string,
-  ) {
+  async grantEmergencyAccess(tenantId: string, userId: string, patientId: string) {
     // Check if emergency access is enabled for this tenant
     const isEnabled = await this.tenantConfigService.isFeatureEnabled(
       tenantId,
@@ -112,7 +108,7 @@ export class EmergencyAccessService {
 
     // Grant temporary access with audit logging
     console.log(`Granting emergency access to user ${userId} for patient ${patientId}`);
-    
+
     return {
       granted: true,
       expiresIn: '1 hour',
@@ -154,7 +150,7 @@ export class AuditService {
     cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
 
     console.log(`Cleaning up audit logs older than ${cutoffDate.toISOString()}`);
-    
+
     // Perform cleanup...
     return { deleted: 0, cutoffDate };
   }
@@ -399,9 +395,7 @@ export class ScheduledTasksService {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
 
-      console.log(
-        `Cleaning up data for tenant ${tenantId} older than ${cutoffDate.toISOString()}`,
-      );
+      console.log(`Cleaning up data for tenant ${tenantId} older than ${cutoffDate.toISOString()}`);
 
       // Perform cleanup...
       results.push({

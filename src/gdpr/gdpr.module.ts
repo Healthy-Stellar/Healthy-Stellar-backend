@@ -20,29 +20,29 @@ import { AccessGrant } from '../access-control/entities/access-grant.entity';
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
 
 @Module({
-    imports: [
-        TypeOrmModule.forFeature([
-            GdprRequest,
-            User,
-            Patient,
-            Record,
-            MedicalRecord,
-            AccessGrant,
-            AuditLogEntity,
-        ]),
-        BullModule.registerQueue({
-            name: 'gdpr',
-        }),
-        AuthModule,
-        PatientModule,
-        RecordsModule,
-        MedicalRecordsModule,
-        AccessControlModule,
-        NotificationsModule,
-        StellarModule,
-    ],
-    controllers: [GdprController],
-    providers: [GdprService, GdprProcessor],
-    exports: [GdprService],
+  imports: [
+    TypeOrmModule.forFeature([
+      GdprRequest,
+      User,
+      Patient,
+      Record,
+      MedicalRecord,
+      AccessGrant,
+      AuditLogEntity,
+    ]),
+    BullModule.registerQueue({
+      name: 'gdpr',
+    }),
+    AuthModule,
+    PatientModule,
+    RecordsModule,
+    MedicalRecordsModule,
+    AccessControlModule,
+    NotificationsModule,
+    StellarModule,
+  ],
+  controllers: [GdprController],
+  providers: [GdprService, GdprProcessor],
+  exports: [GdprService],
 })
-export class GdprModule { }
+export class GdprModule {}

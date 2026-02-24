@@ -26,7 +26,7 @@ export class CreateDrugDto {
   @IsString()
   strength: string;
 
-  @ApiProperty({ example: 15.50 })
+  @ApiProperty({ example: 15.5 })
   @IsNumber()
   @Min(0)
   unitPrice: number;

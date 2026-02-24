@@ -16,19 +16,14 @@ export class DashboardService {
   ) {}
 
   async getOverviewDashboard(): Promise<any> {
-    const [
-      systemHealth,
-      activeAlerts,
-      equipmentMetrics,
-      complianceStatus,
-      incidentMetrics,
-    ] = await Promise.all([
-      this.systemHealthService.getSystemHealth(),
-      this.clinicalAlertService.getActiveAlerts(),
-      this.equipmentMonitoringService.getEquipmentMetrics(),
-      this.complianceMonitoringService.getComplianceStatus(),
-      this.getRecentIncidentMetrics(),
-    ]);
+    const [systemHealth, activeAlerts, equipmentMetrics, complianceStatus, incidentMetrics] =
+      await Promise.all([
+        this.systemHealthService.getSystemHealth(),
+        this.clinicalAlertService.getActiveAlerts(),
+        this.equipmentMonitoringService.getEquipmentMetrics(),
+        this.complianceMonitoringService.getComplianceStatus(),
+        this.getRecentIncidentMetrics(),
+      ]);
 
     return {
       timestamp: new Date(),
@@ -39,8 +34,8 @@ export class DashboardService {
       },
       alerts: {
         active: activeAlerts.length,
-        critical: activeAlerts.filter(a => a.priority === 'critical').length,
-        high: activeAlerts.filter(a => a.priority === 'high').length,
+        critical: activeAlerts.filter((a) => a.priority === 'critical').length,
+        high: activeAlerts.filter((a) => a.priority === 'high').length,
         recent: activeAlerts.slice(0, 5),
       },
       equipment: {
@@ -70,7 +65,7 @@ export class DashboardService {
 
   async getSystemHealthDashboard(): Promise<any> {
     const systemHealth = await this.systemHealthService.getSystemHealth();
-    
+
     return {
       timestamp: new Date(),
       overall: systemHealth.overall,
@@ -100,10 +95,10 @@ export class DashboardService {
       timestamp: new Date(),
       activeAlerts: {
         total: activeAlerts.length,
-        critical: activeAlerts.filter(a => a.priority === 'critical').length,
-        high: activeAlerts.filter(a => a.priority === 'high').length,
-        medium: activeAlerts.filter(a => a.priority === 'medium').length,
-        low: activeAlerts.filter(a => a.priority === 'low').length,
+        critical: activeAlerts.filter((a) => a.priority === 'critical').length,
+        high: activeAlerts.filter((a) => a.priority === 'high').length,
+        medium: activeAlerts.filter((a) => a.priority === 'medium').length,
+        low: activeAlerts.filter((a) => a.priority === 'low').length,
       },
       alertsByType: alertMetrics.byType,
       alertsByDepartment: this.groupAlertsByDepartment(activeAlerts),
@@ -118,7 +113,7 @@ export class DashboardService {
 
   async getEquipmentDashboard(): Promise<any> {
     const equipmentMetrics = await this.equipmentMonitoringService.getEquipmentMetrics();
-    
+
     return {
       timestamp: new Date(),
       overview: {
@@ -146,7 +141,7 @@ export class DashboardService {
 
   async getComplianceDashboard(): Promise<any> {
     const complianceStatus = await this.complianceMonitoringService.getComplianceStatus();
-    
+
     return {
       timestamp: new Date(),
       overview: {
@@ -155,7 +150,9 @@ export class DashboardService {
         compliant: complianceStatus.compliant,
         nonCompliant: complianceStatus.nonCompliant,
         pendingReview: complianceStatus.pendingReview,
-        complianceRate: (complianceStatus.compliant / complianceStatus.totalChecks * 100).toFixed(1),
+        complianceRate: ((complianceStatus.compliant / complianceStatus.totalChecks) * 100).toFixed(
+          1,
+        ),
       },
       byType: complianceStatus.byType,
       bySeverity: complianceStatus.bySeverity,
@@ -172,7 +169,7 @@ export class DashboardService {
       this.getRecentIncidentMetrics(),
       this.incidentTrackingService.getTrendAnalysis(6),
     ]);
-    
+
     return {
       timestamp: new Date(),
       overview: {
@@ -201,7 +198,7 @@ export class DashboardService {
   private async getRecentIncidentMetrics(): Promise<any> {
     const endDate = new Date();
     const startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000); // Last 30 days
-    
+
     return await this.incidentTrackingService.getIncidentMetrics({
       start: startDate,
       end: endDate,
@@ -211,7 +208,7 @@ export class DashboardService {
   private async getAlertMetrics(): Promise<any> {
     const endDate = new Date();
     const startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000); // Last 30 days
-    
+
     return await this.clinicalAlertService.getAlertMetrics({
       start: startDate,
       end: endDate,

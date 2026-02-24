@@ -17,22 +17,16 @@ export class QueueService {
     private emailQueue: Queue,
   ) {}
 
-  async dispatchStellarTransaction(
-    jobData: StellarTransactionJobDto,
-  ): Promise<string> {
-    const job = await this.stellarQueue.add(
-      jobData.operationType,
-      jobData,
-      {
-        attempts: 3,
-        backoff: {
-          type: 'exponential',
-          delay: 2000,
-        },
-        removeOnComplete: 100,
-        removeOnFail: 500,
+  async dispatchStellarTransaction(jobData: StellarTransactionJobDto): Promise<string> {
+    const job = await this.stellarQueue.add(jobData.operationType, jobData, {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 2000,
       },
-    );
+      removeOnComplete: 100,
+      removeOnFail: 500,
+    });
 
     this.logger.log(
       `Dispatched ${jobData.operationType} job ${job.id} (correlation: ${jobData.correlationId})`,
@@ -45,12 +39,7 @@ export class QueueService {
     const queues = [this.stellarQueue, this.ipfsQueue, this.emailQueue];
 
     for (const queue of queues) {
-      const jobs = await queue.getJobs([
-        'waiting',
-        'active',
-        'completed',
-        'failed',
-      ]);
+      const jobs = await queue.getJobs(['waiting', 'active', 'completed', 'failed']);
 
       const job = jobs.find((j) => j.data.correlationId === correlationId);
 
@@ -73,9 +62,7 @@ export class QueueService {
       }
     }
 
-    throw new NotFoundException(
-      `Job with correlationId ${correlationId} not found`,
-    );
+    throw new NotFoundException(`Job with correlationId ${correlationId} not found`);
   }
 
   private mapJobState(state: string): string {

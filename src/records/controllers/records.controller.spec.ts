@@ -67,9 +67,7 @@ describe('RecordsController', () => {
         description: 'Test record',
       };
 
-      await expect(controller.uploadRecord(dto, undefined)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(controller.uploadRecord(dto, undefined)).rejects.toThrow(BadRequestException);
       await expect(controller.uploadRecord(dto, undefined)).rejects.toThrow(
         'Encrypted record file is required',
       );

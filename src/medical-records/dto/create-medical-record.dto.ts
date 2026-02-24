@@ -18,7 +18,7 @@ export class CreateMedicalRecordDto {
     example: 'patient-12345-anon',
     pattern: '^[a-zA-Z0-9-]+$',
     minLength: 10,
-    maxLength: 50
+    maxLength: 50,
   })
   @IsString()
   @IsNotEmpty()
@@ -29,7 +29,7 @@ export class CreateMedicalRecordDto {
   @ApiPropertyOptional({
     description: 'Healthcare provider identifier',
     example: 'provider-67890-anon',
-    pattern: '^[a-zA-Z0-9-]+$'
+    pattern: '^[a-zA-Z0-9-]+$',
   })
   @IsString()
   @IsOptional()
@@ -40,7 +40,7 @@ export class CreateMedicalRecordDto {
     enum: RecordType,
     description: 'Medical record type following HL7 FHIR standards',
     example: RecordType.CONSULTATION,
-    enumName: 'RecordType'
+    enumName: 'RecordType',
   })
   @IsEnum(RecordType)
   @IsNotEmpty()
@@ -49,7 +49,7 @@ export class CreateMedicalRecordDto {
   @ApiPropertyOptional({
     description: 'Medical record title (PHI-compliant)',
     example: 'Annual Physical Examination',
-    maxLength: 200
+    maxLength: 200,
   })
   @IsString()
   @IsOptional()
@@ -59,7 +59,7 @@ export class CreateMedicalRecordDto {
   @ApiPropertyOptional({
     description: 'Clinical notes and observations (encrypted)',
     example: 'Patient presents with routine annual examination. Vital signs within normal limits.',
-    maxLength: 5000
+    maxLength: 5000,
   })
   @IsString()
   @IsOptional()
@@ -69,7 +69,7 @@ export class CreateMedicalRecordDto {
   @ApiPropertyOptional({
     description: 'Date of medical service (ISO 8601 format)',
     example: '2024-01-15T10:30:00Z',
-    format: 'date-time'
+    format: 'date-time',
   })
   @IsDateString()
   @IsOptional()
@@ -81,9 +81,9 @@ export class CreateMedicalRecordDto {
       icd10Code: 'Z00.00',
       snomedCode: '410620009',
       facilityId: 'facility-001',
-      departmentCode: 'INTERNAL_MED'
+      departmentCode: 'INTERNAL_MED',
     },
-    type: 'object'
+    type: 'object',
   })
   @IsObject()
   @IsOptional()

@@ -46,10 +46,7 @@ export class DrugRecallController {
   }
 
   @Post(':id/affected-inventory')
-  async addAffectedInventory(
-    @Param('id') id: string,
-    @Body('inventoryData') inventoryData: any[]
-  ) {
+  async addAffectedInventory(@Param('id') id: string, @Body('inventoryData') inventoryData: any[]) {
     return await this.recallService.addAffectedInventory(id, inventoryData);
   }
 
@@ -57,7 +54,7 @@ export class DrugRecallController {
   async addActionTaken(
     @Param('id') id: string,
     @Body('action') action: string,
-    @Body('performedBy') performedBy: string
+    @Body('performedBy') performedBy: string,
   ) {
     return await this.recallService.addActionTaken(id, action, performedBy);
   }

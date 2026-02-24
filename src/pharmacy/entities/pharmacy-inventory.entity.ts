@@ -1,4 +1,13 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, CreateDateColumn, UpdateDateColumn, JoinColumn, OneToMany } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  CreateDateColumn,
+  UpdateDateColumn,
+  JoinColumn,
+  OneToMany,
+} from 'typeorm';
 import { Drug } from './drug.entity';
 
 @Entity('pharmacy_inventory')
@@ -6,7 +15,7 @@ export class PharmacyInventory {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Drug, drug => drug.inventory)
+  @ManyToOne(() => Drug, (drug) => drug.inventory)
   @JoinColumn({ name: 'drug_id' })
   drug: Drug;
 

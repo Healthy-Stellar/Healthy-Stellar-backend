@@ -145,8 +145,12 @@ export class CreateTenantConfigTable1740000000000 implements MigrationInterface 
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query('DROP TRIGGER IF EXISTS tenant_configs_audit_trigger ON tenant_configs');
-    await queryRunner.query('DROP TRIGGER IF EXISTS update_tenant_configs_updated_at ON tenant_configs');
+    await queryRunner.query(
+      'DROP TRIGGER IF EXISTS tenant_configs_audit_trigger ON tenant_configs',
+    );
+    await queryRunner.query(
+      'DROP TRIGGER IF EXISTS update_tenant_configs_updated_at ON tenant_configs',
+    );
     await queryRunner.dropTable('tenant_configs');
   }
 }

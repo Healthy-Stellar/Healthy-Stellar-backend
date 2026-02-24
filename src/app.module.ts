@@ -65,7 +65,10 @@ const hasBearerAuthUser = (req: any): boolean => {
   }
 
   try {
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, any>;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<
+      string,
+      any
+    >;
     return Boolean(payload?.userId);
   } catch {
     return false;
@@ -89,7 +92,10 @@ const getUserTrackerFromRequest = (req: any): string => {
   }
 
   try {
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, any>;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<
+      string,
+      any
+    >;
     if (payload?.userId) {
       return `user:${payload.userId}`;
     }
@@ -153,7 +159,7 @@ const getUserTrackerFromRequest = (req: any): string => {
     AppService,
     {
       provide: APP_INTERCEPTOR,
-      useClass: TenantInterceptor
+      useClass: TenantInterceptor,
     },
     {
       provide: APP_FILTER,
@@ -169,4 +175,4 @@ const getUserTrackerFromRequest = (req: any): string => {
     },
   ],
 })
-export class AppModule { }
+export class AppModule {}

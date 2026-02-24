@@ -10,13 +10,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiBearerAuth,
-  ApiQuery,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { Icd10ValidationService } from './services/icd10-validation.service';
 import { CptValidationService } from './services/cpt-validation.service';
 import { LoincValidationService } from './services/loinc-validation.service';
@@ -139,10 +133,7 @@ export class MedicalValidationController {
   @Get('data-quality/trend/:recordType')
   @ApiOperation({ summary: 'Get data quality trend for a record type' })
   @ApiQuery({ name: 'days', required: false, type: Number })
-  async getQualityTrend(
-    @Param('recordType') recordType: string,
-    @Query('days') days: number = 30,
-  ) {
+  async getQualityTrend(@Param('recordType') recordType: string, @Query('days') days: number = 30) {
     return this.dataQualityService.getQualityTrend(recordType, days);
   }
 
@@ -157,21 +148,14 @@ export class MedicalValidationController {
 
   @Post('clinical-alerts/drug-interactions')
   @ApiOperation({ summary: 'Check for drug-drug interactions' })
-  async checkDrugInteractions(
-    @Body() body: { patientId: string; medicationCodes: string[] },
-  ) {
+  async checkDrugInteractions(@Body() body: { patientId: string; medicationCodes: string[] }) {
     return this.cdsService.checkDrugInteractions(body);
   }
 
   @Post('clinical-alerts/critical-values')
   @ApiOperation({ summary: 'Check for critical lab values' })
   async checkCriticalValues(
-    @Body() body: {
-      patientId: string;
-      loincCode: string;
-      value: number;
-      unit: string;
-    },
+    @Body() body: { patientId: string; loincCode: string; value: number; unit: string },
   ) {
     return this.cdsService.checkCriticalValues(body);
   }
@@ -179,11 +163,7 @@ export class MedicalValidationController {
   @Post('clinical-alerts/allergy-check')
   @ApiOperation({ summary: 'Check for allergy contraindications' })
   async checkAllergyContraindications(
-    @Body() body: {
-      patientId: string;
-      prescribedNdc: string;
-      allergyList: string[];
-    },
+    @Body() body: { patientId: string; prescribedNdc: string; allergyList: string[] },
   ) {
     return this.cdsService.checkAllergyContraindications(body);
   }
@@ -219,18 +199,13 @@ export class MedicalValidationController {
   @ApiOperation({ summary: 'Get reference data update history' })
   @ApiQuery({ name: 'system', required: false })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  async getUpdateHistory(
-    @Query('system') system?: string,
-    @Query('limit') limit: number = 10,
-  ) {
+  async getUpdateHistory(@Query('system') system?: string, @Query('limit') limit: number = 10) {
     return this.referenceDataService.getUpdateHistory(system, limit);
   }
 
   @Post('reference-data/bulk-check')
   @ApiOperation({ summary: 'Bulk check if codes exist in registry' })
-  async bulkExistenceCheck(
-    @Body() body: { codeSystem: string; codes: string[] },
-  ) {
+  async bulkExistenceCheck(@Body() body: { codeSystem: string; codes: string[] }) {
     return this.referenceDataService.bulkExistenceCheck(body.codeSystem, body.codes);
   }
 
@@ -239,7 +214,8 @@ export class MedicalValidationController {
   @Post('governance/enforce')
   @ApiOperation({ summary: 'Enforce governance policies on a data record' })
   async enforceGovernance(
-    @Body() body: {
+    @Body()
+    body: {
       resourceId: string;
       resourceType: string;
       data: Record<string, unknown>;
@@ -262,9 +238,7 @@ export class MedicalValidationController {
 
   @Post('governance/retention-check')
   @ApiOperation({ summary: 'Check if a record is compliant with retention policy' })
-  async checkRetention(
-    @Body() body: { recordType: string; createdAt: string },
-  ) {
+  async checkRetention(@Body() body: { recordType: string; createdAt: string }) {
     return this.governanceService.checkRetentionCompliance(
       body.recordType,
       new Date(body.createdAt),

@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan } from 'typeorm';
-import { WorkflowExecution, WorkflowType, WorkflowStatus } from './entities/workflow-execution.entity';
+import {
+  WorkflowExecution,
+  WorkflowType,
+  WorkflowStatus,
+} from './entities/workflow-execution.entity';
 
 export interface WorkflowMetrics {
   totalExecutions: number;
@@ -30,15 +34,15 @@ export class WorkflowOptimizationService {
 
   // Healthcare SLA thresholds (in milliseconds)
   private readonly SLA_THRESHOLDS: Record<string, number> = {
-    'emergency-triage': 900_000,     // 15 minutes
-    'patient-admission': 1_800_000,  // 30 minutes
-    'lab-order': 300_000,            // 5 minutes (order processing)
-    'medication-order': 600_000,     // 10 minutes
-    'patient-discharge': 3_600_000,  // 60 minutes
-    'surgical-prep': 7_200_000,      // 2 hours
-    'bed-assignment': 900_000,       // 15 minutes
-    'shift-handover': 1_800_000,     // 30 minutes
-    'billing-process': 86_400_000,   // 24 hours
+    'emergency-triage': 900_000, // 15 minutes
+    'patient-admission': 1_800_000, // 30 minutes
+    'lab-order': 300_000, // 5 minutes (order processing)
+    'medication-order': 600_000, // 10 minutes
+    'patient-discharge': 3_600_000, // 60 minutes
+    'surgical-prep': 7_200_000, // 2 hours
+    'bed-assignment': 900_000, // 15 minutes
+    'shift-handover': 1_800_000, // 30 minutes
+    'billing-process': 86_400_000, // 24 hours
   };
 
   constructor(
@@ -130,7 +134,7 @@ export class WorkflowOptimizationService {
     if (slaThreshold && workflow.executionTimeMs > slaThreshold) {
       this.logger.warn(
         `⚠️ SLA breach: ${workflow.workflowType} took ${workflow.executionTimeMs}ms ` +
-        `(SLA: ${slaThreshold}ms)`,
+          `(SLA: ${slaThreshold}ms)`,
       );
     }
 
@@ -180,9 +184,7 @@ export class WorkflowOptimizationService {
       totalExecutions: allWorkflows.length,
       averageExecutionTimeMs: completed.length > 0 ? Math.round(totalTime / completed.length) : 0,
       successRate:
-        allWorkflows.length > 0
-          ? Math.round((completed.length / allWorkflows.length) * 100)
-          : 100,
+        allWorkflows.length > 0 ? Math.round((completed.length / allWorkflows.length) * 100) : 100,
       bottlenecks,
       activeWorkflows: active.length,
     };
@@ -250,8 +252,8 @@ export class WorkflowOptimizationService {
       if (!w.stepResults) continue;
       for (const [stepName, result] of Object.entries(w.stepResults)) {
         if (!stepTimes[stepName]) stepTimes[stepName] = [];
-        if ((result as any).duration) {
-          stepTimes[stepName].push((result as any).duration);
+        if (result.duration) {
+          stepTimes[stepName].push(result.duration);
         }
       }
     }
