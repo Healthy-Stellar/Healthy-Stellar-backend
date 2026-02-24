@@ -103,14 +103,19 @@ export class UsersService {
   }
 
   async findAll(): Promise<User[]> {
-    return this.usersRepository.find({ relations: ['patientProfile'] });
+    return this.usersRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.patientProfile', 'patientProfile')
+      .getMany();
   }
 
   async findOne(id: string): Promise<User> {
-    const user = await this.usersRepository.findOne({
-      where: { id },
-      relations: ['patientProfile'],
-    });
+    const user = await this.usersRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.patientProfile', 'patientProfile')
+      .where('user.id = :id', { id })
+      .getOne();
+
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
