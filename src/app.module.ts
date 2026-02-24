@@ -35,6 +35,7 @@ import { MedicalDataValidationPipe } from './common/validation/medical-data.vali
 import { NotificationsModule } from './notifications/notifications.module';
 import { QueueModule } from './queues/queue.module';
 import { TenantConfigModule } from './tenant-config/tenant-config.module';
+import { GdprModule } from './gdpr/gdpr.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
 import { JobsModule } from './jobs/jobs.module';
 import { AuditModule } from './common/audit/audit.module';
@@ -145,6 +146,7 @@ const getUserTrackerFromRequest = (req: any): string => {
     AuditModule,
     ReportsModule,
     TenantConfigModule,
+    GdprModule,
   ],
   controllers: [AppController],
   providers: [
