@@ -189,7 +189,7 @@ describe('DatabaseConfig', () => {
       const options = databaseConfig.createTypeOrmOptions();
 
       // Assert
-      expect(options.logging).toEqual(['query', 'error', 'slow', 'warn', 'migration']);
+      expect(options.logging).toEqual(['query', 'error', 'warn', 'migration']);
     });
 
     it('should limit logging in production', () => {

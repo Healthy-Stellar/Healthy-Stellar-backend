@@ -6,6 +6,10 @@ import { UsersService } from './users.service';
 import { User } from './entities/user.entity';
 import { Patient } from './entities/patient.entity';
 
+jest.mock('bcrypt', () => ({
+  hash: jest.fn(),
+}));
+
 describe('UsersService', () => {
   let service: UsersService;
   let usersRepository: jest.Mocked<Repository<User>>;

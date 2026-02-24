@@ -74,7 +74,7 @@ BASE_URL=http://localhost:3000 AUTH_TOKEN=your-jwt-token k6 run tests/load/load-
 Configured in [`DatabaseConfig`](../src/config/database.config.ts):
 
 ```ts
-logging: ['query', 'error', 'slow', 'warn', 'migration'],
+logging: ['query', 'error', 'warn', 'migration'],
 maxQueryExecutionTime: 100,
 extra: {
   max: 20,

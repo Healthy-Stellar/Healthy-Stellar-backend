@@ -61,10 +61,10 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       // Migrations should be run manually with proper audit trail
       migrationsRun: false,
 
-      // Logging configuration for audit trail and slow-query profiling
+      // Logging configuration for audit trail and query profiling
       logging: isProduction
         ? ['error', 'warn', 'migration']
-        : ['query', 'error', 'slow', 'warn', 'migration'],
+        : ['query', 'error', 'warn', 'migration'],
       logger: 'advanced-console',
 
       // Connection pool configuration for HIPAA compliance
@@ -144,7 +144,7 @@ export const dataSourceOptions: DataSourceOptions = {
   logging:
     process.env.NODE_ENV === 'production'
       ? ['error', 'warn', 'migration']
-      : ['query', 'error', 'slow', 'warn', 'migration'],
+      : ['query', 'error', 'warn', 'migration'],
   maxQueryExecutionTime: parseInt(process.env.DB_SLOW_QUERY_MS || '100', 10),
 };
 
