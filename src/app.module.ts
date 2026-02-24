@@ -20,6 +20,7 @@ import { AccessControlModule } from './access-control/access-control.module';
 import { ReportsModule } from './reports/reports.module';
 import { TenantModule } from './tenant/tenant.module';
 import { FhirModule } from './fhir/fhir.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 =======
 import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -161,6 +162,7 @@ const getUserTrackerFromRequest = (req: any): string => {
     ReportsModule,
     TenantConfigModule,
     FhirModule,
+    AnalyticsModule,
 =======
     GdprModule,
  main
