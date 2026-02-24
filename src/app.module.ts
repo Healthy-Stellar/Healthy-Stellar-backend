@@ -46,6 +46,7 @@ import { FhirModule } from './fhir/fhir.module';
 import { StellarModule } from './stellar/stellar.module';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { ThrottlerConfigService } from './common/throttler/throttler-config.service';
+import { MetricsModule } from './metrics/metrics.module';
 
 const hasBearerAuthUser = (req: any): boolean => {
   const authHeader = req?.headers?.authorization;
@@ -146,6 +147,7 @@ const getUserTrackerFromRequest = (req: any): string => {
     ValidationModule,
     InfectionControlModule,
     HealthModule,
+    MetricsModule,
     NotificationsModule,
     QueueModule,
     FhirModule,
