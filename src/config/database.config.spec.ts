@@ -292,8 +292,45 @@ describe('DatabaseConfig', () => {
 
       // Assert
       expect(options.extra.statement_timeout).toBe(60000);
-      expect(options.extra.connectionTimeoutMillis).toBe(30000);
-      expect(options.extra.idleTimeoutMillis).toBe(600000);
+      expect(options.extra.connectionTimeoutMillis).toBe(2000);
+      expect(options.extra.idleTimeoutMillis).toBe(30000);
+    });
+
+    it('should set slow query threshold to 100ms by default', () => {
+      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
+        const config = {
+          NODE_ENV: 'development',
+          DB_HOST: 'localhost',
+          DB_PORT: 5432,
+          DB_USERNAME: 'test_user',
+          DB_PASSWORD: 'test_password',
+          DB_NAME: 'test_db',
+        };
+        return config[key] || defaultValue;
+      });
+
+      const options = databaseConfig.createTypeOrmOptions();
+
+      expect(options.maxQueryExecutionTime).toBe(100);
+    });
+
+    it('should allow overriding slow query threshold via config', () => {
+      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
+        const config = {
+          NODE_ENV: 'development',
+          DB_HOST: 'localhost',
+          DB_PORT: 5432,
+          DB_USERNAME: 'test_user',
+          DB_PASSWORD: 'test_password',
+          DB_NAME: 'test_db',
+          DB_SLOW_QUERY_MS: 250,
+        };
+        return config[key] || defaultValue;
+      });
+
+      const options = databaseConfig.createTypeOrmOptions();
+
+      expect(options.maxQueryExecutionTime).toBe(250);
     });
 
     it('should set application name for audit logging', () => {

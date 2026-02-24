@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, Like, Between } from 'typeorm';
+import { Repository, Like, Between } from 'typeorm';
 import { MedicalRecord, MedicalRecordStatus } from '../entities/medical-record.entity';
 import { MedicalRecordVersion } from '../entities/medical-record-version.entity';
 import { MedicalHistory, HistoryEventType } from '../entities/medical-history.entity';
@@ -79,19 +79,19 @@ export class MedicalRecordsService {
   }
 
   async findOne(id: string, patientId?: string): Promise<MedicalRecord> {
-    const where: FindOptionsWhere<MedicalRecord> = { id };
+    const queryBuilder = this.medicalRecordRepository
+      .createQueryBuilder('record')
+      .leftJoinAndSelect('record.versions', 'version')
+      .leftJoinAndSelect('record.attachments', 'attachment')
+      .leftJoinAndSelect('record.consents', 'consent')
+      .where('record.id = :id', { id })
+      .orderBy('version.createdAt', 'DESC');
 
     if (patientId) {
-      where.patientId = patientId;
+      queryBuilder.andWhere('record.patientId = :patientId', { patientId });
     }
 
-    const record = await this.medicalRecordRepository.findOne({
-      where,
-      relations: ['versions', 'attachments', 'consents'],
-      order: {
-        versions: { createdAt: 'DESC' },
-      },
-    });
+    const record = await queryBuilder.getOne();
 
     if (!record) {
       throw new NotFoundException(`Medical record with ID ${id} not found`);

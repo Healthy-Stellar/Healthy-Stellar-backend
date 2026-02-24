@@ -134,7 +134,7 @@ class DatabaseBenchmark {
     // Query 1: Patient record lookup
     const result1 = await this.benchmarkQuery(
       'Medical Records: Find by Patient ID',
-      `SELECT * FROM medical_records WHERE patient_id = $1 LIMIT 100`,
+      `SELECT * FROM medical_records WHERE "patientId" = $1 LIMIT 100`,
       ['00000000-0000-0000-0000-000000000001'],
     );
     this.results.push(result1);
@@ -144,10 +144,10 @@ class DatabaseBenchmark {
     const result2 = await this.benchmarkQuery(
       'Medical Records: Complex Filter (patient + type + status)',
       `SELECT * FROM medical_records 
-       WHERE patient_id = $1 
-       AND record_type = $2 
+       WHERE "patientId" = $1 
+       AND "recordType" = $2 
        AND status = $3 
-       ORDER BY created_at DESC 
+       ORDER BY "createdAt" DESC 
        LIMIT 50`,
       ['00000000-0000-0000-0000-000000000001', 'consultation', 'active'],
     );
@@ -159,8 +159,8 @@ class DatabaseBenchmark {
       'Medical Records: Filter by Status and Type',
       `SELECT * FROM medical_records 
        WHERE status = $1 
-       AND record_type = $2 
-       ORDER BY created_at DESC 
+       AND "recordType" = $2 
+       ORDER BY "createdAt" DESC 
        LIMIT 100`,
       ['active', 'diagnosis'],
     );
@@ -176,10 +176,10 @@ class DatabaseBenchmark {
     const result4 = await this.benchmarkQuery(
       'Access Grants: Validate Access (patient + grantee + expiration)',
       `SELECT * FROM access_grants 
-       WHERE patient_id = $1 
-       AND grantee_id = $2 
+       WHERE "patientId" = $1 
+       AND "granteeId" = $2 
        AND status = 'ACTIVE'
-       AND (expires_at IS NULL OR expires_at > NOW())`,
+       AND ("expiresAt" IS NULL OR "expiresAt" > NOW())`,
       ['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002'],
     );
     this.results.push(result4);
@@ -189,9 +189,9 @@ class DatabaseBenchmark {
     const result5 = await this.benchmarkQuery(
       'Access Grants: Get Received Grants (grantee + status)',
       `SELECT * FROM access_grants 
-       WHERE grantee_id = $1 
+       WHERE "granteeId" = $1 
        AND status = 'ACTIVE'
-       ORDER BY created_at DESC`,
+       ORDER BY "createdAt" DESC`,
       ['00000000-0000-0000-0000-000000000002'],
     );
     this.results.push(result5);
@@ -202,7 +202,7 @@ class DatabaseBenchmark {
       'Access Grants: Find Expired Grants',
       `SELECT * FROM access_grants 
        WHERE status = 'ACTIVE' 
-       AND expires_at < NOW()`,
+       AND "expiresAt" < NOW()`,
       [],
     );
     this.results.push(result6);
@@ -269,8 +269,8 @@ class DatabaseBenchmark {
     const result11 = await this.benchmarkQuery(
       'Medical History: Patient Timeline',
       `SELECT * FROM medical_history 
-       WHERE patient_id = $1 
-       ORDER BY event_date DESC 
+       WHERE "patientId" = $1 
+       ORDER BY "eventDate" DESC 
        LIMIT 50`,
       ['00000000-0000-0000-0000-000000000001'],
     );
@@ -281,8 +281,8 @@ class DatabaseBenchmark {
     const result12 = await this.benchmarkQuery(
       'Medical History: Record History',
       `SELECT * FROM medical_history 
-       WHERE medical_record_id = $1 
-       ORDER BY event_date DESC`,
+       WHERE "medicalRecordId" = $1 
+       ORDER BY "eventDate" DESC`,
       ['00000000-0000-0000-0000-000000000001'],
     );
     this.results.push(result12);

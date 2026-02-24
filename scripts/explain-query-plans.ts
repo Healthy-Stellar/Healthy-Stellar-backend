@@ -68,11 +68,11 @@ Performance Impact:
         `,
         query: `
 SELECT 
-  id, patient_id, provider_id, record_type, title, 
-  description, status, record_date, created_at, updated_at
+  id, "patientId", "providerId", "recordType", title, 
+  description, status, "recordDate", "createdAt", "updatedAt"
 FROM medical_records 
-WHERE patient_id = $1 
-ORDER BY created_at DESC 
+WHERE "patientId" = $1 
+ORDER BY "createdAt" DESC 
 LIMIT 100
         `,
         params: ['00000000-0000-0000-0000-000000000001'],
@@ -96,14 +96,14 @@ Performance Impact:
         `,
         query: `
 SELECT 
-  id, patient_id, grantee_id, record_ids, access_level,
-  status, expires_at, created_at
+  id, "patientId", "granteeId", "recordIds", "accessLevel",
+  status, "expiresAt", "createdAt"
 FROM access_grants 
-WHERE patient_id = $1 
-  AND grantee_id = $2 
+WHERE "patientId" = $1 
+  AND "granteeId" = $2 
   AND status = 'ACTIVE'
-  AND (expires_at IS NULL OR expires_at > NOW())
-ORDER BY created_at DESC
+  AND ("expiresAt" IS NULL OR "expiresAt" > NOW())
+ORDER BY "createdAt" DESC
         `,
         params: [
           '00000000-0000-0000-0000-000000000001',
