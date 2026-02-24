@@ -52,10 +52,12 @@ describe('MedicalCodeService', () => {
       const result = await service.create(createDto);
 
       expect(result).toEqual(mockCode);
-      expect(mockRepository.create).toHaveBeenCalledWith(expect.objectContaining({
-        code: '99213',
-        codeType: CodeType.CPT,
-      }));
+      expect(mockRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: '99213',
+          codeType: CodeType.CPT,
+        }),
+      );
     });
 
     it('should throw ConflictException if code already exists', async () => {
@@ -172,9 +174,7 @@ describe('MedicalCodeService', () => {
     it('should return valid for existing codes', async () => {
       mockRepository.findOne.mockResolvedValue({ id: '1', code: '99213', isActive: true });
 
-      const result = await service.validateCodes([
-        { code: '99213', codeType: CodeType.CPT },
-      ]);
+      const result = await service.validateCodes([{ code: '99213', codeType: CodeType.CPT }]);
 
       expect(result.valid).toBe(true);
       expect(result.invalidCodes).toHaveLength(0);
@@ -183,9 +183,7 @@ describe('MedicalCodeService', () => {
     it('should return invalid codes list', async () => {
       mockRepository.findOne.mockResolvedValue(null);
 
-      const result = await service.validateCodes([
-        { code: '99999', codeType: CodeType.CPT },
-      ]);
+      const result = await service.validateCodes([{ code: '99999', codeType: CodeType.CPT }]);
 
       expect(result.valid).toBe(false);
       expect(result.invalidCodes).toContain('CPT:99999');

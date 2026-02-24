@@ -2,57 +2,57 @@ import { IsString, IsUUID, IsEnum, IsOptional, IsBoolean, IsDateString } from 'c
 import { QCType, DiscrepancySeverity } from '../entities/quality-control.entity';
 
 export class CreateQualityControlDto {
-    @IsUUID()
-    pathologyCaseId: string;
+  @IsUUID()
+  pathologyCaseId: string;
 
-    @IsEnum(QCType)
-    qcType: QCType;
+  @IsEnum(QCType)
+  qcType: QCType;
 
-    @IsUUID()
-    reviewerId: string;
+  @IsUUID()
+  reviewerId: string;
 
-    @IsString()
-    reviewerName: string;
+  @IsString()
+  reviewerName: string;
 
-    @IsDateString()
-    @IsOptional()
-    reviewDate?: string;
+  @IsDateString()
+  @IsOptional()
+  reviewDate?: string;
 
-    @IsString()
-    findings: string;
+  @IsString()
+  findings: string;
 
-    @IsString()
-    @IsOptional()
-    discrepancies?: string;
+  @IsString()
+  @IsOptional()
+  discrepancies?: string;
 
-    @IsEnum(DiscrepancySeverity)
-    @IsOptional()
-    severity?: DiscrepancySeverity;
+  @IsEnum(DiscrepancySeverity)
+  @IsOptional()
+  severity?: DiscrepancySeverity;
 
-    @IsString()
-    @IsOptional()
-    actionTaken?: string;
+  @IsString()
+  @IsOptional()
+  actionTaken?: string;
 
-    @IsBoolean()
-    @IsOptional()
-    followUpRequired?: boolean;
+  @IsBoolean()
+  @IsOptional()
+  followUpRequired?: boolean;
 
-    @IsBoolean()
-    @IsOptional()
-    educationalValue?: boolean;
+  @IsBoolean()
+  @IsOptional()
+  educationalValue?: boolean;
 
-    @IsString()
-    @IsOptional()
-    educationalNotes?: string;
+  @IsString()
+  @IsOptional()
+  educationalNotes?: string;
 
-    @IsBoolean()
-    @IsOptional()
-    agreement?: boolean;
+  @IsBoolean()
+  @IsOptional()
+  agreement?: boolean;
 
-    @IsString()
-    @IsOptional()
-    notes?: string;
+  @IsString()
+  @IsOptional()
+  notes?: string;
 
-    @IsOptional()
-    metadata?: Record<string, any>;
+  @IsOptional()
+  metadata?: Record<string, any>;
 }

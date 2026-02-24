@@ -39,7 +39,10 @@ describe('WsAuthGuard', () => {
       switchToWs: () => ({ getClient: () => mockClient }),
     } as ExecutionContext;
 
-    authTokenService.verifyAccessToken.mockReturnValue({ userId: '123', sessionId: 'session-1' } as any);
+    authTokenService.verifyAccessToken.mockReturnValue({
+      userId: '123',
+      sessionId: 'session-1',
+    } as any);
     sessionService.isSessionValid.mockResolvedValue(true);
 
     await expect(guard.canActivate(mockContext)).resolves.toBe(true);
@@ -78,7 +81,10 @@ describe('WsAuthGuard', () => {
       switchToWs: () => ({ getClient: () => mockClient }),
     } as ExecutionContext;
 
-    authTokenService.verifyAccessToken.mockReturnValue({ userId: '123', sessionId: 'session-1' } as any);
+    authTokenService.verifyAccessToken.mockReturnValue({
+      userId: '123',
+      sessionId: 'session-1',
+    } as any);
     sessionService.isSessionValid.mockResolvedValue(false);
 
     await expect(guard.canActivate(mockContext)).rejects.toThrow(WsException);

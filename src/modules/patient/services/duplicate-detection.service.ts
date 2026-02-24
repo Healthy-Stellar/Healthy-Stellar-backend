@@ -66,22 +66,20 @@ export class DuplicateDetectionService {
     candidates.push(...byNameDob);
 
     // Remove duplicates and calculate scores
-    const uniqueCandidates = Array.from(
-      new Map(candidates.map(c => [c.id, c])).values(),
-    );
+    const uniqueCandidates = Array.from(new Map(candidates.map((c) => [c.id, c])).values());
 
     const matches: DuplicateMatch[] = uniqueCandidates
-      .map(candidate => {
+      .map((candidate) => {
         const score = this.calculateSimilarityScore(patientData, candidate);
         const matchingFields = this.getMatchingFields(patientData, candidate);
-        
+
         return {
           patient: candidate,
           score,
           matchingFields,
         };
       })
-      .filter(match => match.score >= this.THRESHOLD)
+      .filter((match) => match.score >= this.THRESHOLD)
       .sort((a, b) => b.score - a.score);
 
     // Log potential duplicates
@@ -101,19 +99,13 @@ export class DuplicateDetectionService {
 
     // Name similarity (weight: 30)
     if (patient1.firstName && patient2.firstName) {
-      const firstNameSimilarity = this.stringSimilarity(
-        patient1.firstName,
-        patient2.firstName,
-      );
+      const firstNameSimilarity = this.stringSimilarity(patient1.firstName, patient2.firstName);
       totalScore += firstNameSimilarity * 15;
       weightSum += 15;
     }
 
     if (patient1.lastName && patient2.lastName) {
-      const lastNameSimilarity = this.stringSimilarity(
-        patient1.lastName,
-        patient2.lastName,
-      );
+      const lastNameSimilarity = this.stringSimilarity(patient1.lastName, patient2.lastName);
       totalScore += lastNameSimilarity * 15;
       weightSum += 15;
     }
@@ -121,8 +113,7 @@ export class DuplicateDetectionService {
     // Date of birth (weight: 25)
     if (patient1.dateOfBirth && patient2.dateOfBirth) {
       const dobMatch =
-        new Date(patient1.dateOfBirth).getTime() ===
-        new Date(patient2.dateOfBirth).getTime();
+        new Date(patient1.dateOfBirth).getTime() === new Date(patient2.dateOfBirth).getTime();
       totalScore += dobMatch ? 25 : 0;
       weightSum += 25;
     }
@@ -158,9 +149,9 @@ export class DuplicateDetectionService {
     const s1 = str1.toLowerCase().trim();
     const s2 = str2.toLowerCase().trim();
     const maxLength = Math.max(s1.length, s2.length);
-    
+
     if (maxLength === 0) return 1;
-    
+
     const distance = levenshtein.get(s1, s2);
     return 1 - distance / maxLength;
   }

@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, IsEnum, IsBoolean, IsOptional, IsArray, Length } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsEnum,
+  IsBoolean,
+  IsOptional,
+  IsArray,
+  Length,
+} from 'class-validator';
 
 export class CreateDrugDto {
   @IsString()

@@ -12,22 +12,18 @@ export class MedicalOperationAuditService {
       entity: 'MedicalRecord',
       entityId: patientId,
       details: { action },
-      severity: 'MEDIUM'
+      severity: 'MEDIUM',
     });
   }
 
-  async logMedicalRecordModification(
-    userId: string,
-    patientId: string,
-    changes: any
-  ) {
+  async logMedicalRecordModification(userId: string, patientId: string, changes: any) {
     await this.auditLogService.log({
       userId,
       action: 'MEDICAL_RECORD_MODIFIED',
       entity: 'MedicalRecord',
       entityId: patientId,
       details: { changeCount: Object.keys(changes).length },
-      severity: 'HIGH'
+      severity: 'HIGH',
     });
   }
 
@@ -38,7 +34,7 @@ export class MedicalOperationAuditService {
       entity: 'Prescription',
       entityId: prescriptionId,
       details: { patientId },
-      severity: 'HIGH'
+      severity: 'HIGH',
     });
   }
 
@@ -48,7 +44,7 @@ export class MedicalOperationAuditService {
       action: 'VALIDATION_FAILED',
       entity: dataType,
       details: { reason },
-      severity: 'MEDIUM'
+      severity: 'MEDIUM',
     });
   }
 
@@ -59,7 +55,7 @@ export class MedicalOperationAuditService {
       entity: 'Patient',
       entityId: patientId,
       details: { alertType },
-      severity: 'CRITICAL'
+      severity: 'CRITICAL',
     });
   }
 }

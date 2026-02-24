@@ -8,10 +8,7 @@ import { CommonModule } from '../common/common.module';
 
 @Global()
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([TenantConfig]),
-    CommonModule,
-  ],
+  imports: [TypeOrmModule.forFeature([TenantConfig]), CommonModule],
   controllers: [TenantConfigController],
   providers: [TenantConfigService, FeatureFlagGuard],
   exports: [TenantConfigService, FeatureFlagGuard],

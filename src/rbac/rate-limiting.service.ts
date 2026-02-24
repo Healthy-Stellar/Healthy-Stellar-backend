@@ -56,8 +56,7 @@ export class RateLimitingService {
    * Check and update rate limit for a given key and profile
    */
   check(key: string, profile: keyof typeof this.PROFILES | RateLimitConfig): RateLimitResult {
-    const config: RateLimitConfig =
-      typeof profile === 'string' ? this.PROFILES[profile] : profile;
+    const config: RateLimitConfig = typeof profile === 'string' ? this.PROFILES[profile] : profile;
 
     if (!config) {
       throw new Error(`Unknown rate limit profile: ${profile}`);
@@ -162,7 +161,10 @@ export class RateLimitingService {
       let deleted = 0;
       for (const [key, entry] of this.store) {
         const maxWindow = 900_000; // 15 min max
-        if (now - entry.windowStart > maxWindow && (!entry.blockedUntil || entry.blockedUntil < now)) {
+        if (
+          now - entry.windowStart > maxWindow &&
+          (!entry.blockedUntil || entry.blockedUntil < now)
+        ) {
           this.store.delete(key);
           deleted++;
         }

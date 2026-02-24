@@ -15,7 +15,13 @@ import {
   MEDICAL_ROLES_KEY,
   MEDICAL_SPECIALTY_KEY,
 } from '../decorators/medical-rbac.decorator';
-import { AuditAction, MedicalDepartment, MedicalPermission, MedicalRole, MedicalSpecialty } from '../enums/medical-roles.enum';
+import {
+  AuditAction,
+  MedicalDepartment,
+  MedicalPermission,
+  MedicalRole,
+  MedicalSpecialty,
+} from '../enums/medical-roles.enum';
 import { MedicalUser } from '../interfaces/medical-rbac.interface';
 import { EmergencyOverrideService } from '../services/emergency-override.service';
 import { MedicalAuditService } from '../services/medical-audit.service';
@@ -40,10 +46,10 @@ export class MedicalRbacGuard implements CanActivate {
       throw new UnauthorizedException('No authenticated medical user found');
     }
 
-    const requiredRoles = this.reflector.getAllAndOverride<MedicalRole[]>(
-      MEDICAL_ROLES_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const requiredRoles = this.reflector.getAllAndOverride<MedicalRole[]>(MEDICAL_ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
     const requiredPermissions = this.reflector.getAllAndOverride<MedicalPermission[]>(
       MEDICAL_PERMISSIONS_KEY,
@@ -65,10 +71,10 @@ export class MedicalRbacGuard implements CanActivate {
       [context.getHandler(), context.getClass()],
     );
 
-    const auditResource = this.reflector.getAllAndOverride<string>(
-      AUDIT_RESOURCE_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const auditResource = this.reflector.getAllAndOverride<string>(AUDIT_RESOURCE_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
     const patientId = request.params?.patientId ?? request.body?.patientId;
     const ipAddress = request.ip;
@@ -113,13 +119,7 @@ export class MedicalRbacGuard implements CanActivate {
           }
         }
 
-        await this.denyAccess(
-          user,
-          resourceName,
-          'Department access denied',
-          ipAddress,
-          patientId,
-        );
+        await this.denyAccess(user, resourceName, 'Department access denied', ipAddress, patientId);
         throw new ForbiddenException('Department access denied');
       }
     }

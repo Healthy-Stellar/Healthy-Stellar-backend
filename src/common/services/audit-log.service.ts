@@ -35,10 +35,7 @@ export class AuditLogService {
     return this.auditLogRepository.save(auditLog);
   }
 
-  async findByEntity(
-    entityType: string,
-    entityId: string,
-  ): Promise<AuditLog[]> {
+  async findByEntity(entityType: string, entityId: string): Promise<AuditLog[]> {
     return this.auditLogRepository.find({
       where: { entityType, entityId },
       order: { timestamp: 'DESC' },
@@ -53,10 +50,7 @@ export class AuditLogService {
     });
   }
 
-  async findByOperation(
-    operation: string,
-    limit: number = 100,
-  ): Promise<AuditLog[]> {
+  async findByOperation(operation: string, limit: number = 100): Promise<AuditLog[]> {
     return this.auditLogRepository.find({
       where: { operation },
       order: { timestamp: 'DESC' },
@@ -64,10 +58,7 @@ export class AuditLogService {
     });
   }
 
-  async findByDateRange(
-    startDate: Date,
-    endDate: Date,
-  ): Promise<AuditLog[]> {
+  async findByDateRange(startDate: Date, endDate: Date): Promise<AuditLog[]> {
     return this.auditLogRepository
       .createQueryBuilder('audit_log')
       .where('audit_log.timestamp >= :startDate', { startDate })

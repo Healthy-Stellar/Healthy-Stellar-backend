@@ -16,12 +16,12 @@ export class IpfsHealthIndicator extends HealthIndicator {
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
     const startTime = Date.now();
     const ipfsUrl = this.configService.get('IPFS_API_URL', 'http://localhost:5001');
-    
+
     try {
       await firstValueFrom(
-        this.httpService.post(`${ipfsUrl}/api/v0/version`, null, { timeout: 5000 })
+        this.httpService.post(`${ipfsUrl}/api/v0/version`, null, { timeout: 5000 }),
       );
-      
+
       const responseTime = Date.now() - startTime;
       return this.getStatus(key, true, { responseTime: `${responseTime}ms` });
     } catch (error) {

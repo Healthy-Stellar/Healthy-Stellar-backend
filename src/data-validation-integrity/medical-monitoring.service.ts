@@ -75,14 +75,19 @@ export class MedicalMonitoringService {
     const reports = await qb.getMany();
 
     if (reports.length === 0) {
-      return { totalRecords: 0, passingRecords: 0, passingRate: 100, averageScore: 100, bottomRecords: [] };
+      return {
+        totalRecords: 0,
+        passingRecords: 0,
+        passingRate: 100,
+        averageScore: 100,
+        bottomRecords: [],
+      };
     }
 
     const totalRecords = reports.length;
     const passingRecords = reports.filter((r) => r.isPassing).length;
     const passingRate = (passingRecords / totalRecords) * 100;
-    const averageScore =
-      reports.reduce((sum, r) => sum + Number(r.overallScore), 0) / totalRecords;
+    const averageScore = reports.reduce((sum, r) => sum + Number(r.overallScore), 0) / totalRecords;
 
     // Bottom 10 records by score
     const bottomRecords = reports
@@ -182,7 +187,9 @@ export class MedicalMonitoringService {
     return { averageScoreByType, failingRecords, passingRate };
   }
 
-  private async getClinicalAlertMetrics(since: Date): Promise<MonitoringDashboard['clinicalAlerts']> {
+  private async getClinicalAlertMetrics(
+    since: Date,
+  ): Promise<MonitoringDashboard['clinicalAlerts']> {
     const [openAlerts, criticalAlerts, allRecentAlerts, resolvedWithTime] = await Promise.all([
       this.alertRepo.count({ where: { isResolved: false } }),
       this.alertRepo.count({ where: { severity: 'CRITICAL', isResolved: false } }),
@@ -209,7 +216,10 @@ export class MedicalMonitoringService {
     if (resolvedWithTime.length > 0) {
       const totalHours = resolvedWithTime.reduce((sum, a) => {
         if (a.resolvedAt) {
-          return sum + (new Date(a.resolvedAt).getTime() - new Date(a.createdAt).getTime()) / (1000 * 60 * 60);
+          return (
+            sum +
+            (new Date(a.resolvedAt).getTime() - new Date(a.createdAt).getTime()) / (1000 * 60 * 60)
+          );
         }
         return sum;
       }, 0);
@@ -234,7 +244,9 @@ export class MedicalMonitoringService {
     const recentViolations = totalChecks - compliantChecks;
     const criticalViolations = recentLogs.filter((l) => {
       if (!l.violations) return false;
-      return (l.violations as unknown as { severity: string }[]).some((v) => v.severity === 'CRITICAL');
+      return (l.violations as unknown as { severity: string }[]).some(
+        (v) => v.severity === 'CRITICAL',
+      );
     }).length;
 
     return { overallComplianceRate, recentViolations, criticalViolations };

@@ -5,7 +5,11 @@ import {
   MedicalRole,
   MedicalSpecialty,
 } from '../enums/medical-roles.enum';
-import { DepartmentAccessPolicy, MedicalUser, RolePermissionMap } from '../interfaces/medical-rbac.interface';
+import {
+  DepartmentAccessPolicy,
+  MedicalUser,
+  RolePermissionMap,
+} from '../interfaces/medical-rbac.interface';
 
 @Injectable()
 export class MedicalPermissionsService {
@@ -166,9 +170,7 @@ export class MedicalPermissionsService {
 
     // If specialty is required and user is a doctor, check specialty
     if (policy.requiresSpecialty?.length && user.roles.includes(MedicalRole.DOCTOR)) {
-      const hasSpecialty = user.specialties?.some((s) =>
-        policy.requiresSpecialty!.includes(s),
-      );
+      const hasSpecialty = user.specialties?.some((s) => policy.requiresSpecialty!.includes(s));
       // Allow if user is in own department (assigned there)
       return hasSpecialty === true || user.department === targetDepartment;
     }

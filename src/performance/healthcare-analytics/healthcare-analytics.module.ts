@@ -7,13 +7,7 @@ import { AnalyticsSnapshot } from './entities/analytics-snapshot.entity';
 @Global()
 @Module({
   imports: [TypeOrmModule.forFeature([AnalyticsSnapshot])],
-  providers: [
-    HealthcareAnalyticsService,
-    ReportingOptimizationService,
-  ],
-  exports: [
-    HealthcareAnalyticsService,
-    ReportingOptimizationService,
-  ],
+  providers: [HealthcareAnalyticsService, ReportingOptimizationService],
+  exports: [HealthcareAnalyticsService, ReportingOptimizationService],
 })
 export class HealthcareAnalyticsModule {}

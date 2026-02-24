@@ -8,14 +8,16 @@ export class AlertService {
   private readonly logger = new Logger(AlertService.name);
 
   async sendHighAlertRefusalAlert(mar: MedicationAdministrationRecord): Promise<void> {
-    this.logger.warn(`HIGH ALERT: Patient ${mar.patientId} refused high-alert medication ${mar.medicationName}`);
-    
+    this.logger.warn(
+      `HIGH ALERT: Patient ${mar.patientId} refused high-alert medication ${mar.medicationName}`,
+    );
+
     // In a real implementation, this would:
     // - Send notifications to charge nurse
     // - Alert physician
     // - Create incident report
     // - Send to pharmacy for review
-    
+
     const alertData = {
       type: 'HIGH_ALERT_REFUSAL',
       patientId: mar.patientId,
@@ -29,8 +31,10 @@ export class AlertService {
   }
 
   async sendCriticalMissedDoseAlert(missedDose: MissedDose): Promise<void> {
-    this.logger.warn(`CRITICAL MISSED DOSE: Patient ${missedDose.patientId} missed critical medication ${missedDose.medicationName}`);
-    
+    this.logger.warn(
+      `CRITICAL MISSED DOSE: Patient ${missedDose.patientId} missed critical medication ${missedDose.medicationName}`,
+    );
+
     const alertData = {
       type: 'CRITICAL_MISSED_DOSE',
       patientId: missedDose.patientId,
@@ -45,8 +49,10 @@ export class AlertService {
   }
 
   async sendSevereAdverseReactionAlert(adr: AdverseDrugReaction): Promise<void> {
-    this.logger.error(`SEVERE ADVERSE REACTION: Patient ${adr.patientId} had ${adr.severity} reaction to ${adr.medicationName}`);
-    
+    this.logger.error(
+      `SEVERE ADVERSE REACTION: Patient ${adr.patientId} had ${adr.severity} reaction to ${adr.medicationName}`,
+    );
+
     const alertData = {
       type: 'SEVERE_ADVERSE_REACTION',
       patientId: adr.patientId,
@@ -62,7 +68,7 @@ export class AlertService {
 
   async sendPhysicianMissedDoseNotification(missedDose: MissedDose): Promise<void> {
     this.logger.log(`Notifying physician about missed dose for patient ${missedDose.patientId}`);
-    
+
     const notificationData = {
       type: 'PHYSICIAN_MISSED_DOSE_NOTIFICATION',
       patientId: missedDose.patientId,
@@ -79,7 +85,7 @@ export class AlertService {
 
   async sendPhysicianAdverseReactionNotification(adr: AdverseDrugReaction): Promise<void> {
     this.logger.log(`Notifying physician about adverse reaction for patient ${adr.patientId}`);
-    
+
     const notificationData = {
       type: 'PHYSICIAN_ADR_NOTIFICATION',
       patientId: adr.patientId,
@@ -96,7 +102,7 @@ export class AlertService {
 
   async sendPharmacyAdverseReactionNotification(adr: AdverseDrugReaction): Promise<void> {
     this.logger.log(`Notifying pharmacy about adverse reaction for patient ${adr.patientId}`);
-    
+
     const notificationData = {
       type: 'PHARMACY_ADR_NOTIFICATION',
       patientId: adr.patientId,
@@ -114,11 +120,11 @@ export class AlertService {
     if (medications.length === 0) return;
 
     this.logger.log(`${medications.length} medications due for administration`);
-    
+
     const alertData = {
       type: 'MEDICATIONS_DUE',
       count: medications.length,
-      medications: medications.map(med => ({
+      medications: medications.map((med) => ({
         id: med.id,
         patientId: med.patientId,
         medicationName: med.medicationName,
@@ -135,17 +141,19 @@ export class AlertService {
     if (medications.length === 0) return;
 
     this.logger.warn(`${medications.length} medications are overdue`);
-    
+
     const alertData = {
       type: 'MEDICATIONS_OVERDUE',
       count: medications.length,
-      medications: medications.map(med => ({
+      medications: medications.map((med) => ({
         id: med.id,
         patientId: med.patientId,
         medicationName: med.medicationName,
         scheduledTime: med.scheduledTime,
         isHighAlert: med.isHighAlert,
-        minutesOverdue: Math.floor((new Date().getTime() - med.scheduledTime.getTime()) / (1000 * 60)),
+        minutesOverdue: Math.floor(
+          (new Date().getTime() - med.scheduledTime.getTime()) / (1000 * 60),
+        ),
       })),
       timestamp: new Date(),
     };
@@ -153,9 +161,13 @@ export class AlertService {
     await this.sendAlert(alertData);
   }
 
-  async sendBarcodeVerificationFailureAlert(marId: string, verificationType: string, error: string): Promise<void> {
+  async sendBarcodeVerificationFailureAlert(
+    marId: string,
+    verificationType: string,
+    error: string,
+  ): Promise<void> {
     this.logger.warn(`Barcode verification failed for MAR ${marId}: ${error}`);
-    
+
     const alertData = {
       type: 'BARCODE_VERIFICATION_FAILURE',
       marId,
@@ -174,11 +186,11 @@ export class AlertService {
     // - Send push notifications
     // - Send emails
     // - Integrate with hospital communication systems
-    
+
     this.logger.log(`ALERT SENT: ${JSON.stringify(alertData)}`);
-    
+
     // Simulate async notification sending
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   private async sendNotification(notificationData: any): Promise<void> {
@@ -187,16 +199,18 @@ export class AlertService {
     // - Use different channels based on urgency
     // - Track delivery status
     // - Handle escalation if not acknowledged
-    
+
     this.logger.log(`NOTIFICATION SENT: ${JSON.stringify(notificationData)}`);
-    
+
     // Simulate async notification sending
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   async sendReconciliationAlert(patientId: string, discrepancyCount: number): Promise<void> {
-    this.logger.warn(`Medication reconciliation found ${discrepancyCount} discrepancies for patient ${patientId}`);
-    
+    this.logger.warn(
+      `Medication reconciliation found ${discrepancyCount} discrepancies for patient ${patientId}`,
+    );
+
     const alertData = {
       type: 'RECONCILIATION_DISCREPANCIES',
       patientId,
@@ -209,7 +223,7 @@ export class AlertService {
 
   async sendDrugInteractionAlert(patientId: string, interactions: any[]): Promise<void> {
     this.logger.warn(`Drug interactions detected for patient ${patientId}`);
-    
+
     const alertData = {
       type: 'DRUG_INTERACTIONS',
       patientId,

@@ -6,9 +6,9 @@ import {
   UpdateDateColumn,
   OneToMany,
   Index,
-} from "typeorm";
-import { Record } from "../../records/entities/record.entity";
-import { AuditLog } from "../../audit-log/entities/audit-log.entity";
+} from 'typeorm';
+import { Record } from '../../records/entities/record.entity';
+import { AuditLog } from '../../audit-log/entities/audit-log.entity';
 
 /**
  * User Entity
@@ -16,23 +16,23 @@ import { AuditLog } from "../../audit-log/entities/audit-log.entity";
  * Indexed on email for quick lookups
  * Eager loading disabled to prevent cascading N+1 issues
  */
-@Entity("users")
-@Index(["email"], { name: "idx_users_email", unique: true })
-@Index(["status"], { name: "idx_users_status" })
+@Entity('users')
+@Index(['email'], { name: 'idx_users_email', unique: true })
+@Index(['status'], { name: 'idx_users_status' })
 export class User {
-  @PrimaryGeneratedColumn("uuid")
+  @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: "varchar", length: 255, unique: true })
+  @Column({ type: 'varchar', length: 255, unique: true })
   email: string;
 
-  @Column({ type: "varchar", length: 100 })
+  @Column({ type: 'varchar', length: 100 })
   firstName: string;
 
-  @Column({ type: "varchar", length: 100 })
+  @Column({ type: 'varchar', length: 100 })
   lastName: string;
 
-  @Column({ type: "varchar", length: 50, default: "active" })
+  @Column({ type: 'varchar', length: 50, default: 'active' })
   status: string;
 
   @CreateDateColumn()

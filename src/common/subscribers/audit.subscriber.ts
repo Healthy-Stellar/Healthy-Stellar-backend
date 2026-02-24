@@ -146,8 +146,8 @@ export class AuditSubscriber implements EntitySubscriberInterface<BaseAuditEntit
     const sanitized: Record<string, any> = {};
     for (const [key, value] of Object.entries(entity)) {
       if (key.startsWith('_') || key === 'constructor') continue;
-      
-      if (sensitiveFields.some(field => key.toLowerCase().includes(field.toLowerCase()))) {
+
+      if (sensitiveFields.some((field) => key.toLowerCase().includes(field.toLowerCase()))) {
         sanitized[key] = '***REDACTED***';
       } else {
         sanitized[key] = value;
@@ -162,7 +162,7 @@ export class AuditSubscriber implements EntitySubscriberInterface<BaseAuditEntit
     const changes: Record<string, any> = {};
     for (const key of Object.keys(newEntity)) {
       if (key.startsWith('_') || key === 'constructor') continue;
-      
+
       if (JSON.stringify(oldEntity[key]) !== JSON.stringify(newEntity[key])) {
         changes[key] = {
           from: oldEntity[key],

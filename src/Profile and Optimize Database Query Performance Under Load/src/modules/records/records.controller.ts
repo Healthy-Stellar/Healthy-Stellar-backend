@@ -1,16 +1,8 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Query,
-  Param,
-  Patch,
-} from "@nestjs/common";
-import { RecordsService } from "./records.service";
-import { Record } from "./entities/record.entity";
+import { Controller, Get, Post, Body, Query, Param, Patch } from '@nestjs/common';
+import { RecordsService } from './records.service';
+import { Record } from './entities/record.entity';
 
-@Controller("records")
+@Controller('records')
 export class RecordsController {
   constructor(private readonly recordsService: RecordsService) {}
 
@@ -19,36 +11,36 @@ export class RecordsController {
     return this.recordsService.create(data);
   }
 
-  @Get("owner/:ownerId")
+  @Get('owner/:ownerId')
   async getByOwnerId(
-    @Param("ownerId") ownerId: string,
-    @Query("page") page: number = 1,
-    @Query("limit") limit: number = 20,
+    @Param('ownerId') ownerId: string,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
   ) {
     return this.recordsService.findByOwnerId(ownerId, page, limit);
   }
 
-  @Get("status/:status")
+  @Get('status/:status')
   async getByStatus(
-    @Param("status") status: string,
-    @Query("page") page: number = 1,
-    @Query("limit") limit: number = 20,
+    @Param('status') status: string,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
   ) {
     return this.recordsService.findByStatus(status, page, limit);
   }
 
-  @Get("popular")
-  async getPopular(@Query("limit") limit: number = 10) {
+  @Get('popular')
+  async getPopular(@Query('limit') limit: number = 10) {
     return this.recordsService.getPopularRecords(limit);
   }
 
-  @Get("filter")
+  @Get('filter')
   async getWithFilters(
-    @Query("ownerId") ownerId?: string,
-    @Query("status") status?: string,
-    @Query("category") category?: string,
-    @Query("page") page: number = 1,
-    @Query("limit") limit: number = 20,
+    @Query('ownerId') ownerId?: string,
+    @Query('status') status?: string,
+    @Query('category') category?: string,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
   ) {
     return this.recordsService.findWithFilters({
       ownerId,
@@ -59,8 +51,8 @@ export class RecordsController {
     });
   }
 
-  @Patch(":id/view")
-  async incrementView(@Param("id") id: string) {
+  @Patch(':id/view')
+  async incrementView(@Param('id') id: string) {
     await this.recordsService.incrementViewCount(id);
     return { success: true };
   }

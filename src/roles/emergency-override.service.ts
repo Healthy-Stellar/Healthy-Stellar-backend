@@ -32,15 +32,11 @@ export class EmergencyOverrideService {
     reason: string,
   ): Promise<EmergencyOverrideContext> {
     if (!this.permissionsService.hasPermission(user, MedicalPermission.EMERGENCY_OVERRIDE)) {
-      throw new ForbiddenException(
-        'User does not have permission to activate emergency overrides',
-      );
+      throw new ForbiddenException('User does not have permission to activate emergency overrides');
     }
 
     if (!reason || reason.trim().length < 20) {
-      throw new BadRequestException(
-        'Emergency override reason must be at least 20 characters',
-      );
+      throw new BadRequestException('Emergency override reason must be at least 20 characters');
     }
 
     const expiresAt = new Date(Date.now() + EMERGENCY_OVERRIDE_TTL_MS);
@@ -140,9 +136,6 @@ export class EmergencyOverrideService {
   }
 
   async deactivateOverride(userId: string, patientId: string): Promise<void> {
-    await this.overrideRepo.update(
-      { userId, patientId, isActive: true },
-      { isActive: false },
-    );
+    await this.overrideRepo.update({ userId, patientId, isActive: true }, { isActive: false });
   }
 }

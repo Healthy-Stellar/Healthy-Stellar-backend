@@ -85,7 +85,10 @@ describe('DeviceAuthService', () => {
 
   describe('registerDevice', () => {
     it('should register a device and return the raw API key once', async () => {
-      const device = makeDevice({ status: DeviceStatus.INACTIVE, trustLevel: DeviceTrustLevel.LOW });
+      const device = makeDevice({
+        status: DeviceStatus.INACTIVE,
+        trustLevel: DeviceTrustLevel.LOW,
+      });
       deviceRepo.create.mockReturnValue(device);
       deviceRepo.save.mockResolvedValue(device);
 
@@ -114,7 +117,11 @@ describe('DeviceAuthService', () => {
       deviceRepo.findOne.mockResolvedValue(device);
       deviceRepo.update.mockResolvedValue({});
 
-      const result = await service.authenticateByApiKey('device-uuid-1', 'test-api-key', '10.0.0.1');
+      const result = await service.authenticateByApiKey(
+        'device-uuid-1',
+        'test-api-key',
+        '10.0.0.1',
+      );
 
       expect(result.authenticated).toBe(true);
       expect(result.sessionToken).toBeDefined();
@@ -134,9 +141,9 @@ describe('DeviceAuthService', () => {
     it('should throw if device not found', async () => {
       deviceRepo.findOne.mockResolvedValue(null);
 
-      await expect(
-        service.authenticateByApiKey('bad-id', 'any-key', '10.0.0.1'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.authenticateByApiKey('bad-id', 'any-key', '10.0.0.1')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should throw for decommissioned device', async () => {
@@ -161,7 +168,11 @@ describe('DeviceAuthService', () => {
     it('should auto-unsuspend device after suspension period', async () => {
       const past = new Date(Date.now() - 1000);
       deviceRepo.findOne.mockResolvedValue(
-        makeDevice({ status: DeviceStatus.SUSPENDED, suspendedUntil: past, apiKeyHash: 'hashed:test-api-key' }),
+        makeDevice({
+          status: DeviceStatus.SUSPENDED,
+          suspendedUntil: past,
+          apiKeyHash: 'hashed:test-api-key',
+        }),
       );
       deviceRepo.update.mockResolvedValue({});
 
@@ -219,9 +230,9 @@ describe('DeviceAuthService', () => {
     it('should throw when no challenge exists', async () => {
       deviceRepo.findOneOrFail.mockResolvedValue(makeDevice());
 
-      await expect(
-        service.verifyChallenge('device-uuid-1', 'any-sig', '10.0.0.1'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.verifyChallenge('device-uuid-1', 'any-sig', '10.0.0.1')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should throw when device has no public key', async () => {
@@ -232,9 +243,9 @@ describe('DeviceAuthService', () => {
         expiresAt: new Date(Date.now() + 60000),
       });
 
-      await expect(
-        service.verifyChallenge('device-uuid-1', 'any-sig', '10.0.0.1'),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(service.verifyChallenge('device-uuid-1', 'any-sig', '10.0.0.1')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should verify valid signed challenge', async () => {
@@ -299,7 +310,11 @@ describe('DeviceAuthService', () => {
       deviceRepo.findOneOrFail.mockResolvedValue(device);
       deviceRepo.save.mockResolvedValue({ ...device, trustLevel: DeviceTrustLevel.HIGH });
 
-      const result = await service.updateTrustLevel('device-uuid-1', DeviceTrustLevel.HIGH, 'admin');
+      const result = await service.updateTrustLevel(
+        'device-uuid-1',
+        DeviceTrustLevel.HIGH,
+        'admin',
+      );
 
       expect(deviceRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({

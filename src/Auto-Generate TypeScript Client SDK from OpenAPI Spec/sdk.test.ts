@@ -1,11 +1,6 @@
 import axios from 'axios';
 import { MedChainClient } from '../src/client';
-import {
-  AuthApi,
-  RecordsApi,
-  AccessApi,
-  AuditApi,
-} from '../src/generated/api';
+import { AuthApi, RecordsApi, AccessApi, AuditApi } from '../src/generated/api';
 import type {
   LoginResponse,
   MedicalRecord,
@@ -77,7 +72,7 @@ describe('AuthApi', () => {
     expect(mockAxiosInstance.post).toHaveBeenCalledWith(
       '/auth/login',
       { username: 'alice', password: 'pass' },
-      undefined
+      undefined,
     );
     expect(result.data).toEqual(response);
   });
@@ -134,10 +129,9 @@ describe('RecordsApi', () => {
     const api = new RecordsApi();
     await api.downloadRecord('rec-1');
 
-    expect(mockAxiosInstance.get).toHaveBeenCalledWith(
-      '/records/rec-1/download',
-      { responseType: 'arraybuffer' }
-    );
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/records/rec-1/download', {
+      responseType: 'arraybuffer',
+    });
   });
 });
 
@@ -162,7 +156,7 @@ describe('AccessApi', () => {
     expect(mockAxiosInstance.post).toHaveBeenCalledWith(
       '/access/grants',
       expect.objectContaining({ recordId: 'rec-1' }),
-      undefined
+      undefined,
     );
     expect(result.data.id).toBe('grant-1');
   });

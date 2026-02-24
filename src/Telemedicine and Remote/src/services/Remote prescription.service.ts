@@ -1,15 +1,11 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import {
   RemotePrescription,
   PrescriptionStatus,
   MedicationClass,
-} from "../entities/remote-prescription.entity";
+} from '../entities/remote-prescription.entity';
 
 export interface CreatePrescriptionDto {
   patientId: string;
@@ -39,23 +35,15 @@ export class RemotePrescriptionService {
     private prescriptionRepository: Repository<RemotePrescription>,
   ) {}
 
-  async createPrescription(
-    dto: CreatePrescriptionDto,
-  ): Promise<RemotePrescription> {
+  async createPrescription(dto: CreatePrescriptionDto): Promise<RemotePrescription> {
     // Validate controlled substance requirements
     if (dto.medicationClass === MedicationClass.CONTROLLED_SUBSTANCE) {
       this.validateControlledSubstance(dto);
     }
 
     // Check for drug interactions and allergies
-    const interactions = await this.checkDrugInteractions(
-      dto.patientId,
-      dto.medicationName,
-    );
-    const allergies = await this.checkAllergies(
-      dto.patientId,
-      dto.medicationName,
-    );
+    const interactions = await this.checkDrugInteractions(dto.patientId, dto.medicationName);
+    const allergies = await this.checkAllergies(dto.patientId, dto.medicationName);
 
     const prescriptionNumber = this.generatePrescriptionNumber();
     const prescribedDate = new Date();
@@ -65,8 +53,7 @@ export class RemotePrescriptionService {
     const prescription = this.prescriptionRepository.create({
       ...dto,
       status: PrescriptionStatus.DRAFT,
-      isControlledSubstance:
-        dto.medicationClass === MedicationClass.CONTROLLED_SUBSTANCE,
+      isControlledSubstance: dto.medicationClass === MedicationClass.CONTROLLED_SUBSTANCE,
       prescriptionNumber,
       prescribedDate,
       expirationDate,
@@ -77,7 +64,7 @@ export class RemotePrescriptionService {
       hipaaCompliant: true,
       auditTrail: [
         {
-          action: "CREATED",
+          action: 'CREATED',
           performedBy: dto.providerId,
           timestamp: new Date(),
         },
@@ -94,22 +81,15 @@ export class RemotePrescriptionService {
     const prescription = await this.findOne(prescriptionId);
 
     if (prescription.providerId !== providerId) {
-      throw new BadRequestException(
-        "Only the prescribing provider can approve",
-      );
+      throw new BadRequestException('Only the prescribing provider can approve');
     }
 
-    if (
-      prescription.hasInteractionWarning &&
-      !prescription.overrideInteractionWarning
-    ) {
-      throw new BadRequestException(
-        "Drug interaction warning must be reviewed and overridden",
-      );
+    if (prescription.hasInteractionWarning && !prescription.overrideInteractionWarning) {
+      throw new BadRequestException('Drug interaction warning must be reviewed and overridden');
     }
 
     prescription.status = PrescriptionStatus.APPROVED;
-    this.addAuditEntry(prescription, "APPROVED", providerId);
+    this.addAuditEntry(prescription, 'APPROVED', providerId);
 
     return this.prescriptionRepository.save(prescription);
   }
@@ -122,24 +102,19 @@ export class RemotePrescriptionService {
     const prescription = await this.findOne(prescriptionId);
 
     if (prescription.status !== PrescriptionStatus.APPROVED) {
-      throw new BadRequestException(
-        "Prescription must be approved before sending to pharmacy",
-      );
+      throw new BadRequestException('Prescription must be approved before sending to pharmacy');
     }
 
     if (!prescription.pharmacyId) {
-      throw new BadRequestException("Pharmacy must be selected");
+      throw new BadRequestException('Pharmacy must be selected');
     }
 
     // Validate provider credentials
     const complianceChecks = this.validateProviderCompliance(prescription);
     prescription.complianceChecks = complianceChecks;
 
-    if (
-      !complianceChecks.stateLicenseValid ||
-      !complianceChecks.deaRegistrationValid
-    ) {
-      throw new BadRequestException("Provider credentials are not valid");
+    if (!complianceChecks.stateLicenseValid || !complianceChecks.deaRegistrationValid) {
+      throw new BadRequestException('Provider credentials are not valid');
     }
 
     prescription.status = PrescriptionStatus.SENT_TO_PHARMACY;
@@ -149,7 +124,7 @@ export class RemotePrescriptionService {
     prescription.electronicSignature = electronicSignature;
     prescription.signedAt = new Date();
 
-    this.addAuditEntry(prescription, "SENT_TO_PHARMACY", providerId);
+    this.addAuditEntry(prescription, 'SENT_TO_PHARMACY', providerId);
 
     // In production: Send to pharmacy via NCPDP SCRIPT standard
     // await this.ncpdpService.sendPrescription(prescription);
@@ -163,7 +138,7 @@ export class RemotePrescriptionService {
     prescription.status = PrescriptionStatus.FILLED;
     prescription.filledAt = new Date();
 
-    this.addAuditEntry(prescription, "FILLED", "pharmacy");
+    this.addAuditEntry(prescription, 'FILLED', 'pharmacy');
 
     return this.prescriptionRepository.save(prescription);
   }
@@ -176,7 +151,7 @@ export class RemotePrescriptionService {
     const prescription = await this.findOne(prescriptionId);
 
     if (prescription.status === PrescriptionStatus.FILLED) {
-      throw new BadRequestException("Cannot cancel filled prescription");
+      throw new BadRequestException('Cannot cancel filled prescription');
     }
 
     prescription.status = PrescriptionStatus.CANCELLED;
@@ -184,7 +159,7 @@ export class RemotePrescriptionService {
     prescription.cancelledBy = cancelledBy;
     prescription.cancelledAt = new Date();
 
-    this.addAuditEntry(prescription, "CANCELLED", cancelledBy, { reason });
+    this.addAuditEntry(prescription, 'CANCELLED', cancelledBy, { reason });
 
     return this.prescriptionRepository.save(prescription);
   }
@@ -197,13 +172,13 @@ export class RemotePrescriptionService {
     const prescription = await this.findOne(prescriptionId);
 
     if (!prescription.hasInteractionWarning) {
-      throw new BadRequestException("No interaction warning to override");
+      throw new BadRequestException('No interaction warning to override');
     }
 
     prescription.overrideInteractionWarning = true;
     prescription.overrideReason = reason;
 
-    this.addAuditEntry(prescription, "INTERACTION_OVERRIDE", providerId, {
+    this.addAuditEntry(prescription, 'INTERACTION_OVERRIDE', providerId, {
       reason,
     });
 
@@ -222,7 +197,7 @@ export class RemotePrescriptionService {
 
     return this.prescriptionRepository.find({
       where: whereClause,
-      order: { prescribedDate: "DESC" },
+      order: { prescribedDate: 'DESC' },
     });
   }
 
@@ -236,7 +211,7 @@ export class RemotePrescriptionService {
         medicationName,
         deletedAt: null,
       },
-      order: { prescribedDate: "DESC" },
+      order: { prescribedDate: 'DESC' },
     });
   }
 
@@ -278,7 +253,7 @@ export class RemotePrescriptionService {
 
     this.addAuditEntry(
       prescription,
-      "PRIOR_AUTH_REQUESTED",
+      'PRIOR_AUTH_REQUESTED',
       prescription.providerId,
       authorizationDetails,
     );
@@ -286,10 +261,7 @@ export class RemotePrescriptionService {
     return this.prescriptionRepository.save(prescription);
   }
 
-  private async checkDrugInteractions(
-    patientId: string,
-    newMedication: string,
-  ): Promise<any[]> {
+  private async checkDrugInteractions(patientId: string, newMedication: string): Promise<any[]> {
     // Get active medications
     const activeMeds = await this.getPatientPrescriptions(patientId, true);
 
@@ -298,20 +270,18 @@ export class RemotePrescriptionService {
     // In production: Use drug interaction database/API
     // This is a simplified example
     const knownInteractions = {
-      warfarin: ["aspirin", "ibuprofen"],
-      metformin: ["alcohol"],
-      lisinopril: ["potassium"],
+      warfarin: ['aspirin', 'ibuprofen'],
+      metformin: ['alcohol'],
+      lisinopril: ['potassium'],
     };
 
     activeMeds.forEach((med) => {
       if (
-        knownInteractions[newMedication.toLowerCase()]?.includes(
-          med.medicationName.toLowerCase(),
-        )
+        knownInteractions[newMedication.toLowerCase()]?.includes(med.medicationName.toLowerCase())
       ) {
         interactions.push({
           interactingMedication: med.medicationName,
-          severity: "moderate",
+          severity: 'moderate',
           description: `Potential interaction between ${newMedication} and ${med.medicationName}`,
         });
       }
@@ -320,10 +290,7 @@ export class RemotePrescriptionService {
     return interactions;
   }
 
-  private async checkAllergies(
-    patientId: string,
-    medicationName: string,
-  ): Promise<any[]> {
+  private async checkAllergies(patientId: string, medicationName: string): Promise<any[]> {
     // In production: Query patient allergy records
     // This is a simplified example
     return [];
@@ -331,23 +298,17 @@ export class RemotePrescriptionService {
 
   private validateControlledSubstance(dto: CreatePrescriptionDto): void {
     if (!dto.deaSchedule) {
-      throw new BadRequestException(
-        "DEA schedule required for controlled substances",
-      );
+      throw new BadRequestException('DEA schedule required for controlled substances');
     }
 
     // Schedule II has more restrictions
-    if (dto.deaSchedule === "II" && dto.refills > 0) {
-      throw new BadRequestException(
-        "Schedule II controlled substances cannot have refills",
-      );
+    if (dto.deaSchedule === 'II' && dto.refills > 0) {
+      throw new BadRequestException('Schedule II controlled substances cannot have refills');
     }
 
     // Schedule III-V limited to 5 refills
-    if (["III", "IV", "V"].includes(dto.deaSchedule) && dto.refills > 5) {
-      throw new BadRequestException(
-        "Maximum 5 refills allowed for Schedule III-V",
-      );
+    if (['III', 'IV', 'V'].includes(dto.deaSchedule) && dto.refills > 5) {
+      throw new BadRequestException('Maximum 5 refills allowed for Schedule III-V');
     }
   }
 
@@ -379,10 +340,7 @@ export class RemotePrescriptionService {
       .map((p) => {
         const daysUntilRefill =
           p.daysSupply -
-          Math.floor(
-            (new Date().getTime() - p.filledAt.getTime()) /
-              (1000 * 60 * 60 * 24),
-          );
+          Math.floor((new Date().getTime() - p.filledAt.getTime()) / (1000 * 60 * 60 * 24));
 
         return {
           medicationName: p.medicationName,
@@ -422,4 +380,4 @@ export class RemotePrescriptionService {
 }
 
 // Import for MoreThan
-import { MoreThan } from "typeorm";
+import { MoreThan } from 'typeorm';

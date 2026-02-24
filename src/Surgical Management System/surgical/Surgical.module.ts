@@ -1,7 +1,7 @@
-import { Module } from "@nestjs/common";
-import { TypeOrmModule } from "@nestjs/typeorm";
-import { SurgicalController } from "./surgical.controller";
-import { SurgicalService } from "./surgical.service";
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { SurgicalController } from './surgical.controller';
+import { SurgicalService } from './surgical.service';
 import {
   SurgicalCase,
   OperatingRoom,
@@ -10,7 +10,7 @@ import {
   OperativeNote,
   SurgicalOutcome,
   RoomBooking,
-} from "./entities";
+} from './entities';
 
 @Module({
   imports: [

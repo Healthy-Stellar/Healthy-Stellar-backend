@@ -1,13 +1,4 @@
-import {
-  IsOptional,
-  IsInt,
-  Min,
-  Max,
-  IsEnum,
-  IsDateString,
-  IsIn,
-  IsString,
-} from 'class-validator';
+import { IsOptional, IsInt, Min, Max, IsEnum, IsDateString, IsIn, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { RecordType } from './create-record.dto';

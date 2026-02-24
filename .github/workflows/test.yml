@@ -292,4 +292,6 @@ jobs:
       
       - name: Fail if critical tests failed
         if: needs.unit-tests.result != 'success' || needs.e2e-tests.result != 'success' || needs.build.result != 'success'
-        run: exit 1
+        run: |
+          echo "❌ Critical test failures detected"
+          exit 1

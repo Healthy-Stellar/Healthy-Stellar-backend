@@ -5,7 +5,7 @@ export enum DayOfWeek {
   THURSDAY = 'thursday',
   FRIDAY = 'friday',
   SATURDAY = 'saturday',
-  SUNDAY = 'sunday'
+  SUNDAY = 'sunday',
 }
 
 @Entity('schedules')
@@ -13,7 +13,7 @@ export class Schedule {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Doctor, doctor => doctor.schedules)
+  @ManyToOne(() => Doctor, (doctor) => doctor.schedules)
   doctor: Doctor;
 
   @Column({ type: 'enum', enum: DayOfWeek })

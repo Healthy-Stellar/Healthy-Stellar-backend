@@ -50,17 +50,14 @@ export class EncryptionService {
     const iv = crypto.randomBytes(this.IV_LENGTH);
     const key = this.getContextKey(context);
 
-    const cipher = crypto.createCipheriv(this.ALGORITHM, key, iv) as crypto.CipherGCM;
+    const cipher = crypto.createCipheriv(this.ALGORITHM, key, iv);
 
     if (context) {
       const aad = Buffer.from(JSON.stringify(context));
       cipher.setAAD(aad);
     }
 
-    const encrypted = Buffer.concat([
-      cipher.update(plaintext, 'utf8'),
-      cipher.final(),
-    ]);
+    const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
 
     const authTag = cipher.getAuthTag();
 
@@ -84,11 +81,7 @@ export class EncryptionService {
     }
 
     const key = this.getContextKey(context);
-    const decipher = crypto.createDecipheriv(
-      this.ALGORITHM,
-      key,
-      Buffer.from(iv, 'base64'),
-    ) as crypto.DecipherGCM;
+    const decipher = crypto.createDecipheriv(this.ALGORITHM, key, Buffer.from(iv, 'base64'));
 
     decipher.setAuthTag(Buffer.from(authTag, 'base64'));
 
@@ -110,10 +103,7 @@ export class EncryptionService {
    */
   hashIdentifier(value: string, salt?: string): string {
     const effectiveSalt = salt || this.configService.get<string>('HASH_SALT', 'audit-hash-salt');
-    return crypto
-      .createHmac('sha256', effectiveSalt)
-      .update(value)
-      .digest('hex');
+    return crypto.createHmac('sha256', effectiveSalt).update(value).digest('hex');
   }
 
   /**
@@ -131,7 +121,7 @@ export class EncryptionService {
 
     const cacheKey = `${context.dataType}`;
     if (this.derivedKeys.has(cacheKey)) {
-      return this.derivedKeys.get(cacheKey)!;
+      return this.derivedKeys.get(cacheKey);
     }
 
     const derived = crypto.hkdfSync(
@@ -204,10 +194,7 @@ export class EncryptionService {
    * Create an HMAC signature for data integrity verification
    */
   createIntegritySignature(data: string): string {
-    return crypto
-      .createHmac('sha512', this.encryptionKey)
-      .update(data)
-      .digest('hex');
+    return crypto.createHmac('sha512', this.encryptionKey).update(data).digest('hex');
   }
 
   /**

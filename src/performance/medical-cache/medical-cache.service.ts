@@ -43,27 +43,27 @@ export class MedicalCacheService implements OnModuleInit, OnModuleDestroy {
   // Healthcare-specific TTL defaults (in milliseconds)
   private readonly TTL_DEFAULTS = {
     // Critical patient data - short TTL for freshness
-    'patient-vitals': 15_000,          // 15 seconds
-    'patient-allergies': 300_000,       // 5 minutes
-    'patient-medications': 120_000,     // 2 minutes
+    'patient-vitals': 15_000, // 15 seconds
+    'patient-allergies': 300_000, // 5 minutes
+    'patient-medications': 120_000, // 2 minutes
 
     // Clinical reference data - longer TTL
-    'drug-interactions': 3_600_000,     // 1 hour
-    'icd-codes': 86_400_000,            // 24 hours
-    'formulary': 3_600_000,             // 1 hour
+    'drug-interactions': 3_600_000, // 1 hour
+    'icd-codes': 86_400_000, // 24 hours
+    formulary: 3_600_000, // 1 hour
 
     // Operational data
-    'bed-availability': 30_000,         // 30 seconds
-    'staff-schedule': 300_000,          // 5 minutes
-    'department-stats': 60_000,         // 1 minute
-    'appointment-slots': 60_000,        // 1 minute
+    'bed-availability': 30_000, // 30 seconds
+    'staff-schedule': 300_000, // 5 minutes
+    'department-stats': 60_000, // 1 minute
+    'appointment-slots': 60_000, // 1 minute
 
     // Analytics & reports (can be cached longer)
-    'dashboard-stats': 300_000,         // 5 minutes
-    'compliance-report': 600_000,       // 10 minutes
+    'dashboard-stats': 300_000, // 5 minutes
+    'compliance-report': 600_000, // 10 minutes
 
     // Default
-    'default': 120_000,                 // 2 minutes
+    default: 120_000, // 2 minutes
   };
 
   // Maximum cache entries to prevent memory issues
@@ -244,12 +244,11 @@ export class MedicalCacheService implements OnModuleInit, OnModuleDestroy {
    */
   private evictLowPriority(): void {
     const priorityOrder = { low: 0, normal: 1, high: 2, critical: 3 };
-    const entries = Array.from(this.cache.entries())
-      .sort((a, b) => {
-        const priorityDiff = priorityOrder[a[1].priority] - priorityOrder[b[1].priority];
-        if (priorityDiff !== 0) return priorityDiff;
-        return a[1].lastAccessedAt - b[1].lastAccessedAt;
-      });
+    const entries = Array.from(this.cache.entries()).sort((a, b) => {
+      const priorityDiff = priorityOrder[a[1].priority] - priorityOrder[b[1].priority];
+      if (priorityDiff !== 0) return priorityDiff;
+      return a[1].lastAccessedAt - b[1].lastAccessedAt;
+    });
 
     // Evict 10% of entries
     const evictCount = Math.ceil(this.MAX_CACHE_SIZE * 0.1);

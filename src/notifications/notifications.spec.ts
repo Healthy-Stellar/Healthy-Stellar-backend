@@ -10,7 +10,9 @@ describe('WsAuthGuard (Unit)', () => {
     };
 
     expect(extractToken({ handshake: { auth: { token: 'test-token' } } })).toBe('test-token');
-    expect(extractToken({ handshake: { headers: { authorization: 'Bearer test-token' } } })).toBe('test-token');
+    expect(extractToken({ handshake: { headers: { authorization: 'Bearer test-token' } } })).toBe(
+      'test-token',
+    );
     expect(extractToken({ handshake: { auth: {} } })).toBeUndefined();
   });
 
@@ -24,7 +26,7 @@ describe('NotificationsGateway (Unit)', () => {
   it('should handle room joining logic', async () => {
     const rooms = new Map();
     const userId = 'user-123';
-    
+
     // Simulate joining room
     if (!rooms.has(userId)) {
       rooms.set(userId, new Set());
@@ -37,7 +39,7 @@ describe('NotificationsGateway (Unit)', () => {
 
   it('should determine if user is online', () => {
     const rooms = new Map([['user-123', new Set(['socket-1'])]]);
-    
+
     const isOnline = (userId: string) => {
       const room = rooms.get(userId);
       return room && room.size > 0;
@@ -50,7 +52,12 @@ describe('NotificationsGateway (Unit)', () => {
 
 describe('NotificationsService (Unit)', () => {
   it('should create notification event with correct structure', () => {
-    const createEvent = (eventType: string, actorId: string, resourceId: string, metadata?: any) => ({
+    const createEvent = (
+      eventType: string,
+      actorId: string,
+      resourceId: string,
+      metadata?: any,
+    ) => ({
       eventType,
       actorId,
       resourceId,

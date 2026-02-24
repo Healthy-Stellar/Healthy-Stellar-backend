@@ -198,38 +198,82 @@ export class MedicationAdministration1737554500000 implements MigrationInterface
     `);
 
     // Create indexes for performance
-    await queryRunner.query(`CREATE INDEX "IDX_mar_patient_scheduled_time" ON "medication_administration_records" ("patient_id", "scheduled_time")`);
-    await queryRunner.query(`CREATE INDEX "IDX_mar_nurse_administration_date" ON "medication_administration_records" ("nurse_id", "administration_date")`);
-    await queryRunner.query(`CREATE INDEX "IDX_mar_medication_status" ON "medication_administration_records" ("medication_id", "status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_mar_scheduled_time" ON "medication_administration_records" ("scheduled_time")`);
-    await queryRunner.query(`CREATE INDEX "IDX_mar_status" ON "medication_administration_records" ("status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_mar_administration_date" ON "medication_administration_records" ("administration_date")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_mar_patient_scheduled_time" ON "medication_administration_records" ("patient_id", "scheduled_time")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_mar_nurse_administration_date" ON "medication_administration_records" ("nurse_id", "administration_date")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_mar_medication_status" ON "medication_administration_records" ("medication_id", "status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_mar_scheduled_time" ON "medication_administration_records" ("scheduled_time")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_mar_status" ON "medication_administration_records" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_mar_administration_date" ON "medication_administration_records" ("administration_date")`,
+    );
 
-    await queryRunner.query(`CREATE INDEX "IDX_missed_dose_patient_date" ON "missed_doses" ("patient_id", "missed_date")`);
-    await queryRunner.query(`CREATE INDEX "IDX_missed_dose_follow_up_status" ON "missed_doses" ("follow_up_status")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_missed_dose_patient_date" ON "missed_doses" ("patient_id", "missed_date")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_missed_dose_follow_up_status" ON "missed_doses" ("follow_up_status")`,
+    );
 
-    await queryRunner.query(`CREATE INDEX "IDX_adr_patient_reaction_date" ON "adverse_drug_reactions" ("patient_id", "reaction_date")`);
-    await queryRunner.query(`CREATE INDEX "IDX_adr_severity_status" ON "adverse_drug_reactions" ("severity", "status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_adr_medication_name" ON "adverse_drug_reactions" ("medication_name")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_adr_patient_reaction_date" ON "adverse_drug_reactions" ("patient_id", "reaction_date")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_adr_severity_status" ON "adverse_drug_reactions" ("severity", "status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_adr_medication_name" ON "adverse_drug_reactions" ("medication_name")`,
+    );
 
-    await queryRunner.query(`CREATE INDEX "IDX_barcode_mar_id" ON "barcode_verifications" ("mar_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_barcode_type_status" ON "barcode_verifications" ("verification_type", "status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_barcode_nurse_time" ON "barcode_verifications" ("nurse_id", "verification_time")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_barcode_mar_id" ON "barcode_verifications" ("mar_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_barcode_type_status" ON "barcode_verifications" ("verification_type", "status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_barcode_nurse_time" ON "barcode_verifications" ("nurse_id", "verification_time")`,
+    );
 
-    await queryRunner.query(`CREATE INDEX "IDX_reconciliation_patient_type" ON "medication_reconciliations" ("patient_id", "reconciliation_type")`);
-    await queryRunner.query(`CREATE INDEX "IDX_reconciliation_status_created" ON "medication_reconciliations" ("status", "created_at")`);
-    await queryRunner.query(`CREATE INDEX "IDX_reconciliation_pharmacist" ON "medication_reconciliations" ("pharmacist_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_reconciliation_patient_type" ON "medication_reconciliations" ("patient_id", "reconciliation_type")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_reconciliation_status_created" ON "medication_reconciliations" ("status", "created_at")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_reconciliation_pharmacist" ON "medication_reconciliations" ("pharmacist_id")`,
+    );
 
     // Add foreign key constraints
-    await queryRunner.query(`ALTER TABLE "missed_doses" ADD CONSTRAINT "FK_missed_doses_mar" FOREIGN KEY ("mar_id") REFERENCES "medication_administration_records"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-    await queryRunner.query(`ALTER TABLE "adverse_drug_reactions" ADD CONSTRAINT "FK_adverse_drug_reactions_mar" FOREIGN KEY ("mar_id") REFERENCES "medication_administration_records"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
-    await queryRunner.query(`ALTER TABLE "barcode_verifications" ADD CONSTRAINT "FK_barcode_verifications_mar" FOREIGN KEY ("mar_id") REFERENCES "medication_administration_records"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+    await queryRunner.query(
+      `ALTER TABLE "missed_doses" ADD CONSTRAINT "FK_missed_doses_mar" FOREIGN KEY ("mar_id") REFERENCES "medication_administration_records"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "adverse_drug_reactions" ADD CONSTRAINT "FK_adverse_drug_reactions_mar" FOREIGN KEY ("mar_id") REFERENCES "medication_administration_records"("id") ON DELETE SET NULL ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "barcode_verifications" ADD CONSTRAINT "FK_barcode_verifications_mar" FOREIGN KEY ("mar_id") REFERENCES "medication_administration_records"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     // Drop foreign key constraints
-    await queryRunner.query(`ALTER TABLE "barcode_verifications" DROP CONSTRAINT "FK_barcode_verifications_mar"`);
-    await queryRunner.query(`ALTER TABLE "adverse_drug_reactions" DROP CONSTRAINT "FK_adverse_drug_reactions_mar"`);
+    await queryRunner.query(
+      `ALTER TABLE "barcode_verifications" DROP CONSTRAINT "FK_barcode_verifications_mar"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "adverse_drug_reactions" DROP CONSTRAINT "FK_adverse_drug_reactions_mar"`,
+    );
     await queryRunner.query(`ALTER TABLE "missed_doses" DROP CONSTRAINT "FK_missed_doses_mar"`);
 
     // Drop indexes

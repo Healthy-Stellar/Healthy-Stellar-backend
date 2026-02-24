@@ -128,7 +128,7 @@ describe('AuditService', () => {
           action: AuditAction.PHI_ACCESS,
           resource: `/patients/${i}`,
           userId: 'user-1',
-        })
+        }),
       );
 
       await Promise.all(logs);
@@ -254,9 +254,9 @@ describe('AuditService', () => {
         where: jest.fn().mockReturnThis(),
         groupBy: jest.fn().mockReturnThis(),
         addGroupBy: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValue([
-          { action: 'PHI_ACCESS', count: '100', severity: 'INFO' },
-        ]),
+        getRawMany: jest
+          .fn()
+          .mockResolvedValue([{ action: 'PHI_ACCESS', count: '100', severity: 'INFO' }]),
       };
       repo.createQueryBuilder.mockReturnValue(mockQueryBuilder as any);
       repo.count.mockResolvedValue(5);

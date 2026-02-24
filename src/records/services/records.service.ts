@@ -22,10 +22,7 @@ export class RecordsService {
     encryptedBuffer: Buffer,
   ): Promise<{ recordId: string; cid: string; stellarTxHash: string }> {
     const cid = await this.ipfsService.upload(encryptedBuffer);
-    const stellarTxHash = await this.stellarService.anchorCid(
-      dto.patientId,
-      cid,
-    );
+    const stellarTxHash = await this.stellarService.anchorCid(dto.patientId, cid);
 
     const record = this.recordRepository.create({
       patientId: dto.patientId,
@@ -45,7 +42,16 @@ export class RecordsService {
   }
 
   async findAll(query: PaginationQueryDto): Promise<PaginatedRecordsResponseDto> {
-    const { page = 1, limit = 20, recordType, fromDate, toDate, sortBy = 'createdAt', order = 'desc', patientId } = query;
+    const {
+      page = 1,
+      limit = 20,
+      recordType,
+      fromDate,
+      toDate,
+      sortBy = 'createdAt',
+      order = 'desc',
+      patientId,
+    } = query;
 
     // Build where clause
     const where: FindOptionsWhere<Record> = {};

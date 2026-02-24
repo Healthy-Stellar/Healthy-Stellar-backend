@@ -8,7 +8,7 @@ export interface CachedFeeData {
 
 /**
  * Stellar Cache Service
- * 
+ *
  * Provides in-memory caching for Stellar fee estimates to avoid
  * hammering the Horizon API. Cache TTL is 30 seconds as per requirements.
  */
@@ -23,7 +23,7 @@ export class StellarCacheService {
    */
   get(key: string): any | null {
     const cached = this.cache.get(key);
-    
+
     if (!cached) {
       this.logger.debug(`Cache miss for key: ${key}`);
       return null;

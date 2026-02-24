@@ -23,7 +23,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
    */
   protected async getTracker(req: Request): Promise<string> {
     const user = (req as any).user;
-    
+
     if (user) {
       // Use Stellar public key if available, otherwise user ID
       return user.stellarPublicKey || user.userId || user.id || this.getIpFromRequest(req);
@@ -60,7 +60,10 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     const classRef = context.getClass();
 
     // Get custom rate limits from decorators
-    const customLimit = this.reflector.getAllAndOverride<number>(THROTTLER_LIMIT, [handler, classRef]);
+    const customLimit = this.reflector.getAllAndOverride<number>(THROTTLER_LIMIT, [
+      handler,
+      classRef,
+    ]);
     const customTtl = this.reflector.getAllAndOverride<number>(THROTTLER_TTL, [handler, classRef]);
 
     // Determine rate limit configuration
@@ -102,10 +105,8 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     if (totalHits > limit) {
       const retryAfter = Math.ceil(timeToExpire / 1000);
       response.setHeader('Retry-After', retryAfter);
-      
-      throw new ThrottlerException(
-        `Rate limit exceeded. Try again in ${retryAfter} seconds.`
-      );
+
+      throw new ThrottlerException(`Rate limit exceeded. Try again in ${retryAfter} seconds.`);
     }
 
     return true;
@@ -119,7 +120,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     const handler = context.getHandler();
     const className = context.getClass().name;
     const methodName = handler.name;
-    
+
     return `throttle:${className}:${methodName}:${tracker}:${ttl}`;
   }
 }

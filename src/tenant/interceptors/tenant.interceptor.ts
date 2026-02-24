@@ -1,4 +1,10 @@
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  BadRequestException,
+} from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -14,13 +20,13 @@ export class TenantInterceptor implements NestInterceptor {
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
     const request = context.switchToHttp().getRequest();
-    
+
     // Extract tenant from subdomain or X-Tenant-ID header
     let tenantSlug: string | undefined;
-    
+
     // Try X-Tenant-ID header first
     tenantSlug = request.headers['x-tenant-id'];
-    
+
     // If not in header, try subdomain
     if (!tenantSlug) {
       const host = request.headers.host || '';
@@ -36,13 +42,13 @@ export class TenantInterceptor implements NestInterceptor {
 
     // Get tenant from database
     const tenant = await this.tenantService.findBySlug(tenantSlug);
-    
+
     if (!tenant || tenant.status !== 'active') {
       throw new BadRequestException('Invalid or inactive tenant');
     }
 
     const schemaName = `tenant_${tenant.slug}`;
-    
+
     // Set search_path for this connection
     await this.dataSource.query(`SET search_path TO "${schemaName}", public`);
 

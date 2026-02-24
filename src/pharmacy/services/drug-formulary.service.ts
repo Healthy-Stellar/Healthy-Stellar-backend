@@ -19,31 +19,31 @@ export class DrugFormularyService {
     return await this.formularyRepository.find({
       where: { isActive: true },
       relations: ['drug'],
-      order: { insurancePlan: 'ASC', tier: 'ASC' }
+      order: { insurancePlan: 'ASC', tier: 'ASC' },
     });
   }
 
   async findOne(id: string): Promise<DrugFormulary> {
     const formulary = await this.formularyRepository.findOne({
       where: { id, isActive: true },
-      relations: ['drug']
+      relations: ['drug'],
     });
-    
+
     if (!formulary) {
       throw new NotFoundException(`Formulary entry ${id} not found`);
     }
-    
+
     return formulary;
   }
 
   async findByDrugAndPlan(drugId: string, insurancePlan: string): Promise<DrugFormulary | null> {
     return await this.formularyRepository.findOne({
-      where: { 
-        drugId, 
-        insurancePlan, 
-        isActive: true 
+      where: {
+        drugId,
+        insurancePlan,
+        isActive: true,
       },
-      relations: ['drug']
+      relations: ['drug'],
     });
   }
 
@@ -63,7 +63,7 @@ export class DrugFormularyService {
     return await this.formularyRepository.find({
       where: { insurancePlan, isActive: true },
       relations: ['drug'],
-      order: { tier: 'ASC' }
+      order: { tier: 'ASC' },
     });
   }
 
@@ -71,11 +71,14 @@ export class DrugFormularyService {
     return await this.formularyRepository.find({
       where: { tier, isActive: true },
       relations: ['drug'],
-      order: { insurancePlan: 'ASC' }
+      order: { insurancePlan: 'ASC' },
     });
   }
 
-  async checkCoverage(drugId: string, insurancePlan: string): Promise<{
+  async checkCoverage(
+    drugId: string,
+    insurancePlan: string,
+  ): Promise<{
     isCovered: boolean;
     tier?: FormularyTier;
     status?: FormularyStatus;
@@ -94,7 +97,7 @@ export class DrugFormularyService {
         isCovered: false,
         requiresPriorAuth: false,
         requiresStepTherapy: false,
-        hasQuantityLimit: false
+        hasQuantityLimit: false,
       };
     }
 
@@ -108,15 +111,15 @@ export class DrugFormularyService {
       requiresStepTherapy: formulary.status === FormularyStatus.STEP_THERAPY,
       hasQuantityLimit: formulary.status === FormularyStatus.QUANTITY_LIMIT,
       quantityLimit: formulary.quantityLimit,
-      preferredAlternatives: formulary.preferredAlternatives
+      preferredAlternatives: formulary.preferredAlternatives,
     };
   }
 
   async calculatePatientCost(
-    drugId: string, 
-    insurancePlan: string, 
+    drugId: string,
+    insurancePlan: string,
     quantity: number,
-    drugCost: number
+    drugCost: number,
   ): Promise<{
     totalCost: number;
     insurancePays: number;
@@ -131,7 +134,7 @@ export class DrugFormularyService {
       return {
         totalCost: drugCost,
         insurancePays: 0,
-        patientPays: drugCost
+        patientPays: drugCost,
       };
     }
 
@@ -168,7 +171,7 @@ export class DrugFormularyService {
       patientPays,
       copay: copay > 0 ? copay : undefined,
       coinsurance: coinsurance > 0 ? coinsurance : undefined,
-      deductible: deductible > 0 ? deductible : undefined
+      deductible: deductible > 0 ? deductible : undefined,
     };
   }
 
@@ -180,13 +183,13 @@ export class DrugFormularyService {
     }
 
     return await this.formularyRepository.find({
-      where: { 
+      where: {
         drugId: formulary.preferredAlternatives as any, // TypeORM In operator
         insurancePlan,
-        isActive: true 
+        isActive: true,
       },
       relations: ['drug'],
-      order: { tier: 'ASC' }
+      order: { tier: 'ASC' },
     });
   }
 }

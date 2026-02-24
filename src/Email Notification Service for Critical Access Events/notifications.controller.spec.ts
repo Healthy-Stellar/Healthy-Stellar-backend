@@ -26,7 +26,9 @@ describe('NotificationsController', () => {
   });
 
   it('unsubscribes patient when valid token is provided via query params', async () => {
-    service.unsubscribe.mockResolvedValue({ message: 'You have been unsubscribed from email notifications.' });
+    service.unsubscribe.mockResolvedValue({
+      message: 'You have been unsubscribed from email notifications.',
+    });
 
     const result = await controller.unsubscribe('valid-token', 'patient-1');
     expect(service.unsubscribe).toHaveBeenCalledWith('patient-1', 'valid-token');
@@ -39,6 +41,8 @@ describe('NotificationsController', () => {
 
   it('propagates UnauthorizedException from service on invalid token', async () => {
     service.unsubscribe.mockRejectedValue(new UnauthorizedException('Invalid unsubscribe token'));
-    await expect(controller.unsubscribe('bad-token', 'patient-1')).rejects.toThrow(UnauthorizedException);
+    await expect(controller.unsubscribe('bad-token', 'patient-1')).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 });

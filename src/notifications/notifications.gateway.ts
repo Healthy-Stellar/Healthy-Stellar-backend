@@ -34,7 +34,7 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
     }
 
     await client.join(userId);
-    
+
     const queuedEvents = await this.queueService.getQueuedEvents(userId);
     if (queuedEvents.length > 0) {
       client.emit('queued.events', queuedEvents);
@@ -55,9 +55,9 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
 
   emitNotification(event: NotificationEvent): void {
     const targetUserId = event.metadata?.targetUserId || event.resourceId;
-    
+
     const connectedClients = this.server.sockets.adapter.rooms.get(targetUserId);
-    
+
     if (connectedClients && connectedClients.size > 0) {
       this.server.to(targetUserId).emit(event.eventType, event);
     } else {

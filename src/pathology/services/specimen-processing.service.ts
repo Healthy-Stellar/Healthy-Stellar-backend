@@ -6,76 +6,76 @@ import { CreateSpecimenDto } from '../dto/create-specimen.dto';
 
 @Injectable()
 export class SpecimenProcessingService {
-    private readonly logger = new Logger(SpecimenProcessingService.name);
+  private readonly logger = new Logger(SpecimenProcessingService.name);
 
-    constructor(
-        @InjectRepository(PathologySpecimen)
-        private specimenRepository: Repository<PathologySpecimen>,
-    ) { }
+  constructor(
+    @InjectRepository(PathologySpecimen)
+    private specimenRepository: Repository<PathologySpecimen>,
+  ) {}
 
-    async create(createDto: CreateSpecimenDto, userId: string): Promise<PathologySpecimen> {
-        const specimenNumber = await this.generateSpecimenNumber(createDto.pathologyCaseId);
+  async create(createDto: CreateSpecimenDto, userId: string): Promise<PathologySpecimen> {
+    const specimenNumber = await this.generateSpecimenNumber(createDto.pathologyCaseId);
 
-        const specimen = this.specimenRepository.create({
-            ...createDto,
-            specimenNumber,
-            receivedDate: new Date(),
-            createdBy: userId,
-            updatedBy: userId,
-        });
+    const specimen = this.specimenRepository.create({
+      ...createDto,
+      specimenNumber,
+      receivedDate: new Date(),
+      createdBy: userId,
+      updatedBy: userId,
+    });
 
-        const saved = await this.specimenRepository.save(specimen);
-        this.logger.log(`Specimen created: ${saved.id} (${saved.specimenNumber})`);
+    const saved = await this.specimenRepository.save(specimen);
+    this.logger.log(`Specimen created: ${saved.id} (${saved.specimenNumber})`);
 
-        return saved;
+    return saved;
+  }
+
+  async findOne(id: string): Promise<PathologySpecimen> {
+    const specimen = await this.specimenRepository.findOne({
+      where: { id },
+      relations: ['pathologyCase'],
+    });
+
+    if (!specimen) {
+      throw new NotFoundException(`Specimen with ID ${id} not found`);
     }
 
-    async findOne(id: string): Promise<PathologySpecimen> {
-        const specimen = await this.specimenRepository.findOne({
-            where: { id },
-            relations: ['pathologyCase'],
-        });
+    return specimen;
+  }
 
-        if (!specimen) {
-            throw new NotFoundException(`Specimen with ID ${id} not found`);
-        }
+  async findByCase(caseId: string): Promise<PathologySpecimen[]> {
+    return this.specimenRepository.find({
+      where: { pathologyCaseId: caseId },
+      order: { specimenNumber: 'ASC' },
+    });
+  }
 
-        return specimen;
-    }
+  async updateProcessing(
+    id: string,
+    data: {
+      processingProtocol?: string;
+      numberOfBlocks?: number;
+      numberOfSlides?: number;
+      processingTechnician?: string;
+      processingStartTime?: Date;
+      processingEndTime?: Date;
+      notes?: string;
+    },
+    userId: string,
+  ): Promise<PathologySpecimen> {
+    const specimen = await this.findOne(id);
 
-    async findByCase(caseId: string): Promise<PathologySpecimen[]> {
-        return this.specimenRepository.find({
-            where: { pathologyCaseId: caseId },
-            order: { specimenNumber: 'ASC' },
-        });
-    }
+    Object.assign(specimen, data);
+    specimen.updatedBy = userId;
 
-    async updateProcessing(
-        id: string,
-        data: {
-            processingProtocol?: string;
-            numberOfBlocks?: number;
-            numberOfSlides?: number;
-            processingTechnician?: string;
-            processingStartTime?: Date;
-            processingEndTime?: Date;
-            notes?: string;
-        },
-        userId: string,
-    ): Promise<PathologySpecimen> {
-        const specimen = await this.findOne(id);
+    return this.specimenRepository.save(specimen);
+  }
 
-        Object.assign(specimen, data);
-        specimen.updatedBy = userId;
+  private async generateSpecimenNumber(caseId: string): Promise<string> {
+    const count = await this.specimenRepository.count({
+      where: { pathologyCaseId: caseId },
+    });
 
-        return this.specimenRepository.save(specimen);
-    }
-
-    private async generateSpecimenNumber(caseId: string): Promise<string> {
-        const count = await this.specimenRepository.count({
-            where: { pathologyCaseId: caseId },
-        });
-
-        return `SPEC-${count + 1}`;
-    }
+    return `SPEC-${count + 1}`;
+  }
 }

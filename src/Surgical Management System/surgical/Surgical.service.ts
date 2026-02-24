@@ -3,15 +3,9 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
-} from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import {
-  Repository,
-  Between,
-  In,
-  LessThanOrEqual,
-  MoreThanOrEqual,
-} from "typeorm";
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between, In, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import {
   SurgicalCase,
   OperatingRoom,
@@ -23,7 +17,7 @@ import {
   CaseStatus,
   RoomStatus,
   EquipmentStatus,
-} from "./entities";
+} from './entities';
 import {
   CreateSurgicalCaseDto,
   UpdateSurgicalCaseDto,
@@ -44,7 +38,7 @@ import {
   UpdateSurgicalOutcomeDto,
   ScheduleQueryDto,
   QualityMetricsQueryDto,
-} from "./dto";
+} from './dto';
 
 @Injectable()
 export class SurgicalService {
@@ -77,15 +71,11 @@ export class SurgicalService {
       );
 
       if (!isAvailable) {
-        throw new ConflictException(
-          "Operating room is not available at the scheduled time",
-        );
+        throw new ConflictException('Operating room is not available at the scheduled time');
       }
 
       // Create room booking
-      const endTime = new Date(
-        dto.scheduledDate.getTime() + dto.estimatedDuration * 60000,
-      );
+      const endTime = new Date(dto.scheduledDate.getTime() + dto.estimatedDuration * 60000);
       await this.createRoomBooking({
         operatingRoomId: dto.operatingRoomId,
         startTime: dto.scheduledDate,
@@ -101,10 +91,7 @@ export class SurgicalService {
     return this.surgicalCaseRepository.save(surgicalCase);
   }
 
-  async updateSurgicalCase(
-    id: string,
-    dto: UpdateSurgicalCaseDto,
-  ): Promise<SurgicalCase> {
+  async updateSurgicalCase(id: string, dto: UpdateSurgicalCaseDto): Promise<SurgicalCase> {
     const surgicalCase = await this.surgicalCaseRepository.findOne({
       where: { id },
     });
@@ -114,10 +101,7 @@ export class SurgicalService {
     }
 
     // If rescheduling, check room availability
-    if (
-      dto.scheduledDate &&
-      dto.scheduledDate.getTime() !== surgicalCase.scheduledDate.getTime()
-    ) {
+    if (dto.scheduledDate && dto.scheduledDate.getTime() !== surgicalCase.scheduledDate.getTime()) {
       const roomId = dto.operatingRoomId || surgicalCase.operatingRoomId;
       const duration = dto.estimatedDuration || surgicalCase.estimatedDuration;
 
@@ -130,9 +114,7 @@ export class SurgicalService {
         );
 
         if (!isAvailable) {
-          throw new ConflictException(
-            "Operating room is not available at the new scheduled time",
-          );
+          throw new ConflictException('Operating room is not available at the new scheduled time');
         }
 
         // Update room booking
@@ -154,9 +136,7 @@ export class SurgicalService {
     }
 
     if (surgicalCase.status !== CaseStatus.SCHEDULED) {
-      throw new BadRequestException(
-        `Cannot start surgery with status ${surgicalCase.status}`,
-      );
+      throw new BadRequestException(`Cannot start surgery with status ${surgicalCase.status}`);
     }
 
     surgicalCase.status = CaseStatus.IN_PROGRESS;
@@ -173,10 +153,7 @@ export class SurgicalService {
     return this.surgicalCaseRepository.save(surgicalCase);
   }
 
-  async completeSurgery(
-    id: string,
-    dto: CompleteSurgeryDto,
-  ): Promise<SurgicalCase> {
+  async completeSurgery(id: string, dto: CompleteSurgeryDto): Promise<SurgicalCase> {
     const surgicalCase = await this.surgicalCaseRepository.findOne({
       where: { id },
     });
@@ -186,9 +163,7 @@ export class SurgicalService {
     }
 
     if (surgicalCase.status !== CaseStatus.IN_PROGRESS) {
-      throw new BadRequestException(
-        `Cannot complete surgery with status ${surgicalCase.status}`,
-      );
+      throw new BadRequestException(`Cannot complete surgery with status ${surgicalCase.status}`);
     }
 
     surgicalCase.status = CaseStatus.COMPLETED;
@@ -196,8 +171,7 @@ export class SurgicalService {
 
     if (surgicalCase.actualStartTime) {
       surgicalCase.actualDuration = Math.floor(
-        (dto.actualEndTime.getTime() - surgicalCase.actualStartTime.getTime()) /
-          60000,
+        (dto.actualEndTime.getTime() - surgicalCase.actualStartTime.getTime()) / 60000,
       );
     }
 
@@ -223,7 +197,7 @@ export class SurgicalService {
 
     surgicalCase.status = CaseStatus.CANCELLED;
     if (reason) {
-      surgicalCase.preOpNotes = `${surgicalCase.preOpNotes || ""}\nCancellation reason: ${reason}`;
+      surgicalCase.preOpNotes = `${surgicalCase.preOpNotes || ''}\nCancellation reason: ${reason}`;
     }
 
     // Cancel room booking
@@ -235,7 +209,7 @@ export class SurgicalService {
   async getSurgicalCase(id: string): Promise<SurgicalCase> {
     const surgicalCase = await this.surgicalCaseRepository.findOne({
       where: { id },
-      relations: ["operatingRoom", "teamMembers", "operativeNotes", "outcomes"],
+      relations: ['operatingRoom', 'teamMembers', 'operativeNotes', 'outcomes'],
     });
 
     if (!surgicalCase) {
@@ -270,24 +244,19 @@ export class SurgicalService {
 
     return this.surgicalCaseRepository.find({
       where,
-      relations: ["operatingRoom", "teamMembers"],
-      order: { scheduledDate: "ASC" },
+      relations: ['operatingRoom', 'teamMembers'],
+      order: { scheduledDate: 'ASC' },
     });
   }
 
   // ==================== OPERATING ROOM MANAGEMENT ====================
 
-  async createOperatingRoom(
-    dto: CreateOperatingRoomDto,
-  ): Promise<OperatingRoom> {
+  async createOperatingRoom(dto: CreateOperatingRoomDto): Promise<OperatingRoom> {
     const room = this.operatingRoomRepository.create(dto);
     return this.operatingRoomRepository.save(room);
   }
 
-  async updateOperatingRoom(
-    id: string,
-    dto: UpdateOperatingRoomDto,
-  ): Promise<OperatingRoom> {
+  async updateOperatingRoom(id: string, dto: UpdateOperatingRoomDto): Promise<OperatingRoom> {
     const room = await this.operatingRoomRepository.findOne({ where: { id } });
 
     if (!room) {
@@ -301,7 +270,7 @@ export class SurgicalService {
   async getOperatingRoom(id: string): Promise<OperatingRoom> {
     const room = await this.operatingRoomRepository.findOne({
       where: { id },
-      relations: ["bookings"],
+      relations: ['bookings'],
     });
 
     if (!room) {
@@ -314,7 +283,7 @@ export class SurgicalService {
   async getAllOperatingRooms(): Promise<OperatingRoom[]> {
     return this.operatingRoomRepository.find({
       where: { isActive: true },
-      order: { roomNumber: "ASC" },
+      order: { roomNumber: 'ASC' },
     });
   }
 
@@ -327,15 +296,15 @@ export class SurgicalService {
     const endTime = new Date(startTime.getTime() + durationMinutes * 60000);
 
     const query = this.roomBookingRepository
-      .createQueryBuilder("booking")
-      .where("booking.operatingRoomId = :roomId", { roomId })
-      .andWhere(
-        "(booking.startTime < :endTime AND booking.endTime > :startTime)",
-        { startTime, endTime },
-      );
+      .createQueryBuilder('booking')
+      .where('booking.operatingRoomId = :roomId', { roomId })
+      .andWhere('(booking.startTime < :endTime AND booking.endTime > :startTime)', {
+        startTime,
+        endTime,
+      });
 
     if (excludeCaseId) {
-      query.andWhere("booking.surgicalCaseId != :excludeCaseId", {
+      query.andWhere('booking.surgicalCaseId != :excludeCaseId', {
         excludeCaseId,
       });
     }
@@ -361,14 +330,8 @@ export class SurgicalService {
       }
 
       // Check time availability
-      const duration = Math.floor(
-        (dto.endTime.getTime() - dto.startTime.getTime()) / 60000,
-      );
-      const isAvailable = await this.checkRoomAvailability(
-        room.id,
-        dto.startTime,
-        duration,
-      );
+      const duration = Math.floor((dto.endTime.getTime() - dto.startTime.getTime()) / 60000);
+      const isAvailable = await this.checkRoomAvailability(room.id, dto.startTime, duration);
 
       if (isAvailable) {
         availableRooms.push(room);
@@ -378,26 +341,20 @@ export class SurgicalService {
     return availableRooms;
   }
 
-  async getRoomUtilization(
-    roomId: string,
-    startDate: Date,
-    endDate: Date,
-  ): Promise<any> {
+  async getRoomUtilization(roomId: string, startDate: Date, endDate: Date): Promise<any> {
     const bookings = await this.roomBookingRepository.find({
       where: {
         operatingRoomId: roomId,
         startTime: Between(startDate, endDate),
       },
-      relations: ["surgicalCase"],
+      relations: ['surgicalCase'],
     });
 
-    const totalMinutes =
-      (endDate.getTime() - startDate.getTime()) / (1000 * 60);
+    const totalMinutes = (endDate.getTime() - startDate.getTime()) / (1000 * 60);
     let usedMinutes = 0;
 
     bookings.forEach((booking) => {
-      const duration =
-        (booking.endTime.getTime() - booking.startTime.getTime()) / (1000 * 60);
+      const duration = (booking.endTime.getTime() - booking.startTime.getTime()) / (1000 * 60);
       usedMinutes += duration;
     });
 
@@ -423,14 +380,10 @@ export class SurgicalService {
     });
 
     if (!room) {
-      throw new NotFoundException(
-        `Operating room with ID ${dto.operatingRoomId} not found`,
-      );
+      throw new NotFoundException(`Operating room with ID ${dto.operatingRoomId} not found`);
     }
 
-    const duration = Math.floor(
-      (dto.endTime.getTime() - dto.startTime.getTime()) / 60000,
-    );
+    const duration = Math.floor((dto.endTime.getTime() - dto.startTime.getTime()) / 60000);
     const isAvailable = await this.checkRoomAvailability(
       dto.operatingRoomId,
       dto.startTime,
@@ -438,9 +391,7 @@ export class SurgicalService {
     );
 
     if (!isAvailable) {
-      throw new ConflictException(
-        "Operating room is not available at the specified time",
-      );
+      throw new ConflictException('Operating room is not available at the specified time');
     }
 
     const booking = this.roomBookingRepository.create(dto);
@@ -458,9 +409,7 @@ export class SurgicalService {
 
     if (booking) {
       booking.startTime = newStartTime;
-      booking.endTime = new Date(
-        newStartTime.getTime() + durationMinutes * 60000,
-      );
+      booking.endTime = new Date(newStartTime.getTime() + durationMinutes * 60000);
       await this.roomBookingRepository.save(booking);
     }
   }
@@ -471,17 +420,13 @@ export class SurgicalService {
 
   // ==================== SURGICAL TEAM MANAGEMENT ====================
 
-  async assignTeamMember(
-    dto: AssignTeamMemberDto,
-  ): Promise<SurgicalTeamMember> {
+  async assignTeamMember(dto: AssignTeamMemberDto): Promise<SurgicalTeamMember> {
     const surgicalCase = await this.surgicalCaseRepository.findOne({
       where: { id: dto.surgicalCaseId },
     });
 
     if (!surgicalCase) {
-      throw new NotFoundException(
-        `Surgical case with ID ${dto.surgicalCaseId} not found`,
-      );
+      throw new NotFoundException(`Surgical case with ID ${dto.surgicalCaseId} not found`);
     }
 
     // If assigning as primary, unset other primary members in the same role
@@ -504,10 +449,7 @@ export class SurgicalService {
     return this.teamMemberRepository.save(teamMember);
   }
 
-  async updateTeamMember(
-    id: string,
-    dto: UpdateTeamMemberDto,
-  ): Promise<SurgicalTeamMember> {
+  async updateTeamMember(id: string, dto: UpdateTeamMemberDto): Promise<SurgicalTeamMember> {
     const teamMember = await this.teamMemberRepository.findOne({
       where: { id },
     });
@@ -531,18 +473,14 @@ export class SurgicalService {
   async getTeamMembersForCase(caseId: string): Promise<SurgicalTeamMember[]> {
     return this.teamMemberRepository.find({
       where: { surgicalCaseId: caseId },
-      order: { isPrimary: "DESC", role: "ASC" },
+      order: { isPrimary: 'DESC', role: 'ASC' },
     });
   }
 
-  async getStaffSchedule(
-    staffId: string,
-    startDate: Date,
-    endDate: Date,
-  ): Promise<any[]> {
+  async getStaffSchedule(staffId: string, startDate: Date, endDate: Date): Promise<any[]> {
     const teamMembers = await this.teamMemberRepository.find({
       where: { staffId },
-      relations: ["surgicalCase"],
+      relations: ['surgicalCase'],
     });
 
     const schedule = teamMembers
@@ -557,9 +495,7 @@ export class SurgicalService {
         surgicalCase: member.surgicalCase,
       }))
       .sort(
-        (a, b) =>
-          a.surgicalCase.scheduledDate.getTime() -
-          b.surgicalCase.scheduledDate.getTime(),
+        (a, b) => a.surgicalCase.scheduledDate.getTime() - b.surgicalCase.scheduledDate.getTime(),
       );
 
     return schedule;
@@ -575,10 +511,7 @@ export class SurgicalService {
     return this.equipmentRepository.save(equipment);
   }
 
-  async updateEquipment(
-    id: string,
-    dto: UpdateEquipmentDto,
-  ): Promise<SurgicalEquipment> {
+  async updateEquipment(id: string, dto: UpdateEquipmentDto): Promise<SurgicalEquipment> {
     const equipment = await this.equipmentRepository.findOne({ where: { id } });
 
     if (!equipment) {
@@ -599,24 +532,18 @@ export class SurgicalService {
     return equipment;
   }
 
-  async getAllEquipment(
-    status?: EquipmentStatus,
-    type?: string,
-  ): Promise<SurgicalEquipment[]> {
+  async getAllEquipment(status?: EquipmentStatus, type?: string): Promise<SurgicalEquipment[]> {
     const where: any = {};
     if (status) where.status = status;
     if (type) where.equipmentType = type;
 
     return this.equipmentRepository.find({
       where,
-      order: { equipmentType: "ASC", equipmentName: "ASC" },
+      order: { equipmentType: 'ASC', equipmentName: 'ASC' },
     });
   }
 
-  async assignEquipmentToCase(
-    equipmentId: string,
-    caseId: string,
-  ): Promise<SurgicalEquipment> {
+  async assignEquipmentToCase(equipmentId: string, caseId: string): Promise<SurgicalEquipment> {
     const equipment = await this.equipmentRepository.findOne({
       where: { id: equipmentId },
     });
@@ -626,9 +553,7 @@ export class SurgicalService {
     }
 
     if (equipment.status !== EquipmentStatus.AVAILABLE) {
-      throw new BadRequestException(
-        `Equipment is not available (status: ${equipment.status})`,
-      );
+      throw new BadRequestException(`Equipment is not available (status: ${equipment.status})`);
     }
 
     const surgicalCase = await this.surgicalCaseRepository.findOne({
@@ -645,9 +570,7 @@ export class SurgicalService {
     return this.equipmentRepository.save(equipment);
   }
 
-  async releaseEquipmentFromCase(
-    equipmentId: string,
-  ): Promise<SurgicalEquipment> {
+  async releaseEquipmentFromCase(equipmentId: string): Promise<SurgicalEquipment> {
     const equipment = await this.equipmentRepository.findOne({
       where: { id: equipmentId },
     });
@@ -673,17 +596,13 @@ export class SurgicalService {
     return this.equipmentRepository.save(equipment);
   }
 
-  async recordEquipmentMaintenance(
-    dto: RecordEquipmentMaintenanceDto,
-  ): Promise<SurgicalEquipment> {
+  async recordEquipmentMaintenance(dto: RecordEquipmentMaintenanceDto): Promise<SurgicalEquipment> {
     const equipment = await this.equipmentRepository.findOne({
       where: { id: dto.equipmentId },
     });
 
     if (!equipment) {
-      throw new NotFoundException(
-        `Equipment with ID ${dto.equipmentId} not found`,
-      );
+      throw new NotFoundException(`Equipment with ID ${dto.equipmentId} not found`);
     }
 
     const maintenanceHistory = equipment.maintenanceHistory || [];
@@ -701,17 +620,13 @@ export class SurgicalService {
 
   // ==================== OPERATIVE NOTES ====================
 
-  async createOperativeNote(
-    dto: CreateOperativeNoteDto,
-  ): Promise<OperativeNote> {
+  async createOperativeNote(dto: CreateOperativeNoteDto): Promise<OperativeNote> {
     const surgicalCase = await this.surgicalCaseRepository.findOne({
       where: { id: dto.surgicalCaseId },
     });
 
     if (!surgicalCase) {
-      throw new NotFoundException(
-        `Surgical case with ID ${dto.surgicalCaseId} not found`,
-      );
+      throw new NotFoundException(`Surgical case with ID ${dto.surgicalCaseId} not found`);
     }
 
     const note = this.operativeNoteRepository.create(dto);
@@ -724,13 +639,11 @@ export class SurgicalService {
     });
 
     if (!note) {
-      throw new NotFoundException(
-        `Operative note with ID ${dto.noteId} not found`,
-      );
+      throw new NotFoundException(`Operative note with ID ${dto.noteId} not found`);
     }
 
     if (note.isSigned) {
-      throw new BadRequestException("Operative note is already signed");
+      throw new BadRequestException('Operative note is already signed');
     }
 
     note.isSigned = true;
@@ -742,33 +655,26 @@ export class SurgicalService {
   async getOperativeNotesForCase(caseId: string): Promise<OperativeNote[]> {
     return this.operativeNoteRepository.find({
       where: { surgicalCaseId: caseId },
-      order: { dictatedAt: "DESC" },
+      order: { dictatedAt: 'DESC' },
     });
   }
 
   // ==================== SURGICAL OUTCOMES & QUALITY METRICS ====================
 
-  async createSurgicalOutcome(
-    dto: CreateSurgicalOutcomeDto,
-  ): Promise<SurgicalOutcome> {
+  async createSurgicalOutcome(dto: CreateSurgicalOutcomeDto): Promise<SurgicalOutcome> {
     const surgicalCase = await this.surgicalCaseRepository.findOne({
       where: { id: dto.surgicalCaseId },
     });
 
     if (!surgicalCase) {
-      throw new NotFoundException(
-        `Surgical case with ID ${dto.surgicalCaseId} not found`,
-      );
+      throw new NotFoundException(`Surgical case with ID ${dto.surgicalCaseId} not found`);
     }
 
     const outcome = this.outcomeRepository.create(dto);
     return this.outcomeRepository.save(outcome);
   }
 
-  async updateSurgicalOutcome(
-    id: string,
-    dto: UpdateSurgicalOutcomeDto,
-  ): Promise<SurgicalOutcome> {
+  async updateSurgicalOutcome(id: string, dto: UpdateSurgicalOutcomeDto): Promise<SurgicalOutcome> {
     const outcome = await this.outcomeRepository.findOne({ where: { id } });
 
     if (!outcome) {
@@ -788,7 +694,7 @@ export class SurgicalService {
 
     const outcomes = await this.outcomeRepository.find({
       where: whereConditions,
-      relations: ["surgicalCase"],
+      relations: ['surgicalCase'],
     });
 
     // Filter by additional criteria
@@ -825,54 +731,28 @@ export class SurgicalService {
     const metrics = {
       totalCases,
       complicationRate:
-        (filteredOutcomes.filter((o) => o.hadComplications).length /
-          totalCases) *
-        100,
-      infectionRate:
-        (filteredOutcomes.filter((o) => o.hadInfection).length / totalCases) *
-        100,
-      readmissionRate:
-        (filteredOutcomes.filter((o) => o.hadReadmission).length / totalCases) *
-        100,
-      mortalityRate:
-        (filteredOutcomes.filter((o) => o.hadMortality).length / totalCases) *
-        100,
+        (filteredOutcomes.filter((o) => o.hadComplications).length / totalCases) * 100,
+      infectionRate: (filteredOutcomes.filter((o) => o.hadInfection).length / totalCases) * 100,
+      readmissionRate: (filteredOutcomes.filter((o) => o.hadReadmission).length / totalCases) * 100,
+      mortalityRate: (filteredOutcomes.filter((o) => o.hadMortality).length / totalCases) * 100,
       averagePatientSatisfaction:
-        filteredOutcomes.reduce(
-          (sum, o) => sum + (o.patientSatisfactionScore || 0),
-          0,
-        ) / totalCases,
+        filteredOutcomes.reduce((sum, o) => sum + (o.patientSatisfactionScore || 0), 0) /
+        totalCases,
       averageLengthOfStay:
-        filteredOutcomes.reduce((sum, o) => sum + (o.lengthOfStay || 0), 0) /
-        totalCases,
+        filteredOutcomes.reduce((sum, o) => sum + (o.lengthOfStay || 0), 0) / totalCases,
       averageSurgeryTime:
-        filteredOutcomes.reduce(
-          (sum, o) => sum + (o.timeFromIncisionToClosure || 0),
-          0,
-        ) / totalCases,
-      averageTurnoverTime:
-        filteredOutcomes.reduce((sum, o) => sum + (o.turnoverTime || 0), 0) /
+        filteredOutcomes.reduce((sum, o) => sum + (o.timeFromIncisionToClosure || 0), 0) /
         totalCases,
+      averageTurnoverTime:
+        filteredOutcomes.reduce((sum, o) => sum + (o.turnoverTime || 0), 0) / totalCases,
       prophylacticAntibioticsCompliance:
-        (filteredOutcomes.filter((o) => o.prophylacticAntibioticsGiven).length /
-          totalCases) *
-        100,
+        (filteredOutcomes.filter((o) => o.prophylacticAntibioticsGiven).length / totalCases) * 100,
       dvtProphylaxisCompliance:
-        (filteredOutcomes.filter((o) => o.dvtProphylaxisGiven).length /
-          totalCases) *
-        100,
+        (filteredOutcomes.filter((o) => o.dvtProphylaxisGiven).length / totalCases) * 100,
       normothermiaCompliance:
-        (filteredOutcomes.filter((o) => o.normothermiaMaintained).length /
-          totalCases) *
-        100,
-      totalEstimatedCost: filteredOutcomes.reduce(
-        (sum, o) => sum + (o.estimatedCost || 0),
-        0,
-      ),
-      totalActualCost: filteredOutcomes.reduce(
-        (sum, o) => sum + (o.actualCost || 0),
-        0,
-      ),
+        (filteredOutcomes.filter((o) => o.normothermiaMaintained).length / totalCases) * 100,
+      totalEstimatedCost: filteredOutcomes.reduce((sum, o) => sum + (o.estimatedCost || 0), 0),
+      totalActualCost: filteredOutcomes.reduce((sum, o) => sum + (o.actualCost || 0), 0),
     };
 
     return {
@@ -891,45 +771,31 @@ export class SurgicalService {
         infectionRate: parseFloat(metrics.infectionRate.toFixed(2)),
         readmissionRate: parseFloat(metrics.readmissionRate.toFixed(2)),
         mortalityRate: parseFloat(metrics.mortalityRate.toFixed(2)),
-        averagePatientSatisfaction: parseFloat(
-          metrics.averagePatientSatisfaction.toFixed(2),
-        ),
+        averagePatientSatisfaction: parseFloat(metrics.averagePatientSatisfaction.toFixed(2)),
         averageLengthOfStay: parseFloat(metrics.averageLengthOfStay.toFixed(2)),
         averageSurgeryTime: parseFloat(metrics.averageSurgeryTime.toFixed(2)),
         averageTurnoverTime: parseFloat(metrics.averageTurnoverTime.toFixed(2)),
         prophylacticAntibioticsCompliance: parseFloat(
           metrics.prophylacticAntibioticsCompliance.toFixed(2),
         ),
-        dvtProphylaxisCompliance: parseFloat(
-          metrics.dvtProphylaxisCompliance.toFixed(2),
-        ),
-        normothermiaCompliance: parseFloat(
-          metrics.normothermiaCompliance.toFixed(2),
-        ),
+        dvtProphylaxisCompliance: parseFloat(metrics.dvtProphylaxisCompliance.toFixed(2)),
+        normothermiaCompliance: parseFloat(metrics.normothermiaCompliance.toFixed(2)),
       },
     };
   }
 
-  async getSurgeonPerformance(
-    surgeonId: string,
-    startDate: Date,
-    endDate: Date,
-  ): Promise<any> {
+  async getSurgeonPerformance(surgeonId: string, startDate: Date, endDate: Date): Promise<any> {
     const cases = await this.surgicalCaseRepository.find({
       where: {
         primarySurgeonId: surgeonId,
         scheduledDate: Between(startDate, endDate),
       },
-      relations: ["outcomes"],
+      relations: ['outcomes'],
     });
 
     const totalCases = cases.length;
-    const completedCases = cases.filter(
-      (c) => c.status === CaseStatus.COMPLETED,
-    ).length;
-    const cancelledCases = cases.filter(
-      (c) => c.status === CaseStatus.CANCELLED,
-    ).length;
+    const completedCases = cases.filter((c) => c.status === CaseStatus.COMPLETED).length;
+    const cancelledCases = cases.filter((c) => c.status === CaseStatus.CANCELLED).length;
 
     const outcomes = cases
       .map((c) => c.outcomes)
@@ -950,9 +816,7 @@ export class SurgicalService {
         completedCases,
         cancelledCases,
         completionRate:
-          totalCases > 0
-            ? parseFloat(((completedCases / totalCases) * 100).toFixed(2))
-            : 0,
+          totalCases > 0 ? parseFloat(((completedCases / totalCases) * 100).toFixed(2)) : 0,
       },
       qualityMetrics: metrics.metrics,
     };

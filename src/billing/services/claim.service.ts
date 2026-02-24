@@ -137,10 +137,7 @@ export class ClaimService {
     }
 
     if (filters.startDate && filters.endDate) {
-      where.serviceStartDate = Between(
-        new Date(filters.startDate),
-        new Date(filters.endDate),
-      );
+      where.serviceStartDate = Between(new Date(filters.startDate), new Date(filters.endDate));
     }
 
     const [data, total] = await this.claimRepository.findAndCount({
@@ -158,9 +155,7 @@ export class ClaimService {
     const claim = await this.findById(id);
 
     if (claim.status === ClaimStatus.PAID || claim.status === ClaimStatus.VOID) {
-      throw new BadRequestException(
-        `Cannot update claim in ${claim.status} status`,
-      );
+      throw new BadRequestException(`Cannot update claim in ${claim.status} status`);
     }
 
     Object.assign(claim, updateDto);
@@ -172,9 +167,7 @@ export class ClaimService {
     const claim = await this.findById(submitDto.claimId);
 
     if (claim.status !== ClaimStatus.DRAFT && claim.status !== ClaimStatus.REJECTED) {
-      throw new BadRequestException(
-        `Cannot submit claim in ${claim.status} status`,
-      );
+      throw new BadRequestException(`Cannot submit claim in ${claim.status} status`);
     }
 
     const edi837 = this.generateEDI837(claim);
@@ -365,12 +358,8 @@ export class ClaimService {
           copay: 25.0,
           deductible: 0,
           coinsurance: 5.0,
-          remarkCodes: [
-            { code: 'N130', description: 'Payment adjusted based on fee schedule' },
-          ],
-          adjustmentCodes: [
-            { groupCode: 'CO', reasonCode: '45', amount: 10.0 },
-          ],
+          remarkCodes: [{ code: 'N130', description: 'Payment adjusted based on fee schedule' }],
+          adjustmentCodes: [{ groupCode: 'CO', reasonCode: '45', amount: 10.0 }],
         },
       ],
     };

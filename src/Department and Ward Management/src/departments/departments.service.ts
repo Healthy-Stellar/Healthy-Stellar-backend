@@ -1,8 +1,8 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { Department } from "./entities/department.entity";
-import { CreateDepartmentDto } from "./dto/create-department.dto";
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Department } from './entities/department.entity';
+import { CreateDepartmentDto } from './dto/create-department.dto';
 
 @Injectable()
 export class DepartmentsService {
@@ -18,14 +18,14 @@ export class DepartmentsService {
 
   async findAll(): Promise<Department[]> {
     return this.departmentsRepository.find({
-      relations: ["wards", "equipment", "workflows"],
+      relations: ['wards', 'equipment', 'workflows'],
     });
   }
 
   async findOne(id: string): Promise<Department> {
     const department = await this.departmentsRepository.findOne({
       where: { id },
-      relations: ["wards", "equipment", "workflows"],
+      relations: ['wards', 'equipment', 'workflows'],
     });
 
     if (!department) {
@@ -45,25 +45,24 @@ export class DepartmentsService {
 
     // Calculate bed occupancy across all wards
     const totalBeds = await this.departmentsRepository
-      .createQueryBuilder("dept")
-      .leftJoin("dept.wards", "ward")
-      .leftJoin("ward.rooms", "room")
-      .leftJoin("room.beds", "bed")
-      .where("dept.id = :id", { id })
-      .andWhere("bed.isActive = :isActive", { isActive: true })
+      .createQueryBuilder('dept')
+      .leftJoin('dept.wards', 'ward')
+      .leftJoin('ward.rooms', 'room')
+      .leftJoin('room.beds', 'bed')
+      .where('dept.id = :id', { id })
+      .andWhere('bed.isActive = :isActive', { isActive: true })
       .getCount();
 
     const occupiedBeds = await this.departmentsRepository
-      .createQueryBuilder("dept")
-      .leftJoin("dept.wards", "ward")
-      .leftJoin("ward.rooms", "room")
-      .leftJoin("room.beds", "bed")
-      .where("dept.id = :id", { id })
-      .andWhere("bed.status = :status", { status: "occupied" })
+      .createQueryBuilder('dept')
+      .leftJoin('dept.wards', 'ward')
+      .leftJoin('ward.rooms', 'room')
+      .leftJoin('room.beds', 'bed')
+      .where('dept.id = :id', { id })
+      .andWhere('bed.status = :status', { status: 'occupied' })
       .getCount();
 
-    const bedOccupancyRate =
-      totalBeds > 0 ? (occupiedBeds / totalBeds) * 100 : 0;
+    const bedOccupancyRate = totalBeds > 0 ? (occupiedBeds / totalBeds) * 100 : 0;
 
     // Mock calculations for other metrics (integrate with real data)
     return {

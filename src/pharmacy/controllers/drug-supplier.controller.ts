@@ -37,10 +37,7 @@ export class DrugSupplierController {
   }
 
   @Patch(':id/reliability-score')
-  async updateReliabilityScore(
-    @Param('id') id: string,
-    @Body('score') score: number
-  ) {
+  async updateReliabilityScore(@Param('id') id: string, @Body('score') score: number) {
     return await this.supplierService.updateReliabilityScore(id, score);
   }
 }

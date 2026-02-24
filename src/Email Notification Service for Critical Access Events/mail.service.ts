@@ -71,10 +71,11 @@ export class MailService {
     const subject = `Access Granted: ${grantee.name} can now view your records`;
 
     if (this.isTestEnv) {
-      this.logger.log(
-        `[TEST] Would send '${subject}' to ${patient.email}`,
-        { patient, grantee, record },
-      );
+      this.logger.log(`[TEST] Would send '${subject}' to ${patient.email}`, {
+        patient,
+        grantee,
+        record,
+      });
       return;
     }
 
@@ -151,10 +152,7 @@ export class MailService {
     });
   }
 
-  async sendSuspiciousAccessEmail(
-    patient: Patient,
-    event: SuspiciousAccessEvent,
-  ): Promise<void> {
+  async sendSuspiciousAccessEmail(patient: Patient, event: SuspiciousAccessEvent): Promise<void> {
     const subject = '⚠️ Suspicious Access Detected on Your Health Records';
 
     if (this.isTestEnv) {

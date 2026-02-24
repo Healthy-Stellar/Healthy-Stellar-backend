@@ -1,10 +1,4 @@
-import {
-  IsArray,
-  IsString,
-  IsNotEmpty,
-  ValidateNested,
-  Type
-} from 'class-validator';
+import { IsArray, IsString, IsNotEmpty, ValidateNested, Type } from 'class-validator';
 
 export class DrugItemDto {
   @IsString()

@@ -38,7 +38,7 @@ export class BackupMonitoringService {
   @Cron('*/15 * * * *') // Every 15 minutes
   async monitorBackupHealth() {
     const metrics = await this.getHealthMetrics();
-    
+
     // Check for critical issues
     if (metrics.complianceStatus === 'critical') {
       this.logger.error('CRITICAL: Backup system compliance issues detected');
@@ -48,7 +48,9 @@ export class BackupMonitoringService {
     }
 
     // Log metrics
-    this.logger.log(`Backup Health: Success Rate ${metrics.backupSuccessRate}%, Recent Failures: ${metrics.recentFailures}`);
+    this.logger.log(
+      `Backup Health: Success Rate ${metrics.backupSuccessRate}%, Recent Failures: ${metrics.recentFailures}`,
+    );
   }
 
   async getHealthMetrics(): Promise<BackupHealthMetrics> {
@@ -63,17 +65,18 @@ export class BackupMonitoringService {
     });
 
     const lastBackup = recentBackups[0];
-    const successfulBackups = recentBackups.filter(b => b.status === BackupStatus.VERIFIED);
-    const failedBackups = recentBackups.filter(b => b.status === BackupStatus.FAILED);
+    const successfulBackups = recentBackups.filter((b) => b.status === BackupStatus.VERIFIED);
+    const failedBackups = recentBackups.filter((b) => b.status === BackupStatus.FAILED);
 
     // Calculate metrics
-    const backupSuccessRate = recentBackups.length > 0
-      ? (successfulBackups.length / recentBackups.length) * 100
-      : 0;
+    const backupSuccessRate =
+      recentBackups.length > 0 ? (successfulBackups.length / recentBackups.length) * 100 : 0;
 
-    const averageBackupDuration = successfulBackups.length > 0
-      ? successfulBackups.reduce((sum, b) => sum + (b.durationSeconds || 0), 0) / successfulBackups.length
-      : 0;
+    const averageBackupDuration =
+      successfulBackups.length > 0
+        ? successfulBackups.reduce((sum, b) => sum + (b.durationSeconds || 0), 0) /
+          successfulBackups.length
+        : 0;
 
     const totalBackupSize = successfulBackups.reduce((sum, b) => sum + b.backupSize, 0);
 
@@ -82,9 +85,7 @@ export class BackupMonitoringService {
       order: { startedAt: 'ASC' },
     });
 
-    const recentFailures = failedBackups.filter(
-      b => b.startedAt >= last24Hours,
-    ).length;
+    const recentFailures = failedBackups.filter((b) => b.startedAt >= last24Hours).length;
 
     // Generate alerts
     const alerts: BackupAlert[] = [];
@@ -99,8 +100,9 @@ export class BackupMonitoringService {
       });
       complianceStatus = 'critical';
     } else {
-      const hoursSinceLastBackup = (now.getTime() - lastBackup.startedAt.getTime()) / (1000 * 60 * 60);
-      
+      const hoursSinceLastBackup =
+        (now.getTime() - lastBackup.startedAt.getTime()) / (1000 * 60 * 60);
+
       if (hoursSinceLastBackup > 24) {
         alerts.push({
           severity: 'critical',
@@ -165,8 +167,9 @@ export class BackupMonitoringService {
       });
       if (complianceStatus !== 'critical') complianceStatus = 'warning';
     } else {
-      const daysSinceTest = (now.getTime() - lastRecoveryTest.startedAt.getTime()) / (1000 * 60 * 60 * 24);
-      
+      const daysSinceTest =
+        (now.getTime() - lastRecoveryTest.startedAt.getTime()) / (1000 * 60 * 60 * 24);
+
       if (daysSinceTest > 30) {
         alerts.push({
           severity: 'warning',
@@ -194,12 +197,12 @@ export class BackupMonitoringService {
     // In production, this would send alerts via email, SMS, PagerDuty, etc.
     this.logger.error('CRITICAL BACKUP ALERT', {
       metrics,
-      alerts: metrics.alerts.filter(a => a.severity === 'critical'),
+      alerts: metrics.alerts.filter((a) => a.severity === 'critical'),
     });
 
     // Store alerts for retrieval
     this.alerts.push(...metrics.alerts);
-    
+
     // Keep only last 100 alerts
     if (this.alerts.length > 100) {
       this.alerts.splice(0, this.alerts.length - 100);
@@ -219,15 +222,21 @@ export class BackupMonitoringService {
       order: { startedAt: 'ASC' },
     });
 
-    const byStatus = backups.reduce((acc, backup) => {
-      acc[backup.status] = (acc[backup.status] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    const byStatus = backups.reduce(
+      (acc, backup) => {
+        acc[backup.status] = (acc[backup.status] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
 
-    const byType = backups.reduce((acc, backup) => {
-      acc[backup.backupType] = (acc[backup.backupType] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    const byType = backups.reduce(
+      (acc, backup) => {
+        acc[backup.backupType] = (acc[backup.backupType] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
 
     const totalSize = backups.reduce((sum, b) => sum + b.backupSize, 0);
     const averageSize = backups.length > 0 ? totalSize / backups.length : 0;
@@ -239,9 +248,8 @@ export class BackupMonitoringService {
       byType,
       totalSize,
       averageSize,
-      successRate: backups.length > 0
-        ? ((byStatus[BackupStatus.VERIFIED] || 0) / backups.length) * 100
-        : 0,
+      successRate:
+        backups.length > 0 ? ((byStatus[BackupStatus.VERIFIED] || 0) / backups.length) * 100 : 0,
     };
   }
 }

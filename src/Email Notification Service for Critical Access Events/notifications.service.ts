@@ -30,10 +30,7 @@ export class NotificationsService {
       .digest('hex');
 
     // Constant-time comparison to prevent timing attacks
-    const tokensMatch = crypto.timingSafeEqual(
-      Buffer.from(token),
-      Buffer.from(expectedToken),
-    );
+    const tokensMatch = crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expectedToken));
 
     if (!tokensMatch) {
       throw new UnauthorizedException('Invalid unsubscribe token');

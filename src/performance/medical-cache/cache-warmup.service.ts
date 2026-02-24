@@ -70,13 +70,17 @@ export class CacheWarmupService implements OnModuleInit {
    */
   private async warmupActiveAdmissions(): Promise<void> {
     try {
-      const admissions = await this.dataSource.query(`
+      const admissions = await this.dataSource
+        .query(
+          `
         SELECT id, mrn, first_name, last_name, admission_date, is_admitted
         FROM patient
         WHERE is_admitted = true
         ORDER BY admission_date DESC
         LIMIT 500;
-      `).catch(() => []);
+      `,
+        )
+        .catch(() => []);
 
       this.cacheService.set('admissions:active', admissions, {
         category: 'bed-availability',
@@ -101,11 +105,14 @@ export class CacheWarmupService implements OnModuleInit {
 
       for (const table of tables) {
         try {
-          const result = await this.dataSource.query(`
+          const result = await this.dataSource.query(
+            `
             SELECT reltuples::bigint AS estimate
             FROM pg_class
             WHERE relname = $1;
-          `, [table]);
+          `,
+            [table],
+          );
           stats[table] = parseInt(result[0]?.estimate || '0');
         } catch {
           stats[table] = 0;
@@ -156,7 +163,9 @@ export class CacheWarmupService implements OnModuleInit {
    */
   private async warmupTableMetadata(): Promise<void> {
     try {
-      const metadata = await this.dataSource.query(`
+      const metadata = await this.dataSource
+        .query(
+          `
         SELECT 
           t.table_name,
           c.column_name, 
@@ -167,7 +176,9 @@ export class CacheWarmupService implements OnModuleInit {
         WHERE t.table_schema = 'public'
         AND t.table_type = 'BASE TABLE'
         ORDER BY t.table_name, c.ordinal_position;
-      `).catch(() => []);
+      `,
+        )
+        .catch(() => []);
 
       // Group by table
       const tableMap: Record<string, any[]> = {};

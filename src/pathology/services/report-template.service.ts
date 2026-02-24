@@ -6,72 +6,72 @@ import { CreateReportTemplateDto } from '../dto/create-report-template.dto';
 
 @Injectable()
 export class ReportTemplateService {
-    private readonly logger = new Logger(ReportTemplateService.name);
+  private readonly logger = new Logger(ReportTemplateService.name);
 
-    constructor(
-        @InjectRepository(ReportTemplate)
-        private templateRepository: Repository<ReportTemplate>,
-    ) { }
+  constructor(
+    @InjectRepository(ReportTemplate)
+    private templateRepository: Repository<ReportTemplate>,
+  ) {}
 
-    async create(createDto: CreateReportTemplateDto, userId: string): Promise<ReportTemplate> {
-        const template = this.templateRepository.create({
-            ...createDto,
-            createdBy: userId,
-            updatedBy: userId,
-        });
+  async create(createDto: CreateReportTemplateDto, userId: string): Promise<ReportTemplate> {
+    const template = this.templateRepository.create({
+      ...createDto,
+      createdBy: userId,
+      updatedBy: userId,
+    });
 
-        const saved = await this.templateRepository.save(template);
-        this.logger.log(`Report template created: ${saved.id}`);
+    const saved = await this.templateRepository.save(template);
+    this.logger.log(`Report template created: ${saved.id}`);
 
-        return saved;
+    return saved;
+  }
+
+  async findAll(): Promise<ReportTemplate[]> {
+    return this.templateRepository.find({
+      where: { status: TemplateStatus.ACTIVE },
+      order: { name: 'ASC' },
+    });
+  }
+
+  async findOne(id: string): Promise<ReportTemplate> {
+    const template = await this.templateRepository.findOne({
+      where: { id },
+    });
+
+    if (!template) {
+      throw new NotFoundException(`Report template with ID ${id} not found`);
     }
 
-    async findAll(): Promise<ReportTemplate[]> {
-        return this.templateRepository.find({
-            where: { status: TemplateStatus.ACTIVE },
-            order: { name: 'ASC' },
-        });
-    }
+    return template;
+  }
 
-    async findOne(id: string): Promise<ReportTemplate> {
-        const template = await this.templateRepository.findOne({
-            where: { id },
-        });
+  async findByOrgan(organType: string): Promise<ReportTemplate[]> {
+    return this.templateRepository.find({
+      where: {
+        organType,
+        status: TemplateStatus.ACTIVE,
+      },
+      order: { name: 'ASC' },
+    });
+  }
 
-        if (!template) {
-            throw new NotFoundException(`Report template with ID ${id} not found`);
-        }
+  async activate(id: string, userId: string): Promise<ReportTemplate> {
+    const template = await this.findOne(id);
 
-        return template;
-    }
+    template.status = TemplateStatus.ACTIVE;
+    template.approvedBy = userId;
+    template.approvedDate = new Date();
+    template.updatedBy = userId;
 
-    async findByOrgan(organType: string): Promise<ReportTemplate[]> {
-        return this.templateRepository.find({
-            where: {
-                organType,
-                status: TemplateStatus.ACTIVE,
-            },
-            order: { name: 'ASC' },
-        });
-    }
+    return this.templateRepository.save(template);
+  }
 
-    async activate(id: string, userId: string): Promise<ReportTemplate> {
-        const template = await this.findOne(id);
+  async deactivate(id: string, userId: string): Promise<ReportTemplate> {
+    const template = await this.findOne(id);
 
-        template.status = TemplateStatus.ACTIVE;
-        template.approvedBy = userId;
-        template.approvedDate = new Date();
-        template.updatedBy = userId;
+    template.status = TemplateStatus.INACTIVE;
+    template.updatedBy = userId;
 
-        return this.templateRepository.save(template);
-    }
-
-    async deactivate(id: string, userId: string): Promise<ReportTemplate> {
-        const template = await this.findOne(id);
-
-        template.status = TemplateStatus.INACTIVE;
-        template.updatedBy = userId;
-
-        return this.templateRepository.save(template);
-    }
+    return this.templateRepository.save(template);
+  }
 }

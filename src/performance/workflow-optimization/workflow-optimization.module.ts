@@ -8,15 +8,7 @@ import { WorkflowExecution } from './entities/workflow-execution.entity';
 @Global()
 @Module({
   imports: [TypeOrmModule.forFeature([WorkflowExecution])],
-  providers: [
-    WorkflowOptimizationService,
-    WorkflowAutomationService,
-    TaskQueueService,
-  ],
-  exports: [
-    WorkflowOptimizationService,
-    WorkflowAutomationService,
-    TaskQueueService,
-  ],
+  providers: [WorkflowOptimizationService, WorkflowAutomationService, TaskQueueService],
+  exports: [WorkflowOptimizationService, WorkflowAutomationService, TaskQueueService],
 })
 export class WorkflowOptimizationModule {}

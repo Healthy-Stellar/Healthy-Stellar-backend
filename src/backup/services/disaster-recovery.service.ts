@@ -46,7 +46,7 @@ export class DisasterRecoveryService {
 
   async createRecoveryPlan(backupId: string): Promise<RecoveryPlan> {
     const backup = await this.backupLogRepository.findOne({ where: { id: backupId } });
-    
+
     if (!backup) {
       throw new Error('Backup not found');
     }
@@ -253,10 +253,9 @@ export class DisasterRecoveryService {
 
     try {
       // Create test database
-      await execAsync(
-        `createdb -h ${dbHost} -p ${dbPort} -U ${dbUser} ${testDbName}`,
-        { env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD } },
-      );
+      await execAsync(`createdb -h ${dbHost} -p ${dbPort} -U ${dbUser} ${testDbName}`, {
+        env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD },
+      });
 
       // Restore to test database
       await execAsync(
@@ -274,10 +273,9 @@ export class DisasterRecoveryService {
     } finally {
       // Cleanup test database
       try {
-        await execAsync(
-          `dropdb -h ${dbHost} -p ${dbPort} -U ${dbUser} ${testDbName}`,
-          { env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD } },
-        );
+        await execAsync(`dropdb -h ${dbHost} -p ${dbPort} -U ${dbUser} ${testDbName}`, {
+          env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD },
+        });
       } catch (error) {
         this.logger.warn(`Failed to cleanup test database: ${error.message}`);
       }

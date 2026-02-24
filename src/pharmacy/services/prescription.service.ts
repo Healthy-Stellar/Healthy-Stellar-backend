@@ -4,10 +4,7 @@ import { Repository, Between } from 'typeorm';
 import { Prescription } from '../entities/prescription.entity';
 import { PrescriptionItem } from '../entities/prescription-item.entity';
 import { CreatePrescriptionDto } from '../dto/create-prescription.dto';
-import {
-  UpdatePrescriptionDto,
-  SearchPrescriptionsDto,
-} from '../dto/manage-prescription.dto';
+import { UpdatePrescriptionDto, SearchPrescriptionsDto } from '../dto/manage-prescription.dto';
 import { SafetyAlertService } from './safety-alert.service';
 import { PharmacyInventoryService } from './pharmacy-inventory.service';
 import { ControlledSubstanceService } from './controlled-substance.service';
@@ -31,18 +28,18 @@ export class PrescriptionService {
     const prescription = this.prescriptionRepository.create({
       ...createDto,
       status: 'pending',
-      refillsRemaining: createDto.refillsAllowed
+      refillsRemaining: createDto.refillsAllowed,
     });
 
     const savedPrescription = await this.prescriptionRepository.save(prescription);
 
     // Create prescription items
-    const items = createDto.items.map(itemDto => 
+    const items = createDto.items.map((itemDto) =>
       this.prescriptionItemRepository.create({
         ...itemDto,
         prescriptionId: savedPrescription.id,
-        quantityDispensed: 0
-      })
+        quantityDispensed: 0,
+      }),
     );
 
     await this.prescriptionItemRepository.save(items);
@@ -57,7 +54,7 @@ export class PrescriptionService {
   async findOne(id: string): Promise<Prescription> {
     const prescription = await this.prescriptionRepository.findOne({
       where: { id },
-      relations: ['items', 'items.drug']
+      relations: ['items', 'items.drug'],
     });
 
     if (!prescription) {
@@ -71,22 +68,28 @@ export class PrescriptionService {
     const prescription = await this.findOne(id);
 
     if (prescription.status !== 'pending') {
-      throw new BadRequestException(`Prescription cannot be verified in status: ${prescription.status}`);
+      throw new BadRequestException(
+        `Prescription cannot be verified in status: ${prescription.status}`,
+      );
     }
 
     // Check for critical alerts
     const alerts = await this.safetyAlertService.getAlertsByPrescription(id);
-    const criticalAlerts = alerts.filter(a => a.severity === 'critical' && !a.acknowledged);
+    const criticalAlerts = alerts.filter((a) => a.severity === 'critical' && !a.acknowledged);
 
     if (criticalAlerts.length > 0) {
-      throw new BadRequestException('Critical safety alerts must be acknowledged before verification');
+      throw new BadRequestException(
+        'Critical safety alerts must be acknowledged before verification',
+      );
     }
 
     // Verify inventory availability
     for (const item of prescription.items) {
       const availableQty = await this.inventoryService.getTotalQuantity(item.drugId);
       if (availableQty < item.quantityPrescribed) {
-        throw new BadRequestException(`Insufficient inventory for ${item.drug.genericName}. Available: ${availableQty}, Required: ${item.quantityPrescribed}`);
+        throw new BadRequestException(
+          `Insufficient inventory for ${item.drug.genericName}. Available: ${availableQty}, Required: ${item.quantityPrescribed}`,
+        );
       }
     }
 
@@ -122,7 +125,7 @@ export class PrescriptionService {
           prescription.patientName,
           prescription.prescriberName,
           prescription.prescriberDEA,
-          pharmacistId
+          pharmacistId,
         );
       }
     }
@@ -171,7 +174,7 @@ export class PrescriptionService {
     return await this.prescriptionRepository.find({
       where: { status: 'pending' },
       relations: ['items', 'items.drug'],
-      order: { createdAt: 'ASC' }
+      order: { createdAt: 'ASC' },
     });
   }
 
@@ -179,7 +182,7 @@ export class PrescriptionService {
     return await this.prescriptionRepository.find({
       where: { patientId },
       relations: ['items', 'items.drug'],
-      order: { createdAt: 'DESC' }
+      order: { createdAt: 'DESC' },
     });
   }
 
@@ -191,7 +194,10 @@ export class PrescriptionService {
     }
 
     if (typeof updateDto.refillsAllowed === 'number') {
-      const alreadyUsed = Math.max(0, (prescription.refillsAllowed || 0) - (prescription.refillsRemaining || 0));
+      const alreadyUsed = Math.max(
+        0,
+        (prescription.refillsAllowed || 0) - (prescription.refillsRemaining || 0),
+      );
       if (updateDto.refillsAllowed < alreadyUsed) {
         throw new BadRequestException('refillsAllowed cannot be less than refills already used');
       }
@@ -215,8 +221,10 @@ export class PrescriptionService {
           throw new BadRequestException(`Prescription item not found: ${itemDto.id}`);
         }
 
-        if (typeof itemDto.quantityPrescribed === 'number') item.quantityPrescribed = itemDto.quantityPrescribed;
-        if (itemDto.dosageInstructions !== undefined) item.dosageInstructions = itemDto.dosageInstructions;
+        if (typeof itemDto.quantityPrescribed === 'number')
+          item.quantityPrescribed = itemDto.quantityPrescribed;
+        if (itemDto.dosageInstructions !== undefined)
+          item.dosageInstructions = itemDto.dosageInstructions;
         if (typeof itemDto.daySupply === 'number') item.daySupply = itemDto.daySupply;
         if (itemDto.drugId) item.drugId = itemDto.drugId;
       }
@@ -253,7 +261,9 @@ export class PrescriptionService {
     return await this.prescriptionRepository.save(prescription);
   }
 
-  async getPrescriptionNotes(id: string): Promise<Array<{ createdAt: string; authorId: string; note: string }>> {
+  async getPrescriptionNotes(
+    id: string,
+  ): Promise<Array<{ createdAt: string; authorId: string; note: string }>> {
     const prescription = await this.findOne(id);
     if (!prescription.notes) return [];
 

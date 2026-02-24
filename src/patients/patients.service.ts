@@ -28,7 +28,7 @@ export class PatientsService {
       mrn: generateMRN(),
       isAdmitted: false,
       isActive: true,
-    } as any as Patient );
+    } as any as Patient);
 
     return this.patientRepo.save(patient);
   }
@@ -44,39 +44,38 @@ export class PatientsService {
     return patient;
   }
 
- async findAll(){
-  const patients=await this.patientRepo.find();
-   return patients;
- }
+  async findAll() {
+    const patients = await this.patientRepo.find();
+    return patients;
+  }
   /**
    * -----------------------------
    * Search patients (privacy safe)
    * -----------------------------
    */
   async search(search: string): Promise<Patient[]> {
-  const qb = this.patientRepo.createQueryBuilder('patient');
+    const qb = this.patientRepo.createQueryBuilder('patient');
 
-  if (search && search.trim() !== '') {
-    qb.where(
-      `
+    if (search && search.trim() !== '') {
+      qb.where(
+        `
       patient.firstName LIKE :search
       OR patient.lastName LIKE :search
       OR patient.nationalId LIKE :search
       OR DATE_FORMAT(patient.dateOfBirth, '%Y-%m-%d') LIKE :search
       OR patient.mrn LIKE :search
       `,
-      {
-        search: `%${search}%`,
-      },
-    );
+        {
+          search: `%${search}%`,
+        },
+      );
+    }
+
+    // Limit results for privacy & performance
+    qb.take(20);
+
+    return qb.getMany();
   }
-
-  // Limit results for privacy & performance
-  qb.take(20);
-
-  return qb.getMany();
-}
-
 
   /**
    * -----------------------------
@@ -121,10 +120,7 @@ export class PatientsService {
     return !!match;
   }
 
-async attachPhoto(
-    patientId: string,
-    file: Express.Multer.File,
-  ): Promise<Patient> {
+  async attachPhoto(patientId: string, file: Express.Multer.File): Promise<Patient> {
     const patient = await this.patientRepo.findOne({
       where: { id: patientId },
     });
@@ -138,5 +134,4 @@ async attachPhoto(
 
     return this.patientRepo.save(patient);
   }
-
 }

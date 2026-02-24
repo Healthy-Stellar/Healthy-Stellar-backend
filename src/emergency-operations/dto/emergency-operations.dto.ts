@@ -11,9 +11,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import {
-  CriticalAlertSeverity,
-} from '../entities/critical-care-monitoring.entity';
+import { CriticalAlertSeverity } from '../entities/critical-care-monitoring.entity';
 import { DisasterIncidentStatus } from '../entities/emergency-documentation.entity';
 import { EmergencyResourceStatus } from '../entities/emergency-resource.entity';
 import { RapidResponseStatus } from '../entities/rapid-response-event.entity';

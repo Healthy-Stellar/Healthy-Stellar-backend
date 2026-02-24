@@ -79,10 +79,7 @@ export class MedicalAuditService {
     if (query.emergencyOnly) (where as any).isEmergencyOverride = true;
 
     if (query.startDate && query.endDate) {
-      (where as any).timestamp = Between(
-        new Date(query.startDate),
-        new Date(query.endDate),
-      );
+      (where as any).timestamp = Between(new Date(query.startDate), new Date(query.endDate));
     }
 
     const page = query.page ?? 1;

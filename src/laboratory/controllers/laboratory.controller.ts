@@ -7,14 +7,20 @@ import { CreateLabOrderDto, CreateLabResultDto, CreateSpecimenDto } from '../dto
 @Controller('laboratory')
 export class LaboratoryController {
   @Get('tests')
-  @ApiOperation({ summary: 'Get available lab tests', description: 'Retrieve catalog of available laboratory tests' })
+  @ApiOperation({
+    summary: 'Get available lab tests',
+    description: 'Retrieve catalog of available laboratory tests',
+  })
   @ApiResponse({ status: 200, description: 'Lab tests retrieved' })
   async getTests(@Query('category') category?: string) {
     return [];
   }
 
   @Get('tests/:id')
-  @ApiOperation({ summary: 'Get test details', description: 'Retrieve test information including reference ranges' })
+  @ApiOperation({
+    summary: 'Get test details',
+    description: 'Retrieve test information including reference ranges',
+  })
   @ApiResponse({ status: 200, description: 'Test details retrieved' })
   async getTest(@Param('id') id: string) {
     return { id, testCode: 'CBC', testName: 'Complete Blood Count' };
@@ -35,14 +41,20 @@ export class LaboratoryController {
   }
 
   @Get('orders/patient/:patientId')
-  @ApiOperation({ summary: 'Get patient lab orders', description: 'Retrieve all lab orders for a patient' })
+  @ApiOperation({
+    summary: 'Get patient lab orders',
+    description: 'Retrieve all lab orders for a patient',
+  })
   @ApiResponse({ status: 200, description: 'Patient orders retrieved' })
   async getPatientOrders(@Param('patientId') patientId: string) {
     return [];
   }
 
   @Post('specimens')
-  @ApiOperation({ summary: 'Register specimen', description: 'Register collected specimen with tracking' })
+  @ApiOperation({
+    summary: 'Register specimen',
+    description: 'Register collected specimen with tracking',
+  })
   @ApiResponse({ status: 201, description: 'Specimen registered' })
   async createSpecimen(@Body() dto: CreateSpecimenDto) {
     return { id: 'specimen-uuid', specimenId: 'SPEC-2024-0001', status: 'collected' };
@@ -56,9 +68,15 @@ export class LaboratoryController {
   }
 
   @Put('specimens/:id/status')
-  @ApiOperation({ summary: 'Update specimen status', description: 'Update specimen tracking status' })
+  @ApiOperation({
+    summary: 'Update specimen status',
+    description: 'Update specimen tracking status',
+  })
   @ApiResponse({ status: 200, description: 'Status updated' })
-  async updateSpecimenStatus(@Param('id') id: string, @Body() body: { status: string; location: string }) {
+  async updateSpecimenStatus(
+    @Param('id') id: string,
+    @Body() body: { status: string; location: string },
+  ) {
     return { id, status: body.status, location: body.location };
   }
 
@@ -70,7 +88,10 @@ export class LaboratoryController {
   }
 
   @Get('results/order/:orderId')
-  @ApiOperation({ summary: 'Get order results', description: 'Retrieve all results for a lab order' })
+  @ApiOperation({
+    summary: 'Get order results',
+    description: 'Retrieve all results for a lab order',
+  })
   @ApiResponse({ status: 200, description: 'Results retrieved' })
   async getOrderResults(@Param('orderId') orderId: string) {
     return [];
@@ -84,9 +105,15 @@ export class LaboratoryController {
   }
 
   @Get('results/patient/:patientId')
-  @ApiOperation({ summary: 'Get patient results', description: 'Retrieve all lab results for patient' })
+  @ApiOperation({
+    summary: 'Get patient results',
+    description: 'Retrieve all lab results for patient',
+  })
   @ApiResponse({ status: 200, description: 'Patient results retrieved' })
-  async getPatientResults(@Param('patientId') patientId: string, @Query('startDate') startDate?: string) {
+  async getPatientResults(
+    @Param('patientId') patientId: string,
+    @Query('startDate') startDate?: string,
+  ) {
     return [];
   }
 
@@ -100,12 +127,18 @@ export class LaboratoryController {
   @Get('reports/turnaround')
   @ApiOperation({ summary: 'Turnaround time report', description: 'Analyze lab turnaround times' })
   @ApiResponse({ status: 200, description: 'Report generated' })
-  async getTurnaroundReport(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
+  async getTurnaroundReport(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
     return { averageTAT: 24, onTimeRate: 95.5 };
   }
 
   @Get('equipment/status')
-  @ApiOperation({ summary: 'Equipment status', description: 'Get lab equipment status and availability' })
+  @ApiOperation({
+    summary: 'Equipment status',
+    description: 'Get lab equipment status and availability',
+  })
   @ApiResponse({ status: 200, description: 'Equipment status retrieved' })
   async getEquipmentStatus() {
     return [];

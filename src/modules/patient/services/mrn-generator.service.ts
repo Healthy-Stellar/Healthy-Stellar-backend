@@ -17,7 +17,7 @@ export class MrnGeneratorService {
   async generateMrn(): Promise<string> {
     const prefix = 'HHS';
     const year = new Date().getFullYear();
-    
+
     // Get the count of patients created this year
     const startOfYear = new Date(year, 0, 1);
     const count = await this.patientRepository
@@ -32,7 +32,9 @@ export class MrnGeneratorService {
     const exists = await this.patientRepository.findOne({ where: { mrn } });
     if (exists) {
       // Add random suffix if collision (extremely unlikely)
-      const randomSuffix = Math.floor(Math.random() * 99).toString().padStart(2, '0');
+      const randomSuffix = Math.floor(Math.random() * 99)
+        .toString()
+        .padStart(2, '0');
       return `${mrn}-${randomSuffix}`;
     }
 

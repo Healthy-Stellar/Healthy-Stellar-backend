@@ -1,7 +1,7 @@
-import { Process, Processor } from "@nestjs/bull";
-import { Job } from "bull";
-import { Logger } from "@nestjs/common";
-import { ProvisioningService } from "./provisioning.service";
+import { Process, Processor } from '@nestjs/bull';
+import { Job } from 'bull';
+import { Logger } from '@nestjs/common';
+import { ProvisioningService } from './provisioning.service';
 
 export interface ProvisioningJobData {
   tenantName: string;
@@ -11,7 +11,7 @@ export interface ProvisioningJobData {
   jobId?: string;
 }
 
-@Processor("provisioning")
+@Processor('provisioning')
 export class ProvisioningProcessor {
   private readonly logger = new Logger(ProvisioningProcessor.name);
 
@@ -19,9 +19,7 @@ export class ProvisioningProcessor {
 
   @Process()
   async handleProvisioning(job: Job<ProvisioningJobData>) {
-    this.logger.log(
-      `Processing provisioning job ${job.id} for tenant: ${job.data.tenantName}`,
-    );
+    this.logger.log(`Processing provisioning job ${job.id} for tenant: ${job.data.tenantName}`);
 
     try {
       // Update job progress
@@ -44,10 +42,7 @@ export class ProvisioningProcessor {
         message: `Tenant ${job.data.tenantName} provisioned successfully`,
       };
     } catch (error) {
-      this.logger.error(
-        `Provisioning job ${job.id} failed: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Provisioning job ${job.id} failed: ${error.message}`, error.stack);
 
       // Don't retry by default - we want to inspect the error
       throw error;

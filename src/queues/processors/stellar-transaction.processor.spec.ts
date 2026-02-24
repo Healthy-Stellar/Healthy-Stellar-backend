@@ -10,9 +10,7 @@ describe('StellarTransactionProcessor', () => {
       providers: [StellarTransactionProcessor],
     }).compile();
 
-    processor = module.get<StellarTransactionProcessor>(
-      StellarTransactionProcessor,
-    );
+    processor = module.get<StellarTransactionProcessor>(StellarTransactionProcessor);
   });
 
   describe('process', () => {

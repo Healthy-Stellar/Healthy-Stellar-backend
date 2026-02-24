@@ -25,7 +25,10 @@ interface AllergyCheck {
 }
 
 // Simplified drug interaction pairs (in production, use a proper drug DB like Multum or First Databank)
-const KNOWN_DRUG_INTERACTIONS: Record<string, { codes: string[]; severity: AlertSeverity; message: string }> = {
+const KNOWN_DRUG_INTERACTIONS: Record<
+  string,
+  { codes: string[]; severity: AlertSeverity; message: string }
+> = {
   warfarin_aspirin: {
     codes: ['0069-2855', '63323-052'], // example NDCs
     severity: AlertSeverity.HIGH,
@@ -83,7 +86,10 @@ export class ClinicalDecisionSupportService {
    * Check for critical lab values requiring immediate action
    */
   async checkCriticalValues(check: CriticalValueCheck): Promise<ClinicalAlert | null> {
-    const criticalRanges: Record<string, { criticalLow?: number; criticalHigh?: number; unit: string; name: string }> = {
+    const criticalRanges: Record<
+      string,
+      { criticalLow?: number; criticalHigh?: number; unit: string; name: string }
+    > = {
       '2823-3': { criticalLow: 2.5, criticalHigh: 6.5, unit: 'mEq/L', name: 'Potassium' },
       '2160-0': { criticalHigh: 10.0, unit: 'mg/dL', name: 'Creatinine' },
       '718-7': { criticalLow: 7.0, criticalHigh: 20.0, unit: 'g/dL', name: 'Hemoglobin' },
@@ -259,7 +265,10 @@ export class ClinicalDecisionSupportService {
   }
 
   private async createAndSaveAlert(
-    alertData: Omit<ClinicalAlertEntity, 'alertId' | 'isResolved' | 'resolvedBy' | 'resolvedAt' | 'overrideReason' | 'createdAt'>,
+    alertData: Omit<
+      ClinicalAlertEntity,
+      'alertId' | 'isResolved' | 'resolvedBy' | 'resolvedAt' | 'overrideReason' | 'createdAt'
+    >,
   ): Promise<ClinicalAlert> {
     const entity = this.alertRepo.create({
       ...alertData,

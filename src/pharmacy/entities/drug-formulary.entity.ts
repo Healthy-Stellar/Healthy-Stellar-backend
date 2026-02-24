@@ -1,4 +1,12 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
 import { Drug } from './drug.entity';
 
 export enum FormularyTier {
@@ -6,7 +14,7 @@ export enum FormularyTier {
   TIER_2 = 'tier_2', // Preferred brand
   TIER_3 = 'tier_3', // Non-preferred brand
   TIER_4 = 'tier_4', // Specialty drugs
-  NOT_COVERED = 'not_covered'
+  NOT_COVERED = 'not_covered',
 }
 
 export enum FormularyStatus {
@@ -14,7 +22,7 @@ export enum FormularyStatus {
   PRIOR_AUTH = 'prior_authorization',
   STEP_THERAPY = 'step_therapy',
   QUANTITY_LIMIT = 'quantity_limit',
-  NOT_COVERED = 'not_covered'
+  NOT_COVERED = 'not_covered',
 }
 
 @Entity('drug_formulary')
@@ -35,14 +43,14 @@ export class DrugFormulary {
   @Column({
     type: 'enum',
     enum: FormularyTier,
-    default: FormularyTier.TIER_3
+    default: FormularyTier.TIER_3,
   })
   tier: FormularyTier;
 
   @Column({
     type: 'enum',
     enum: FormularyStatus,
-    default: FormularyStatus.COVERED
+    default: FormularyStatus.COVERED,
   })
   status: FormularyStatus;
 

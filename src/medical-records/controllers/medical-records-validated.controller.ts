@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Post,
-  Body,
-  UseGuards,
-  UseFilters,
-  Inject
-} from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, UseFilters, Inject } from '@nestjs/common';
 import { CreateMedicalRecordValidatedDto } from '../dto/create-medical-record-validated.dto';
 import { MedicalRecordsService } from '../services/medical-records.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -20,26 +13,26 @@ export class MedicalRecordsValidatedController {
   constructor(
     private medicalRecordsService: MedicalRecordsService,
     @Inject(MedicalOperationAuditService)
-    private auditService: MedicalOperationAuditService
+    private auditService: MedicalOperationAuditService,
   ) {}
 
   @Post()
   async createMedicalRecord(
     @Body(MedicalDataValidationPipe)
-    createMedicalRecordDto: CreateMedicalRecordValidatedDto
+    createMedicalRecordDto: CreateMedicalRecordValidatedDto,
   ) {
     const record = await this.medicalRecordsService.create(createMedicalRecordDto);
-    
+
     await this.auditService.logMedicalRecordModification(
       'system',
       createMedicalRecordDto.patientId,
-      { recordId: record.id }
+      { recordId: record.id },
     );
 
     return {
       success: true,
       data: record,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   }
 }

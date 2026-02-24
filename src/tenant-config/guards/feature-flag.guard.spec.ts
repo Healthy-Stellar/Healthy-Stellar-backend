@@ -74,10 +74,7 @@ describe('FeatureFlagGuard', () => {
       const result = await guard.canActivate(context);
 
       expect(result).toBe(true);
-      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(
-        tenantId,
-        featureKey,
-      );
+      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(tenantId, featureKey);
     });
 
     it('should deny access when feature is disabled', async () => {
@@ -110,10 +107,7 @@ describe('FeatureFlagGuard', () => {
 
       await guard.canActivate(context);
 
-      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(
-        tenantId,
-        featureKey,
-      );
+      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(tenantId, featureKey);
     });
 
     it('should extract tenant ID from URL params (tenantId)', async () => {
@@ -129,10 +123,7 @@ describe('FeatureFlagGuard', () => {
 
       await guard.canActivate(context);
 
-      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(
-        tenantId,
-        featureKey,
-      );
+      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(tenantId, featureKey);
     });
 
     it('should extract tenant ID from query params', async () => {
@@ -149,10 +140,7 @@ describe('FeatureFlagGuard', () => {
 
       await guard.canActivate(context);
 
-      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(
-        tenantId,
-        featureKey,
-      );
+      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(tenantId, featureKey);
     });
 
     it('should extract tenant ID from custom header', async () => {
@@ -170,10 +158,7 @@ describe('FeatureFlagGuard', () => {
 
       await guard.canActivate(context);
 
-      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(
-        tenantId,
-        featureKey,
-      );
+      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(tenantId, featureKey);
     });
 
     it('should extract tenant ID from user object (tenantId)', async () => {
@@ -192,10 +177,7 @@ describe('FeatureFlagGuard', () => {
 
       await guard.canActivate(context);
 
-      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(
-        tenantId,
-        featureKey,
-      );
+      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(tenantId, featureKey);
     });
 
     it('should extract tenant ID from user object (organizationId)', async () => {
@@ -214,10 +196,7 @@ describe('FeatureFlagGuard', () => {
 
       await guard.canActivate(context);
 
-      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(
-        tenantId,
-        featureKey,
-      );
+      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(tenantId, featureKey);
     });
 
     it('should throw ForbiddenException when tenant ID cannot be extracted', async () => {
@@ -232,9 +211,7 @@ describe('FeatureFlagGuard', () => {
       });
 
       await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
-      await expect(guard.canActivate(context)).rejects.toThrow(
-        'Tenant identification required',
-      );
+      await expect(guard.canActivate(context)).rejects.toThrow('Tenant identification required');
     });
 
     it('should prioritize URL params over other sources', async () => {
@@ -252,10 +229,7 @@ describe('FeatureFlagGuard', () => {
 
       await guard.canActivate(context);
 
-      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(
-        urlTenantId,
-        featureKey,
-      );
+      expect(tenantConfigService.isFeatureEnabled).toHaveBeenCalledWith(urlTenantId, featureKey);
     });
   });
 });

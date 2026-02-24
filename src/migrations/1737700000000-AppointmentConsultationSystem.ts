@@ -1,11 +1,11 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AppointmentConsultationSystem1737700000000 implements MigrationInterface {
-    name = 'AppointmentConsultationSystem1737700000000';
+  name = 'AppointmentConsultationSystem1737700000000';
 
-    public async up(queryRunner: QueryRunner): Promise<void> {
-        // Appointments table
-        await queryRunner.query(`
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    // Appointments table
+    await queryRunner.query(`
             CREATE TABLE "appointments" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "patient_id" character varying NOT NULL,
@@ -28,8 +28,8 @@ export class AppointmentConsultationSystem1737700000000 implements MigrationInte
             )
         `);
 
-        // Doctor Availability table
-        await queryRunner.query(`
+    // Doctor Availability table
+    await queryRunner.query(`
             CREATE TABLE "doctor_availability" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "doctor_id" character varying NOT NULL,
@@ -49,8 +49,8 @@ export class AppointmentConsultationSystem1737700000000 implements MigrationInte
             )
         `);
 
-        // Consultation Notes table
-        await queryRunner.query(`
+    // Consultation Notes table
+    await queryRunner.query(`
             CREATE TABLE "consultation_notes" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "appointment_id" uuid NOT NULL,
@@ -72,8 +72,8 @@ export class AppointmentConsultationSystem1737700000000 implements MigrationInte
             )
         `);
 
-        // Appointment Reminders table
-        await queryRunner.query(`
+    // Appointment Reminders table
+    await queryRunner.query(`
             CREATE TABLE "appointment_reminders" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "appointment_id" character varying NOT NULL,
@@ -92,59 +92,87 @@ export class AppointmentConsultationSystem1737700000000 implements MigrationInte
             )
         `);
 
-        // Add foreign key constraints
-        await queryRunner.query(`
+    // Add foreign key constraints
+    await queryRunner.query(`
             ALTER TABLE "consultation_notes" 
             ADD CONSTRAINT "FK_consultation_notes_appointment" 
             FOREIGN KEY ("appointment_id") REFERENCES "appointments"("id") ON DELETE CASCADE
         `);
 
-        // Create indexes for better performance
-        await queryRunner.query(`CREATE INDEX "IDX_appointments_doctor_id" ON "appointments" ("doctor_id")`);
-        await queryRunner.query(`CREATE INDEX "IDX_appointments_patient_id" ON "appointments" ("patient_id")`);
-        await queryRunner.query(`CREATE INDEX "IDX_appointments_date" ON "appointments" ("appointment_date")`);
-        await queryRunner.query(`CREATE INDEX "IDX_appointments_status" ON "appointments" ("status")`);
-        await queryRunner.query(`CREATE INDEX "IDX_appointments_priority" ON "appointments" ("priority")`);
-        await queryRunner.query(`CREATE INDEX "IDX_appointments_type" ON "appointments" ("type")`);
-        
-        await queryRunner.query(`CREATE INDEX "IDX_doctor_availability_doctor_id" ON "doctor_availability" ("doctor_id")`);
-        await queryRunner.query(`CREATE INDEX "IDX_doctor_availability_day_of_week" ON "doctor_availability" ("day_of_week")`);
-        await queryRunner.query(`CREATE INDEX "IDX_doctor_availability_status" ON "doctor_availability" ("status")`);
-        
-        await queryRunner.query(`CREATE INDEX "IDX_consultation_notes_appointment_id" ON "consultation_notes" ("appointment_id")`);
-        await queryRunner.query(`CREATE INDEX "IDX_consultation_notes_doctor_id" ON "consultation_notes" ("doctor_id")`);
-        await queryRunner.query(`CREATE INDEX "IDX_consultation_notes_outcome" ON "consultation_notes" ("outcome")`);
-        
-        await queryRunner.query(`CREATE INDEX "IDX_appointment_reminders_appointment_id" ON "appointment_reminders" ("appointment_id")`);
-        await queryRunner.query(`CREATE INDEX "IDX_appointment_reminders_status" ON "appointment_reminders" ("status")`);
-        await queryRunner.query(`CREATE INDEX "IDX_appointment_reminders_scheduled_time" ON "appointment_reminders" ("scheduled_time")`);
-    }
+    // Create indexes for better performance
+    await queryRunner.query(
+      `CREATE INDEX "IDX_appointments_doctor_id" ON "appointments" ("doctor_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_appointments_patient_id" ON "appointments" ("patient_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_appointments_date" ON "appointments" ("appointment_date")`,
+    );
+    await queryRunner.query(`CREATE INDEX "IDX_appointments_status" ON "appointments" ("status")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_appointments_priority" ON "appointments" ("priority")`,
+    );
+    await queryRunner.query(`CREATE INDEX "IDX_appointments_type" ON "appointments" ("type")`);
 
-    public async down(queryRunner: QueryRunner): Promise<void> {
-        // Drop foreign key constraints
-        await queryRunner.query(`ALTER TABLE "consultation_notes" DROP CONSTRAINT "FK_consultation_notes_appointment"`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_doctor_availability_doctor_id" ON "doctor_availability" ("doctor_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_doctor_availability_day_of_week" ON "doctor_availability" ("day_of_week")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_doctor_availability_status" ON "doctor_availability" ("status")`,
+    );
 
-        // Drop indexes
-        await queryRunner.query(`DROP INDEX "IDX_appointment_reminders_scheduled_time"`);
-        await queryRunner.query(`DROP INDEX "IDX_appointment_reminders_status"`);
-        await queryRunner.query(`DROP INDEX "IDX_appointment_reminders_appointment_id"`);
-        await queryRunner.query(`DROP INDEX "IDX_consultation_notes_outcome"`);
-        await queryRunner.query(`DROP INDEX "IDX_consultation_notes_doctor_id"`);
-        await queryRunner.query(`DROP INDEX "IDX_consultation_notes_appointment_id"`);
-        await queryRunner.query(`DROP INDEX "IDX_doctor_availability_status"`);
-        await queryRunner.query(`DROP INDEX "IDX_doctor_availability_day_of_week"`);
-        await queryRunner.query(`DROP INDEX "IDX_doctor_availability_doctor_id"`);
-        await queryRunner.query(`DROP INDEX "IDX_appointments_type"`);
-        await queryRunner.query(`DROP INDEX "IDX_appointments_priority"`);
-        await queryRunner.query(`DROP INDEX "IDX_appointments_status"`);
-        await queryRunner.query(`DROP INDEX "IDX_appointments_date"`);
-        await queryRunner.query(`DROP INDEX "IDX_appointments_patient_id"`);
-        await queryRunner.query(`DROP INDEX "IDX_appointments_doctor_id"`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_consultation_notes_appointment_id" ON "consultation_notes" ("appointment_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_consultation_notes_doctor_id" ON "consultation_notes" ("doctor_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_consultation_notes_outcome" ON "consultation_notes" ("outcome")`,
+    );
 
-        // Drop tables
-        await queryRunner.query(`DROP TABLE "appointment_reminders"`);
-        await queryRunner.query(`DROP TABLE "consultation_notes"`);
-        await queryRunner.query(`DROP TABLE "doctor_availability"`);
-        await queryRunner.query(`DROP TABLE "appointments"`);
-    }
+    await queryRunner.query(
+      `CREATE INDEX "IDX_appointment_reminders_appointment_id" ON "appointment_reminders" ("appointment_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_appointment_reminders_status" ON "appointment_reminders" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_appointment_reminders_scheduled_time" ON "appointment_reminders" ("scheduled_time")`,
+    );
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    // Drop foreign key constraints
+    await queryRunner.query(
+      `ALTER TABLE "consultation_notes" DROP CONSTRAINT "FK_consultation_notes_appointment"`,
+    );
+
+    // Drop indexes
+    await queryRunner.query(`DROP INDEX "IDX_appointment_reminders_scheduled_time"`);
+    await queryRunner.query(`DROP INDEX "IDX_appointment_reminders_status"`);
+    await queryRunner.query(`DROP INDEX "IDX_appointment_reminders_appointment_id"`);
+    await queryRunner.query(`DROP INDEX "IDX_consultation_notes_outcome"`);
+    await queryRunner.query(`DROP INDEX "IDX_consultation_notes_doctor_id"`);
+    await queryRunner.query(`DROP INDEX "IDX_consultation_notes_appointment_id"`);
+    await queryRunner.query(`DROP INDEX "IDX_doctor_availability_status"`);
+    await queryRunner.query(`DROP INDEX "IDX_doctor_availability_day_of_week"`);
+    await queryRunner.query(`DROP INDEX "IDX_doctor_availability_doctor_id"`);
+    await queryRunner.query(`DROP INDEX "IDX_appointments_type"`);
+    await queryRunner.query(`DROP INDEX "IDX_appointments_priority"`);
+    await queryRunner.query(`DROP INDEX "IDX_appointments_status"`);
+    await queryRunner.query(`DROP INDEX "IDX_appointments_date"`);
+    await queryRunner.query(`DROP INDEX "IDX_appointments_patient_id"`);
+    await queryRunner.query(`DROP INDEX "IDX_appointments_doctor_id"`);
+
+    // Drop tables
+    await queryRunner.query(`DROP TABLE "appointment_reminders"`);
+    await queryRunner.query(`DROP TABLE "consultation_notes"`);
+    await queryRunner.query(`DROP TABLE "doctor_availability"`);
+    await queryRunner.query(`DROP TABLE "appointments"`);
+  }
 }

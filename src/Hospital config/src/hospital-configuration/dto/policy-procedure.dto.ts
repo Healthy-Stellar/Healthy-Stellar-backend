@@ -2,7 +2,7 @@ export class HospitalPolicyDto {
   id: string;
   title: string;
   policyNumber: string;
-  category: "clinical" | "administrative" | "safety" | "compliance" | "hr";
+  category: 'clinical' | 'administrative' | 'safety' | 'compliance' | 'hr';
   description: string;
   effectiveDate: Date;
   reviewDate: Date;
@@ -10,7 +10,7 @@ export class HospitalPolicyDto {
   departmentsApplicable: string[];
   content: string;
   attachments: string[];
-  status: "active" | "draft" | "archived";
+  status: 'active' | 'draft' | 'archived';
 }
 
 export class MedicalProcedureDto {

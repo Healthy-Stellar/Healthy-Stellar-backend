@@ -9,7 +9,7 @@ export class NotificationService {
   async sendAlertNotification(alert: ClinicalAlert): Promise<void> {
     try {
       const channels = alert.notificationChannels || [];
-      
+
       for (const channel of channels) {
         switch (channel) {
           case 'email':
@@ -63,7 +63,7 @@ export class NotificationService {
   async sendRegulatoryNotification(incident: HealthcareIncident): Promise<void> {
     try {
       const regulatoryBodies = incident.regulatoryBodies || [];
-      
+
       for (const body of regulatoryBodies) {
         await this.sendRegulatoryReport(incident, body);
       }
@@ -74,7 +74,11 @@ export class NotificationService {
     }
   }
 
-  async sendMaintenanceReminder(equipmentId: string, equipmentName: string, dueDate: Date): Promise<void> {
+  async sendMaintenanceReminder(
+    equipmentId: string,
+    equipmentName: string,
+    dueDate: Date,
+  ): Promise<void> {
     try {
       await this.sendEmailNotification({
         title: 'Equipment Maintenance Due',
@@ -113,7 +117,7 @@ export class NotificationService {
   private async sendEmailNotification(alert: ClinicalAlert): Promise<void> {
     // Mock email implementation
     this.logger.log(`EMAIL: ${alert.title} - ${alert.message}`);
-    
+
     // In a real implementation, you would integrate with an email service
     // such as SendGrid, AWS SES, or similar
     const emailData = {
@@ -124,13 +128,13 @@ export class NotificationService {
     };
 
     // Simulate email sending
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   private async sendSmsNotification(alert: ClinicalAlert): Promise<void> {
     // Mock SMS implementation
     this.logger.log(`SMS: ${alert.title} - ${alert.message.substring(0, 100)}...`);
-    
+
     // In a real implementation, you would integrate with an SMS service
     // such as Twilio, AWS SNS, or similar
     const smsData = {
@@ -139,13 +143,13 @@ export class NotificationService {
     };
 
     // Simulate SMS sending
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   private async sendPagerNotification(alert: ClinicalAlert): Promise<void> {
     // Mock pager implementation
     this.logger.log(`PAGER: ${alert.title}`);
-    
+
     // In a real implementation, you would integrate with a pager service
     const pagerData = {
       to: this.getOnCallStaff(alert.department),
@@ -154,13 +158,13 @@ export class NotificationService {
     };
 
     // Simulate pager notification
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   private async sendPhoneNotification(alert: ClinicalAlert): Promise<void> {
     // Mock phone call implementation
     this.logger.log(`PHONE: Calling for ${alert.title}`);
-    
+
     // In a real implementation, you would integrate with a voice service
     // such as Twilio Voice, AWS Connect, or similar
     const callData = {
@@ -169,13 +173,13 @@ export class NotificationService {
     };
 
     // Simulate phone call
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   private async sendDashboardNotification(alert: ClinicalAlert): Promise<void> {
     // Mock dashboard notification implementation
     this.logger.log(`DASHBOARD: ${alert.title} displayed`);
-    
+
     // In a real implementation, you would push to a real-time dashboard
     // using WebSockets, Server-Sent Events, or similar
     const dashboardData = {
@@ -185,13 +189,18 @@ export class NotificationService {
     };
 
     // Simulate dashboard update
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
-  private async sendRegulatoryReport(incident: HealthcareIncident, regulatoryBody: string): Promise<void> {
+  private async sendRegulatoryReport(
+    incident: HealthcareIncident,
+    regulatoryBody: string,
+  ): Promise<void> {
     // Mock regulatory reporting implementation
-    this.logger.log(`REGULATORY: Reporting incident ${incident.incidentNumber} to ${regulatoryBody}`);
-    
+    this.logger.log(
+      `REGULATORY: Reporting incident ${incident.incidentNumber} to ${regulatoryBody}`,
+    );
+
     // In a real implementation, you would integrate with regulatory reporting systems
     const reportData = {
       incidentNumber: incident.incidentNumber,
@@ -205,7 +214,7 @@ export class NotificationService {
     };
 
     // Simulate regulatory report submission
-    await new Promise(resolve => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 200));
   }
 
   private formatEmailBody(alert: ClinicalAlert): string {
@@ -232,38 +241,38 @@ Alert ID: ${alert.id}
   private getRecipientsByPriority(priority: string): string[] {
     // Mock recipient logic based on priority
     const recipients = ['healthcare-alerts@hospital.com'];
-    
+
     if (priority === 'high' || priority === 'critical') {
       recipients.push('charge-nurse@hospital.com', 'supervisor@hospital.com');
     }
-    
+
     if (priority === 'critical') {
       recipients.push('medical-director@hospital.com', 'cio@hospital.com');
     }
-    
+
     return recipients;
   }
 
   private getEmergencyContacts(priority: string): string[] {
     // Mock emergency contact logic
     const contacts = ['+1234567890']; // Charge nurse
-    
+
     if (priority === 'critical') {
       contacts.push('+1234567891', '+1234567892'); // Supervisor, Medical Director
     }
-    
+
     return contacts;
   }
 
   private getOnCallStaff(department: string): string[] {
     // Mock on-call staff logic
     const onCallMap = {
-      'ICU': ['pager-icu-001', 'pager-icu-002'],
-      'Emergency': ['pager-er-001', 'pager-er-002'],
-      'Surgery': ['pager-or-001', 'pager-or-002'],
-      'default': ['pager-charge-001'],
+      ICU: ['pager-icu-001', 'pager-icu-002'],
+      Emergency: ['pager-er-001', 'pager-er-002'],
+      Surgery: ['pager-or-001', 'pager-or-002'],
+      default: ['pager-charge-001'],
     };
-    
+
     return onCallMap[department] || onCallMap['default'];
   }
 }

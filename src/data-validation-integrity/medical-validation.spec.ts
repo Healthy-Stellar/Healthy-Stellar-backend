@@ -6,7 +6,12 @@ import { CptValidationService } from '../services/cpt-validation.service';
 import { LoincValidationService } from '../services/loinc-validation.service';
 import { ClinicalDataQualityService } from '../services/clinical-data-quality.service';
 import { DataGovernanceService } from '../services/data-governance.service';
-import { MedicalCodeRegistry, DataQualityReport, GovernancePolicyEntity, GovernanceComplianceLog } from '../entities/medical-validation.entities';
+import {
+  MedicalCodeRegistry,
+  DataQualityReport,
+  GovernancePolicyEntity,
+  GovernanceComplianceLog,
+} from '../entities/medical-validation.entities';
 import { DataQualityDimension } from '../medical-codes.constants';
 
 const mockRepository = () => ({
@@ -258,7 +263,9 @@ describe('ClinicalDataQualityService', () => {
     expect(report.recordId).toBe('REC001');
     expect(report.recordType).toBe('encounter');
     expect(report.qualityScores).toHaveLength(6);
-    expect(report.qualityScores.map((s) => s.dimension)).toContain(DataQualityDimension.COMPLETENESS);
+    expect(report.qualityScores.map((s) => s.dimension)).toContain(
+      DataQualityDimension.COMPLETENESS,
+    );
     expect(report.overallScore).toBeGreaterThan(0);
     expect(report.overallScore).toBeLessThanOrEqual(100);
   });
@@ -312,7 +319,9 @@ describe('ClinicalDataQualityService', () => {
     };
 
     const report = await service.assessQuality('REC005', 'encounter', data, ['patientId']);
-    expect(report.issues.some((i) => i.field === 'age' && i.issueType === 'OUT_OF_RANGE')).toBe(true);
+    expect(report.issues.some((i) => i.field === 'age' && i.issueType === 'OUT_OF_RANGE')).toBe(
+      true,
+    );
   });
 });
 

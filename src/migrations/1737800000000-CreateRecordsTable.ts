@@ -31,13 +31,7 @@ export class CreateRecordsTable1737800000000 implements MigrationInterface {
           {
             name: 'recordType',
             type: 'enum',
-            enum: [
-              'MEDICAL_REPORT',
-              'LAB_RESULT',
-              'PRESCRIPTION',
-              'IMAGING',
-              'CONSULTATION',
-            ],
+            enum: ['MEDICAL_REPORT', 'LAB_RESULT', 'PRESCRIPTION', 'IMAGING', 'CONSULTATION'],
             isNullable: false,
           },
           {

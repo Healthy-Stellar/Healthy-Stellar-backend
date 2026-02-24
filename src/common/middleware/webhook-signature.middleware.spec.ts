@@ -56,7 +56,7 @@ describe('WebhookSignatureMiddleware', () => {
   });
 
   it('should reject expired timestamp (older than 5 minutes)', () => {
-    const timestamp = Date.now() - (6 * 60 * 1000); // 6 minutes ago
+    const timestamp = Date.now() - 6 * 60 * 1000; // 6 minutes ago
     const body = JSON.stringify({ event: 'test' });
     const signature = createSignature(timestamp, body, mockSecret);
 
@@ -97,6 +97,8 @@ describe('WebhookSignatureMiddleware', () => {
 
   it('should throw error if WEBHOOK_SECRET is not set', () => {
     delete process.env.WEBHOOK_SECRET;
-    expect(() => new WebhookSignatureMiddleware()).toThrow('WEBHOOK_SECRET environment variable is required');
+    expect(() => new WebhookSignatureMiddleware()).toThrow(
+      'WEBHOOK_SECRET environment variable is required',
+    );
   });
 });

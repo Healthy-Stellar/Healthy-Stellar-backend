@@ -69,7 +69,7 @@ export class MissedDoseService {
 
   async findCriticalMissedDoses(): Promise<MissedDose[]> {
     return await this.missedDoseRepository.find({
-      where: { 
+      where: {
         isCriticalMedication: true,
         followUpStatus: FollowUpStatus.PENDING,
       },
@@ -154,14 +154,14 @@ export class MissedDoseService {
 
     const stats = {
       total: missedDoses.length,
-      critical: missedDoses.filter(md => md.isCriticalMedication).length,
-      pending: missedDoses.filter(md => md.followUpStatus === FollowUpStatus.PENDING).length,
-      resolved: missedDoses.filter(md => md.followUpStatus === FollowUpStatus.RESOLVED).length,
+      critical: missedDoses.filter((md) => md.isCriticalMedication).length,
+      pending: missedDoses.filter((md) => md.followUpStatus === FollowUpStatus.PENDING).length,
+      resolved: missedDoses.filter((md) => md.followUpStatus === FollowUpStatus.RESOLVED).length,
       reasonBreakdown: {} as Record<string, number>,
     };
 
     // Calculate reason breakdown
-    missedDoses.forEach(md => {
+    missedDoses.forEach((md) => {
       stats.reasonBreakdown[md.reason] = (stats.reasonBreakdown[md.reason] || 0) + 1;
     });
 

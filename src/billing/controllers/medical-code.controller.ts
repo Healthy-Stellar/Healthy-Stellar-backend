@@ -59,10 +59,7 @@ export class MedicalCodeController {
   @ApiParam({ name: 'codeType', description: 'Code type (CPT, ICD10-CM, etc.)' })
   @ApiParam({ name: 'code', description: 'Medical code value' })
   @ApiResponse({ status: 200, description: 'Medical code retrieved successfully' })
-  async findByCode(
-    @Param('codeType') codeType: CodeType,
-    @Param('code') code: string,
-  ) {
+  async findByCode(@Param('codeType') codeType: CodeType, @Param('code') code: string) {
     return this.medicalCodeService.findByCode(code, codeType);
   }
 
@@ -70,10 +67,7 @@ export class MedicalCodeController {
   @ApiOperation({ summary: 'Get codes by category' })
   @ApiParam({ name: 'codeType', description: 'Code type' })
   @ApiParam({ name: 'category', description: 'Category name' })
-  async getByCategory(
-    @Param('codeType') codeType: CodeType,
-    @Param('category') category: string,
-  ) {
+  async getByCategory(@Param('codeType') codeType: CodeType, @Param('category') category: string) {
     if (codeType === CodeType.CPT) {
       return this.medicalCodeService.getCPTCodesByCategory(category);
     }
@@ -110,9 +104,7 @@ export class MedicalCodeController {
   @Post('validate')
   @ApiOperation({ summary: 'Validate a list of medical codes' })
   @ApiResponse({ status: 200, description: 'Validation result returned' })
-  async validateCodes(
-    @Body() codes: Array<{ code: string; codeType: CodeType }>,
-  ) {
+  async validateCodes(@Body() codes: Array<{ code: string; codeType: CodeType }>) {
     return this.medicalCodeService.validateCodes(codes);
   }
 }

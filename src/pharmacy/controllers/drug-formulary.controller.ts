@@ -29,30 +29,27 @@ export class DrugFormularyController {
   @Get('coverage/:drugId/:insurancePlan')
   async checkCoverage(
     @Param('drugId') drugId: string,
-    @Param('insurancePlan') insurancePlan: string
+    @Param('insurancePlan') insurancePlan: string,
   ) {
     return await this.formularyService.checkCoverage(drugId, insurancePlan);
   }
 
   @Post('cost-calculation')
-  async calculatePatientCost(@Body() body: {
-    drugId: string;
-    insurancePlan: string;
-    quantity: number;
-    drugCost: number;
-  }) {
+  async calculatePatientCost(
+    @Body() body: { drugId: string; insurancePlan: string; quantity: number; drugCost: number },
+  ) {
     return await this.formularyService.calculatePatientCost(
       body.drugId,
       body.insurancePlan,
       body.quantity,
-      body.drugCost
+      body.drugCost,
     );
   }
 
   @Get('alternatives/:drugId/:insurancePlan')
   async getPreferredAlternatives(
     @Param('drugId') drugId: string,
-    @Param('insurancePlan') insurancePlan: string
+    @Param('insurancePlan') insurancePlan: string,
   ) {
     return await this.formularyService.getPreferredAlternatives(drugId, insurancePlan);
   }

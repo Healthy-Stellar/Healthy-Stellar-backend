@@ -9,16 +9,20 @@ import {
   MaxLength,
   MinLength,
   Matches,
-  Type
+  Type,
 } from 'class-validator';
-import { IsValidICD10, IsValidCPT, IsValidMRN } from '../../common/validation/medical-validation.decorators';
+import {
+  IsValidICD10,
+  IsValidCPT,
+  IsValidMRN,
+} from '../../common/validation/medical-validation.decorators';
 
 enum RecordType {
   DIAGNOSIS = 'DIAGNOSIS',
   TREATMENT = 'TREATMENT',
   PRESCRIPTION = 'PRESCRIPTION',
   LAB_RESULT = 'LAB_RESULT',
-  IMAGING = 'IMAGING'
+  IMAGING = 'IMAGING',
 }
 
 export class DiagnosisCodeDto {

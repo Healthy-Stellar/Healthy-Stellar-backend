@@ -84,13 +84,10 @@ export class FileUploadController {
   @ApiResponse({ status: 200, description: 'File downloaded successfully' })
   async download(@Param('id') id: string, @Res() res: Response) {
     const { stream, attachment } = await this.fileUploadService.getFileStream(id);
-    
+
     res.setHeader('Content-Type', attachment.mimeType);
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${attachment.originalFileName}"`,
-    );
-    
+    res.setHeader('Content-Disposition', `attachment; filename="${attachment.originalFileName}"`);
+
     stream.pipe(res);
   }
 

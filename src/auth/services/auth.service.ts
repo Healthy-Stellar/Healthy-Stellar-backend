@@ -1,4 +1,10 @@
-import { Injectable, BadRequestException, UnauthorizedException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  UnauthorizedException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from '../entities/user.entity';
@@ -63,7 +69,9 @@ export class AuthService {
     }
 
     // Validate password
-    const passwordValidation = this.passwordValidationService.validatePassword(registerDto.password);
+    const passwordValidation = this.passwordValidationService.validatePassword(
+      registerDto.password,
+    );
     if (!passwordValidation.isValid) {
       throw new BadRequestException({
         message: 'Password does not meet security requirements',
@@ -139,7 +147,10 @@ export class AuthService {
     // Find user
     const user = await this.userRepository.findOne({ where: { email } });
 
-    if (!user || !(await this.passwordValidationService.verifyPassword(password, user.passwordHash))) {
+    if (
+      !user ||
+      !(await this.passwordValidationService.verifyPassword(password, user.passwordHash))
+    ) {
       // Increment failed login attempts
       if (user) {
         user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
@@ -187,7 +198,10 @@ export class AuthService {
     }
 
     // Check if password has expired (HIPAA requirement)
-    if (user.lastPasswordChangeAt && this.passwordValidationService.isPasswordExpired(user.lastPasswordChangeAt)) {
+    if (
+      user.lastPasswordChangeAt &&
+      this.passwordValidationService.isPasswordExpired(user.lastPasswordChangeAt)
+    ) {
       user.requiresPasswordChange = true;
       await this.userRepository.save(user);
     }
@@ -253,7 +267,11 @@ export class AuthService {
   /**
    * Change password
    */
-  async changePassword(userId: string, changePasswordDto: ChangePasswordDto, ipAddress: string): Promise<void> {
+  async changePassword(
+    userId: string,
+    changePasswordDto: ChangePasswordDto,
+    ipAddress: string,
+  ): Promise<void> {
     const { currentPassword, newPassword, confirmPassword } = changePasswordDto;
 
     if (newPassword !== confirmPassword) {
@@ -267,7 +285,10 @@ export class AuthService {
     }
 
     // Verify current password
-    const isValid = await this.passwordValidationService.verifyPassword(currentPassword, user.passwordHash);
+    const isValid = await this.passwordValidationService.verifyPassword(
+      currentPassword,
+      user.passwordHash,
+    );
     if (!isValid) {
       await this.auditService.logAuthenticationEvent('PASSWORD_CHANGE', false, {
         userId,
@@ -365,6 +386,8 @@ export class AuthService {
    * Generate session ID
    */
   private generateSessionId(): string {
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    return (
+      Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+    );
   }
 }

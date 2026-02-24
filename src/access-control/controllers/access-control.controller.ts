@@ -1,14 +1,4 @@
-import {
-  Controller,
-  Post,
-  Delete,
-  Get,
-  Body,
-  Param,
-  Req,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Post, Delete, Get, Body, Param, Req, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AccessControlService } from '../services/access-control.service';
 import { CreateAccessGrantDto } from '../dto/create-access-grant.dto';

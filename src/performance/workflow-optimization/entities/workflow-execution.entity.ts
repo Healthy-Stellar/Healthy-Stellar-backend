@@ -7,7 +7,13 @@ import {
   Index,
 } from 'typeorm';
 
-export type WorkflowStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
+export type WorkflowStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'paused';
 export type WorkflowType =
   | 'patient-admission'
   | 'patient-discharge'

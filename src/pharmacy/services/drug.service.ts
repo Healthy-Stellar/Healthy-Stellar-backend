@@ -14,7 +14,7 @@ export class DrugService {
   async create(createDrugDto: CreateDrugDto): Promise<Drug> {
     // Check if NDC code already exists
     const existing = await this.drugRepository.findOne({
-      where: { ndcCode: createDrugDto.ndcCode }
+      where: { ndcCode: createDrugDto.ndcCode },
     });
 
     if (existing) {
@@ -28,14 +28,14 @@ export class DrugService {
   async findAll(): Promise<Drug[]> {
     return await this.drugRepository.find({
       where: { isActive: true },
-      relations: ['inventory']
+      relations: ['inventory'],
     });
   }
 
   async findOne(id: string): Promise<Drug> {
     const drug = await this.drugRepository.findOne({
       where: { id },
-      relations: ['inventory']
+      relations: ['inventory'],
     });
 
     if (!drug) {
@@ -47,7 +47,7 @@ export class DrugService {
 
   async findByNDC(ndcCode: string): Promise<Drug> {
     const drug = await this.drugRepository.findOne({
-      where: { ndcCode }
+      where: { ndcCode },
     });
 
     if (!drug) {
@@ -70,7 +70,9 @@ export class DrugService {
   async getControlledSubstances(schedule?: string): Promise<Drug[]> {
     const query = this.drugRepository
       .createQueryBuilder('drug')
-      .where('drug.controlledSubstanceSchedule != :nonControlled', { nonControlled: 'non-controlled' })
+      .where('drug.controlledSubstanceSchedule != :nonControlled', {
+        nonControlled: 'non-controlled',
+      })
       .andWhere('drug.isActive = :active', { active: true });
 
     if (schedule) {

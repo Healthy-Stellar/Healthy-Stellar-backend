@@ -69,7 +69,8 @@ async function bootstrap() {
   // Medical-Grade API Documentation
   const config = new DocumentBuilder()
     .setTitle('Medical Records Management API')
-    .setDescription(`
+    .setDescription(
+      `
       **HIPAA-Compliant Healthcare Management System**
       
       ⚠️ **MEDICAL DATA PRIVACY NOTICE**
@@ -85,16 +86,20 @@ async function bootstrap() {
       - Medical data is anonymized in examples
       - Audit logging for all operations
       - End-to-end encryption
-    `)
+    `,
+    )
     .setVersion('1.0.0')
     .setContact('Medical IT Team', 'https://medical-system.com', 'medical-it@hospital.com')
     .setLicense('Medical License', 'https://medical-system.com/license')
-    .addBearerAuth({
-      type: 'http',
-      scheme: 'bearer',
-      bearerFormat: 'JWT',
-      description: 'Medical staff authentication token'
-    }, 'medical-auth')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Medical staff authentication token',
+      },
+      'medical-auth',
+    )
     .addTag('Medical Records', 'Patient medical record management')
     .addTag('Clinical Templates', 'Standardized clinical documentation')
     .addTag('Consent Management', 'Patient consent and data sharing')
@@ -112,7 +117,7 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  
+
   // Custom CSS for medical branding
   const customCss = `
     .swagger-ui .topbar { background-color: #2c5aa0; }
@@ -136,8 +141,8 @@ async function bootstrap() {
       displayRequestDuration: true,
       filter: true,
       showExtensions: true,
-      showCommonExtensions: true
-    }
+      showCommonExtensions: true,
+    },
   });
 
   const port = process.env.PORT ?? 3000;

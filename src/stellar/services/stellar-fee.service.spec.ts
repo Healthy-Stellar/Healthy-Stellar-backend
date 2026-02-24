@@ -132,17 +132,12 @@ describe('StellarFeeService', () => {
       expect(result).toHaveProperty('baseFee', '100');
       expect(result).toHaveProperty('recommended');
       expect(result).toHaveProperty('networkCongestion');
-      expect(cacheService.set).toHaveBeenCalledWith(
-        'fee-estimate:anchorRecord',
-        result,
-      );
+      expect(cacheService.set).toHaveBeenCalledWith('fee-estimate:anchorRecord', result);
     });
 
     it('should throw BadRequestException for invalid operation', async () => {
       // Act & Assert
-      await expect(service.getFeeEstimate('invalidOperation')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.getFeeEstimate('invalidOperation')).rejects.toThrow(BadRequestException);
     });
 
     it('should calculate higher fee for anchorRecord operation', async () => {
@@ -159,10 +154,10 @@ describe('StellarFeeService', () => {
 
       // Act
       const anchorResult = await service.getFeeEstimate('anchorRecord');
-      
+
       jest.spyOn(cacheService, 'get').mockReturnValue(null);
       jest.spyOn(httpService, 'get').mockReturnValue(of(axiosResponse));
-      
+
       const revokeResult = await service.getFeeEstimate('revokeAccess');
 
       // Assert - anchorRecord should have higher fee due to 1.5x multiplier
@@ -179,9 +174,9 @@ describe('StellarFeeService', () => {
       jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => timeoutError));
 
       // Act & Assert
-      await expect(
-        service.getFeeEstimate('anchorRecord'),
-      ).rejects.toThrow(ServiceUnavailableException);
+      await expect(service.getFeeEstimate('anchorRecord')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
     });
 
     it('should handle Horizon API connection error', async () => {
@@ -192,9 +187,9 @@ describe('StellarFeeService', () => {
       jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => connectionError));
 
       // Act & Assert
-      await expect(
-        service.getFeeEstimate('anchorRecord'),
-      ).rejects.toThrow(ServiceUnavailableException);
+      await expect(service.getFeeEstimate('anchorRecord')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
     });
 
     it('should handle Horizon API HTTP error', async () => {
@@ -211,9 +206,9 @@ describe('StellarFeeService', () => {
       jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => httpError));
 
       // Act & Assert
-      await expect(
-        service.getFeeEstimate('anchorRecord'),
-      ).rejects.toThrow(ServiceUnavailableException);
+      await expect(service.getFeeEstimate('anchorRecord')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
     });
   });
 

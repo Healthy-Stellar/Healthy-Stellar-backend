@@ -11,7 +11,7 @@ import {
   Max,
   Type,
   IsPositive,
-  Matches
+  Matches,
 } from 'class-validator';
 
 enum Frequency {
@@ -19,7 +19,7 @@ enum Frequency {
   TWICE_DAILY = 'TWICE_DAILY',
   THREE_TIMES_DAILY = 'THREE_TIMES_DAILY',
   FOUR_TIMES_DAILY = 'FOUR_TIMES_DAILY',
-  AS_NEEDED = 'AS_NEEDED'
+  AS_NEEDED = 'AS_NEEDED',
 }
 
 enum Route {
@@ -27,7 +27,7 @@ enum Route {
   INTRAVENOUS = 'INTRAVENOUS',
   INTRAMUSCULAR = 'INTRAMUSCULAR',
   TOPICAL = 'TOPICAL',
-  INTRANASAL = 'INTRANASAL'
+  INTRANASAL = 'INTRANASAL',
 }
 
 export class PrescriptionItemDto {

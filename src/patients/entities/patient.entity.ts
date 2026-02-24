@@ -49,15 +49,7 @@ export class Patient {
    * -----------------------------
    */
   @Column({ nullable: true })
-  bloodGroup?:
-    | 'A+'
-    | 'A-'
-    | 'B+'
-    | 'B-'
-    | 'AB+'
-    | 'AB-'
-    | 'O+'
-    | 'O-';
+  bloodGroup?: 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-';
 
   @Column('json', { nullable: true })
   knownAllergies?: string[];

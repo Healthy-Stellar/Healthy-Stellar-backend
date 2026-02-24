@@ -135,7 +135,13 @@ describe('DenialService', () => {
         status: AppealStatus.DRAFT,
         appealReason: createDto.appealReason,
         appealedAmount: createDto.appealedAmount,
-        timeline: [{ date: expect.any(String), action: 'Appeal created', notes: 'Initial appeal draft created' }],
+        timeline: [
+          {
+            date: expect.any(String),
+            action: 'Appeal created',
+            notes: 'Initial appeal draft created',
+          },
+        ],
       };
 
       mockDenialRepository.findOne.mockResolvedValue(mockDenial);

@@ -28,18 +28,15 @@ export const CorrelationId = createParamDecorator(
 /**
  * Extracts the current authenticated user from the request
  */
-export const CurrentUser = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest<Request & { user?: unknown }>();
-    return request.user;
-  },
-);
+export const CurrentUser = createParamDecorator((_data: unknown, ctx: ExecutionContext) => {
+  const request = ctx.switchToHttp().getRequest<Request & { user?: unknown }>();
+  return request.user;
+});
 
 /**
  * Marks an endpoint as a PHI access point (adds enhanced audit logging)
  */
-export const PhiAccess = (resourceType: string) =>
-  SetMetadata('phi_resource_type', resourceType);
+export const PhiAccess = (resourceType: string) => SetMetadata('phi_resource_type', resourceType);
 
 /**
  * Emergency override decorator (break-glass access)

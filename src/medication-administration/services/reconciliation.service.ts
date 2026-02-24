@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
-import { MedicationReconciliation, ReconciliationType, ReconciliationStatus } from '../entities/medication-reconciliation.entity';
+import {
+  MedicationReconciliation,
+  ReconciliationType,
+  ReconciliationStatus,
+} from '../entities/medication-reconciliation.entity';
 import { CreateReconciliationDto } from '../dto/create-reconciliation.dto';
 import { AlertService } from './alert.service';
 
@@ -13,7 +17,9 @@ export class ReconciliationService {
     private alertService: AlertService,
   ) {}
 
-  async create(createReconciliationDto: CreateReconciliationDto): Promise<MedicationReconciliation> {
+  async create(
+    createReconciliationDto: CreateReconciliationDto,
+  ): Promise<MedicationReconciliation> {
     const reconciliation = this.reconciliationRepository.create(createReconciliationDto);
     return await this.reconciliationRepository.save(reconciliation);
   }
@@ -59,9 +65,9 @@ export class ReconciliationService {
 
   async updateStatus(id: string, status: ReconciliationStatus): Promise<MedicationReconciliation> {
     const reconciliation = await this.findOne(id);
-    
+
     const updates: Partial<MedicationReconciliation> = { status };
-    
+
     if (status === ReconciliationStatus.COMPLETED) {
       updates.completedAt = new Date();
     }
@@ -72,7 +78,7 @@ export class ReconciliationService {
 
   async addHomeMedications(id: string, medications: any[]): Promise<MedicationReconciliation> {
     const reconciliation = await this.findOne(id);
-    
+
     await this.reconciliationRepository.update(id, {
       homeMedications: medications,
       status: ReconciliationStatus.IN_PROGRESS,
@@ -83,7 +89,7 @@ export class ReconciliationService {
 
   async addCurrentMedications(id: string, medications: any[]): Promise<MedicationReconciliation> {
     const reconciliation = await this.findOne(id);
-    
+
     await this.reconciliationRepository.update(id, {
       currentMedications: medications,
       status: ReconciliationStatus.IN_PROGRESS,
@@ -92,7 +98,11 @@ export class ReconciliationService {
     return await this.findOne(id);
   }
 
-  async performReconciliation(id: string, pharmacistId: string, pharmacistName: string): Promise<MedicationReconciliation> {
+  async performReconciliation(
+    id: string,
+    pharmacistId: string,
+    pharmacistName: string,
+  ): Promise<MedicationReconciliation> {
     const reconciliation = await this.findOne(id);
 
     if (!reconciliation.homeMedications || !reconciliation.currentMedications) {
@@ -115,7 +125,10 @@ export class ReconciliationService {
       pharmacistName,
       discrepanciesFound: discrepancies,
       reconciledMedications,
-      status: discrepancies.length > 0 ? ReconciliationStatus.REQUIRES_REVIEW : ReconciliationStatus.COMPLETED,
+      status:
+        discrepancies.length > 0
+          ? ReconciliationStatus.REQUIRES_REVIEW
+          : ReconciliationStatus.COMPLETED,
       completedAt: discrepancies.length === 0 ? new Date() : null,
     };
 
@@ -123,7 +136,10 @@ export class ReconciliationService {
 
     // Send alert if discrepancies found
     if (discrepancies.length > 0) {
-      await this.alertService.sendReconciliationAlert(reconciliation.patientId, discrepancies.length);
+      await this.alertService.sendReconciliationAlert(
+        reconciliation.patientId,
+        discrepancies.length,
+      );
     }
 
     return await this.findOne(id);
@@ -224,9 +240,9 @@ export class ReconciliationService {
     const discrepancies = [];
 
     // Check for medications in home list but not in current list
-    homeMedications.forEach(homeMed => {
+    homeMedications.forEach((homeMed) => {
       const currentMed = currentMedications.find(
-        curr => curr.name.toLowerCase() === homeMed.name.toLowerCase(),
+        (curr) => curr.name.toLowerCase() === homeMed.name.toLowerCase(),
       );
 
       if (!currentMed) {
@@ -259,9 +275,9 @@ export class ReconciliationService {
     });
 
     // Check for new medications in current list
-    currentMedications.forEach(currentMed => {
+    currentMedications.forEach((currentMed) => {
       const homeMed = homeMedications.find(
-        home => home.name.toLowerCase() === currentMed.name.toLowerCase(),
+        (home) => home.name.toLowerCase() === currentMed.name.toLowerCase(),
       );
 
       if (!homeMed) {
@@ -276,11 +292,15 @@ export class ReconciliationService {
     return discrepancies;
   }
 
-  private createReconciledList(homeMedications: any[], currentMedications: any[], discrepancies: any[]): any[] {
+  private createReconciledList(
+    homeMedications: any[],
+    currentMedications: any[],
+    discrepancies: any[],
+  ): any[] {
     const reconciled = [];
 
     // Start with current medications as base
-    currentMedications.forEach(currentMed => {
+    currentMedications.forEach((currentMed) => {
       reconciled.push({
         ...currentMed,
         action: 'CONTINUE',
@@ -289,9 +309,9 @@ export class ReconciliationService {
     });
 
     // Add home medications that are missing from current
-    homeMedications.forEach(homeMed => {
+    homeMedications.forEach((homeMed) => {
       const existsInCurrent = currentMedications.find(
-        curr => curr.name.toLowerCase() === homeMed.name.toLowerCase(),
+        (curr) => curr.name.toLowerCase() === homeMed.name.toLowerCase(),
       );
 
       if (!existsInCurrent) {
@@ -315,25 +335,32 @@ export class ReconciliationService {
 
     const stats = {
       total: reconciliations.length,
-      completed: reconciliations.filter(r => r.status === ReconciliationStatus.COMPLETED).length,
-      pending: reconciliations.filter(r => r.status === ReconciliationStatus.PENDING).length,
-      inProgress: reconciliations.filter(r => r.status === ReconciliationStatus.IN_PROGRESS).length,
-      requiresReview: reconciliations.filter(r => r.status === ReconciliationStatus.REQUIRES_REVIEW).length,
-      withDiscrepancies: reconciliations.filter(r => r.discrepanciesFound && r.discrepanciesFound.length > 0).length,
+      completed: reconciliations.filter((r) => r.status === ReconciliationStatus.COMPLETED).length,
+      pending: reconciliations.filter((r) => r.status === ReconciliationStatus.PENDING).length,
+      inProgress: reconciliations.filter((r) => r.status === ReconciliationStatus.IN_PROGRESS)
+        .length,
+      requiresReview: reconciliations.filter(
+        (r) => r.status === ReconciliationStatus.REQUIRES_REVIEW,
+      ).length,
+      withDiscrepancies: reconciliations.filter(
+        (r) => r.discrepanciesFound && r.discrepanciesFound.length > 0,
+      ).length,
       typeBreakdown: {} as Record<string, number>,
       averageDiscrepancies: 0,
     };
 
     // Calculate type breakdown
-    reconciliations.forEach(r => {
-      stats.typeBreakdown[r.reconciliationType] = (stats.typeBreakdown[r.reconciliationType] || 0) + 1;
+    reconciliations.forEach((r) => {
+      stats.typeBreakdown[r.reconciliationType] =
+        (stats.typeBreakdown[r.reconciliationType] || 0) + 1;
     });
 
     // Calculate average discrepancies
     const totalDiscrepancies = reconciliations.reduce((sum, r) => {
       return sum + (r.discrepanciesFound ? r.discrepanciesFound.length : 0);
     }, 0);
-    stats.averageDiscrepancies = reconciliations.length > 0 ? totalDiscrepancies / reconciliations.length : 0;
+    stats.averageDiscrepancies =
+      reconciliations.length > 0 ? totalDiscrepancies / reconciliations.length : 0;
 
     return stats;
   }

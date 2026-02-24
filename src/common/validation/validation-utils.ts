@@ -33,7 +33,7 @@ export class ValidationUtils {
 
     return {
       icd10Codes: [...new Set(icd10Codes)],
-      cptCodes: [...new Set(cptCodes)]
+      cptCodes: [...new Set(cptCodes)],
     };
   }
 

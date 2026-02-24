@@ -1,7 +1,7 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Between } from "typeorm";
-import { AuditLog } from "./entities/audit-log.entity";
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between } from 'typeorm';
+import { AuditLog } from './entities/audit-log.entity';
 
 /**
  * AuditLog Service
@@ -56,10 +56,10 @@ export class AuditLogService {
 
     const [data, total] = await this.auditLogRepository.findAndCount({
       where: { userId },
-      order: { createdAt: "DESC" },
+      order: { createdAt: 'DESC' },
       take: limit,
       skip: (page - 1) * limit,
-      relations: ["user"],
+      relations: ['user'],
     });
 
     const duration = Date.now() - startTime;
@@ -79,20 +79,16 @@ export class AuditLogService {
    * - SELECT specific columns to reduce I/O
    * - EXPLAIN ANALYZE: Should use index scan on idx_audit_logs_created_at
    */
-  async findByDateRange(
-    startDate: Date,
-    endDate: Date,
-    limit: number = 100,
-  ): Promise<AuditLog[]> {
+  async findByDateRange(startDate: Date, endDate: Date, limit: number = 100): Promise<AuditLog[]> {
     const startTime = Date.now();
 
     const logs = await this.auditLogRepository.find({
       where: {
         createdAt: Between(startDate, endDate),
       },
-      order: { createdAt: "DESC" },
+      order: { createdAt: 'DESC' },
       take: limit,
-      select: ["id", "userId", "action", "resourceType", "createdAt"],
+      select: ['id', 'userId', 'action', 'resourceType', 'createdAt'],
     });
 
     const duration = Date.now() - startTime;
@@ -125,10 +121,10 @@ export class AuditLogService {
         userId,
         createdAt: Between(startDate, endDate),
       },
-      order: { createdAt: "DESC" },
+      order: { createdAt: 'DESC' },
       take: limit,
       skip: (page - 1) * limit,
-      relations: ["user"],
+      relations: ['user'],
     });
 
     const duration = Date.now() - startTime;
@@ -147,18 +143,15 @@ export class AuditLogService {
    * - Loads all data in single query, preventing N+1
    * - Select specific columns to reduce data transfer
    */
-  async findRecentForUsers(
-    userIds: string[],
-    limit: number = 10,
-  ): Promise<AuditLog[]> {
+  async findRecentForUsers(userIds: string[], limit: number = 10): Promise<AuditLog[]> {
     const startTime = Date.now();
 
     // Using QueryBuilder to prevent N+1 when eager loading multiple users
     const logs = await this.auditLogRepository
-      .createQueryBuilder("log")
-      .leftJoinAndSelect("log.user", "user")
-      .where("log.userId IN (:...userIds)", { userIds })
-      .orderBy("log.createdAt", "DESC")
+      .createQueryBuilder('log')
+      .leftJoinAndSelect('log.user', 'user')
+      .where('log.userId IN (:...userIds)', { userIds })
+      .orderBy('log.createdAt', 'DESC')
       .limit(limit)
       .getMany();
 
@@ -186,36 +179,36 @@ export class AuditLogService {
     const { page = 1, limit = 20 } = filters;
 
     let query = this.auditLogRepository
-      .createQueryBuilder("log")
-      .leftJoinAndSelect("log.user", "user");
+      .createQueryBuilder('log')
+      .leftJoinAndSelect('log.user', 'user');
 
     if (filters.userId) {
-      query = query.andWhere("log.userId = :userId", {
+      query = query.andWhere('log.userId = :userId', {
         userId: filters.userId,
       });
     }
 
     if (filters.action) {
-      query = query.andWhere("log.action = :action", {
+      query = query.andWhere('log.action = :action', {
         action: filters.action,
       });
     }
 
     if (filters.resourceType) {
-      query = query.andWhere("log.resourceType = :resourceType", {
+      query = query.andWhere('log.resourceType = :resourceType', {
         resourceType: filters.resourceType,
       });
     }
 
     if (filters.startDate && filters.endDate) {
-      query = query.andWhere("log.createdAt BETWEEN :startDate AND :endDate", {
+      query = query.andWhere('log.createdAt BETWEEN :startDate AND :endDate', {
         startDate: filters.startDate,
         endDate: filters.endDate,
       });
     }
 
     const [data, total] = await query
-      .orderBy("log.createdAt", "DESC")
+      .orderBy('log.createdAt', 'DESC')
       .take(limit)
       .skip((page - 1) * limit)
       .getManyAndCount();

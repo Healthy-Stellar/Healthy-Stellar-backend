@@ -25,10 +25,7 @@ export class HealthcareMonitoringController {
   }
 
   @Get('metrics')
-  async getMetrics(
-    @Query('type') type?: string,
-    @Query('hours') hours: number = 24,
-  ) {
+  async getMetrics(@Query('type') type?: string, @Query('hours') hours: number = 24) {
     // Implementation for retrieving specific metrics
     return {
       message: 'Metrics endpoint',

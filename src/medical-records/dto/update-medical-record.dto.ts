@@ -1,10 +1,4 @@
-import {
-  IsString,
-  IsEnum,
-  IsOptional,
-  IsDateString,
-  IsObject,
-} from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsDateString, IsObject } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { RecordType, MedicalRecordStatus } from '../entities/medical-record.entity';
 

@@ -169,7 +169,11 @@ export class DeviceAuthService {
   /**
    * Update device trust level after security assessment
    */
-  async updateTrustLevel(deviceId: string, trustLevel: DeviceTrustLevel, updatedBy: string): Promise<MedicalDevice> {
+  async updateTrustLevel(
+    deviceId: string,
+    trustLevel: DeviceTrustLevel,
+    updatedBy: string,
+  ): Promise<MedicalDevice> {
     const device = await this.deviceRepository.findOneOrFail({ where: { id: deviceId } });
     device.trustLevel = trustLevel;
 
@@ -216,7 +220,9 @@ export class DeviceAuthService {
 
     if (device.status === DeviceStatus.SUSPENDED) {
       if (device.suspendedUntil && device.suspendedUntil > new Date()) {
-        throw new ForbiddenException(`Device suspended until ${device.suspendedUntil.toISOString()}`);
+        throw new ForbiddenException(
+          `Device suspended until ${device.suspendedUntil.toISOString()}`,
+        );
       }
       // Auto-unsuspend if past suspension period
       await this.deviceRepository.update(device.id, {
@@ -250,7 +256,8 @@ export class DeviceAuthService {
 
     await this.auditService.log({
       action: AuditAction.DEVICE_REJECTED,
-      severity: attempts >= this.MAX_FAILED_ATTEMPTS ? AuditSeverity.CRITICAL : AuditSeverity.WARNING,
+      severity:
+        attempts >= this.MAX_FAILED_ATTEMPTS ? AuditSeverity.CRITICAL : AuditSeverity.WARNING,
       resource: 'MedicalDevice',
       resourceId: device.id,
       ipAddress,

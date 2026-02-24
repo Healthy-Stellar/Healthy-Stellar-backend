@@ -10,7 +10,7 @@ export class MedicalDataEncryptionService {
     const cipher = crypto.createCipheriv(
       'aes-256-cbc',
       Buffer.from(this.padKey(this.encryptionKey)),
-      iv
+      iv,
     );
 
     let encrypted = cipher.update(data, 'utf8', 'hex');
@@ -25,7 +25,7 @@ export class MedicalDataEncryptionService {
     const decipher = crypto.createDecipheriv(
       'aes-256-cbc',
       Buffer.from(this.padKey(this.encryptionKey)),
-      iv
+      iv,
     );
 
     let decrypted = decipher.update(encrypted, 'hex', 'utf8');

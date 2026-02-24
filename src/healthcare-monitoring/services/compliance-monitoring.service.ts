@@ -2,7 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { ComplianceCheck, ComplianceType, ComplianceStatus, ComplianceSeverity } from '../entities/compliance-check.entity';
+import {
+  ComplianceCheck,
+  ComplianceType,
+  ComplianceStatus,
+  ComplianceSeverity,
+} from '../entities/compliance-check.entity';
 import { ClinicalAlertService } from './clinical-alert.service';
 
 @Injectable()
@@ -193,7 +198,9 @@ export class ComplianceMonitoringService {
     });
   }
 
-  private async recordComplianceCheck(checkData: Partial<ComplianceCheck>): Promise<ComplianceCheck> {
+  private async recordComplianceCheck(
+    checkData: Partial<ComplianceCheck>,
+  ): Promise<ComplianceCheck> {
     const check = this.complianceRepository.create({
       ...checkData,
       checkDate: new Date(),
@@ -202,8 +209,10 @@ export class ComplianceMonitoringService {
     const savedCheck = await this.complianceRepository.save(check);
 
     // Create alert for non-compliant items
-    if (savedCheck.status === ComplianceStatus.NON_COMPLIANT && 
-        savedCheck.severity === ComplianceSeverity.CRITICAL) {
+    if (
+      savedCheck.status === ComplianceStatus.NON_COMPLIANT &&
+      savedCheck.severity === ComplianceSeverity.CRITICAL
+    ) {
       await this.clinicalAlertService.createAlert({
         alertType: 'REGULATORY_VIOLATION' as any,
         priority: 'critical' as any,
@@ -220,8 +229,8 @@ export class ComplianceMonitoringService {
   async getComplianceStatus(complianceType?: ComplianceType): Promise<any> {
     const query = this.complianceRepository
       .createQueryBuilder('check')
-      .where('check.checkDate >= :since', { 
-        since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // Last 30 days
+      .where('check.checkDate >= :since', {
+        since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Last 30 days
       });
 
     if (complianceType) {
@@ -241,7 +250,7 @@ export class ComplianceMonitoringService {
       recentViolations: [],
     };
 
-    checks.forEach(check => {
+    checks.forEach((check) => {
       // Count by status
       switch (check.status) {
         case ComplianceStatus.COMPLIANT:

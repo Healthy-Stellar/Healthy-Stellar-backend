@@ -1,4 +1,13 @@
-import { IsString, IsEmail, IsOptional, IsEnum, IsDateString, IsBoolean, Length, Matches } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsOptional,
+  IsEnum,
+  IsDateString,
+  IsBoolean,
+  Length,
+  Matches,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Gender, BloodType, MaritalStatus } from '../entities/patient.entity';
 

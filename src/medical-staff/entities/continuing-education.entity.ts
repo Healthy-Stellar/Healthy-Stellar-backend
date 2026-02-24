@@ -3,7 +3,7 @@ export class ContinuingEducation {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Doctor, doctor => doctor.continuingEducation)
+  @ManyToOne(() => Doctor, (doctor) => doctor.continuingEducation)
   doctor: Doctor;
 
   @Column()

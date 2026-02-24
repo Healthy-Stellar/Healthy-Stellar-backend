@@ -25,7 +25,7 @@ import { AuditLogEntity } from '../audit/audit-log.entity';
     HIPAACCompliantErrorHandler,
     MedicalEmergencyErrorFilter,
     AuditLogService,
-    MedicalOperationAuditService
+    MedicalOperationAuditService,
   ],
   exports: [
     MedicalDataSanitizerService,
@@ -36,7 +36,7 @@ import { AuditLogEntity } from '../audit/audit-log.entity';
     HIPAACCompliantErrorHandler,
     MedicalEmergencyErrorFilter,
     AuditLogService,
-    MedicalOperationAuditService
-  ]
+    MedicalOperationAuditService,
+  ],
 })
 export class ValidationModule {}

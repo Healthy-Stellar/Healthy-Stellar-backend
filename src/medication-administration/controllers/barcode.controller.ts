@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Param,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { BarcodeService } from '../services/barcode.service';
 import { BarcodeScanDto } from '../dto/barcode-scan.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -32,10 +24,7 @@ export class BarcodeController {
 
   @Get('failed')
   @Roles('nurse', 'admin')
-  getFailedVerifications(
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
-  ) {
+  getFailedVerifications(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
     const start = new Date(startDate);
     const end = new Date(endDate);
     return this.barcodeService.getFailedVerifications(start, end);

@@ -35,7 +35,7 @@ export class TenantService {
 
   async provisionTenantSchema(slug: string): Promise<void> {
     const schemaName = `tenant_${slug}`;
-    
+
     // Create schema
     await this.dataSource.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
 
@@ -92,10 +92,18 @@ export class TenantService {
     }
 
     // Create indexes
-    await this.dataSource.query(`CREATE INDEX IF NOT EXISTS idx_medical_records_patient ON "${schemaName}".medical_records(patient_id)`);
-    await this.dataSource.query(`CREATE INDEX IF NOT EXISTS idx_billings_patient ON "${schemaName}".billings(patient_id)`);
-    await this.dataSource.query(`CREATE INDEX IF NOT EXISTS idx_prescriptions_patient ON "${schemaName}".prescriptions(patient_id)`);
-    await this.dataSource.query(`CREATE INDEX IF NOT EXISTS idx_lab_orders_patient ON "${schemaName}".lab_orders(patient_id)`);
+    await this.dataSource.query(
+      `CREATE INDEX IF NOT EXISTS idx_medical_records_patient ON "${schemaName}".medical_records(patient_id)`,
+    );
+    await this.dataSource.query(
+      `CREATE INDEX IF NOT EXISTS idx_billings_patient ON "${schemaName}".billings(patient_id)`,
+    );
+    await this.dataSource.query(
+      `CREATE INDEX IF NOT EXISTS idx_prescriptions_patient ON "${schemaName}".prescriptions(patient_id)`,
+    );
+    await this.dataSource.query(
+      `CREATE INDEX IF NOT EXISTS idx_lab_orders_patient ON "${schemaName}".lab_orders(patient_id)`,
+    );
   }
 
   private async seedTenantData(schemaName: string): Promise<void> {
@@ -137,10 +145,10 @@ export class TenantService {
   async delete(id: string): Promise<void> {
     const tenant = await this.findById(id);
     const schemaName = `tenant_${tenant.slug}`;
-    
+
     // Drop schema (CASCADE will drop all tables)
     await this.dataSource.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
-    
+
     // Delete tenant record
     await this.tenantRepository.remove(tenant);
   }

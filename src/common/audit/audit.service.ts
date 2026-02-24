@@ -152,18 +152,16 @@ export class AuditService {
   /**
    * Get audit logs for investigation
    */
-  async getAuditLogs(
-    filters?: {
-      userId?: string;
-      action?: AuditAction;
-      startDate?: Date;
-      endDate?: Date;
-      severity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-      requiresInvestigation?: boolean;
-      limit?: number;
-      offset?: number;
-    },
-  ): Promise<AuditLogEntity[]> {
+  async getAuditLogs(filters?: {
+    userId?: string;
+    action?: AuditAction;
+    startDate?: Date;
+    endDate?: Date;
+    severity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    requiresInvestigation?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<AuditLogEntity[]> {
     let query = this.auditLogRepository.createQueryBuilder('audit');
 
     if (filters?.userId) {
@@ -215,7 +213,7 @@ export class AuditService {
     return this.auditLogRepository
       .createQueryBuilder('audit')
       .where('audit.createdAt >= :startDate', { startDate })
-      .andWhere("audit.severity IN (:...severities)", { severities: ['HIGH', 'CRITICAL'] })
+      .andWhere('audit.severity IN (:...severities)', { severities: ['HIGH', 'CRITICAL'] })
       .orderBy('audit.createdAt', 'DESC')
       .getMany();
   }

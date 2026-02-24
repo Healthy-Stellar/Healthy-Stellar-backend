@@ -1,16 +1,12 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import {
   TelemedicineDocument,
   DocumentType,
   DocumentStatus,
-} from "../entities/telemedicine-document.entity";
-import * as crypto from "crypto";
+} from '../entities/telemedicine-document.entity';
+import * as crypto from 'crypto';
 
 export interface CreateDocumentDto {
   patientId: string;
@@ -51,7 +47,7 @@ export class TelemedicineDocumentationService {
       qualityMetrics: this.calculateQualityMetrics(dto),
       auditTrail: [
         {
-          action: "CREATED",
+          action: 'CREATED',
           performedBy: dto.providerId,
           timestamp: new Date(),
         },
@@ -65,20 +61,15 @@ export class TelemedicineDocumentationService {
     const document = await this.findOne(dto.documentId);
 
     if (document.providerId !== dto.providerId) {
-      throw new BadRequestException(
-        "Only the authoring provider can sign this document",
-      );
+      throw new BadRequestException('Only the authoring provider can sign this document');
     }
 
     if (document.status === DocumentStatus.SIGNED) {
-      throw new BadRequestException("Document is already signed");
+      throw new BadRequestException('Document is already signed');
     }
 
     // Generate electronic signature hash
-    const signatureHash = this.generateElectronicSignature(
-      dto.signature,
-      document,
-    );
+    const signatureHash = this.generateElectronicSignature(dto.signature, document);
 
     document.status = DocumentStatus.SIGNED;
     document.isSigned = true;
@@ -86,7 +77,7 @@ export class TelemedicineDocumentationService {
     document.signedAt = new Date();
     document.signedBy = dto.providerId;
 
-    this.addAuditEntry(document, "SIGNED", dto.providerId);
+    this.addAuditEntry(document, 'SIGNED', dto.providerId);
 
     return this.documentRepository.save(document);
   }
@@ -100,7 +91,7 @@ export class TelemedicineDocumentationService {
     const originalDocument = await this.findOne(documentId);
 
     if (!originalDocument.isSigned) {
-      throw new BadRequestException("Only signed documents can be amended");
+      throw new BadRequestException('Only signed documents can be amended');
     }
 
     // Create amendment
@@ -120,7 +111,7 @@ export class TelemedicineDocumentationService {
       signedBy: null,
       auditTrail: [
         {
-          action: "AMENDED",
+          action: 'AMENDED',
           performedBy: providerId,
           timestamp: new Date(),
           changes: { reason: amendmentReason },
@@ -151,28 +142,24 @@ export class TelemedicineDocumentationService {
     const document = await this.findOne(documentId);
 
     if (!document.isSigned) {
-      throw new BadRequestException(
-        "Only signed documents can be shared with patients",
-      );
+      throw new BadRequestException('Only signed documents can be shared with patients');
     }
 
     document.sharedWithPatient = true;
     document.sharedAt = new Date();
 
-    this.addAuditEntry(document, "SHARED_WITH_PATIENT", document.providerId);
+    this.addAuditEntry(document, 'SHARED_WITH_PATIENT', document.providerId);
 
     return this.documentRepository.save(document);
   }
 
-  async markAsViewedByPatient(
-    documentId: string,
-  ): Promise<TelemedicineDocument> {
+  async markAsViewedByPatient(documentId: string): Promise<TelemedicineDocument> {
     const document = await this.findOne(documentId);
 
     document.patientViewed = true;
     document.patientViewedAt = new Date();
 
-    this.addAuditEntry(document, "VIEWED_BY_PATIENT", document.patientId);
+    this.addAuditEntry(document, 'VIEWED_BY_PATIENT', document.patientId);
 
     return this.documentRepository.save(document);
   }
@@ -189,16 +176,14 @@ export class TelemedicineDocumentationService {
 
     return this.documentRepository.find({
       where: whereClause,
-      order: { createdAt: "DESC" },
+      order: { createdAt: 'DESC' },
     });
   }
 
-  async getVisitDocuments(
-    virtualVisitId: string,
-  ): Promise<TelemedicineDocument[]> {
+  async getVisitDocuments(virtualVisitId: string): Promise<TelemedicineDocument[]> {
     return this.documentRepository.find({
       where: { virtualVisitId, deletedAt: null },
-      order: { createdAt: "ASC" },
+      order: { createdAt: 'ASC' },
     });
   }
 
@@ -214,25 +199,19 @@ export class TelemedicineDocumentationService {
     if (document.documentType === DocumentType.CLINICAL_NOTE) {
       const soap = document.soapNote;
 
-      if (!soap?.subjective?.chiefComplaint)
-        missingFields.push("Chief Complaint");
-      if (!soap?.subjective?.historyOfPresentIllness) missingFields.push("HPI");
-      if (!soap?.objective?.vitalSigns) missingFields.push("Vital Signs");
-      if (
-        !soap?.assessment?.diagnosis ||
-        soap.assessment.diagnosis.length === 0
-      ) {
-        missingFields.push("Diagnosis");
+      if (!soap?.subjective?.chiefComplaint) missingFields.push('Chief Complaint');
+      if (!soap?.subjective?.historyOfPresentIllness) missingFields.push('HPI');
+      if (!soap?.objective?.vitalSigns) missingFields.push('Vital Signs');
+      if (!soap?.assessment?.diagnosis || soap.assessment.diagnosis.length === 0) {
+        missingFields.push('Diagnosis');
       }
-      if (!soap?.plan?.treatment) missingFields.push("Treatment Plan");
+      if (!soap?.plan?.treatment) missingFields.push('Treatment Plan');
     }
 
-    if (!document.isSigned) missingFields.push("Electronic Signature");
+    if (!document.isSigned) missingFields.push('Electronic Signature');
 
-    const totalFields =
-      document.documentType === DocumentType.CLINICAL_NOTE ? 6 : 2;
-    const completenessScore =
-      ((totalFields - missingFields.length) / totalFields) * 100;
+    const totalFields = document.documentType === DocumentType.CLINICAL_NOTE ? 6 : 2;
+    const completenessScore = ((totalFields - missingFields.length) / totalFields) * 100;
 
     return {
       isComplete: missingFields.length === 0,
@@ -260,15 +239,8 @@ export class TelemedicineDocumentationService {
   }
 
   private validateSoapNote(soapNote: any): void {
-    if (
-      !soapNote.subjective &&
-      !soapNote.objective &&
-      !soapNote.assessment &&
-      !soapNote.plan
-    ) {
-      throw new BadRequestException(
-        "SOAP note must contain at least one section",
-      );
+    if (!soapNote.subjective && !soapNote.objective && !soapNote.assessment && !soapNote.plan) {
+      throw new BadRequestException('SOAP note must contain at least one section');
     }
   }
 
@@ -290,7 +262,7 @@ export class TelemedicineDocumentationService {
 
     // Calculate completeness
     let completedFields = 0;
-    let totalFields = 4;
+    const totalFields = 4;
 
     if (dto.content) completedFields++;
     if (dto.soapNote) completedFields++;
@@ -303,49 +275,42 @@ export class TelemedicineDocumentationService {
   }
 
   private formatSoapNoteAsText(soapNote: any): string {
-    let text = "";
+    let text = '';
 
     if (soapNote.subjective) {
-      text += "SUBJECTIVE:\n";
-      text += `Chief Complaint: ${soapNote.subjective.chiefComplaint || "N/A"}\n`;
-      text += `HPI: ${soapNote.subjective.historyOfPresentIllness || "N/A"}\n`;
-      text += `Medications: ${soapNote.subjective.medications?.join(", ") || "None"}\n`;
-      text += `Allergies: ${soapNote.subjective.allergies?.join(", ") || "NKDA"}\n\n`;
+      text += 'SUBJECTIVE:\n';
+      text += `Chief Complaint: ${soapNote.subjective.chiefComplaint || 'N/A'}\n`;
+      text += `HPI: ${soapNote.subjective.historyOfPresentIllness || 'N/A'}\n`;
+      text += `Medications: ${soapNote.subjective.medications?.join(', ') || 'None'}\n`;
+      text += `Allergies: ${soapNote.subjective.allergies?.join(', ') || 'NKDA'}\n\n`;
     }
 
     if (soapNote.objective) {
-      text += "OBJECTIVE:\n";
+      text += 'OBJECTIVE:\n';
       text += `Vital Signs: ${JSON.stringify(soapNote.objective.vitalSigns || {})}\n`;
-      text += `Physical Exam: ${soapNote.objective.physicalExam || "N/A"}\n\n`;
+      text += `Physical Exam: ${soapNote.objective.physicalExam || 'N/A'}\n\n`;
     }
 
     if (soapNote.assessment) {
-      text += "ASSESSMENT:\n";
-      text += `Diagnosis: ${soapNote.assessment.diagnosis?.join(", ") || "N/A"}\n\n`;
+      text += 'ASSESSMENT:\n';
+      text += `Diagnosis: ${soapNote.assessment.diagnosis?.join(', ') || 'N/A'}\n\n`;
     }
 
     if (soapNote.plan) {
-      text += "PLAN:\n";
-      text += `Treatment: ${soapNote.plan.treatment || "N/A"}\n`;
-      text += `Follow-up: ${soapNote.plan.followUp || "N/A"}\n`;
+      text += 'PLAN:\n';
+      text += `Treatment: ${soapNote.plan.treatment || 'N/A'}\n`;
+      text += `Follow-up: ${soapNote.plan.followUp || 'N/A'}\n`;
     }
 
     return text;
   }
 
-  private generateElectronicSignature(
-    signature: string,
-    document: TelemedicineDocument,
-  ): string {
+  private generateElectronicSignature(signature: string, document: TelemedicineDocument): string {
     const dataToSign = `${document.id}${document.content}${signature}${new Date().toISOString()}`;
-    return crypto.createHash("sha256").update(dataToSign).digest("hex");
+    return crypto.createHash('sha256').update(dataToSign).digest('hex');
   }
 
-  private addAuditEntry(
-    document: TelemedicineDocument,
-    action: string,
-    performedBy: string,
-  ): void {
+  private addAuditEntry(document: TelemedicineDocument, action: string, performedBy: string): void {
     const auditTrail = document.auditTrail || [];
     auditTrail.push({
       action,
@@ -387,7 +352,7 @@ export class TelemedicineDocumentationService {
     document.deletedAt = new Date();
     document.status = DocumentStatus.DELETED;
 
-    this.addAuditEntry(document, "DELETED", deletedBy);
+    this.addAuditEntry(document, 'DELETED', deletedBy);
 
     await this.documentRepository.save(document);
   }

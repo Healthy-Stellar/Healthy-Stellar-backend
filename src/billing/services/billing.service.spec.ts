@@ -57,7 +57,9 @@ describe('BillingService', () => {
       serviceDate: '2024-01-15',
       providerId: 'provider-123',
       providerName: 'Dr. Smith',
-      diagnosisCodes: [{ code: 'J06.9', description: 'Upper respiratory infection', isPrimary: true }],
+      diagnosisCodes: [
+        { code: 'J06.9', description: 'Upper respiratory infection', isPrimary: true },
+      ],
       lineItems: [
         {
           serviceDate: '2024-01-15',
@@ -94,8 +96,20 @@ describe('BillingService', () => {
       const multiLineDto = {
         ...createDto,
         lineItems: [
-          { serviceDate: '2024-01-15', cptCode: '99213', cptDescription: 'Office visit', unitCharge: 150, units: 1 },
-          { serviceDate: '2024-01-15', cptCode: '36415', cptDescription: 'Blood draw', unitCharge: 25, units: 1 },
+          {
+            serviceDate: '2024-01-15',
+            cptCode: '99213',
+            cptDescription: 'Office visit',
+            unitCharge: 150,
+            units: 1,
+          },
+          {
+            serviceDate: '2024-01-15',
+            cptCode: '36415',
+            cptDescription: 'Blood draw',
+            unitCharge: 25,
+            units: 1,
+          },
         ],
       };
 
@@ -220,7 +234,11 @@ describe('BillingService', () => {
       };
 
       mockLineItemRepository.findOne.mockResolvedValue(mockLineItem);
-      mockLineItemRepository.save.mockResolvedValue({ ...mockLineItem, unitCharge: 175, totalCharge: 175 });
+      mockLineItemRepository.save.mockResolvedValue({
+        ...mockLineItem,
+        unitCharge: 175,
+        totalCharge: 175,
+      });
       mockBillingRepository.findOne.mockResolvedValue(mockBilling);
       mockBillingRepository.save.mockResolvedValue(mockBilling);
 

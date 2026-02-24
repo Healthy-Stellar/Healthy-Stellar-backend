@@ -15,7 +15,9 @@ export class SorobanQueueService {
 
   async dispatchGrantOrRevoke(payload: SorobanGrantDispatchPayload): Promise<string> {
     const transactionHash = this.buildDeterministicMockHash(payload);
-    this.logger.log(`Queued Soroban ${payload.action} tx for grant ${payload.grantId}: ${transactionHash}`);
+    this.logger.log(
+      `Queued Soroban ${payload.action} tx for grant ${payload.grantId}: ${transactionHash}`,
+    );
 
     return Promise.resolve(transactionHash);
   }

@@ -1,4 +1,15 @@
-import { IsString, IsEmail, IsEnum, IsArray, IsDateString, IsNumber, IsOptional, IsPhoneNumber, ValidateNested, Min } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsEnum,
+  IsArray,
+  IsDateString,
+  IsNumber,
+  IsOptional,
+  IsPhoneNumber,
+  ValidateNested,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 class CredentialDto {

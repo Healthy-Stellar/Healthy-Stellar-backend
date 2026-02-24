@@ -8,7 +8,7 @@ import { createMockAuditLog } from '../../../test/utils/hipaa-compliance.util';
 
 /**
  * Medical Records Service Tests
- * 
+ *
  * Tests medical record CRUD operations, access control, versioning, and HIPAA compliance
  */
 describe('MedicalRecordsService', () => {
@@ -159,9 +159,7 @@ describe('MedicalRecordsService', () => {
     it('should create new version on update', async () => {
       // Arrange
       const patient = aPatient().build();
-      const existingRecord = aMedicalRecord(patient.id)
-        .withId('test-record-id')
-        .build();
+      const existingRecord = aMedicalRecord(patient.id).withId('test-record-id').build();
       existingRecord.version = 1;
 
       const updateData = { description: 'Updated description' };
@@ -197,9 +195,7 @@ describe('MedicalRecordsService', () => {
     it('should enforce provider access control', async () => {
       // Arrange
       const patient = aPatient().build();
-      const record = aMedicalRecord(patient.id)
-        .withProvider('authorized-provider-id')
-        .build();
+      const record = aMedicalRecord(patient.id).withProvider('authorized-provider-id').build();
 
       mockRepository.findOneBy.mockResolvedValue(record);
 
@@ -302,7 +298,7 @@ describe('MedicalRecordsService', () => {
       ];
 
       // Assert
-      records.forEach(record => {
+      records.forEach((record) => {
         expect(record).toBeAnonymized();
       });
     });

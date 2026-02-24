@@ -79,7 +79,8 @@ export class MfaController {
         success: true,
         message: result.message,
         backupCodes: result.backupCodes,
-        warning: 'Save backup codes in a secure location. You can use them to access your account if you lose access to your authenticator.',
+        warning:
+          'Save backup codes in a secure location. You can use them to access your account if you lose access to your authenticator.',
       };
     } catch (error) {
       await this.auditService.logAuthenticationEvent(AuditAction.MFA_VERIFIED, false, {
@@ -154,7 +155,10 @@ export class MfaController {
   ): Promise<any> {
     const user = req.user as JwtPayload;
     // Verify with MFA code first
-    const isValid = await this.mfaService.verifyMfaCode(user.userId, backupCodesDto.verificationCode);
+    const isValid = await this.mfaService.verifyMfaCode(
+      user.userId,
+      backupCodesDto.verificationCode,
+    );
 
     if (!isValid) {
       throw new BadRequestException('Invalid MFA code');
@@ -186,7 +190,10 @@ export class MfaController {
   async disableMfa(@Body() backupCodesDto: BackupCodesDto, @Req() req: Request): Promise<any> {
     const user = req.user as JwtPayload;
     // Verify with MFA code first
-    const isValid = await this.mfaService.verifyMfaCode(user.userId, backupCodesDto.verificationCode);
+    const isValid = await this.mfaService.verifyMfaCode(
+      user.userId,
+      backupCodesDto.verificationCode,
+    );
 
     if (!isValid) {
       throw new BadRequestException('Invalid MFA code');

@@ -54,7 +54,9 @@ describe('PaymentService', () => {
     service = module.get<PaymentService>(PaymentService);
     paymentRepository = module.get<Repository<Payment>>(getRepositoryToken(Payment));
     billingRepository = module.get<Repository<Billing>>(getRepositoryToken(Billing));
-    lineItemRepository = module.get<Repository<BillingLineItem>>(getRepositoryToken(BillingLineItem));
+    lineItemRepository = module.get<Repository<BillingLineItem>>(
+      getRepositoryToken(BillingLineItem),
+    );
     jest.clearAllMocks();
   });
 
@@ -84,7 +86,11 @@ describe('PaymentService', () => {
         billingId: 'billing-123',
         status: PaymentStatus.PENDING,
       };
-      const processedPayment = { ...mockPayment, status: PaymentStatus.COMPLETED, postedDate: new Date() };
+      const processedPayment = {
+        ...mockPayment,
+        status: PaymentStatus.COMPLETED,
+        postedDate: new Date(),
+      };
 
       mockBillingRepository.findOne.mockResolvedValue(mockBilling);
       mockPaymentRepository.create.mockReturnValue(mockPayment);

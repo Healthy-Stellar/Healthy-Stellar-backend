@@ -55,28 +55,18 @@ export class ReportService {
       }),
     ]);
 
-    const totalCharges = billings.reduce(
-      (sum, b) => sum + Number(b.totalCharges),
-      0,
-    );
+    const totalCharges = billings.reduce((sum, b) => sum + Number(b.totalCharges), 0);
     const totalPayments = payments.reduce((sum, p) => sum + Number(p.amount), 0);
-    const totalAdjustments = billings.reduce(
-      (sum, b) => sum + Number(b.totalAdjustments),
-      0,
-    );
+    const totalAdjustments = billings.reduce((sum, b) => sum + Number(b.totalAdjustments), 0);
     const totalRefunds = payments
       .filter((p) => p.amount < 0)
       .reduce((sum, p) => sum + Math.abs(Number(p.amount)), 0);
 
     const outstandingAR = billings.reduce((sum, b) => sum + Number(b.balance), 0);
 
-    const claimsSubmitted = claims.filter(
-      (c) => c.status !== ClaimStatus.DRAFT,
-    ).length;
+    const claimsSubmitted = claims.filter((c) => c.status !== ClaimStatus.DRAFT).length;
     const claimsPaid = claims.filter((c) => c.status === ClaimStatus.PAID).length;
-    const claimsDenied = claims.filter(
-      (c) => c.status === ClaimStatus.DENIED,
-    ).length;
+    const claimsDenied = claims.filter((c) => c.status === ClaimStatus.DENIED).length;
     const claimsPending = claims.filter(
       (c) =>
         c.status === ClaimStatus.PENDING ||
@@ -97,13 +87,11 @@ export class ReportService {
     const paidClaims = claims.filter((c) => c.adjudicatedAt);
     const totalDaysToPayment = paidClaims.reduce((sum, c) => {
       const days = Math.floor(
-        (c.adjudicatedAt!.getTime() - c.submittedAt!.getTime()) /
-          (1000 * 60 * 60 * 24),
+        (c.adjudicatedAt.getTime() - c.submittedAt.getTime()) / (1000 * 60 * 60 * 24),
       );
       return sum + days;
     }, 0);
-    const averageDaysToPayment =
-      paidClaims.length > 0 ? totalDaysToPayment / paidClaims.length : 0;
+    const averageDaysToPayment = paidClaims.length > 0 ? totalDaysToPayment / paidClaims.length : 0;
 
     const arAging = await this.calculateARAgingForPeriod(endDate);
 
@@ -146,8 +134,7 @@ export class ReportService {
           totalCharges - totalAdjustments > 0
             ? (totalPayments / (totalCharges - totalAdjustments)) * 100
             : 0,
-        adjustmentRate:
-          totalCharges > 0 ? (totalAdjustments / totalCharges) * 100 : 0,
+        adjustmentRate: totalCharges > 0 ? (totalAdjustments / totalCharges) * 100 : 0,
         badDebtRate: 0,
         costToCollect: 0,
       },
@@ -157,9 +144,7 @@ export class ReportService {
     return this.reportRepository.save(report);
   }
 
-  private async calculateARAgingForPeriod(
-    asOfDate: Date,
-  ): Promise<{
+  private async calculateARAgingForPeriod(asOfDate: Date): Promise<{
     current: number;
     days30: number;
     days60: number;
@@ -241,23 +226,17 @@ export class ReportService {
       payerMap[payerName].claimCount += 1;
     }
 
-    const totalRevenue = Object.values(payerMap).reduce(
-      (sum, p) => sum + p.payments,
-      0,
-    );
+    const totalRevenue = Object.values(payerMap).reduce((sum, p) => sum + p.payments, 0);
 
     return Object.values(payerMap)
       .map((payer) => ({
         ...payer,
-        percentageOfRevenue:
-          totalRevenue > 0 ? (payer.payments / totalRevenue) * 100 : 0,
+        percentageOfRevenue: totalRevenue > 0 ? (payer.payments / totalRevenue) * 100 : 0,
       }))
       .sort((a, b) => b.payments - a.payments);
   }
 
-  private calculateTopDenialReasons(
-    denials: ClaimDenial[],
-  ): Array<{
+  private calculateTopDenialReasons(denials: ClaimDenial[]): Array<{
     reason: string;
     count: number;
     amount: number;
@@ -287,9 +266,7 @@ export class ReportService {
       .slice(0, 10);
   }
 
-  private calculateTopProcedures(
-    billings: Billing[],
-  ): Array<{
+  private calculateTopProcedures(billings: Billing[]): Array<{
     cptCode: string;
     description: string;
     count: number;
@@ -327,9 +304,7 @@ export class ReportService {
       .slice(0, 20);
   }
 
-  private calculateProviderPerformance(
-    billings: Billing[],
-  ): Array<{
+  private calculateProviderPerformance(billings: Billing[]): Array<{
     providerId: string;
     providerName: string;
     charges: number;
@@ -366,8 +341,7 @@ export class ReportService {
       .map(([providerId, data]) => ({
         providerId,
         ...data,
-        avgRevenuePerEncounter:
-          data.encounters > 0 ? data.collections / data.encounters : 0,
+        avgRevenuePerEncounter: data.encounters > 0 ? data.collections / data.encounters : 0,
       }))
       .sort((a, b) => b.collections - a.collections);
   }
@@ -375,12 +349,14 @@ export class ReportService {
   private async calculateMonthlyTrend(
     startDate: Date,
     endDate: Date,
-  ): Promise<Array<{
-    month: string;
-    charges: number;
-    payments: number;
-    adjustments: number;
-  }>> {
+  ): Promise<
+    Array<{
+      month: string;
+      charges: number;
+      payments: number;
+      adjustments: number;
+    }>
+  > {
     const trend: Array<{
       month: string;
       charges: number;
@@ -410,10 +386,7 @@ export class ReportService {
         month: `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`,
         charges: billings.reduce((sum, b) => sum + Number(b.totalCharges), 0),
         payments: payments.reduce((sum, p) => sum + Number(p.amount), 0),
-        adjustments: billings.reduce(
-          (sum, b) => sum + Number(b.totalAdjustments),
-          0,
-        ),
+        adjustments: billings.reduce((sum, b) => sum + Number(b.totalAdjustments), 0),
       });
 
       current.setMonth(current.getMonth() + 1);
@@ -492,11 +465,7 @@ export class ReportService {
     }
 
     summary.total =
-      summary.current +
-      summary.days30 +
-      summary.days60 +
-      summary.days90 +
-      summary.days120Plus;
+      summary.current + summary.days30 + summary.days60 + summary.days90 + summary.days120Plus;
 
     return { summary, details };
   }
@@ -525,7 +494,8 @@ export class ReportService {
       totalDenials: denials.length,
       totalDeniedAmount: denials.reduce((sum, d) => sum + Number(d.deniedAmount), 0),
       appealedCount: denials.filter((d) => d.appeals && d.appeals.length > 0).length,
-      overturnedCount: denials.filter((d) => d.isResolved && d.resolutionType === 'appeal_approved').length,
+      overturnedCount: denials.filter((d) => d.isResolved && d.resolutionType === 'appeal_approved')
+        .length,
       recoveredAmount: denials
         .filter((d) => d.isResolved)
         .reduce((sum, d) => sum + Number(d.recoveredAmount || 0), 0),
@@ -593,10 +563,7 @@ export class ReportService {
     }
 
     if (searchDto.startDate && searchDto.endDate) {
-      where.generatedAt = Between(
-        new Date(searchDto.startDate),
-        new Date(searchDto.endDate),
-      );
+      where.generatedAt = Between(new Date(searchDto.startDate), new Date(searchDto.endDate));
     }
 
     return this.reportRepository.find({

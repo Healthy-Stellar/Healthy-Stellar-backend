@@ -46,7 +46,9 @@ export class ReportingOptimizationService {
 
     // Check cache first
     if (options.cacheKey) {
-      const cachedResult = this.cacheService.get<any>(`report:${options.cacheKey}:${page}:${pageSize}`);
+      const cachedResult = this.cacheService.get<any>(
+        `report:${options.cacheKey}:${page}:${pageSize}`,
+      );
       if (cachedResult) return cachedResult;
     }
 
@@ -105,16 +107,21 @@ export class ReportingOptimizationService {
   ): Promise<{ created: boolean; refreshed: boolean }> {
     try {
       // Check if view exists
-      const exists = await this.dataSource.query(`
+      const exists = await this.dataSource.query(
+        `
         SELECT matviewname FROM pg_matviews WHERE matviewname = $1;
-      `, [viewName]);
+      `,
+        [viewName],
+      );
 
       if (exists.length > 0) {
         // Refresh existing view
-        await this.dataSource.query(`REFRESH MATERIALIZED VIEW CONCURRENTLY "${viewName}";`).catch(async () => {
-          // Fall back to non-concurrent refresh
-          await this.dataSource.query(`REFRESH MATERIALIZED VIEW "${viewName}";`);
-        });
+        await this.dataSource
+          .query(`REFRESH MATERIALIZED VIEW CONCURRENTLY "${viewName}";`)
+          .catch(async () => {
+            // Fall back to non-concurrent refresh
+            await this.dataSource.query(`REFRESH MATERIALIZED VIEW "${viewName}";`);
+          });
 
         this.logger.log(`Materialized view refreshed: ${viewName}`);
         return { created: false, refreshed: true };
@@ -123,11 +130,15 @@ export class ReportingOptimizationService {
         await this.dataSource.query(`CREATE MATERIALIZED VIEW "${viewName}" AS ${query};`);
 
         // Create unique index for concurrent refresh support
-        await this.dataSource.query(`
+        await this.dataSource
+          .query(
+            `
           CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_${viewName}_id ON "${viewName}"(id);
-        `).catch(() => {
-          // Index creation may fail if there's no id column
-        });
+        `,
+          )
+          .catch(() => {
+            // Index creation may fail if there's no id column
+          });
 
         this.logger.log(`Materialized view created: ${viewName}`);
         return { created: true, refreshed: false };
@@ -234,15 +245,11 @@ export class ReportingOptimizationService {
 
     const cacheKey = `${reportType}:${dateFrom.toISOString()}:${dateTo.toISOString()}`;
 
-    return this.executePaginatedReport(
-      template,
-      [dateFrom, dateTo],
-      {
-        page: options?.page,
-        pageSize: options?.pageSize,
-        cacheKey,
-        cacheTtlMs: 600_000, // 10 minutes
-      },
-    );
+    return this.executePaginatedReport(template, [dateFrom, dateTo], {
+      page: options?.page,
+      pageSize: options?.pageSize,
+      cacheKey,
+      cacheTtlMs: 600_000, // 10 minutes
+    });
   }
 }

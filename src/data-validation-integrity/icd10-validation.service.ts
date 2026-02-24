@@ -83,7 +83,10 @@ export class Icd10ValidationService {
     return result;
   }
 
-  async validateCrosswalk(icd10Code: string, cptCodes: string[]): Promise<{
+  async validateCrosswalk(
+    icd10Code: string,
+    cptCodes: string[],
+  ): Promise<{
     isCompatible: boolean;
     incompatibleCodes: string[];
     warnings: string[];

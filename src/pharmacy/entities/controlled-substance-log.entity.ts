@@ -1,4 +1,11 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, CreateDateColumn, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  CreateDateColumn,
+  JoinColumn,
+} from 'typeorm';
 import { Drug } from './drug.entity';
 import { Prescription } from './prescription.entity';
 
@@ -21,7 +28,10 @@ export class ControlledSubstanceLog {
   @Column({ nullable: true })
   prescriptionId: string;
 
-  @Column({ type: 'enum', enum: ['dispensed', 'received', 'wasted', 'returned', 'transferred', 'stolen'] })
+  @Column({
+    type: 'enum',
+    enum: ['dispensed', 'received', 'wasted', 'returned', 'transferred', 'stolen'],
+  })
   transactionType: string;
 
   @Column({ type: 'int' })

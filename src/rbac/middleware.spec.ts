@@ -24,7 +24,11 @@ const mockRes = () => {
     headers: {} as Record<string, string>,
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
-    setHeader: jest.fn().mockImplementation(function(this: Record<string, unknown>, k: string, v: string) {
+    setHeader: jest.fn().mockImplementation(function (
+      this: Record<string, unknown>,
+      k: string,
+      v: string,
+    ) {
       (this.headers as Record<string, string>)[k] = v;
     }),
     removeHeader: jest.fn(),
@@ -300,7 +304,11 @@ describe('HealthcareSecurityMiddleware', () => {
   });
 
   it('should return 429 when IP rate limit exceeded', async () => {
-    rateLimitingService.checkIpLimit.mockReturnValue({ ...allowedRateLimit, allowed: false, resetAt: new Date() });
+    rateLimitingService.checkIpLimit.mockReturnValue({
+      ...allowedRateLimit,
+      allowed: false,
+      resetAt: new Date(),
+    });
 
     const req = mockReq();
     const res = mockRes();
@@ -314,7 +322,11 @@ describe('HealthcareSecurityMiddleware', () => {
 
   it('should return 429 when path rate limit exceeded', async () => {
     rateLimitingService.checkIpLimit.mockReturnValue(allowedRateLimit);
-    rateLimitingService.check.mockReturnValue({ ...allowedRateLimit, allowed: false, resetAt: new Date() });
+    rateLimitingService.check.mockReturnValue({
+      ...allowedRateLimit,
+      allowed: false,
+      resetAt: new Date(),
+    });
 
     const req = mockReq({ path: '/patients/123' });
     const res = mockRes();

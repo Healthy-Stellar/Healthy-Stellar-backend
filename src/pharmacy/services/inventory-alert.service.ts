@@ -155,9 +155,7 @@ export class InventoryAlertService {
         const fallbackSupplierId = preferredSuppliers[0]?.id;
 
         if (!supplierId && !fallbackSupplierId) {
-          this.logger.warn(
-            `AUTO PURCHASE ORDER SKIPPED: No supplier on file for ${item.drugName}`,
-          );
+          this.logger.warn(`AUTO PURCHASE ORDER SKIPPED: No supplier on file for ${item.drugName}`);
           continue;
         }
 

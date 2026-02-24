@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Like, Between } from 'typeorm';
 import { MedicalRecord, MedicalRecordStatus } from '../entities/medical-record.entity';
@@ -42,7 +37,7 @@ export class MedicalRecordsService {
     });
 
     const savedRecord = await this.medicalRecordRepository.save(record);
-    
+
     // Reload to get the proper version number
     const recordWithVersion = await this.medicalRecordRepository.findOne({
       where: { id: savedRecord.id },
@@ -56,9 +51,16 @@ export class MedicalRecordsService {
       status: recordWithVersion.status,
       metadata: recordWithVersion.metadata,
     });
-    
+
     try {
-      await this.createVersion(recordWithVersion, null, currentContent, userId, userName, 'Initial record creation');
+      await this.createVersion(
+        recordWithVersion,
+        null,
+        currentContent,
+        userId,
+        userName,
+        'Initial record creation',
+      );
     } catch (error) {
       this.logger.error(`Failed to create initial version: ${error.message}`, error.stack);
       // Continue even if version creation fails
@@ -198,10 +200,9 @@ export class MedicalRecordsService {
     }
 
     if (search) {
-      queryBuilder.andWhere(
-        '(record.title ILIKE :search OR record.description ILIKE :search)',
-        { search: `%${search}%` },
-      );
+      queryBuilder.andWhere('(record.title ILIKE :search OR record.description ILIKE :search)', {
+        search: `%${search}%`,
+      });
     }
 
     if (startDate || endDate) {
@@ -319,7 +320,7 @@ export class MedicalRecordsService {
   ): Promise<MedicalRecordVersion> {
     // Get the current version number (default to 1 if not set)
     const versionNumber = record.version || 1;
-    
+
     const version = this.versionRepository.create({
       medicalRecordId: record.id,
       versionNumber: versionNumber,
@@ -328,9 +329,7 @@ export class MedicalRecordsService {
       changedBy: userId,
       changedByName: userName,
       changeReason: changeReason || 'Record modified',
-      changes: previousContent
-        ? this.calculateChanges(previousContent, currentContent)
-        : null,
+      changes: previousContent ? this.calculateChanges(previousContent, currentContent) : null,
     });
 
     return this.versionRepository.save(version);
@@ -362,10 +361,7 @@ export class MedicalRecordsService {
     return this.historyRepository.save(history);
   }
 
-  private calculateChanges(
-    previousContent: string,
-    currentContent: string,
-  ): Record<string, any> {
+  private calculateChanges(previousContent: string, currentContent: string): Record<string, any> {
     try {
       const previous = JSON.parse(previousContent);
       const current = JSON.parse(currentContent);

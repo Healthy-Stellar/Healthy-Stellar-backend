@@ -15,7 +15,10 @@ export class StellarHealthIndicator extends HealthIndicator {
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
     const startTime = Date.now();
-    const horizonUrl = this.configService.get('STELLAR_HORIZON_URL', 'https://horizon-testnet.stellar.org');
+    const horizonUrl = this.configService.get(
+      'STELLAR_HORIZON_URL',
+      'https://horizon-testnet.stellar.org',
+    );
     try {
       await firstValueFrom(this.httpService.get(`${horizonUrl}/`, { timeout: 5000 }));
       const responseTime = Date.now() - startTime;

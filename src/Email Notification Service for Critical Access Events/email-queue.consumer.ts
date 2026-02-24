@@ -28,25 +28,25 @@ export class EmailQueueConsumer extends WorkerHost {
 
     switch (job.data.type) {
       case EmailJobType.ACCESS_GRANTED: {
-        const { patient, grantee, record } = job.data as AccessGrantedJobData;
+        const { patient, grantee, record } = job.data;
         await this.mailService.sendAccessGrantedEmail(patient, grantee, record);
         break;
       }
 
       case EmailJobType.ACCESS_REVOKED: {
-        const { patient, revokee, record } = job.data as AccessRevokedJobData;
+        const { patient, revokee, record } = job.data;
         await this.mailService.sendAccessRevokedEmail(patient, revokee, record);
         break;
       }
 
       case EmailJobType.RECORD_UPLOADED: {
-        const { patient, record, uploadedBy } = job.data as RecordUploadedJobData;
+        const { patient, record, uploadedBy } = job.data;
         await this.mailService.sendRecordUploadedEmail(patient, record, uploadedBy);
         break;
       }
 
       case EmailJobType.SUSPICIOUS_ACCESS: {
-        const { patient, event } = job.data as SuspiciousAccessJobData;
+        const { patient, event } = job.data;
         await this.mailService.sendSuspiciousAccessEmail(patient, event);
         break;
       }

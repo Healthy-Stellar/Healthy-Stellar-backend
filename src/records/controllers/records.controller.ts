@@ -32,10 +32,7 @@ export class RecordsController {
       },
     }),
   )
-  async uploadRecord(
-    @Body() dto: CreateRecordDto,
-    @UploadedFile() file: Express.Multer.File,
-  ) {
+  async uploadRecord(@Body() dto: CreateRecordDto, @UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('Encrypted record file is required');
     }
@@ -51,14 +48,48 @@ export class RecordsController {
     type: PaginatedRecordsResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Bad request - invalid query parameters' })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 20, max: 100)' })
-  @ApiQuery({ name: 'recordType', required: false, enum: ['MEDICAL_REPORT', 'LAB_RESULT', 'PRESCRIPTION', 'IMAGING', 'CONSULTATION'] })
-  @ApiQuery({ name: 'fromDate', required: false, type: String, description: 'Start date (ISO 8601)' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default: 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Items per page (default: 20, max: 100)',
+  })
+  @ApiQuery({
+    name: 'recordType',
+    required: false,
+    enum: ['MEDICAL_REPORT', 'LAB_RESULT', 'PRESCRIPTION', 'IMAGING', 'CONSULTATION'],
+  })
+  @ApiQuery({
+    name: 'fromDate',
+    required: false,
+    type: String,
+    description: 'Start date (ISO 8601)',
+  })
   @ApiQuery({ name: 'toDate', required: false, type: String, description: 'End date (ISO 8601)' })
-  @ApiQuery({ name: 'sortBy', required: false, enum: ['createdAt', 'recordType', 'patientId'], description: 'Sort field (default: createdAt)' })
-  @ApiQuery({ name: 'order', required: false, enum: ['asc', 'desc'], description: 'Sort order (default: desc)' })
-  @ApiQuery({ name: 'patientId', required: false, type: String, description: 'Filter by patient ID' })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: ['createdAt', 'recordType', 'patientId'],
+    description: 'Sort field (default: createdAt)',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: ['asc', 'desc'],
+    description: 'Sort order (default: desc)',
+  })
+  @ApiQuery({
+    name: 'patientId',
+    required: false,
+    type: String,
+    description: 'Filter by patient ID',
+  })
   async findAll(@Query() query: PaginationQueryDto): Promise<PaginatedRecordsResponseDto> {
     return this.recordsService.findAll(query);
   }

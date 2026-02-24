@@ -1,18 +1,18 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { getRepositoryToken } from "@nestjs/typeorm";
-import { ProvisioningService } from "@/tenants/services/provisioning.service";
-import { DatabaseService } from "@/tenants/services/database.service";
-import { SorobanService } from "@/tenants/services/soroban.service";
-import { EmailService } from "@/tenants/services/email.service";
-import { Tenant, TenantStatus } from "@/tenants/entities/tenant.entity";
+import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { ProvisioningService } from '@/tenants/services/provisioning.service';
+import { DatabaseService } from '@/tenants/services/database.service';
+import { SorobanService } from '@/tenants/services/soroban.service';
+import { EmailService } from '@/tenants/services/email.service';
+import { Tenant, TenantStatus } from '@/tenants/entities/tenant.entity';
 import {
   ProvisioningLog,
   ProvisioningStatus,
   ProvisioningStep,
-} from "@/tenants/entities/provisioning-log.entity";
-import { Repository } from "typeorm";
+} from '@/tenants/entities/provisioning-log.entity';
+import { Repository } from 'typeorm';
 
-describe("ProvisioningService", () => {
+describe('ProvisioningService', () => {
   let service: ProvisioningService;
   let tenantRepository: Repository<Tenant>;
   let provisioningLogRepository: Repository<ProvisioningLog>;
@@ -21,14 +21,14 @@ describe("ProvisioningService", () => {
   let emailService: EmailService;
 
   const mockTenant: Tenant = {
-    id: "test-id-123",
-    name: "Test Org",
-    schemaName: "test_org_12345",
+    id: 'test-id-123',
+    name: 'Test Org',
+    schemaName: 'test_org_12345',
     status: TenantStatus.ACTIVE,
-    adminEmail: "admin@test.local",
-    adminFirstName: "Admin",
-    adminLastName: "User",
-    sorobanContractId: "contract_123",
+    adminEmail: 'admin@test.local',
+    adminFirstName: 'Admin',
+    adminLastName: 'User',
+    sorobanContractId: 'contract_123',
     provisioningError: null,
     provisioningLogs: [],
     createdAt: new Date(),
@@ -85,9 +85,7 @@ describe("ProvisioningService", () => {
     }).compile();
 
     service = module.get<ProvisioningService>(ProvisioningService);
-    tenantRepository = module.get<Repository<Tenant>>(
-      getRepositoryToken(Tenant),
-    );
+    tenantRepository = module.get<Repository<Tenant>>(getRepositoryToken(Tenant));
     provisioningLogRepository = module.get<Repository<ProvisioningLog>>(
       getRepositoryToken(ProvisioningLog),
     );
@@ -96,37 +94,27 @@ describe("ProvisioningService", () => {
     emailService = module.get<EmailService>(EmailService);
   });
 
-  it("should be defined", () => {
+  it('should be defined', () => {
     expect(service).toBeDefined();
   });
 
-  describe("provisionTenant", () => {
-    it("should successfully provision a tenant", async () => {
+  describe('provisionTenant', () => {
+    it('should successfully provision a tenant', async () => {
       const tenantData = {
-        name: "New Org",
-        adminEmail: "admin@neworg.local",
-        adminFirstName: "John",
-        adminLastName: "Doe",
+        name: 'New Org',
+        adminEmail: 'admin@neworg.local',
+        adminFirstName: 'John',
+        adminLastName: 'Doe',
       };
 
-      jest.spyOn(tenantRepository, "create").mockReturnValue(mockTenant);
-      jest.spyOn(tenantRepository, "save").mockResolvedValue(mockTenant);
-      jest
-        .spyOn(databaseService, "createTenantSchema")
-        .mockResolvedValue(undefined);
-      jest
-        .spyOn(databaseService, "runTenantMigrations")
-        .mockResolvedValue(undefined);
-      jest
-        .spyOn(databaseService, "seedTenantData")
-        .mockResolvedValue(undefined);
-      jest
-        .spyOn(databaseService, "createAdminUser")
-        .mockResolvedValue("user-id-123");
-      jest
-        .spyOn(sorobanService, "deployTenantContract")
-        .mockResolvedValue("contract_123");
-      jest.spyOn(emailService, "sendWelcomeEmail").mockResolvedValue(undefined);
+      jest.spyOn(tenantRepository, 'create').mockReturnValue(mockTenant);
+      jest.spyOn(tenantRepository, 'save').mockResolvedValue(mockTenant);
+      jest.spyOn(databaseService, 'createTenantSchema').mockResolvedValue(undefined);
+      jest.spyOn(databaseService, 'runTenantMigrations').mockResolvedValue(undefined);
+      jest.spyOn(databaseService, 'seedTenantData').mockResolvedValue(undefined);
+      jest.spyOn(databaseService, 'createAdminUser').mockResolvedValue('user-id-123');
+      jest.spyOn(sorobanService, 'deployTenantContract').mockResolvedValue('contract_123');
+      jest.spyOn(emailService, 'sendWelcomeEmail').mockResolvedValue(undefined);
 
       const result = await service.provisionTenant(tenantData);
 
@@ -139,42 +127,34 @@ describe("ProvisioningService", () => {
       expect(emailService.sendWelcomeEmail).toHaveBeenCalled();
     });
 
-    it("should handle provisioning errors and perform rollback", async () => {
+    it('should handle provisioning errors and perform rollback', async () => {
       const tenantData = {
-        name: "Error Org",
-        adminEmail: "admin@errororg.local",
-        adminFirstName: "Error",
-        adminLastName: "Handler",
+        name: 'Error Org',
+        adminEmail: 'admin@errororg.local',
+        adminFirstName: 'Error',
+        adminLastName: 'Handler',
       };
 
-      const testError = new Error("Schema creation failed");
+      const testError = new Error('Schema creation failed');
 
-      jest.spyOn(tenantRepository, "create").mockReturnValue(mockTenant);
-      jest.spyOn(tenantRepository, "save").mockResolvedValue(mockTenant);
-      jest
-        .spyOn(databaseService, "createTenantSchema")
-        .mockRejectedValue(testError);
-      jest
-        .spyOn(databaseService, "dropTenantSchema")
-        .mockResolvedValue(undefined);
-      jest
-        .spyOn(emailService, "sendProvisioningErrorEmail")
-        .mockResolvedValue(undefined);
+      jest.spyOn(tenantRepository, 'create').mockReturnValue(mockTenant);
+      jest.spyOn(tenantRepository, 'save').mockResolvedValue(mockTenant);
+      jest.spyOn(databaseService, 'createTenantSchema').mockRejectedValue(testError);
+      jest.spyOn(databaseService, 'dropTenantSchema').mockResolvedValue(undefined);
+      jest.spyOn(emailService, 'sendProvisioningErrorEmail').mockResolvedValue(undefined);
 
-      await expect(service.provisionTenant(tenantData)).rejects.toThrow(
-        "Schema creation failed",
-      );
+      await expect(service.provisionTenant(tenantData)).rejects.toThrow('Schema creation failed');
 
       expect(databaseService.dropTenantSchema).toHaveBeenCalled();
       expect(emailService.sendProvisioningErrorEmail).toHaveBeenCalled();
     });
   });
 
-  describe("getProvisioningStatus", () => {
-    it("should return provisioning status for a tenant", async () => {
-      jest.spyOn(tenantRepository, "findOne").mockResolvedValue(mockTenant);
+  describe('getProvisioningStatus', () => {
+    it('should return provisioning status for a tenant', async () => {
+      jest.spyOn(tenantRepository, 'findOne').mockResolvedValue(mockTenant);
 
-      const status = await service.getProvisioningStatus("test-id-123");
+      const status = await service.getProvisioningStatus('test-id-123');
 
       expect(status).toBeDefined();
       expect(status.tenantId).toBe(mockTenant.id);
@@ -182,38 +162,38 @@ describe("ProvisioningService", () => {
       expect(status.overallStatus).toBe(mockTenant.status);
     });
 
-    it("should return null for non-existent tenant", async () => {
-      jest.spyOn(tenantRepository, "findOne").mockResolvedValue(null);
+    it('should return null for non-existent tenant', async () => {
+      jest.spyOn(tenantRepository, 'findOne').mockResolvedValue(null);
 
-      const status = await service.getProvisioningStatus("non-existent-id");
+      const status = await service.getProvisioningStatus('non-existent-id');
 
       expect(status).toBeNull();
     });
   });
 
-  describe("deprovisionTenant", () => {
-    it("should archive a tenant", async () => {
-      jest.spyOn(tenantRepository, "findOne").mockResolvedValue(mockTenant);
-      jest.spyOn(tenantRepository, "save").mockResolvedValue({
+  describe('deprovisionTenant', () => {
+    it('should archive a tenant', async () => {
+      jest.spyOn(tenantRepository, 'findOne').mockResolvedValue(mockTenant);
+      jest.spyOn(tenantRepository, 'save').mockResolvedValue({
         ...mockTenant,
         status: TenantStatus.ARCHIVED,
         archivedAt: new Date(),
       });
 
-      await service.deprovisionTenant("test-id-123");
+      await service.deprovisionTenant('test-id-123');
 
       expect(tenantRepository.findOne).toHaveBeenCalledWith({
-        where: { id: "test-id-123" },
+        where: { id: 'test-id-123' },
       });
       expect(tenantRepository.save).toHaveBeenCalled();
     });
 
-    it("should throw error if tenant not found", async () => {
-      jest.spyOn(tenantRepository, "findOne").mockResolvedValue(null);
+    it('should throw error if tenant not found', async () => {
+      jest.spyOn(tenantRepository, 'findOne').mockResolvedValue(null);
 
-      await expect(
-        service.deprovisionTenant("non-existent-id"),
-      ).rejects.toThrow("Tenant not found");
+      await expect(service.deprovisionTenant('non-existent-id')).rejects.toThrow(
+        'Tenant not found',
+      );
     });
   });
 });

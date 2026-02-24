@@ -59,7 +59,11 @@ export class MfaService {
   /**
    * Verify MFA setup and save to database
    */
-  async verifyAndEnableMfa(userId: string, verificationCode: string, deviceName?: string): Promise<MfaVerificationResult> {
+  async verifyAndEnableMfa(
+    userId: string,
+    verificationCode: string,
+    deviceName?: string,
+  ): Promise<MfaVerificationResult> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('User not found');

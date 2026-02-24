@@ -19,10 +19,7 @@ export class FeatureFlagGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredFeature = this.reflector.get<string>(
-      REQUIRE_FEATURE_KEY,
-      context.getHandler(),
-    );
+    const requiredFeature = this.reflector.get<string>(REQUIRE_FEATURE_KEY, context.getHandler());
 
     if (!requiredFeature) {
       // No feature requirement, allow access
@@ -40,15 +37,10 @@ export class FeatureFlagGuard implements CanActivate {
     }
 
     try {
-      const isEnabled = await this.tenantConfigService.isFeatureEnabled(
-        tenantId,
-        requiredFeature,
-      );
+      const isEnabled = await this.tenantConfigService.isFeatureEnabled(tenantId, requiredFeature);
 
       if (!isEnabled) {
-        this.logger.warn(
-          `Feature "${requiredFeature}" is disabled for tenant`,
-        );
+        this.logger.warn(`Feature "${requiredFeature}" is disabled for tenant`);
         // Add constant-time delay to prevent timing attacks
         await this.constantTimeDelay();
         throw new ForbiddenException(
@@ -56,21 +48,19 @@ export class FeatureFlagGuard implements CanActivate {
         );
       }
 
-      this.logger.debug(
-        `Feature "${requiredFeature}" check passed for tenant`,
-      );
-      
+      this.logger.debug(`Feature "${requiredFeature}" check passed for tenant`);
+
       // Add constant-time delay to prevent timing attacks
       await this.constantTimeDelay();
       return true;
     } catch (error) {
       // Add constant-time delay to prevent timing attacks
       await this.constantTimeDelay();
-      
+
       if (error instanceof ForbiddenException) {
         throw error;
       }
-      
+
       this.logger.error(`Error checking feature: ${error.message}`);
       throw new ForbiddenException('Feature check failed');
     }
@@ -83,7 +73,7 @@ export class FeatureFlagGuard implements CanActivate {
   private async constantTimeDelay(): Promise<void> {
     // Add 5-15ms random delay to prevent timing analysis
     const delay = 5 + Math.random() * 10;
-    await new Promise(resolve => setTimeout(resolve, delay));
+    await new Promise((resolve) => setTimeout(resolve, delay));
   }
 
   /**

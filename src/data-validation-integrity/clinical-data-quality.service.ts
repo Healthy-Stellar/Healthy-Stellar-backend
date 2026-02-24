@@ -91,7 +91,10 @@ export class ClinicalDataQualityService {
     return report;
   }
 
-  async getQualityTrend(recordType: string, days: number = 30): Promise<{
+  async getQualityTrend(
+    recordType: string,
+    days: number = 30,
+  ): Promise<{
     averageScore: number;
     trend: 'IMPROVING' | 'DECLINING' | 'STABLE';
     recentReports: { date: Date; score: number }[];
@@ -117,7 +120,8 @@ export class ClinicalDataQualityService {
     // Determine trend from first half vs second half
     const midpoint = Math.floor(scores.length / 2);
     const firstHalfAvg = scores.slice(0, midpoint).reduce((a, b) => a + b, 0) / midpoint || 0;
-    const secondHalfAvg = scores.slice(midpoint).reduce((a, b) => a + b, 0) / (scores.length - midpoint);
+    const secondHalfAvg =
+      scores.slice(midpoint).reduce((a, b) => a + b, 0) / (scores.length - midpoint);
 
     let trend: 'IMPROVING' | 'DECLINING' | 'STABLE' = 'STABLE';
     if (secondHalfAvg - firstHalfAvg > 2) trend = 'IMPROVING';
@@ -152,8 +156,7 @@ export class ClinicalDataQualityService {
       }
     }
 
-    const score =
-      requiredFields.length > 0 ? (presentCount / requiredFields.length) * 100 : 100;
+    const score = requiredFields.length > 0 ? (presentCount / requiredFields.length) * 100 : 100;
 
     return {
       dimension: DataQualityDimension.COMPLETENESS,
@@ -253,10 +256,7 @@ export class ClinicalDataQualityService {
     };
   }
 
-  private assessTimeliness(
-    data: Record<string, unknown>,
-    dateFields: string[],
-  ): DataQualityScore {
+  private assessTimeliness(data: Record<string, unknown>, dateFields: string[]): DataQualityScore {
     const issues: DataQualityIssue[] = [];
     const now = new Date();
 
@@ -349,10 +349,7 @@ export class ClinicalDataQualityService {
     return Math.round((weightedSum / totalWeight) * 100) / 100;
   }
 
-  private async persistQualityReport(
-    report: DataQualityReport,
-    threshold: number,
-  ): Promise<void> {
+  private async persistQualityReport(report: DataQualityReport, threshold: number): Promise<void> {
     try {
       await this.qualityReportRepo.save({
         recordId: report.recordId,

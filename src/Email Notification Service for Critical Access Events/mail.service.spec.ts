@@ -108,7 +108,9 @@ describe('MailService', () => {
       await service.sendRecordUploadedEmail(mockPatient, mockRecord);
 
       const call = mailerService.sendMail.mock.calls[0][0];
-      expect(call.context.unsubscribeUrl).toMatch(/\/notifications\/unsubscribe\?token=.+&patientId=patient-1/);
+      expect(call.context.unsubscribeUrl).toMatch(
+        /\/notifications\/unsubscribe\?token=.+&patientId=patient-1/,
+      );
     });
 
     it('sends suspicious-access email with high urgency subject', async () => {

@@ -15,7 +15,11 @@ import { EmergencyOverrideService } from '../services/emergency-override.service
 import { MedicalAuditService } from '../services/medical-audit.service';
 import { MedicalPermissionsService } from '../services/medical-permissions.service';
 
-const makeContext = (user: MedicalUser | null, metadata: Record<string, unknown> = {}, params: Record<string, string> = {}): ExecutionContext => {
+const makeContext = (
+  user: MedicalUser | null,
+  metadata: Record<string, unknown> = {},
+  params: Record<string, string> = {},
+): ExecutionContext => {
   const request = { medicalUser: user, params, ip: '127.0.0.1' };
 
   const reflector = {

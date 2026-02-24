@@ -13,10 +13,7 @@ describe('AuditInterceptor', () => {
     auditService = { log: jest.fn(async () => ({})) };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AuditInterceptor,
-        { provide: AuditService, useValue: auditService },
-      ],
+      providers: [AuditInterceptor, { provide: AuditService, useValue: auditService }],
     }).compile();
 
     interceptor = module.get<AuditInterceptor>(AuditInterceptor);
@@ -34,7 +31,7 @@ describe('AuditInterceptor', () => {
           connection: {},
         }),
       }),
-    } as unknown as ExecutionContext);
+    }) as unknown as ExecutionContext;
 
   const buildHandler = (): CallHandler => ({ handle: () => of({ id: 'record-1' }) });
 

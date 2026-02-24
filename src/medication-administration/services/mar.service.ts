@@ -1,7 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In } from 'typeorm';
-import { MedicationAdministrationRecord, AdministrationStatus } from '../entities/medication-administration-record.entity';
+import {
+  MedicationAdministrationRecord,
+  AdministrationStatus,
+} from '../entities/medication-administration-record.entity';
 import { CreateMarDto } from '../dto/create-mar.dto';
 import { AdministerMedicationDto } from '../dto/administer-medication.dto';
 import { MissedDoseService } from './missed-dose.service';
@@ -40,9 +43,12 @@ export class MarService {
     });
   }
 
-  async findByPatientAndDate(patientId: string, date: string): Promise<MedicationAdministrationRecord[]> {
+  async findByPatientAndDate(
+    patientId: string,
+    date: string,
+  ): Promise<MedicationAdministrationRecord[]> {
     return await this.marRepository.find({
-      where: { 
+      where: {
         patientId,
         administrationDate: date,
       },
@@ -85,7 +91,9 @@ export class MarService {
     });
   }
 
-  async administerMedication(dto: AdministerMedicationDto): Promise<MedicationAdministrationRecord> {
+  async administerMedication(
+    dto: AdministerMedicationDto,
+  ): Promise<MedicationAdministrationRecord> {
     const mar = await this.marRepository.findOne({
       where: { id: dto.marId },
     });
@@ -109,7 +117,7 @@ export class MarService {
         dto.timeVerified,
       ];
 
-      if (!requiredVerifications.every(v => v === true)) {
+      if (!requiredVerifications.every((v) => v === true)) {
         throw new BadRequestException('All verifications required for high-alert medication');
       }
 
@@ -152,7 +160,10 @@ export class MarService {
     return mar;
   }
 
-  async update(id: string, updateData: Partial<MedicationAdministrationRecord>): Promise<MedicationAdministrationRecord> {
+  async update(
+    id: string,
+    updateData: Partial<MedicationAdministrationRecord>,
+  ): Promise<MedicationAdministrationRecord> {
     const mar = await this.findOne(id);
     Object.assign(mar, updateData, { updatedAt: new Date() });
     return await this.marRepository.save(mar);
@@ -173,11 +184,11 @@ export class MarService {
 
     const stats = {
       total: records.length,
-      administered: records.filter(r => r.status === AdministrationStatus.ADMINISTERED).length,
-      missed: records.filter(r => r.status === AdministrationStatus.MISSED).length,
-      refused: records.filter(r => r.status === AdministrationStatus.REFUSED).length,
-      held: records.filter(r => r.status === AdministrationStatus.HELD).length,
-      discontinued: records.filter(r => r.status === AdministrationStatus.DISCONTINUED).length,
+      administered: records.filter((r) => r.status === AdministrationStatus.ADMINISTERED).length,
+      missed: records.filter((r) => r.status === AdministrationStatus.MISSED).length,
+      refused: records.filter((r) => r.status === AdministrationStatus.REFUSED).length,
+      held: records.filter((r) => r.status === AdministrationStatus.HELD).length,
+      discontinued: records.filter((r) => r.status === AdministrationStatus.DISCONTINUED).length,
       adherenceRate: 0,
     };
 
@@ -186,7 +197,10 @@ export class MarService {
     return stats;
   }
 
-  async getDueMedications(nurseId: string, timeWindow: number = 60): Promise<MedicationAdministrationRecord[]> {
+  async getDueMedications(
+    nurseId: string,
+    timeWindow: number = 60,
+  ): Promise<MedicationAdministrationRecord[]> {
     const now = new Date();
     const windowEnd = new Date(now.getTime() + timeWindow * 60 * 1000);
 

@@ -192,9 +192,7 @@ export class RealTimeDataService implements OnModuleInit, OnModuleDestroy {
       orderedBy: string;
     },
   ): void {
-    const channel = labResult.isCritical
-      ? this.CHANNELS.LAB_CRITICAL
-      : this.CHANNELS.LAB_RESULTS;
+    const channel = labResult.isCritical ? this.CHANNELS.LAB_CRITICAL : this.CHANNELS.LAB_RESULTS;
 
     this.publish({
       channel,
@@ -229,9 +227,7 @@ export class RealTimeDataService implements OnModuleInit, OnModuleDestroy {
    * Get recent events for a channel.
    */
   getRecentEvents(channel: string, limit: number = 50): RealTimeEvent[] {
-    return this.eventHistory
-      .filter((e) => e.channel === channel)
-      .slice(-limit);
+    return this.eventHistory.filter((e) => e.channel === channel).slice(-limit);
   }
 
   /**
@@ -257,10 +253,15 @@ export class RealTimeDataService implements OnModuleInit, OnModuleDestroy {
     respiratoryRate?: number;
   }): boolean {
     if (vitals.heartRate && (vitals.heartRate < 40 || vitals.heartRate > 150)) return true;
-    if (vitals.bloodPressureSystolic && (vitals.bloodPressureSystolic < 80 || vitals.bloodPressureSystolic > 200)) return true;
+    if (
+      vitals.bloodPressureSystolic &&
+      (vitals.bloodPressureSystolic < 80 || vitals.bloodPressureSystolic > 200)
+    )
+      return true;
     if (vitals.oxygenSaturation && vitals.oxygenSaturation < 90) return true;
     if (vitals.temperature && (vitals.temperature < 35 || vitals.temperature > 40)) return true;
-    if (vitals.respiratoryRate && (vitals.respiratoryRate < 8 || vitals.respiratoryRate > 35)) return true;
+    if (vitals.respiratoryRate && (vitals.respiratoryRate < 8 || vitals.respiratoryRate > 35))
+      return true;
     return false;
   }
 
@@ -285,7 +286,7 @@ export class RealTimeDataService implements OnModuleInit, OnModuleDestroy {
   private cleanupEventHistory(): void {
     const cutoff = Date.now() - 3_600_000; // 1 hour
     const before = this.eventHistory.length;
-    
+
     while (this.eventHistory.length > 0 && this.eventHistory[0].timestamp.getTime() < cutoff) {
       this.eventHistory.shift();
     }

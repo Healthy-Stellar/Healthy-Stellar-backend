@@ -1,7 +1,7 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, In } from "typeorm";
-import { Record } from "./entities/record.entity";
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, In } from 'typeorm';
+import { Record } from './entities/record.entity';
 
 /**
  * Records Service
@@ -55,7 +55,7 @@ export class RecordsService {
 
     const [data, total] = await this.recordRepository.findAndCount({
       where: { ownerId },
-      order: { createdAt: "DESC" },
+      order: { createdAt: 'DESC' },
       take: limit,
       skip: (page - 1) * limit,
     });
@@ -85,7 +85,7 @@ export class RecordsService {
 
     const [data, total] = await this.recordRepository.findAndCount({
       where: { status },
-      order: { createdAt: "DESC" },
+      order: { createdAt: 'DESC' },
       take: limit,
       skip: (page - 1) * limit,
     });
@@ -117,7 +117,7 @@ export class RecordsService {
 
     const [data, total] = await this.recordRepository.findAndCount({
       where: { ownerId, status },
-      order: { createdAt: "DESC" },
+      order: { createdAt: 'DESC' },
       take: limit,
       skip: (page - 1) * limit,
     });
@@ -145,9 +145,9 @@ export class RecordsService {
 
     // Using QueryBuilder to prevent N+1 when loading owner details
     const [data, total] = await this.recordRepository
-      .createQueryBuilder("record")
-      .leftJoinAndSelect("record.owner", "owner")
-      .orderBy("record.createdAt", "DESC")
+      .createQueryBuilder('record')
+      .leftJoinAndSelect('record.owner', 'owner')
+      .orderBy('record.createdAt', 'DESC')
       .take(limit)
       .skip((page - 1) * limit)
       .getManyAndCount();
@@ -177,28 +177,28 @@ export class RecordsService {
     const startTime = Date.now();
     const { page = 1, limit = 20 } = filters;
 
-    let query = this.recordRepository.createQueryBuilder("record");
+    let query = this.recordRepository.createQueryBuilder('record');
 
     if (filters.ownerId) {
-      query = query.where("record.ownerId = :ownerId", {
+      query = query.where('record.ownerId = :ownerId', {
         ownerId: filters.ownerId,
       });
     }
 
     if (filters.status) {
-      query = query.andWhere("record.status = :status", {
+      query = query.andWhere('record.status = :status', {
         status: filters.status,
       });
     }
 
     if (filters.category) {
-      query = query.andWhere("record.category = :category", {
+      query = query.andWhere('record.category = :category', {
         category: filters.category,
       });
     }
 
     const [data, total] = await query
-      .orderBy("record.createdAt", "DESC")
+      .orderBy('record.createdAt', 'DESC')
       .take(limit)
       .skip((page - 1) * limit)
       .getManyAndCount();
@@ -223,9 +223,9 @@ export class RecordsService {
     const startTime = Date.now();
 
     const records = await this.recordRepository
-      .createQueryBuilder("record")
-      .where("record.viewCount > :viewCount", { viewCount: 0 })
-      .orderBy("record.viewCount", "DESC")
+      .createQueryBuilder('record')
+      .where('record.viewCount > :viewCount', { viewCount: 0 })
+      .orderBy('record.viewCount', 'DESC')
       .limit(limit)
       .getMany();
 
@@ -247,8 +247,8 @@ export class RecordsService {
     await this.recordRepository
       .createQueryBuilder()
       .update(Record)
-      .set({ viewCount: () => "viewCount + 1" })
-      .where("id = :id", { id: recordId })
+      .set({ viewCount: () => 'viewCount + 1' })
+      .where('id = :id', { id: recordId })
       .execute();
 
     const duration = Date.now() - startTime;
@@ -285,7 +285,7 @@ export class RecordsService {
       .createQueryBuilder()
       .update(Record)
       .set(updates)
-      .where("id IN (:...ids)", { ids })
+      .where('id IN (:...ids)', { ids })
       .execute();
 
     const duration = Date.now() - startTime;

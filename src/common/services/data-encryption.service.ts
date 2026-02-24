@@ -24,15 +24,12 @@ export class DataEncryptionService {
     try {
       const salt = randomBytes(this.saltLength);
       const iv = randomBytes(this.ivLength);
-      
+
       const key = scryptSync(this.encryptionKey, salt, this.keyLength);
 
       const cipher = createCipheriv(this.algorithm, key, iv);
-      
-      const encrypted = Buffer.concat([
-        cipher.update(plainText, 'utf8'),
-        cipher.final(),
-      ]);
+
+      const encrypted = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()]);
 
       const tag = cipher.getAuthTag();
 
@@ -55,19 +52,14 @@ export class DataEncryptionService {
         this.saltLength + this.ivLength,
         this.saltLength + this.ivLength + this.tagLength,
       );
-      const encrypted = data.subarray(
-        this.saltLength + this.ivLength + this.tagLength,
-      );
+      const encrypted = data.subarray(this.saltLength + this.ivLength + this.tagLength);
 
       const key = scryptSync(this.encryptionKey, salt, this.keyLength);
 
       const decipher = createDecipheriv(this.algorithm, key, iv);
       decipher.setAuthTag(tag);
 
-      const decrypted = Buffer.concat([
-        decipher.update(encrypted),
-        decipher.final(),
-      ]);
+      const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
 
       return decrypted.toString('utf8');
     } catch (error) {

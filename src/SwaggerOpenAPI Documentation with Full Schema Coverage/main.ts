@@ -25,8 +25,7 @@ async function bootstrap() {
         basicAuth({
           challenge: true,
           users: {
-            [process.env.SWAGGER_USER ?? 'admin']:
-              process.env.SWAGGER_PASS ?? 'secret',
+            [process.env.SWAGGER_USER ?? 'admin']: process.env.SWAGGER_PASS ?? 'secret',
           },
         }),
       );
@@ -67,7 +66,7 @@ async function bootstrap() {
 
     SwaggerModule.setup('api/docs', app, document, {
       swaggerOptions: {
-        persistAuthorization: true,          // remember token across refreshes
+        persistAuthorization: true, // remember token across refreshes
         tagsSorter: 'alpha',
         operationsSorter: 'alpha',
         docExpansion: 'none',

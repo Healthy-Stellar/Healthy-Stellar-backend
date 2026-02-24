@@ -183,7 +183,7 @@ export class DiagnosisService {
     await this.findById(diagnosisId);
     return await this.treatmentPlanRepository
       .createQueryBuilder('plan')
-      .where(':diagnosisId = ANY(string_to_array(plan.diagnosisIds, \',\'))', { diagnosisId })
+      .where(":diagnosisId = ANY(string_to_array(plan.diagnosisIds, ','))", { diagnosisId })
       .orderBy('plan.createdAt', 'DESC')
       .getMany();
   }

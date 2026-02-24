@@ -12,7 +12,8 @@ export class TenantController {
   @Post()
   @ApiOperation({
     summary: 'Create new tenant',
-    description: 'Provisions a new tenant with dedicated PostgreSQL schema, runs migrations, and seeds base data'
+    description:
+      'Provisions a new tenant with dedicated PostgreSQL schema, runs migrations, and seeds base data',
   })
   @ApiResponse({ status: 201, description: 'Tenant created and schema provisioned' })
   @ApiResponse({ status: 409, description: 'Tenant with this slug already exists' })

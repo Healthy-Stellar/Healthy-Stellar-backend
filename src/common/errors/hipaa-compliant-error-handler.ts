@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { AuditLogService } from '../audit/audit-log.service';
 
 export interface SafeErrorResponse {
@@ -17,13 +22,13 @@ export class HIPAACCompliantErrorHandler {
       context,
       timestamp: new Date(),
       errorType: 'VALIDATION_ERROR',
-      severity: 'MEDIUM'
+      severity: 'MEDIUM',
     });
 
     return {
       statusCode: 400,
       message: 'Medical data validation failed. Please check your input.',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   }
 
@@ -31,7 +36,7 @@ export class HIPAACCompliantErrorHandler {
     this.auditService.logUnauthorizedAccess({
       context,
       timestamp: new Date(),
-      requestId
+      requestId,
     });
 
     return new UnauthorizedException('Access denied');
@@ -41,7 +46,7 @@ export class HIPAACCompliantErrorHandler {
     this.auditService.logForbiddenAccess({
       context,
       timestamp: new Date(),
-      requestId
+      requestId,
     });
 
     return new ForbiddenException('You do not have permission to access this resource');
@@ -52,13 +57,13 @@ export class HIPAACCompliantErrorHandler {
       context,
       timestamp: new Date(),
       errorType: error.name,
-      severity: 'HIGH'
+      severity: 'HIGH',
     });
 
     return {
       statusCode: 400,
       message: 'An error occurred while processing medical records',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   }
 
@@ -67,13 +72,13 @@ export class HIPAACCompliantErrorHandler {
       context,
       timestamp: new Date(),
       errorType: error.name,
-      severity: 'CRITICAL'
+      severity: 'CRITICAL',
     });
 
     return {
       statusCode: 500,
       message: 'An internal server error occurred',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   }
 
@@ -82,13 +87,13 @@ export class HIPAACCompliantErrorHandler {
       context,
       timestamp: new Date(),
       alertData,
-      severity: 'CRITICAL'
+      severity: 'CRITICAL',
     });
 
     return {
       statusCode: 200,
       message: 'Emergency alert processed',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   }
 }

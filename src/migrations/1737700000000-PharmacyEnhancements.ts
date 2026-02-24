@@ -98,23 +98,53 @@ export class PharmacyEnhancements1737700000000 implements MigrationInterface {
     `);
 
     // Create indexes for better performance
-    await queryRunner.query(`CREATE INDEX "IDX_patient_counseling_logs_patient_id" ON "patient_counseling_logs" ("patient_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_patient_counseling_logs_prescription_id" ON "patient_counseling_logs" ("prescription_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_patient_counseling_logs_pharmacist_id" ON "patient_counseling_logs" ("pharmacist_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_patient_counseling_logs_status" ON "patient_counseling_logs" ("status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_patient_counseling_logs_counseling_date" ON "patient_counseling_logs" ("counseling_date")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_patient_counseling_logs_patient_id" ON "patient_counseling_logs" ("patient_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_patient_counseling_logs_prescription_id" ON "patient_counseling_logs" ("prescription_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_patient_counseling_logs_pharmacist_id" ON "patient_counseling_logs" ("pharmacist_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_patient_counseling_logs_status" ON "patient_counseling_logs" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_patient_counseling_logs_counseling_date" ON "patient_counseling_logs" ("counseling_date")`,
+    );
 
-    await queryRunner.query(`CREATE INDEX "IDX_medication_error_logs_error_type" ON "medication_error_logs" ("error_type")`);
-    await queryRunner.query(`CREATE INDEX "IDX_medication_error_logs_severity" ON "medication_error_logs" ("severity")`);
-    await queryRunner.query(`CREATE INDEX "IDX_medication_error_logs_status" ON "medication_error_logs" ("status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_medication_error_logs_patient_id" ON "medication_error_logs" ("patient_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_medication_error_logs_reported_at" ON "medication_error_logs" ("reported_at")`);
-    await queryRunner.query(`CREATE INDEX "IDX_medication_error_logs_occurred_at" ON "medication_error_logs" ("occurred_at")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_medication_error_logs_error_type" ON "medication_error_logs" ("error_type")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_medication_error_logs_severity" ON "medication_error_logs" ("severity")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_medication_error_logs_status" ON "medication_error_logs" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_medication_error_logs_patient_id" ON "medication_error_logs" ("patient_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_medication_error_logs_reported_at" ON "medication_error_logs" ("reported_at")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_medication_error_logs_occurred_at" ON "medication_error_logs" ("occurred_at")`,
+    );
 
-    await queryRunner.query(`CREATE INDEX "IDX_prescription_refills_original_prescription_id" ON "prescription_refills" ("original_prescription_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_prescription_refills_refill_prescription_id" ON "prescription_refills" ("refill_prescription_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_prescription_refills_pharmacist_id" ON "prescription_refills" ("pharmacist_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_prescription_refills_refill_date" ON "prescription_refills" ("refill_date")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_prescription_refills_original_prescription_id" ON "prescription_refills" ("original_prescription_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_prescription_refills_refill_prescription_id" ON "prescription_refills" ("refill_prescription_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_prescription_refills_pharmacist_id" ON "prescription_refills" ("pharmacist_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_prescription_refills_refill_date" ON "prescription_refills" ("refill_date")`,
+    );
 
     // Insert sample drug interaction data for common interactions
     await queryRunner.query(`
@@ -192,9 +222,15 @@ export class PharmacyEnhancements1737700000000 implements MigrationInterface {
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     // Drop foreign key constraints
-    await queryRunner.query(`ALTER TABLE "prescription_refills" DROP CONSTRAINT "FK_prescription_refills_refill"`);
-    await queryRunner.query(`ALTER TABLE "prescription_refills" DROP CONSTRAINT "FK_prescription_refills_original"`);
-    await queryRunner.query(`ALTER TABLE "patient_counseling_logs" DROP CONSTRAINT "FK_patient_counseling_logs_prescription"`);
+    await queryRunner.query(
+      `ALTER TABLE "prescription_refills" DROP CONSTRAINT "FK_prescription_refills_refill"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "prescription_refills" DROP CONSTRAINT "FK_prescription_refills_original"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "patient_counseling_logs" DROP CONSTRAINT "FK_patient_counseling_logs_prescription"`,
+    );
 
     // Drop indexes
     await queryRunner.query(`DROP INDEX "IDX_prescription_refills_refill_date"`);

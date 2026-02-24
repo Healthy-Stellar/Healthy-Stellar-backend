@@ -51,8 +51,8 @@ describe('MedicalAuditService', () => {
       const entry = sampleEntry();
       const created = { id: 'log-1', ...entry };
 
-      repo.create.mockReturnValue(created as any);
-      repo.save.mockResolvedValue(created as any);
+      repo.create.mockReturnValue(created);
+      repo.save.mockResolvedValue(created);
 
       const result = await service.log(entry);
 
@@ -74,8 +74,8 @@ describe('MedicalAuditService', () => {
       const entry = { ...sampleEntry(), isEmergencyOverride: true };
       const created = { id: 'log-2', ...entry };
 
-      repo.create.mockReturnValue(created as any);
-      repo.save.mockResolvedValue(created as any);
+      repo.create.mockReturnValue(created);
+      repo.save.mockResolvedValue(created);
 
       const result = await service.log(entry);
 
@@ -142,9 +142,7 @@ describe('MedicalAuditService', () => {
 
       await service.queryLogs({ limit: 9999 });
 
-      expect(repo.findAndCount).toHaveBeenCalledWith(
-        expect.objectContaining({ take: 100 }),
-      );
+      expect(repo.findAndCount).toHaveBeenCalledWith(expect.objectContaining({ take: 100 }));
     });
 
     it('returns pagination result', async () => {

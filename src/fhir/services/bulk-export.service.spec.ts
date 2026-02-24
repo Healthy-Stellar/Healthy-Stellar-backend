@@ -58,7 +58,10 @@ describe('BulkExportService', () => {
     });
 
     it('should default to all resource types if none specified', async () => {
-      const mockJob = { id: 'job-123', resourceTypes: ['Patient', 'DocumentReference', 'Consent', 'Provenance'] };
+      const mockJob = {
+        id: 'job-123',
+        resourceTypes: ['Patient', 'DocumentReference', 'Consent', 'Provenance'],
+      };
       jobRepo.create.mockReturnValue(mockJob);
       jobRepo.save.mockResolvedValue(mockJob);
 

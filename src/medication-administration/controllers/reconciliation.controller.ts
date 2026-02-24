@@ -1,19 +1,13 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Query, UseGuards } from '@nestjs/common';
 import { ReconciliationService } from '../services/reconciliation.service';
 import { CreateReconciliationDto } from '../dto/create-reconciliation.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
-import { ReconciliationType, ReconciliationStatus } from '../entities/medication-reconciliation.entity';
+import {
+  ReconciliationType,
+  ReconciliationStatus,
+} from '../entities/medication-reconciliation.entity';
 
 @Controller('medication-reconciliation')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -52,10 +46,7 @@ export class ReconciliationController {
 
   @Get('stats')
   @Roles('physician', 'admin')
-  getReconciliationStats(
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
-  ) {
+  getReconciliationStats(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
     return this.reconciliationService.getReconciliationStats(startDate, endDate);
   }
 
@@ -67,28 +58,19 @@ export class ReconciliationController {
 
   @Patch(':id/status')
   @Roles('nurse', 'physician')
-  updateStatus(
-    @Param('id') id: string,
-    @Body() statusData: { status: ReconciliationStatus },
-  ) {
+  updateStatus(@Param('id') id: string, @Body() statusData: { status: ReconciliationStatus }) {
     return this.reconciliationService.updateStatus(id, statusData.status);
   }
 
   @Post(':id/home-medications')
   @Roles('nurse', 'physician')
-  addHomeMedications(
-    @Param('id') id: string,
-    @Body() medicationData: { medications: any[] },
-  ) {
+  addHomeMedications(@Param('id') id: string, @Body() medicationData: { medications: any[] }) {
     return this.reconciliationService.addHomeMedications(id, medicationData.medications);
   }
 
   @Post(':id/current-medications')
   @Roles('nurse', 'physician')
-  addCurrentMedications(
-    @Param('id') id: string,
-    @Body() medicationData: { medications: any[] },
-  ) {
+  addCurrentMedications(@Param('id') id: string, @Body() medicationData: { medications: any[] }) {
     return this.reconciliationService.addCurrentMedications(id, medicationData.medications);
   }
 
@@ -109,7 +91,8 @@ export class ReconciliationController {
   @Roles('physician')
   reviewDiscrepancies(
     @Param('id') id: string,
-    @Body() reviewData: {
+    @Body()
+    reviewData: {
       reviewerId: string;
       actions: any[];
       notes?: string;

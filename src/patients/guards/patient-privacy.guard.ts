@@ -5,14 +5,11 @@ import { PatientsService } from '../patients.service';
 
 @Injectable()
 export class PatientPrivacyGuard implements CanActivate {
-  constructor(
-
-    private readonly patientsService: PatientsService,
-  ) {}
+  constructor(private readonly patientsService: PatientsService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    const user = request.user || {role:"admin"};; // assuming JwtAuthGuard populated this
+    const user = request.user || { role: 'admin' }; // assuming JwtAuthGuard populated this
     const patientId = request?.params?.id || request?.body?.id;
 
     if (!user) {

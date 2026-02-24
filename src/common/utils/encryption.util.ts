@@ -10,26 +10,16 @@ export class EncryptionUtil {
   private static readonly SALT_LENGTH = 16;
   private static readonly TAG_LENGTH = 16;
 
-  static async encrypt(
-    plainText: string,
-    encryptionKey: string,
-  ): Promise<string> {
+  static async encrypt(plainText: string, encryptionKey: string): Promise<string> {
     try {
       const salt = randomBytes(this.SALT_LENGTH);
       const iv = randomBytes(this.IV_LENGTH);
-      
-      const key = (await scryptAsync(
-        encryptionKey,
-        salt,
-        this.KEY_LENGTH,
-      )) as Buffer;
+
+      const key = (await scryptAsync(encryptionKey, salt, this.KEY_LENGTH)) as Buffer;
 
       const cipher = createCipheriv(this.ALGORITHM, key, iv);
-      
-      const encrypted = Buffer.concat([
-        cipher.update(plainText, 'utf8'),
-        cipher.final(),
-      ]);
+
+      const encrypted = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()]);
 
       const tag = cipher.getAuthTag();
 
@@ -40,10 +30,7 @@ export class EncryptionUtil {
     }
   }
 
-  static async decrypt(
-    encryptedData: string,
-    encryptionKey: string,
-  ): Promise<string> {
+  static async decrypt(encryptedData: string, encryptionKey: string): Promise<string> {
     try {
       const data = Buffer.from(encryptedData, 'base64');
 
@@ -53,23 +40,14 @@ export class EncryptionUtil {
         this.SALT_LENGTH + this.IV_LENGTH,
         this.SALT_LENGTH + this.IV_LENGTH + this.TAG_LENGTH,
       );
-      const encrypted = data.subarray(
-        this.SALT_LENGTH + this.IV_LENGTH + this.TAG_LENGTH,
-      );
+      const encrypted = data.subarray(this.SALT_LENGTH + this.IV_LENGTH + this.TAG_LENGTH);
 
-      const key = (await scryptAsync(
-        encryptionKey,
-        salt,
-        this.KEY_LENGTH,
-      )) as Buffer;
+      const key = (await scryptAsync(encryptionKey, salt, this.KEY_LENGTH)) as Buffer;
 
       const decipher = createDecipheriv(this.ALGORITHM, key, iv);
       decipher.setAuthTag(tag);
 
-      const decrypted = Buffer.concat([
-        decipher.update(encrypted),
-        decipher.final(),
-      ]);
+      const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
 
       return decrypted.toString('utf8');
     } catch (error) {

@@ -109,10 +109,7 @@ export class DenialService {
     }
 
     if (filters.startDate && filters.endDate) {
-      where.denialDate = Between(
-        new Date(filters.startDate),
-        new Date(filters.endDate),
-      );
+      where.denialDate = Between(new Date(filters.startDate), new Date(filters.endDate));
     }
 
     const [data, total] = await this.denialRepository.findAndCount({
@@ -156,7 +153,8 @@ export class DenialService {
       order: { appealLevel: 'DESC' },
     });
 
-    const nextLevel = createDto.appealLevel ||
+    const nextLevel =
+      createDto.appealLevel ||
       (existingAppeals.length > 0 ? existingAppeals[0].appealLevel + 1 : 1);
 
     if (nextLevel > 3) {
@@ -240,10 +238,7 @@ export class DenialService {
     }
 
     if (filters.startDate && filters.endDate) {
-      where.submittedDate = Between(
-        new Date(filters.startDate),
-        new Date(filters.endDate),
-      );
+      where.submittedDate = Between(new Date(filters.startDate), new Date(filters.endDate));
     }
 
     const [data, total] = await this.appealRepository.findAndCount({
@@ -274,9 +269,7 @@ export class DenialService {
       submittedDate: updateDto.submittedDate
         ? new Date(updateDto.submittedDate)
         : appeal.submittedDate,
-      decisionDate: updateDto.decisionDate
-        ? new Date(updateDto.decisionDate)
-        : appeal.decisionDate,
+      decisionDate: updateDto.decisionDate ? new Date(updateDto.decisionDate) : appeal.decisionDate,
       timeline,
     });
 
@@ -403,9 +396,7 @@ export class DenialService {
       if (denial.appeals && denial.appeals.length > 0) {
         appealedCount += 1;
 
-        const approvedAppeal = denial.appeals.find(
-          (a) => a.status === AppealStatus.APPROVED,
-        );
+        const approvedAppeal = denial.appeals.find((a) => a.status === AppealStatus.APPROVED);
         if (approvedAppeal) {
           overturnedCount += 1;
           totalRecovered += Number(approvedAppeal.approvedAmount || 0);
@@ -415,10 +406,7 @@ export class DenialService {
 
     return {
       totalDenials: denials.length,
-      totalDeniedAmount: denials.reduce(
-        (sum, d) => sum + Number(d.deniedAmount),
-        0,
-      ),
+      totalDeniedAmount: denials.reduce((sum, d) => sum + Number(d.deniedAmount), 0),
       byReason: Object.entries(byReason).map(([reason, data]) => ({
         reason,
         ...data,
@@ -431,10 +419,7 @@ export class DenialService {
 
   async getPendingAppeals(): Promise<ClaimAppeal[]> {
     return this.appealRepository.find({
-      where: [
-        { status: AppealStatus.SUBMITTED },
-        { status: AppealStatus.UNDER_REVIEW },
-      ],
+      where: [{ status: AppealStatus.SUBMITTED }, { status: AppealStatus.UNDER_REVIEW }],
       relations: ['denial', 'denial.claim'],
       order: { submittedDate: 'ASC' },
     });

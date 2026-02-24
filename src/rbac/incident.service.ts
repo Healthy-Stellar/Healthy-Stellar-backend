@@ -89,7 +89,11 @@ export class IncidentService {
   /**
    * Update incident status with timeline tracking
    */
-  async updateIncident(id: string, dto: UpdateIncidentDto, actor: string): Promise<SecurityIncident> {
+  async updateIncident(
+    id: string,
+    dto: UpdateIncidentDto,
+    actor: string,
+  ): Promise<SecurityIncident> {
     const incident = await this.incidentRepository.findOneOrFail({ where: { id } });
     const now = new Date();
 
@@ -234,7 +238,11 @@ export class IncidentService {
   }
 
   @OnEvent('audit.anomaly')
-  async handleAuditAnomaly(payload: { userId: string; count: number; windowMinutes: number }): Promise<void> {
+  async handleAuditAnomaly(payload: {
+    userId: string;
+    count: number;
+    windowMinutes: number;
+  }): Promise<void> {
     await this.createIncident({
       type: IncidentType.UNAUTHORIZED_ACCESS,
       severity: IncidentSeverity.HIGH,

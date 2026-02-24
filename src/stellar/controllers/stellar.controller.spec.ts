@@ -88,28 +88,22 @@ describe('StellarController', () => {
       // Arrange
       jest
         .spyOn(feeService, 'getFeeEstimate')
-        .mockRejectedValue(
-          new BadRequestException('Invalid operation'),
-        );
+        .mockRejectedValue(new BadRequestException('Invalid operation'));
 
       // Act & Assert
-      await expect(controller.getFeeEstimate('invalidOp')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(controller.getFeeEstimate('invalidOp')).rejects.toThrow(BadRequestException);
     });
 
     it('should throw ServiceUnavailableException when Horizon is down', async () => {
       // Arrange
       jest
         .spyOn(feeService, 'getFeeEstimate')
-        .mockRejectedValue(
-          new ServiceUnavailableException('Horizon unavailable'),
-        );
+        .mockRejectedValue(new ServiceUnavailableException('Horizon unavailable'));
 
       // Act & Assert
-      await expect(
-        controller.getFeeEstimate('anchorRecord'),
-      ).rejects.toThrow(ServiceUnavailableException);
+      await expect(controller.getFeeEstimate('anchorRecord')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
     });
 
     it('should return different congestion levels', async () => {

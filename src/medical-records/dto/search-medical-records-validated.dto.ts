@@ -5,7 +5,7 @@ import {
   IsEnum,
   IsDateString,
   MaxLength,
-  MinLength
+  MinLength,
 } from 'class-validator';
 
 enum SearchType {
@@ -13,7 +13,7 @@ enum SearchType {
   PROCEDURE = 'PROCEDURE',
   MEDICATION = 'MEDICATION',
   PROVIDER = 'PROVIDER',
-  DATE_RANGE = 'DATE_RANGE'
+  DATE_RANGE = 'DATE_RANGE',
 }
 
 export class SearchMedicalRecordsValidatedDto {

@@ -1,7 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { HealthcareIncident, IncidentType, IncidentSeverity, IncidentStatus } from '../entities/healthcare-incident.entity';
+import {
+  HealthcareIncident,
+  IncidentType,
+  IncidentSeverity,
+  IncidentStatus,
+} from '../entities/healthcare-incident.entity';
 import { NotificationService } from './notification.service';
 
 @Injectable()
@@ -29,25 +34,29 @@ export class IncidentTrackingService {
     attachments?: string[];
   }): Promise<HealthcareIncident> {
     const incidentNumber = await this.generateIncidentNumber();
-    
+
     const incident = this.incidentRepository.create({
       ...incidentData,
       incidentNumber,
       status: IncidentStatus.REPORTED,
       reportedAt: new Date(),
-      timeline: [{
-        timestamp: new Date(),
-        action: 'incident_reported',
-        userId: incidentData.reportedBy,
-        description: 'Incident reported',
-      }],
+      timeline: [
+        {
+          timestamp: new Date(),
+          action: 'incident_reported',
+          userId: incidentData.reportedBy,
+          description: 'Incident reported',
+        },
+      ],
     });
 
     const savedIncident = await this.incidentRepository.save(incident);
-    
+
     // Send notifications for high severity incidents
-    if (savedIncident.severity === IncidentSeverity.MAJOR || 
-        savedIncident.severity === IncidentSeverity.CATASTROPHIC) {
+    if (
+      savedIncident.severity === IncidentSeverity.MAJOR ||
+      savedIncident.severity === IncidentSeverity.CATASTROPHIC
+    ) {
       await this.notificationService.sendIncidentNotification(savedIncident);
     }
 
@@ -55,7 +64,11 @@ export class IncidentTrackingService {
     return savedIncident;
   }
 
-  async assignIncident(incidentId: string, assignedTo: string, assignedBy: string): Promise<HealthcareIncident> {
+  async assignIncident(
+    incidentId: string,
+    assignedTo: string,
+    assignedBy: string,
+  ): Promise<HealthcareIncident> {
     const incident = await this.incidentRepository.findOne({ where: { id: incidentId } });
     if (!incident) {
       throw new Error('Incident not found');
@@ -72,7 +85,10 @@ export class IncidentTrackingService {
     return await this.incidentRepository.save(incident);
   }
 
-  async startInvestigation(incidentId: string, investigatorId: string): Promise<HealthcareIncident> {
+  async startInvestigation(
+    incidentId: string,
+    investigatorId: string,
+  ): Promise<HealthcareIncident> {
     const incident = await this.incidentRepository.findOne({ where: { id: incidentId } });
     if (!incident) {
       throw new Error('Incident not found');
@@ -92,14 +108,14 @@ export class IncidentTrackingService {
   }
 
   async updateInvestigation(
-    incidentId: string, 
+    incidentId: string,
     updateData: {
       rootCause?: string;
       correctiveActions?: string;
       preventiveActions?: string;
       investigationNotes?: string;
     },
-    userId: string
+    userId: string,
   ): Promise<HealthcareIncident> {
     const incident = await this.incidentRepository.findOne({ where: { id: incidentId } });
     if (!incident) {
@@ -118,13 +134,13 @@ export class IncidentTrackingService {
   }
 
   async resolveIncident(
-    incidentId: string, 
+    incidentId: string,
     resolutionData: {
       rootCause: string;
       correctiveActions: string;
       preventiveActions: string;
     },
-    userId: string
+    userId: string,
   ): Promise<HealthcareIncident> {
     const incident = await this.incidentRepository.findOne({ where: { id: incidentId } });
     if (!incident) {
@@ -175,7 +191,10 @@ export class IncidentTrackingService {
     return await this.incidentRepository.save(incident);
   }
 
-  async getIncidentsByDepartment(department: string, status?: IncidentStatus): Promise<HealthcareIncident[]> {
+  async getIncidentsByDepartment(
+    department: string,
+    status?: IncidentStatus,
+  ): Promise<HealthcareIncident[]> {
     const query = this.incidentRepository
       .createQueryBuilder('incident')
       .where('incident.department = :department', { department })
@@ -208,18 +227,19 @@ export class IncidentTrackingService {
     let totalResolutionTime = 0;
     let resolvedCount = 0;
 
-    incidents.forEach(incident => {
+    incidents.forEach((incident) => {
       // Count by type
       metrics.byType[incident.incidentType] = (metrics.byType[incident.incidentType] || 0) + 1;
-      
+
       // Count by severity
       metrics.bySeverity[incident.severity] = (metrics.bySeverity[incident.severity] || 0) + 1;
-      
+
       // Count by status
       metrics.byStatus[incident.status] = (metrics.byStatus[incident.status] || 0) + 1;
-      
+
       // Count by department
-      metrics.byDepartment[incident.department] = (metrics.byDepartment[incident.department] || 0) + 1;
+      metrics.byDepartment[incident.department] =
+        (metrics.byDepartment[incident.department] || 0) + 1;
 
       // Calculate resolution time
       if (incident.status === IncidentStatus.RESOLVED && incident.resolvedAt) {
@@ -229,7 +249,10 @@ export class IncidentTrackingService {
       }
 
       // Count open incidents
-      if (incident.status === IncidentStatus.REPORTED || incident.status === IncidentStatus.INVESTIGATING) {
+      if (
+        incident.status === IncidentStatus.REPORTED ||
+        incident.status === IncidentStatus.INVESTIGATING
+      ) {
         metrics.openIncidents++;
       }
 
@@ -260,26 +283,27 @@ export class IncidentTrackingService {
     const typeFrequency = {};
     const severityTrends = {};
 
-    incidents.forEach(incident => {
+    incidents.forEach((incident) => {
       const monthKey = incident.reportedAt.toISOString().substring(0, 7); // YYYY-MM
-      
+
       // Monthly incident count
       monthlyData[monthKey] = (monthlyData[monthKey] || 0) + 1;
-      
+
       // Type frequency
       typeFrequency[incident.incidentType] = (typeFrequency[incident.incidentType] || 0) + 1;
-      
+
       // Severity trends
       if (!severityTrends[monthKey]) {
         severityTrends[monthKey] = {};
       }
-      severityTrends[monthKey][incident.severity] = (severityTrends[monthKey][incident.severity] || 0) + 1;
+      severityTrends[monthKey][incident.severity] =
+        (severityTrends[monthKey][incident.severity] || 0) + 1;
     });
 
     return {
       monthlyIncidents: monthlyData,
       mostCommonTypes: Object.entries(typeFrequency)
-        .sort(([,a], [,b]) => (b as number) - (a as number))
+        .sort(([, a], [, b]) => (b as number) - (a as number))
         .slice(0, 5),
       severityTrends,
       totalIncidents: incidents.length,
@@ -290,10 +314,10 @@ export class IncidentTrackingService {
     const year = new Date().getFullYear();
     const count = await this.incidentRepository.count({
       where: {
-        incidentNumber: Like(`INC-${year}-%`)
-      }
+        incidentNumber: Like(`INC-${year}-%`),
+      },
     });
-    
+
     return `INC-${year}-${String(count + 1).padStart(4, '0')}`;
   }
 }

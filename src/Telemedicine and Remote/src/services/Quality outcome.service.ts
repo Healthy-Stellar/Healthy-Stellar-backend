@@ -1,11 +1,7 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Between } from "typeorm";
-import {
-  QualityOutcome,
-  OutcomeType,
-  ComparisonResult,
-} from "../entities/quality-outcome.entity";
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between } from 'typeorm';
+import { QualityOutcome, OutcomeType, ComparisonResult } from '../entities/quality-outcome.entity';
 
 export interface CreateOutcomeDto {
   patientId: string;
@@ -35,17 +31,13 @@ export class QualityOutcomeService {
     const score = this.calculateNormalizedScore(dto.outcomeType, dto.metrics);
 
     // Get baseline data if exists
-    const baselineData = await this.getBaselineData(
-      dto.patientId,
-      dto.outcomeType,
-    );
+    const baselineData = await this.getBaselineData(dto.patientId, dto.outcomeType);
 
     // Calculate improvement
     let improvementPercentage = 0;
     if (baselineData) {
       improvementPercentage =
-        ((score - baselineData.baselineScore) / baselineData.baselineScore) *
-        100;
+        ((score - baselineData.baselineScore) / baselineData.baselineScore) * 100;
     }
 
     const outcome = this.outcomeRepository.create({
@@ -55,7 +47,7 @@ export class QualityOutcomeService {
       improvementPercentage: baselineData ? improvementPercentage : null,
       meetsQualityBenchmark: this.checkBenchmark(dto.outcomeType, score),
       benchmarkScore: this.getBenchmarkScore(dto.outcomeType),
-      benchmarkSource: "National Quality Forum",
+      benchmarkSource: 'National Quality Forum',
     });
 
     return this.outcomeRepository.save(outcome);
@@ -122,7 +114,7 @@ export class QualityOutcomeService {
 
     return this.outcomeRepository.find({
       where: whereClause,
-      order: { measurementDate: "DESC" },
+      order: { measurementDate: 'DESC' },
     });
   }
 
@@ -164,40 +156,28 @@ export class QualityOutcomeService {
     if (satisfactionOutcomes.length > 0) {
       const satisfactionScores = satisfactionOutcomes.map((o) => o.score);
       metrics.patientSatisfactionAvg =
-        satisfactionScores.reduce((a, b) => a + b, 0) /
-        satisfactionScores.length;
+        satisfactionScores.reduce((a, b) => a + b, 0) / satisfactionScores.length;
     }
 
     // Clinical outcomes
-    const clinicalOutcomes = outcomes.filter(
-      (o) => o.outcomeType === OutcomeType.CLINICAL_OUTCOME,
-    );
+    const clinicalOutcomes = outcomes.filter((o) => o.outcomeType === OutcomeType.CLINICAL_OUTCOME);
     const successfulOutcomes = clinicalOutcomes.filter(
       (o) => o.metrics.targetMetricAchieved,
     ).length;
     metrics.clinicalOutcomeSuccess =
-      clinicalOutcomes.length > 0
-        ? (successfulOutcomes / clinicalOutcomes.length) * 100
-        : 0;
+      clinicalOutcomes.length > 0 ? (successfulOutcomes / clinicalOutcomes.length) * 100 : 0;
 
     // Benchmark compliance
-    const benchmarkCompliant = outcomes.filter(
-      (o) => o.meetsQualityBenchmark,
-    ).length;
-    metrics.benchmarkComplianceRate =
-      (benchmarkCompliant / outcomes.length) * 100;
+    const benchmarkCompliant = outcomes.filter((o) => o.meetsQualityBenchmark).length;
+    metrics.benchmarkComplianceRate = (benchmarkCompliant / outcomes.length) * 100;
 
     // Comparison counts
     outcomes.forEach((o) => {
       if (o.comparisonToInPerson === ComparisonResult.BETTER_THAN_IN_PERSON) {
         metrics.comparisonToInPerson.better++;
-      } else if (
-        o.comparisonToInPerson === ComparisonResult.EQUIVALENT_TO_IN_PERSON
-      ) {
+      } else if (o.comparisonToInPerson === ComparisonResult.EQUIVALENT_TO_IN_PERSON) {
         metrics.comparisonToInPerson.equivalent++;
-      } else if (
-        o.comparisonToInPerson === ComparisonResult.WORSE_THAN_IN_PERSON
-      ) {
+      } else if (o.comparisonToInPerson === ComparisonResult.WORSE_THAN_IN_PERSON) {
         metrics.comparisonToInPerson.worse++;
       }
     });
@@ -205,11 +185,7 @@ export class QualityOutcomeService {
     return metrics;
   }
 
-  async generateQualityReport(
-    startDate: Date,
-    endDate: Date,
-    providerId?: string,
-  ): Promise<any> {
+  async generateQualityReport(startDate: Date, endDate: Date, providerId?: string): Promise<any> {
     const whereClause: any = {
       measurementDate: Between(startDate, endDate),
     };
@@ -261,13 +237,8 @@ export class QualityOutcomeService {
 
     // Calculate statistics for each type
     for (const [type, typeOutcomes] of Object.entries(groupedOutcomes)) {
-      const scores = typeOutcomes
-        .filter((o) => o.score !== null)
-        .map((o) => o.score);
-      const avgScore =
-        scores.length > 0
-          ? scores.reduce((a, b) => a + b, 0) / scores.length
-          : 0;
+      const scores = typeOutcomes.filter((o) => o.score !== null).map((o) => o.score);
+      const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
 
       report.outcomesByType[type] = {
         count: typeOutcomes.length,
@@ -276,14 +247,10 @@ export class QualityOutcomeService {
     }
 
     // Overall quality score
-    const allScores = outcomes
-      .filter((o) => o.score !== null)
-      .map((o) => o.score);
+    const allScores = outcomes.filter((o) => o.score !== null).map((o) => o.score);
     report.overallQualityScore =
       allScores.length > 0
-        ? Math.round(
-            (allScores.reduce((a, b) => a + b, 0) / allScores.length) * 10,
-          ) / 10
+        ? Math.round((allScores.reduce((a, b) => a + b, 0) / allScores.length) * 10) / 10
         : 0;
 
     // Benchmark comparison
@@ -298,13 +265,9 @@ export class QualityOutcomeService {
     outcomes.forEach((o) => {
       if (o.comparisonToInPerson === ComparisonResult.EQUIVALENT_TO_IN_PERSON) {
         report.telemedicineVsInPerson.equivalent++;
-      } else if (
-        o.comparisonToInPerson === ComparisonResult.BETTER_THAN_IN_PERSON
-      ) {
+      } else if (o.comparisonToInPerson === ComparisonResult.BETTER_THAN_IN_PERSON) {
         report.telemedicineVsInPerson.better++;
-      } else if (
-        o.comparisonToInPerson === ComparisonResult.WORSE_THAN_IN_PERSON
-      ) {
+      } else if (o.comparisonToInPerson === ComparisonResult.WORSE_THAN_IN_PERSON) {
         report.telemedicineVsInPerson.worse++;
       } else {
         report.telemedicineVsInPerson.notCompared++;
@@ -312,9 +275,7 @@ export class QualityOutcomeService {
     });
 
     // Adverse events
-    report.adverseEvents.total = outcomes.filter(
-      (o) => o.hadAdverseEvent,
-    ).length;
+    report.adverseEvents.total = outcomes.filter((o) => o.hadAdverseEvent).length;
     report.adverseEvents.relatedToTelemedicine = outcomes.filter(
       (o) => o.hadAdverseEvent && o.relatedToTelemedicine,
     ).length;
@@ -326,8 +287,7 @@ export class QualityOutcomeService {
     if (satisfactionOutcomes.length > 0) {
       const satisfactionScores = satisfactionOutcomes.map((o) => o.score);
       report.patientSatisfaction.average =
-        satisfactionScores.reduce((a, b) => a + b, 0) /
-        satisfactionScores.length;
+        satisfactionScores.reduce((a, b) => a + b, 0) / satisfactionScores.length;
 
       const recommendCount = satisfactionOutcomes.filter(
         (o) => o.metrics.wouldRecommend === true,
@@ -355,10 +315,7 @@ export class QualityOutcomeService {
     return this.outcomeRepository.save(outcome);
   }
 
-  async validateOutcome(
-    outcomeId: string,
-    validatedBy: string,
-  ): Promise<QualityOutcome> {
+  async validateOutcome(outcomeId: string, validatedBy: string): Promise<QualityOutcome> {
     const outcome = await this.findOne(outcomeId);
 
     outcome.isValidated = true;
@@ -368,10 +325,7 @@ export class QualityOutcomeService {
     return this.outcomeRepository.save(outcome);
   }
 
-  private calculateNormalizedScore(
-    outcomeType: OutcomeType,
-    metrics: any,
-  ): number {
+  private calculateNormalizedScore(outcomeType: OutcomeType, metrics: any): number {
     switch (outcomeType) {
       case OutcomeType.PATIENT_SATISFACTION:
         // Average of all satisfaction metrics (1-5 scale) normalized to 0-100
@@ -382,9 +336,7 @@ export class QualityOutcomeService {
           metrics.technicalQuality,
         ].filter((s) => s !== undefined);
 
-        const avg =
-          satisfactionScores.reduce((a, b) => a + b, 0) /
-          satisfactionScores.length;
+        const avg = satisfactionScores.reduce((a, b) => a + b, 0) / satisfactionScores.length;
         return (avg / 5) * 100;
 
       case OutcomeType.CLINICAL_OUTCOME:
@@ -413,13 +365,10 @@ export class QualityOutcomeService {
     }
   }
 
-  private async getBaselineData(
-    patientId: string,
-    outcomeType: OutcomeType,
-  ): Promise<any | null> {
+  private async getBaselineData(patientId: string, outcomeType: OutcomeType): Promise<any | null> {
     const baselineOutcome = await this.outcomeRepository.findOne({
       where: { patientId, outcomeType },
-      order: { measurementDate: "ASC" },
+      order: { measurementDate: 'ASC' },
     });
 
     if (!baselineOutcome) return null;

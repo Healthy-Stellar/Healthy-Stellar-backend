@@ -29,24 +29,21 @@ export class DrugWasteController {
   @Get('date-range')
   async getWasteByDateRange(
     @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string
+    @Query('endDate') endDate: string,
   ) {
-    return await this.wasteService.getWasteByDateRange(
-      new Date(startDate),
-      new Date(endDate)
-    );
+    return await this.wasteService.getWasteByDateRange(new Date(startDate), new Date(endDate));
   }
 
   @Get('total-cost')
   async getTotalWasteCost(
     @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string
+    @Query('endDate') endDate?: string,
   ) {
     return {
       totalCost: await this.wasteService.getTotalWasteCost(
         startDate ? new Date(startDate) : undefined,
-        endDate ? new Date(endDate) : undefined
-      )
+        endDate ? new Date(endDate) : undefined,
+      ),
     };
   }
 
@@ -55,13 +52,13 @@ export class DrugWasteController {
     @Query('reason') reason?: WasteReason,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
-    @Query('drugId') drugId?: string
+    @Query('drugId') drugId?: string,
   ) {
     return await this.wasteService.getWasteReport({
       reason,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
-      drugId
+      drugId,
     });
   }
 
@@ -71,10 +68,7 @@ export class DrugWasteController {
   }
 
   @Patch(':id/disposal-details')
-  async updateDisposalDetails(
-    @Param('id') id: string,
-    @Body() disposalDetails: any
-  ) {
+  async updateDisposalDetails(@Param('id') id: string, @Body() disposalDetails: any) {
     return await this.wasteService.updateDisposalDetails(id, disposalDetails);
   }
 }

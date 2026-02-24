@@ -22,7 +22,7 @@ export class WebhookSignatureMiddleware implements NestMiddleware {
     }
 
     const [timestamp, receivedSignature] = signature.split('.');
-    
+
     if (!timestamp || !receivedSignature) {
       throw new UnauthorizedException();
     }

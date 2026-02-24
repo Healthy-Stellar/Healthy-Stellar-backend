@@ -22,7 +22,11 @@ export class BulkExportService {
     @InjectQueue('fhir-bulk-export') private exportQueue: Queue,
   ) {}
 
-  async initiateExport(requesterId: string, requesterRole: string, resourceTypes?: string[]): Promise<string> {
+  async initiateExport(
+    requesterId: string,
+    requesterRole: string,
+    resourceTypes?: string[],
+  ): Promise<string> {
     const types = resourceTypes || ['Patient', 'DocumentReference', 'Consent', 'Provenance'];
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -101,35 +105,47 @@ export class BulkExportService {
     }
   }
 
-  private async exportResourceType(type: string, requesterId: string, isAdmin: boolean): Promise<{ url: string; count: number }> {
+  private async exportResourceType(
+    type: string,
+    requesterId: string,
+    isAdmin: boolean,
+  ): Promise<{ url: string; count: number }> {
     let resources = [];
 
     switch (type) {
       case 'Patient':
-        const patients = isAdmin ? await this.patientRepo.find() : await this.patientRepo.find({ where: { id: requesterId } });
-        resources = patients.map(p => FhirMapper.toPatient(p));
+        const patients = isAdmin
+          ? await this.patientRepo.find()
+          : await this.patientRepo.find({ where: { id: requesterId } });
+        resources = patients.map((p) => FhirMapper.toPatient(p));
         break;
 
       case 'DocumentReference':
-        const records = isAdmin ? await this.recordRepo.find() : await this.recordRepo.find({ where: { patientId: requesterId } });
-        resources = records.map(r => FhirMapper.toDocumentReference(r));
+        const records = isAdmin
+          ? await this.recordRepo.find()
+          : await this.recordRepo.find({ where: { patientId: requesterId } });
+        resources = records.map((r) => FhirMapper.toDocumentReference(r));
         break;
 
       case 'Consent':
-        const consents = isAdmin ? await this.consentRepo.find() : await this.consentRepo.find({ where: { patientId: requesterId } });
-        resources = consents.map(c => FhirMapper.toConsent(c));
+        const consents = isAdmin
+          ? await this.consentRepo.find()
+          : await this.consentRepo.find({ where: { patientId: requesterId } });
+        resources = consents.map((c) => FhirMapper.toConsent(c));
         break;
 
       case 'Provenance':
-        const recordIds = isAdmin 
-          ? (await this.recordRepo.find()).map(r => r.id)
-          : (await this.recordRepo.find({ where: { patientId: requesterId } })).map(r => r.id);
-        const histories = await this.historyRepo.find({ where: { medicalRecordId: In(recordIds) } });
+        const recordIds = isAdmin
+          ? (await this.recordRepo.find()).map((r) => r.id)
+          : (await this.recordRepo.find({ where: { patientId: requesterId } })).map((r) => r.id);
+        const histories = await this.historyRepo.find({
+          where: { medicalRecordId: In(recordIds) },
+        });
         resources = FhirMapper.toProvenance(histories);
         break;
     }
 
-    const ndjson = resources.map(r => JSON.stringify(r)).join('\n');
+    const ndjson = resources.map((r) => JSON.stringify(r)).join('\n');
     const ipfsUrl = await this.uploadToIPFS(ndjson);
 
     return { url: ipfsUrl, count: resources.length };

@@ -1,4 +1,11 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  JoinColumn,
+  CreateDateColumn,
+} from 'typeorm';
 import { Drug } from './drug.entity';
 
 @Entity('drug_interactions')
@@ -6,14 +13,14 @@ export class DrugInteraction {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Drug, drug => drug.interactions1)
+  @ManyToOne(() => Drug, (drug) => drug.interactions1)
   @JoinColumn({ name: 'drug1_id' })
   drug1: Drug;
 
   @Column()
   drug1Id: string;
 
-  @ManyToOne(() => Drug, drug => drug.interactions2)
+  @ManyToOne(() => Drug, (drug) => drug.interactions2)
   @JoinColumn({ name: 'drug2_id' })
   drug2: Drug;
 

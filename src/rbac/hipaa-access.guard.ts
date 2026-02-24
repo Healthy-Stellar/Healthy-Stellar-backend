@@ -49,7 +49,9 @@ export class HipaaAccessGuard implements CanActivate {
     const hasRole = requiredRoles.includes(user.role);
     if (!hasRole) {
       await this.denyAccess(request, `Role ${user.role} not authorized`);
-      throw new ForbiddenException(`Insufficient permissions: requires ${requiredRoles.join(' or ')}`);
+      throw new ForbiddenException(
+        `Insufficient permissions: requires ${requiredRoles.join(' or ')}`,
+      );
     }
 
     return true;

@@ -1,5 +1,5 @@
-import { Injectable, Logger } from "@nestjs/common";
-import * as StellarSDK from "stellar-sdk";
+import { Injectable, Logger } from '@nestjs/common';
+import * as StellarSDK from 'stellar-sdk';
 
 @Injectable()
 export class SorobanService {
@@ -8,10 +8,9 @@ export class SorobanService {
   private network: StellarSDK.Networks;
 
   constructor() {
-    const rpcUrl =
-      process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+    const rpcUrl = process.env.SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org';
     const networkPassphrase =
-      process.env.SOROBAN_NETWORK === "public"
+      process.env.SOROBAN_NETWORK === 'public'
         ? StellarSDK.Networks.PUBLIC_NETWORK_PASSPHRASE
         : StellarSDK.Networks.TESTNET_NETWORK_PASSPHRASE;
 
@@ -19,10 +18,7 @@ export class SorobanService {
     this.network = networkPassphrase;
   }
 
-  async deployTenantContract(
-    tenantId: string,
-    tenantName: string,
-  ): Promise<string> {
+  async deployTenantContract(tenantId: string, tenantName: string): Promise<string> {
     this.logger.debug(`Deploying Soroban contract for tenant: ${tenantId}`);
 
     try {
@@ -58,9 +54,7 @@ export class SorobanService {
       // For now, we'll simulate verification
       return true;
     } catch (error) {
-      this.logger.error(
-        `Failed to verify contract ${contractId}: ${error.message}`,
-      );
+      this.logger.error(`Failed to verify contract ${contractId}: ${error.message}`);
       return false;
     }
   }

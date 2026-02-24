@@ -7,12 +7,7 @@ import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [AuthModule],
-  providers: [
-    NotificationsGateway,
-    NotificationsService,
-    NotificationQueueService,
-    WsAuthGuard,
-  ],
+  providers: [NotificationsGateway, NotificationsService, NotificationQueueService, WsAuthGuard],
   exports: [NotificationsService],
 })
 export class NotificationsModule {}

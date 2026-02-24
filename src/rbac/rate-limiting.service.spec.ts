@@ -9,10 +9,7 @@ describe('RateLimitingService', () => {
     jest.useFakeTimers();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        RateLimitingService,
-        { provide: ConfigService, useValue: { get: jest.fn() } },
-      ],
+      providers: [RateLimitingService, { provide: ConfigService, useValue: { get: jest.fn() } }],
     }).compile();
 
     service = module.get<RateLimitingService>(RateLimitingService);

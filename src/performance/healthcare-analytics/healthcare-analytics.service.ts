@@ -89,14 +89,20 @@ export class HealthcareAnalyticsService {
     bedOccupancyRate: number;
   }> {
     try {
-      const result = await this.dataSource.query(`
+      const result = await this.dataSource
+        .query(
+          `
         SELECT 
           COUNT(*) as total_patients,
           COUNT(*) FILTER (WHERE is_admitted = true) as admitted_patients,
           COUNT(*) FILTER (WHERE admission_date = CURRENT_DATE::text) as today_admissions,
           COUNT(*) FILTER (WHERE discharge_date = CURRENT_DATE::text) as today_discharges
         FROM patient;
-      `).catch(() => [{ total_patients: 0, admitted_patients: 0, today_admissions: 0, today_discharges: 0 }]);
+      `,
+        )
+        .catch(() => [
+          { total_patients: 0, admitted_patients: 0, today_admissions: 0, today_discharges: 0 },
+        ]);
 
       const stats = result[0];
       const totalBeds = 200; // Configurable
@@ -113,8 +119,11 @@ export class HealthcareAnalyticsService {
       };
     } catch {
       return {
-        totalPatients: 0, admittedPatients: 0, todayAdmissions: 0,
-        todayDischarges: 0, bedOccupancyRate: 0,
+        totalPatients: 0,
+        admittedPatients: 0,
+        todayAdmissions: 0,
+        todayDischarges: 0,
+        bedOccupancyRate: 0,
       };
     }
   }
@@ -156,8 +165,10 @@ export class HealthcareAnalyticsService {
       };
     } catch {
       return {
-        pendingLabOrders: 0, criticalLabResults: 0,
-        pendingMedOrders: 0, activeDiagnoses: 0,
+        pendingLabOrders: 0,
+        criticalLabResults: 0,
+        pendingMedOrders: 0,
+        activeDiagnoses: 0,
       };
     }
   }
@@ -193,12 +204,14 @@ export class HealthcareAnalyticsService {
         todayAppointments,
         appointmentNoShowRate: noShowRate,
         averageWaitTimeMinutes: 0, // Requires specific wait time tracking
-        staffOnDuty: 0,            // Requires staff scheduling module
+        staffOnDuty: 0, // Requires staff scheduling module
       };
     } catch {
       return {
-        todayAppointments: 0, appointmentNoShowRate: 0,
-        averageWaitTimeMinutes: 0, staffOnDuty: 0,
+        todayAppointments: 0,
+        appointmentNoShowRate: 0,
+        averageWaitTimeMinutes: 0,
+        staffOnDuty: 0,
       };
     }
   }
@@ -259,10 +272,7 @@ export class HealthcareAnalyticsService {
   /**
    * Get historical analytics for trend analysis.
    */
-  async getHistoricalTrends(
-    category: string,
-    days: number = 30,
-  ): Promise<AnalyticsSnapshot[]> {
+  async getHistoricalTrends(category: string, days: number = 30): Promise<AnalyticsSnapshot[]> {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
     return this.snapshotRepo.find({

@@ -16,7 +16,7 @@ export class ThrottlerBehindProxyGuard extends ThrottlerGuard {
   protected async getTracker(req: Request): Promise<string> {
     // Check if user is authenticated
     const user = (req as any).user;
-    
+
     if (user) {
       // Use Stellar public key if available, otherwise user ID
       return user.stellarPublicKey || user.userId || user.id || this.getIpFromRequest(req);
@@ -52,7 +52,9 @@ export class ThrottlerBehindProxyGuard extends ThrottlerGuard {
    * - Authenticated users get higher limits (200 req/min)
    * - Unauthenticated users get lower limits (100 req/min)
    */
-  protected async getThrottlerConfig(context: ExecutionContext): Promise<{ ttl: number; limit: number }> {
+  protected async getThrottlerConfig(
+    context: ExecutionContext,
+  ): Promise<{ ttl: number; limit: number }> {
     const request = context.switchToHttp().getRequest<Request>();
     const user = (request as any).user;
 

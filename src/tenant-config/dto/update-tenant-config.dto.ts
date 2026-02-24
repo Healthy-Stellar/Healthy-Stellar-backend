@@ -1,4 +1,13 @@
-import { IsString, IsNotEmpty, IsOptional, IsIn, MaxLength, IsArray, ValidateNested, ArrayMaxSize } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsIn,
+  MaxLength,
+  IsArray,
+  ValidateNested,
+  ArrayMaxSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ConfigValueType } from '../entities/tenant-config.entity';
 

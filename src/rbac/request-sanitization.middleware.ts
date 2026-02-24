@@ -22,7 +22,11 @@ export class RequestSanitizationMiddleware implements NestMiddleware {
     // Validate content type for POST/PUT/PATCH
     if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
       const contentType = req.headers['content-type'] || '';
-      if (req.body && !contentType.includes('application/json') && !contentType.includes('multipart/form-data')) {
+      if (
+        req.body &&
+        !contentType.includes('application/json') &&
+        !contentType.includes('multipart/form-data')
+      ) {
         this.logger.warn(`Unexpected content-type: ${contentType} for ${req.method} ${req.path}`);
       }
     }
@@ -37,9 +41,12 @@ export class RequestSanitizationMiddleware implements NestMiddleware {
       if (typeof value === 'string') {
         sanitized[key] = this.sanitizeString(value);
       } else if (Array.isArray(value)) {
-        sanitized[key] = value.map(item =>
-          typeof item === 'string' ? this.sanitizeString(item) :
-          typeof item === 'object' && item !== null ? this.sanitizeObject(item as Record<string, unknown>) : item
+        sanitized[key] = value.map((item) =>
+          typeof item === 'string'
+            ? this.sanitizeString(item)
+            : typeof item === 'object' && item !== null
+              ? this.sanitizeObject(item as Record<string, unknown>)
+              : item,
         );
       } else if (typeof value === 'object' && value !== null) {
         sanitized[key] = this.sanitizeObject(value as Record<string, unknown>);

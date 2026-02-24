@@ -9,7 +9,7 @@ export class Specialty {
   @Column({ type: 'text', nullable: true })
   description: string;
 
-  @ManyToMany(() => Doctor, doctor => doctor.specialties)
+  @ManyToMany(() => Doctor, (doctor) => doctor.specialties)
   doctors: Doctor[];
 
   @CreateDateColumn()

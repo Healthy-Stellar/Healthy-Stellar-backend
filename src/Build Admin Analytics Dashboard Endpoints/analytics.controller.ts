@@ -41,9 +41,7 @@ export class AnalyticsController {
   @Get('top-providers')
   @ApiOperation({ summary: 'Providers ranked by active access grants' })
   @ApiQuery({ name: 'limit', required: false, example: 10 })
-  async getTopProviders(
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
-  ) {
+  async getTopProviders(@Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number) {
     return this.analyticsService.getTopProviders(Math.min(limit, 100));
   }
 }

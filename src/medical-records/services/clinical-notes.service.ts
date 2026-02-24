@@ -88,7 +88,13 @@ export class ClinicalNotesService {
     const missingFields: string[] = [];
     if (!note.title) missingFields.push('title');
     if (!note.noteType) missingFields.push('noteType');
-    if (!note.noteContent && !note.subjective && !note.objective && !note.assessment && !note.plan) {
+    if (
+      !note.noteContent &&
+      !note.subjective &&
+      !note.objective &&
+      !note.assessment &&
+      !note.plan
+    ) {
       missingFields.push('content');
     }
 

@@ -9,16 +9,22 @@ export class EmergencyAccessCleanupService implements OnModuleInit, OnModuleDest
   constructor(private readonly accessControlService: AccessControlService) {}
 
   onModuleInit(): void {
-    this.cleanupInterval = setInterval(async () => {
-      try {
-        const expired = await this.accessControlService.expireEmergencyGrants();
-        if (expired > 0) {
-          this.logger.log(`Emergency cleanup expired ${expired} grants`);
+    this.cleanupInterval = setInterval(
+      async () => {
+        try {
+          const expired = await this.accessControlService.expireEmergencyGrants();
+          if (expired > 0) {
+            this.logger.log(`Emergency cleanup expired ${expired} grants`);
+          }
+        } catch (error) {
+          this.logger.error(
+            'Emergency grant cleanup failed',
+            error instanceof Error ? error.stack : undefined,
+          );
         }
-      } catch (error) {
-        this.logger.error('Emergency grant cleanup failed', error instanceof Error ? error.stack : undefined);
-      }
-    }, 15 * 60 * 1000);
+      },
+      15 * 60 * 1000,
+    );
   }
 
   onModuleDestroy(): void {

@@ -21,7 +21,7 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 @Controller('patients')
 export class PatientsController {
-  constructor(private readonly patientsService: PatientsService) { }
+  constructor(private readonly patientsService: PatientsService) {}
 
   /**
    * -----------------------------
@@ -49,16 +49,16 @@ export class PatientsController {
   }
 
   /**
- * -----------------------------
- * Get Patient by ID
- * -----------------------------
- * - Restricted access
- * - Privacy enforced via guard
- */
+   * -----------------------------
+   * Get Patient by ID
+   * -----------------------------
+   * - Restricted access
+   * - Privacy enforced via guard
+   */
   @Get('/admin/all/')
   @UseGuards(AdminGuard)
   async getPatient() {
-    return this.patientsService.findAll()
+    return this.patientsService.findAll();
   }
 
   /**
@@ -89,13 +89,13 @@ export class PatientsController {
   }
 
   /**
- * -----------------------------
- * Patient Update Photo URL
- * -----------------------------
- * - ONLY ADMIN CAN ADMIT A Patient
- */
+   * -----------------------------
+   * Patient Update Photo URL
+   * -----------------------------
+   * - ONLY ADMIN CAN ADMIT A Patient
+   */
 
-/**
+  /**
    * -----------------------------
    * Upload Patient Photo
    * -----------------------------
@@ -117,10 +117,7 @@ export class PatientsController {
       }),
       fileFilter: (req, file, cb) => {
         if (!file.mimetype.match(/\/(jpg|jpeg|png)$/)) {
-          return cb(
-            new BadRequestException('Only JPG and PNG images are allowed'),
-            false,
-          );
+          return cb(new BadRequestException('Only JPG and PNG images are allowed'), false);
         }
         cb(null, true);
       },
@@ -139,5 +136,4 @@ export class PatientsController {
 
     return this.patientsService.attachPhoto(patientId, file);
   }
-
 }

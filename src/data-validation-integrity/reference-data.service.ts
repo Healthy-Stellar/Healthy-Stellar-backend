@@ -175,10 +175,10 @@ export class ReferenceDataService {
   ): Promise<MedicalCodeRegistry[]> {
     const qb = this.codeRegistryRepo
       .createQueryBuilder('registry')
-      .where(
-        '(registry.code ILIKE :query OR registry.description ILIKE :queryDesc)',
-        { query: `${query}%`, queryDesc: `%${query}%` },
-      )
+      .where('(registry.code ILIKE :query OR registry.description ILIKE :queryDesc)', {
+        query: `${query}%`,
+        queryDesc: `%${query}%`,
+      })
       .orderBy('registry.code', 'ASC')
       .take(limit);
 
@@ -196,7 +196,10 @@ export class ReferenceDataService {
   /**
    * Get update history for a code system
    */
-  async getUpdateHistory(codeSystem?: string, limit: number = 10): Promise<ReferenceDataUpdateLog[]> {
+  async getUpdateHistory(
+    codeSystem?: string,
+    limit: number = 10,
+  ): Promise<ReferenceDataUpdateLog[]> {
     const query = this.updateLogRepo
       .createQueryBuilder('log')
       .orderBy('log.updatedAt', 'DESC')

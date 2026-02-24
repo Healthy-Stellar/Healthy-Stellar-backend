@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Query, UseGuards } from '@nestjs/common';
 import { AdverseReactionService } from '../services/adverse-reaction.service';
 import { CreateAdverseReactionDto } from '../dto/create-adverse-reaction.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -64,10 +55,7 @@ export class AdverseReactionController {
 
   @Get('stats')
   @Roles('physician', 'admin')
-  getReactionStats(
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
-  ) {
+  getReactionStats(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
     return this.adverseReactionService.getReactionStats(startDate, endDate);
   }
 
@@ -103,19 +91,13 @@ export class AdverseReactionController {
 
   @Post(':id/report-fda')
   @Roles('physician', 'admin')
-  reportToFDA(
-    @Param('id') id: string,
-    @Body() reportData: { reportNumber: string },
-  ) {
+  reportToFDA(@Param('id') id: string, @Body() reportData: { reportNumber: string }) {
     return this.adverseReactionService.reportToFDA(id, reportData.reportNumber);
   }
 
   @Post(':id/resolve')
   @Roles('physician')
-  resolveReaction(
-    @Param('id') id: string,
-    @Body() resolveData: { outcome: string },
-  ) {
+  resolveReaction(@Param('id') id: string, @Body() resolveData: { outcome: string }) {
     return this.adverseReactionService.resolveReaction(id, resolveData.outcome);
   }
 }

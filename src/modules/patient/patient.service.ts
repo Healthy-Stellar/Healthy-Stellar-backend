@@ -39,7 +39,7 @@ export class PatientService {
     if (duplicates.length > 0) {
       throw new ConflictException({
         message: 'Potential duplicate patient(s) detected',
-        duplicates: duplicates.map(d => ({
+        duplicates: duplicates.map((d) => ({
           id: d.patient.id,
           mrn: d.patient.mrn,
           fullName: d.patient.fullName,
@@ -218,8 +218,7 @@ export class PatientService {
     // Update last visit if duplicate is more recent
     if (
       duplicatePatient.lastVisitDate &&
-      (!masterPatient.lastVisitDate ||
-        duplicatePatient.lastVisitDate > masterPatient.lastVisitDate)
+      (!masterPatient.lastVisitDate || duplicatePatient.lastVisitDate > masterPatient.lastVisitDate)
     ) {
       masterPatient.lastVisitDate = duplicatePatient.lastVisitDate;
     }
@@ -283,4 +282,3 @@ export class PatientService {
     });
   }
 }
-

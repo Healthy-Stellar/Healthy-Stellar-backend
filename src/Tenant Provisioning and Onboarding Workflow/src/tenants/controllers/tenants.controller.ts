@@ -10,26 +10,22 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
-} from "@nestjs/common";
-import { Queue } from "bull";
-import { InjectQueue } from "@nestjs/bull";
-import { Repository } from "typeorm";
-import { InjectRepository } from "@nestjs/typeorm";
-import {
-  CreateTenantDto,
-  ProvisioningStatusDto,
-  TenantResponseDto,
-} from "../dto/tenant.dto";
-import { Tenant } from "../entities/tenant.entity";
-import { ProvisioningService } from "../services/provisioning.service";
-import { ProvisioningJobData } from "../processors/provisioning.processor";
+} from '@nestjs/common';
+import { Queue } from 'bull';
+import { InjectQueue } from '@nestjs/bull';
+import { Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { CreateTenantDto, ProvisioningStatusDto, TenantResponseDto } from '../dto/tenant.dto';
+import { Tenant } from '../entities/tenant.entity';
+import { ProvisioningService } from '../services/provisioning.service';
+import { ProvisioningJobData } from '../processors/provisioning.processor';
 
-@Controller("admin/tenants")
+@Controller('admin/tenants')
 export class TenantsController {
   private readonly logger = new Logger(TenantsController.name);
 
   constructor(
-    @InjectQueue("provisioning")
+    @InjectQueue('provisioning')
     private provisioningQueue: Queue<ProvisioningJobData>,
     @InjectRepository(Tenant)
     private tenantRepository: Repository<Tenant>,
@@ -39,17 +35,13 @@ export class TenantsController {
   @Post()
   @HttpCode(HttpStatus.ACCEPTED)
   async createTenant(@Body() createTenantDto: CreateTenantDto) {
-    this.logger.log(
-      `Received request to provision tenant: ${createTenantDto.name}`,
-    );
+    this.logger.log(`Received request to provision tenant: ${createTenantDto.name}`);
 
     try {
       // Validate that schema name can be generated
       const schemaName = this.generateSchemaName(createTenantDto.name);
       if (!this.isValidSchemaName(schemaName)) {
-        throw new BadRequestException(
-          `Invalid tenant name: ${createTenantDto.name}`,
-        );
+        throw new BadRequestException(`Invalid tenant name: ${createTenantDto.name}`);
       }
 
       // Queue the provisioning job
@@ -63,7 +55,7 @@ export class TenantsController {
         {
           attempts: 1, // No automatic retries
           backoff: {
-            type: "exponential",
+            type: 'exponential',
             delay: 5000,
           },
           removeOnComplete: false, // Keep job history
@@ -75,7 +67,7 @@ export class TenantsController {
 
       return {
         jobId: job.id,
-        status: "queued",
+        status: 'queued',
         message: `Tenant provisioning for ${createTenantDto.name} has been queued`,
       };
     } catch (error) {
@@ -84,15 +76,12 @@ export class TenantsController {
     }
   }
 
-  @Get(":id/provisioning-status")
-  async getProvisioningStatus(
-    @Param("id") tenantId: string,
-  ): Promise<ProvisioningStatusDto> {
+  @Get(':id/provisioning-status')
+  async getProvisioningStatus(@Param('id') tenantId: string): Promise<ProvisioningStatusDto> {
     this.logger.log(`Retrieving provisioning status for tenant: ${tenantId}`);
 
     try {
-      const status =
-        await this.provisioningService.getProvisioningStatus(tenantId);
+      const status = await this.provisioningService.getProvisioningStatus(tenantId);
 
       if (!status) {
         throw new NotFoundException(`Tenant not found: ${tenantId}`);
@@ -105,8 +94,8 @@ export class TenantsController {
     }
   }
 
-  @Get(":id")
-  async getTenant(@Param("id") tenantId: string): Promise<TenantResponseDto> {
+  @Get(':id')
+  async getTenant(@Param('id') tenantId: string): Promise<TenantResponseDto> {
     this.logger.log(`Retrieving tenant: ${tenantId}`);
 
     try {
@@ -134,16 +123,16 @@ export class TenantsController {
     }
   }
 
-  @Delete(":id")
+  @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  async deleteTenant(@Param("id") tenantId: string) {
+  async deleteTenant(@Param('id') tenantId: string) {
     this.logger.log(`Received request to deprovision tenant: ${tenantId}`);
 
     try {
       await this.provisioningService.deprovisionTenant(tenantId);
 
       return {
-        status: "archived",
+        status: 'archived',
         message: `Tenant ${tenantId} has been archived`,
       };
     } catch (error) {
@@ -154,11 +143,11 @@ export class TenantsController {
 
   @Get()
   async listTenants() {
-    this.logger.log("Listing all tenants");
+    this.logger.log('Listing all tenants');
 
     try {
       const tenants = await this.tenantRepository.find({
-        order: { createdAt: "DESC" },
+        order: { createdAt: 'DESC' },
       });
 
       return {
@@ -180,9 +169,9 @@ export class TenantsController {
   private generateSchemaName(tenantName: string): string {
     let schemaName = tenantName
       .toLowerCase()
-      .replace(/[^a-z0-9]/g, "_")
-      .replace(/_+/g, "_")
-      .replace(/^_+|_+$/g, "");
+      .replace(/[^a-z0-9]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
 
     if (!schemaName || !/^[a-z]/.test(schemaName)) {
       schemaName = `tenant_${schemaName}`;

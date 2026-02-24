@@ -19,14 +19,8 @@ import {
   CriticalCareMonitoring,
   CriticalAlertSeverity,
 } from '../entities/critical-care-monitoring.entity';
-import {
-  EmergencyResource,
-  EmergencyResourceStatus,
-} from '../entities/emergency-resource.entity';
-import {
-  RapidResponseEvent,
-  RapidResponseStatus,
-} from '../entities/rapid-response-event.entity';
+import { EmergencyResource, EmergencyResourceStatus } from '../entities/emergency-resource.entity';
+import { RapidResponseEvent, RapidResponseStatus } from '../entities/rapid-response-event.entity';
 import {
   DisasterIncident,
   DisasterIncidentStatus,
@@ -116,7 +110,10 @@ export class EmergencyOperationsService {
     });
   }
 
-  async acknowledgeCriticalAlert(alertId: string, acknowledgedBy: string): Promise<CriticalCareAlert> {
+  async acknowledgeCriticalAlert(
+    alertId: string,
+    acknowledgedBy: string,
+  ): Promise<CriticalCareAlert> {
     const alert = await this.alertRepository.findOne({ where: { id: alertId } });
     if (!alert) throw new NotFoundException(`Critical alert ${alertId} not found`);
     alert.acknowledged = true;
@@ -129,7 +126,10 @@ export class EmergencyOperationsService {
     const resource = this.resourceRepository.create({
       ...dto,
       availableUnits: dto.totalUnits,
-      status: dto.totalUnits > 0 ? EmergencyResourceStatus.AVAILABLE : EmergencyResourceStatus.UNAVAILABLE,
+      status:
+        dto.totalUnits > 0
+          ? EmergencyResourceStatus.AVAILABLE
+          : EmergencyResourceStatus.UNAVAILABLE,
     });
     return await this.resourceRepository.save(resource);
   }
@@ -173,7 +173,10 @@ export class EmergencyOperationsService {
     if (dto.notes) {
       event.notes = event.notes ? `${event.notes}\n${dto.notes}` : dto.notes;
     }
-    if (dto.status === RapidResponseStatus.RESOLVED || dto.status === RapidResponseStatus.CANCELLED) {
+    if (
+      dto.status === RapidResponseStatus.RESOLVED ||
+      dto.status === RapidResponseStatus.CANCELLED
+    ) {
       event.resolvedAt = new Date();
     }
     return await this.rapidResponseRepository.save(event);
@@ -245,7 +248,10 @@ export class EmergencyOperationsService {
     return item;
   }
 
-  private resolveResourceStatus(availableUnits: number, totalUnits: number): EmergencyResourceStatus {
+  private resolveResourceStatus(
+    availableUnits: number,
+    totalUnits: number,
+  ): EmergencyResourceStatus {
     if (availableUnits <= 0) return EmergencyResourceStatus.UNAVAILABLE;
     const ratio = totalUnits > 0 ? availableUnits / totalUnits : 0;
     if (ratio <= 0.25) return EmergencyResourceStatus.LIMITED;
@@ -268,7 +274,8 @@ export class EmergencyOperationsService {
     if ((key.includes('heart_rate') || key.includes('hr')) && (value < 35 || value > 150)) {
       return CriticalAlertSeverity.CRITICAL;
     }
-    if (key.includes('systolic') && (value < 75 || value > 210)) return CriticalAlertSeverity.CRITICAL;
+    if (key.includes('systolic') && (value < 75 || value > 210))
+      return CriticalAlertSeverity.CRITICAL;
     return CriticalAlertSeverity.WARNING;
   }
 }
