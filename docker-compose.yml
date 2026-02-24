@@ -16,6 +16,11 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - JWT_SECRET_FILE=/run/secrets/jwt_secret
+      - LOG_LEVEL=info
+      - LOKI_HOST=http://loki:3100
+      - APP_LOG_RETENTION_DAYS=30
+      - AUDIT_LOG_RETENTION_DAYS=2555
+      - SLOW_REQUEST_THRESHOLD_MS=1000
     secrets:
       - db_password
       - jwt_secret
