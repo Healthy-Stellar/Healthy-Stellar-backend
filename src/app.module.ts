@@ -19,6 +19,12 @@ import { EmergencyOperationsModule } from './emergency-operations/emergency-oper
 import { AccessControlModule } from './access-control/access-control.module';
 import { ReportsModule } from './reports/reports.module';
 import { TenantModule } from './tenant/tenant.module';
+import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { QueueModule } from './queues/queue.module';
+import { FhirModule } from './fhir/fhir.module';
+import { AccessControlModule } from './access-control/access-control.module';
+import { StellarModule } from './stellar/stellar.module';
 import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -30,6 +36,13 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { QueueModule } from './queues/queue.module';
 import { TenantConfigModule } from './tenant-config/tenant-config.module';
 import { GdprModule } from './gdpr/gdpr.module';
+import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
+import { JobsModule } from './jobs/jobs.module';
+import { AuditModule } from './common/audit/audit.module';
+import { FhirModule } from './fhir/fhir.module';
+import { StellarModule } from './stellar/stellar.module';
+import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
+import { ThrottlerConfigService } from './common/throttler/throttler-config.service';
 
 const hasBearerAuthUser = (req: any): boolean => {
   const authHeader = req?.headers?.authorization;
@@ -90,9 +103,6 @@ const getUserTrackerFromRequest = (req: any): string => {
 
   return req?.ip || 'unknown-ip';
 };
-import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
-import { JobsModule } from './jobs/jobs.module';
-import { AuditModule } from './common/audit/audit.module';
 
 @Module({
   imports: [

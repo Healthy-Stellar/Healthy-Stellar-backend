@@ -3,6 +3,98 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AccessGrant, AccessLevel, GrantStatus } from '../entities/access-grant.entity';
 import { AccessControlService } from './access-control.service';
+describe('verifyAccess', () => {
+  it('should return true when valid grant exists', async () => {
+    const requesterId = 'requester-123';
+    const recordId = 'record-456';
+
+    const validGrant = {
+      id: 'grant-789',
+      patientId: 'patient-123',
+      granteeId: requesterId,
+      recordIds: [recordId, 'other-record'],
+      status: GrantStatus.ACTIVE,
+      expiresAt: new Date(Date.now() + 86400000), // 24 hours from now
+    } as AccessGrant;
+
+    repository.find.mockResolvedValue([validGrant]);
+
+    const result = await service.verifyAccess(requesterId, recordId);
+
+    expect(result).toBe(true);
+    expect(repository.find).toHaveBeenCalledWith({
+      where: {
+        granteeId: requesterId,
+        status: GrantStatus.ACTIVE,
+      },
+    });
+  });
+
+  it('should return false when no grant exists', async () => {
+    repository.find.mockResolvedValue([]);
+
+    const result = await service.verifyAccess('requester-123', 'record-456');
+
+    expect(result).toBe(false);
+  });
+
+  it('should return false when grant does not include the record', async () => {
+    const requesterId = 'requester-123';
+    const recordId = 'record-456';
+
+    const grant = {
+      id: 'grant-789',
+      granteeId: requesterId,
+      recordIds: ['other-record-1', 'other-record-2'],
+      status: GrantStatus.ACTIVE,
+      expiresAt: null,
+    } as AccessGrant;
+
+    repository.find.mockResolvedValue([grant]);
+
+    const result = await service.verifyAccess(requesterId, recordId);
+
+    expect(result).toBe(false);
+  });
+
+  it('should return false when grant is expired', async () => {
+    const requesterId = 'requester-123';
+    const recordId = 'record-456';
+
+    const expiredGrant = {
+      id: 'grant-789',
+      granteeId: requesterId,
+      recordIds: [recordId],
+      status: GrantStatus.ACTIVE,
+      expiresAt: new Date(Date.now() - 86400000), // 24 hours ago
+    } as AccessGrant;
+
+    repository.find.mockResolvedValue([expiredGrant]);
+
+    const result = await service.verifyAccess(requesterId, recordId);
+
+    expect(result).toBe(false);
+  });
+
+  it('should return true when grant has no expiration', async () => {
+    const requesterId = 'requester-123';
+    const recordId = 'record-456';
+
+    const permanentGrant = {
+      id: 'grant-789',
+      granteeId: requesterId,
+      recordIds: [recordId],
+      status: GrantStatus.ACTIVE,
+      expiresAt: null,
+    } as AccessGrant;
+
+    repository.find.mockResolvedValue([permanentGrant]);
+
+    const result = await service.verifyAccess(requesterId, recordId);
+
+    expect(result).toBe(true);
+  });
+});
 import { SorobanQueueService } from './soroban-queue.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { User } from '../../auth/entities/user.entity';

@@ -320,4 +320,24 @@ export class AccessControlService {
       order: { createdAt: 'DESC' },
     });
   }
+
+    async verifyAccess(requesterId: string, recordId: string): Promise<boolean> {
+      this.logger.log(`Verifying access for requester ${requesterId} on record ${recordId}`);
+
+      const grants = await this.grantRepository.find({
+        where: {
+          granteeId: requesterId,
+          status: GrantStatus.ACTIVE,
+        },
+      });
+
+      const now = new Date();
+      const validGrant = grants.find((grant) => {
+        const hasRecord = grant.recordIds.includes(recordId);
+        const notExpired = !grant.expiresAt || grant.expiresAt > now;
+        return hasRecord && notExpired;
+      });
+
+      return !!validGrant;
+    }
 }
