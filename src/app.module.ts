@@ -1,7 +1,7 @@
 import { APP_FILTER, APP_GUARD, APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from './auth/auth.module';
@@ -19,8 +19,21 @@ import { EmergencyOperationsModule } from './emergency-operations/emergency-oper
 import { AccessControlModule } from './access-control/access-control.module';
 import { ReportsModule } from './reports/reports.module';
 import { TenantModule } from './tenant/tenant.module';
-import { I18nModule, AcceptLanguageResolver } from 'nestjs-i18n';
+import { I18nModule, AcceptLanguageResolver } from 'nestjshelp me solve this fronted issue as a single resource with this #50 Engagement Rewards UI/2
+Repo Avatar hman38705/socialflow-ai-dashboard
+
+Descriptions:
+##issue 108.2:-i18n';
 import * as path from 'path';
+import { FhirModule } from './fhir/fhir.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { QueueModule } from './queues/queue.module';
+import { FhirModule } from './fhir/fhir.module';
+import { AccessControlModule } from './access-control/access-control.module';
+import { StellarModule } from './stellar/stellar.module';
+ main
 import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -39,6 +52,9 @@ import { FhirModule } from './fhir/fhir.module';
 import { StellarModule } from './stellar/stellar.module';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { ThrottlerConfigService } from './common/throttler/throttler-config.service';
+import { MetricsModule } from './metrics/metrics.module';
+import { LoggerModule } from './common/logger/logger.module';
+import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 
 const hasBearerAuthUser = (req: any): boolean => {
   const authHeader = req?.headers?.authorization;
@@ -108,6 +124,7 @@ const getUserTrackerFromRequest = (req: any): string => {
 
 @Module({
   imports: [
+    LoggerModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
@@ -147,6 +164,7 @@ const getUserTrackerFromRequest = (req: any): string => {
     ValidationModule,
     InfectionControlModule,
     HealthModule,
+    MetricsModule,
     NotificationsModule,
     QueueModule,
     FhirModule,
@@ -156,6 +174,8 @@ const getUserTrackerFromRequest = (req: any): string => {
     AuditModule,
     ReportsModule,
     TenantConfigModule,
+    FhirModule,
+    AnalyticsModule,
     GdprModule,
   ],
   controllers: [AppController],
@@ -179,4 +199,8 @@ const getUserTrackerFromRequest = (req: any): string => {
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+  }
+}

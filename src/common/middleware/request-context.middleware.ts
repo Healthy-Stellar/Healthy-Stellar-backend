@@ -1,49 +1,48 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
-import { DataSource } from 'typeorm';
+import { AsyncLocalStorage } from 'async_hooks';
+import { randomUUID } from 'crypto';
+
+export interface RequestContext {
+  requestId: string;
+  traceId: string;
+  tenantId?: string;
+  userId?: string;
+  timestamp: string;
+}
+
+export const asyncLocalStorage = new AsyncLocalStorage<RequestContext>();
 
 @Injectable()
 export class RequestContextMiddleware implements NestMiddleware {
-  constructor(private dataSource: DataSource) {}
+  use(req: Request, res: Response, next: NextFunction) {
+    const requestId = (req.headers['x-request-id'] as string) || randomUUID();
+    const traceId = (req.headers['x-trace-id'] as string) || randomUUID();
+    
+    // Extract from JWT or headers if available
+    const tenantId = req.headers['x-tenant-id'] as string;
+    const userId = (req as any).user?.id || (req.headers['x-user-id'] as string);
 
-  async use(req: Request, res: Response, next: NextFunction) {
-    const userId = (req as any).user?.id || 'anonymous';
-    const ipAddress = req.ip || req.connection?.remoteAddress || 'unknown';
-    const userAgent = req.headers['user-agent'] || 'unknown';
-    const requestId = (req.headers['x-request-id'] as string) || this.generateRequestId();
-    const sessionId = (req as any).session?.id;
-
-    req.headers['x-request-id'] = requestId;
-
-    const queryRunner = this.dataSource.createQueryRunner();
-
-    queryRunner.data = {
-      userId,
-      ipAddress,
-      userAgent,
+    const context: RequestContext = {
       requestId,
-      sessionId,
+      traceId,
+      tenantId,
+      userId,
+      timestamp: new Date().toISOString(),
     };
 
-    (req as any).queryRunner = queryRunner;
-    (req as any).auditContext = {
-      userId,
-      ipAddress,
-      userAgent,
-      requestId,
-      sessionId,
-    };
+    // Set request ID in response header
+    res.setHeader('X-Request-ID', requestId);
+    res.setHeader('X-Trace-ID', traceId);
 
-    res.on('finish', () => {
-      if (queryRunner && !queryRunner.isReleased) {
-        queryRunner.release();
-      }
+    // Store context in AsyncLocalStorage
+    asyncLocalStorage.run(context, () => {
+      next();
     });
-
-    next();
   }
+}
 
-  private generateRequestId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  }
+// Helper function to get current context
+export function getRequestContext(): RequestContext | undefined {
+  return asyncLocalStorage.getStore();
 }
