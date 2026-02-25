@@ -1,0 +1,65 @@
+{
+  "name": "@medchain/sdk",
+  "version": "1.0.0",
+  "description": "Auto-generated TypeScript SDK for MedChain Healthcare API",
+  "author": "MedChain Team",
+  "license": "ISC",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./models": {
+      "import": "./dist/models/index.js",
+      "require": "./dist/models/index.js",
+      "types": "./dist/models/index.d.ts"
+    },
+    "./apis": {
+      "import": "./dist/apis/index.js",
+      "require": "./dist/apis/index.js",
+      "types": "./dist/apis/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "axios": "^1.x"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Healthy-Stellar/Healthy-Stellar-backend.git",
+    "directory": "packages/sdk"
+  },
+  "keywords": [
+    "medchain",
+    "healthcare",
+    "api",
+    "client",
+    "sdk",
+    "typescript",
+    "axios",
+    "blockchain"
+  ],
+  "bugs": {
+    "url": "https://github.com/Healthy-Stellar/Healthy-Stellar-backend/issues"
+  },
+  "homepage": "https://github.com/Healthy-Stellar/Healthy-Stellar-backend/tree/main/packages/sdk#readme"
+}

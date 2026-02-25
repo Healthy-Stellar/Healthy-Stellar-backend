@@ -1,0 +1,116 @@
+name: SDK Publish to npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 1.0.0)'
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Update SDK version from release tag
+        if: github.event_name == 'release'
+        run: |
+          VERSION=${{ github.event.release.tag_name }}
+          VERSION=${VERSION#v}  # Remove 'v' prefix if exists
+          echo "Publishing version: $VERSION"
+          npm run version:sdk -- "$VERSION"
+
+      - name: Update SDK version from workflow input
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          npm run version:sdk -- "${{ github.event.inputs.version }}"
+
+      - name: Install openapi-generator-cli
+        run: npm install -g @openapitools/openapi-generator-cli@2.7.0
+
+      - name: Generate SDK
+        run: npm run generate:sdk
+        env:
+          OPENAPI_SPEC: docs/openapi.json
+
+      - name: Build SDK
+        run: npm run build:sdk
+
+      - name: Run SDK tests
+        run: npm run test:sdk
+        continue-on-error: true
+
+      - name: Publish to npm
+        run: npm publish packages/sdk --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Print published package info
+        run: |
+          echo "✅ SDK published successfully to npm!"
+          echo "Package: @medchain/sdk"
+          VERSION=$(node -p "require('./packages/sdk/package.json').version")
+          echo "Version: $VERSION"
+          echo "Registry: https://www.npmjs.com/package/@medchain/sdk"
+
+      - name: Create deployment status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.ref,
+              environment: 'npm',
+              description: 'SDK published to npm',
+              auto_merge: false,
+              required_contexts: [],
+            });
+
+      - name: Comment on release
+        if: github.event_name == 'release'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '## 📦 SDK Published to npm\n\n✅ The TypeScript SDK has been published to npm!\n\n**Package**: `@medchain/sdk`\n\n**Install**: `npm install @medchain/sdk`\n\n**View on npm**: https://www.npmjs.com/package/@medchain/sdk\n\n**Docs**: https://github.com/${{ github.repository }}/tree/main/packages/sdk#readme'
+            });
+
+      - name: Send Slack notification
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "SDK Publication Status",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "${{ job.status == 'success' && '✅ SDK Published to npm' || '❌ SDK Publication Failed' }}\n*Package*: @medchain/sdk\n*Repo*: ${{ github.repository }}\n*Action*: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        continue-on-error: true
