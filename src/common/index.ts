@@ -28,5 +28,11 @@ export * from './middleware/request-context.middleware';
 // Guards
 export * from './guards/audit-context.guard';
 
+// Filters
+export * from './filters/global-exception.filter';
+
+// Exceptions
+export * from './exceptions';
+
 // Module
 export * from './common.module';
