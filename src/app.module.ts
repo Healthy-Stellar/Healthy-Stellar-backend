@@ -19,9 +19,14 @@ import { EmergencyOperationsModule } from './emergency-operations/emergency-oper
 import { AccessControlModule } from './access-control/access-control.module';
 import { ReportsModule } from './reports/reports.module';
 import { TenantModule } from './tenant/tenant.module';
+import { I18nModule, AcceptLanguageResolver } from 'nestjshelp me solve this fronted issue as a single resource with this #50 Engagement Rewards UI/2
+Repo Avatar hman38705/socialflow-ai-dashboard
+
+Descriptions:
+##issue 108.2:-i18n';
+import * as path from 'path';
 import { FhirModule } from './fhir/fhir.module';
 import { AnalyticsModule } from './analytics/analytics.module';
-=======
 import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { QueueModule } from './queues/queue.module';
@@ -135,6 +140,14 @@ const getUserTrackerFromRequest = (req: any): string => {
       imports: [ConfigModule],
       useClass: ThrottlerConfigService,
     }),
+    I18nModule.forRoot({
+      fallbackLanguage: 'en',
+      loaderOptions: {
+        path: path.join(__dirname, '/i18n/'),
+        watch: true,
+      },
+      resolvers: [AcceptLanguageResolver],
+    }),
     // Application modules
     TenantModule,
     CommonModule,
@@ -163,9 +176,7 @@ const getUserTrackerFromRequest = (req: any): string => {
     TenantConfigModule,
     FhirModule,
     AnalyticsModule,
-=======
     GdprModule,
- main
   ],
   controllers: [AppController],
   providers: [

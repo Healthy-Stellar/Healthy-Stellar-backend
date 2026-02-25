@@ -131,7 +131,7 @@ export class PatientsController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) {
-      throw new BadRequestException('Image file is required');
+      throw new BadRequestException(I18nContext.current()?.t('errors.IMAGE_FILE_IS_REQUIRED') || 'Image file is required');
     }
 
     return this.patientsService.attachPhoto(patientId, file);

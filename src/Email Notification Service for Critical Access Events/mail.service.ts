@@ -66,8 +66,9 @@ export class MailService {
     patient: Patient,
     grantee: Provider,
     record: MedicalRecord,
+    language: string = 'en'
   ): Promise<void> {
-    const template = 'access-granted/access-granted';
+    const template = `access-granted/access-granted.${language}`;
     const subject = `Access Granted: ${grantee.name} can now view your records`;
 
     if (this.isTestEnv) {
@@ -100,6 +101,7 @@ export class MailService {
     patient: Patient,
     revokee: Provider,
     record: MedicalRecord,
+    language: string = 'en'
   ): Promise<void> {
     const subject = `Access Revoked: ${revokee.name} no longer has access to your records`;
 
@@ -111,7 +113,7 @@ export class MailService {
     await this.mailerService.sendMail({
       to: patient.email,
       subject,
-      template: 'access-revoked/access-revoked',
+      template: `access-revoked/access-revoked.${language}`,
       context: {
         patientName: patient.name,
         granteeName: revokee.name,
@@ -127,6 +129,7 @@ export class MailService {
     patient: Patient,
     record: MedicalRecord,
     uploadedBy?: Provider,
+    language: string = 'en'
   ): Promise<void> {
     const subject = `New Record Available: ${record.title}`;
 
@@ -138,7 +141,7 @@ export class MailService {
     await this.mailerService.sendMail({
       to: patient.email,
       subject,
-      template: 'record-uploaded/record-uploaded',
+      template: `record-uploaded/record-uploaded.${language}`,
       context: {
         patientName: patient.name,
         recordTitle: record.title,
@@ -152,7 +155,11 @@ export class MailService {
     });
   }
 
-  async sendSuspiciousAccessEmail(patient: Patient, event: SuspiciousAccessEvent): Promise<void> {
+  async sendSuspiciousAccessEmail(
+    patient: Patient,
+    event: SuspiciousAccessEvent,
+    language: string = 'en'
+  ): Promise<void> {
     const subject = '⚠️ Suspicious Access Detected on Your Health Records';
 
     if (this.isTestEnv) {
@@ -163,7 +170,7 @@ export class MailService {
     await this.mailerService.sendMail({
       to: patient.email,
       subject,
-      template: 'suspicious-access/suspicious-access',
+      template: `suspicious-access/suspicious-access.${language}`,
       context: {
         patientName: patient.name,
         accessorName: event.accessorName,
