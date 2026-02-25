@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accès accordé</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: #f5f5f5;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px 20px;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 600;
+    }
+    .content {
+      padding: 30px 20px;
+    }
+    .content h2 {
+      color: #333333;
+      font-size: 20px;
+      margin: 0 0 15px 0;
+    }
+    .content p {
+      color: #555555;
+      line-height: 1.6;
+      margin: 0 0 15px 0;
+    }
+    .record-info {
+      background-color: #f9f9f9;
+      border-left: 4px solid #667eea;
+      padding: 15px;
+      margin: 20px 0;
+      border-radius: 4px;
+    }
+    .record-info strong {
+      color: #333333;
+    }
+    .cta-button {
+      display: inline-block;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      text-decoration: none;
+      padding: 12px 30px;
+      border-radius: 6px;
+      margin: 20px 0;
+      font-weight: 600;
+      transition: opacity 0.3s;
+    }
+    .cta-button:hover {
+      opacity: 0.9;
+    }
+    .footer {
+      background-color: #f9f9f9;
+      padding: 20px;
+      text-align: center;
+      color: #888888;
+      font-size: 13px;
+      border-top: 1px solid #eeeeee;
+    }
+    .footer a {
+      color: #667eea;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>✓ Accès accordé</h1>
+    </div>
+    <div class="content">
+      <h2>Bonjour {{patientName}},</h2>
+      <p>Bonne nouvelle ! {{grantorName}} vous a accordé l'accès à un dossier médical dans MedChain.</p>
+
+      <div class="record-info">
+        <strong>Type de dossier :</strong> {{recordType}}<br>
+        <strong>Accordé par :</strong> {{grantorName}} ({{grantorEmail}})<br>
+        <strong>Niveau d'accès :</strong> {{accessLevel}}<br>
+        {{#if expiresAt}}<strong>Expire le :</strong> {{expiresAt}}{{/if}}
+      </div>
+
+      <p>Vous pouvez maintenant consulter et gérer ce dossier via votre compte MedChain. Cliquez sur le bouton ci-dessous pour accéder à vos dossiers :</p>
+
+      <a href="{{recordsUrl}}" class="cta-button">Voir les dossiers</a>
+
+      <p><strong>Permissions accordées :</strong></p>
+      <ul>
+        {{#each permissions}}
+        <li>{{this}}</li>
+        {{/each}}
+      </ul>
+
+      <p>Si vous avez des questions ou si vous pensez que cet accès a été accordé par erreur, veuillez contacter le titulaire du dossier ou répondre à cet e-mail.</p>
+    </div>
+    <div class="footer">
+      <p>© 2024 MedChain. Tous droits réservés.</p>
+      <p><a href="{{privacyUrl}}">Politique de confidentialité</a> | <a href="{{termsUrl}}">Conditions d'utilisation</a></p>
+    </div>
+  </div>
+</body>
+</html>

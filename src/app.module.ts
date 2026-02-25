@@ -47,6 +47,8 @@ import { JobsModule } from './jobs/jobs.module';
 import { AuditModule } from './common/audit/audit.module';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { ThrottlerConfigService } from './common/throttler/throttler-config.service';
+import { I18nAppModule } from './i18n/i18n.module';
+import { I18nExceptionFilter } from './i18n/filters/i18n-exception.filter';
 import { CircuitBreakerModule } from './common/circuit-breaker/chelp me solve this fronted issue as a single resource with this #50 Engagement Rewards UI/2
 Repo Avatar hman38705/socialflow-ai-dashboard
 
@@ -151,6 +153,7 @@ const getUserTrackerFromRequest = (req: any): string => {
     // Application modules
     TenantModule,
     CommonModule,
+    I18nAppModule,
     AuthModule,
     BillingModule,
     MedicalRecordsModule,
@@ -191,6 +194,10 @@ const getUserTrackerFromRequest = (req: any): string => {
     {
       provide: APP_FILTER,
       useClass: CircuitBreakerExceptionFilter,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: I18nExceptionFilter,
     },
     {
       provide: APP_PIPE,
