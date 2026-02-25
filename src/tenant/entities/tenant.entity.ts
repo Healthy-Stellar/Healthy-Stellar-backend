@@ -23,6 +23,9 @@ export class Tenant {
   @Column({ unique: true, nullable: true })
   stellarContractAddress: string;
 
+  @Column({ nullable: true })
+  kmsCmkArn: string;
+
   @Column({ default: 'active' })
   status: string;
 
