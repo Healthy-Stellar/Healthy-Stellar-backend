@@ -3,7 +3,7 @@ import { VersioningType, VERSION_NEUTRAL } from '@nestjs/common';
 import { I18nValidationPipe, I18nValidationExceptionFilter } from 'nestjs-i18n';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import helmet from 'helmet';
 import { DeprecationInterceptor } from './common/interceptors/deprecation.interceptor';
 import { Logger } from 'nestjs-pino';
@@ -74,6 +74,7 @@ async function bootstrap() {
 
   app.useGlobalInterceptors(new DeprecationInterceptor(app.get(Reflector)));
 
+  app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalFilters(
     new I18nValidationExceptionFilter({ detailedErrors: false }),
     new HttpExceptionFilter()
