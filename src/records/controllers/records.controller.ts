@@ -34,7 +34,7 @@ export class RecordsController {
   )
   async uploadRecord(@Body() dto: CreateRecordDto, @UploadedFile() file: Express.Multer.File) {
     if (!file) {
-      throw new BadRequestException('Encrypted record file is required');
+      throw new BadRequestException(I18nContext.current()?.t('errors.ENCRYPTED_RECORD_FILE_IS_REQUIRED') || 'Encrypted record file is required');
     }
 
     return this.recordsService.uploadRecord(dto, file.buffer);
