@@ -75,6 +75,9 @@ export class MedicalRecord {
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  stellarTxHash: string;
+
   @VersionColumn()
   version: number;
 

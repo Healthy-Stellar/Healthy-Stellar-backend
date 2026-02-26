@@ -27,6 +27,7 @@ import { StellarTransactionProcessor } from './processors/stellar-transaction.pr
       { name: QUEUE_NAMES.STELLAR_TRANSACTIONS },
       { name: QUEUE_NAMES.IPFS_UPLOADS },
       { name: QUEUE_NAMES.EMAIL_NOTIFICATIONS },
+      { name: QUEUE_NAMES.REPORTS },
     ),
     BullBoardModule.forRoot({
       route: '/admin/queues',
@@ -44,9 +45,13 @@ import { StellarTransactionProcessor } from './processors/stellar-transaction.pr
       name: QUEUE_NAMES.EMAIL_NOTIFICATIONS,
       adapter: BullMQAdapter,
     }),
+    BullBoardModule.forFeature({
+      name: QUEUE_NAMES.REPORTS,
+      adapter: BullMQAdapter,
+    }),
   ],
   controllers: [QueueController],
   providers: [QueueService, StellarTransactionProcessor],
-  exports: [QueueService],
+  exports: [QueueService, BullModule],
 })
 export class QueueModule {}
