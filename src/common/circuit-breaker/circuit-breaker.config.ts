@@ -1,4 +1,4 @@
-import { CircuitBreakerPolicy, ConsecutiveBreaker, ExponentialBackoff, handleAll, retry } from 'cockatiel';
+import { ConsecutiveBreaker, ExponentialBackoff, handleAll, retry, circuitBreaker, wrap } from 'cockatiel';
 
 export interface CircuitBreakerConfig {
   failureThreshold: number;
@@ -40,17 +40,13 @@ export const CIRCUIT_BREAKER_CONFIGS: Record<string, CircuitBreakerConfig> = {
 };
 
 export function createCircuitBreaker(serviceName: string, config: CircuitBreakerConfig) {
-  const breaker = new ConsecutiveBreaker({
-    threshold: config.failureThreshold,
+  const breaker = new ConsecutiveBreaker(config.failureThreshold);
+
+  const cbPolicy = circuitBreaker(handleAll, {
     halfOpenAfter: config.halfOpenAfter * 1000, // convert to ms
+    breaker,
   });
 
-  const retryPolicy = retry(handleAll, {
-    maxAttempts: config.retryAttempts || 3,
-    backoff: new ExponentialBackoff({
-      initialDelay: config.retryBackoff || 500,
-    }),
-  });
-
-  return CircuitBreakerPolicy.wrap(retryPolicy, breaker);
+  return cbPolicy;
 }
+

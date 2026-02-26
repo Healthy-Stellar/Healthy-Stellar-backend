@@ -1,11 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CircuitBreakerService } from './circuit-breaker.service';
 import { BrokenCircuitError } from 'cockatiel';
+import { register } from 'prom-client';
 
 describe('CircuitBreakerService', () => {
   let service: CircuitBreakerService;
 
   beforeEach(async () => {
+    register.clear();
     const module: TestingModule = await Test.createTestingModule({
       providers: [CircuitBreakerService],
     }).compile();

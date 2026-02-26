@@ -134,7 +134,6 @@
     "@types/argon2": "^0.14.1",
     "@types/bcrypt": "^5.0.2",
     "@types/cron": "^2.0.1",
-    "@types/fast-check": "^3.5.0",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/multer": "^1.4.11",

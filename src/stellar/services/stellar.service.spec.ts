@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { StellarService } from './stellar.service';
+import { CircuitBreakerService } from '../../common/circuit-breaker/circuit-breaker.service';
 
 // ── Mock @stellar/stellar-sdk ─────────────────────────────────────────────
 
@@ -127,6 +128,12 @@ describe('StellarService', () => {
           provide: ConfigService,
           useValue: {
             get: jest.fn((key: string, fallback?: string) => configValues[key] ?? fallback),
+          },
+        },
+        {
+          provide: CircuitBreakerService,
+          useValue: {
+            execute: jest.fn().mockImplementation((service, fn) => fn()),
           },
         },
       ],

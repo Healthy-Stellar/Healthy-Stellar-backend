@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { KeyManagementError } from '../errors';
 import * as crypto from 'crypto';
+import { CircuitBreakerService } from '../../common/circuit-breaker/circuit-breaker.service';
 
 /**
  * Key Management Service
@@ -33,6 +34,8 @@ export class KeyManagementService {
    * Used for key rotation and cryptographic agility
    */
   private readonly currentDekVersion = 'v1';
+
+  constructor(private readonly circuitBreaker: CircuitBreakerService) { }
 
   /**
    * Initialize KEKs for test patients
@@ -67,37 +70,39 @@ export class KeyManagementService {
    * Requirements: 4.1, 4.2, 4.3, 13.1, 13.3
    */
   async wrapDek(dek: Buffer, patientId: string): Promise<Buffer> {
-    // Retrieve the patient's KEK
-    const kek = this.keks.get(patientId);
-    if (!kek) {
-      throw new KeyManagementError(
-        `KEK not found for patient ${patientId}. Ensure KEK is initialized.`
-      );
-    }
+    return this.circuitBreaker.execute('kms', async () => {
+      // Retrieve the patient's KEK
+      const kek = this.keks.get(patientId);
+      if (!kek) {
+        throw new KeyManagementError(
+          `KEK not found for patient ${patientId}. Ensure KEK is initialized.`
+        );
+      }
 
-    try {
-      // Generate a unique 12-byte IV for this wrapping operation
-      const iv = crypto.randomBytes(12);
+      try {
+        // Generate a unique 12-byte IV for this wrapping operation
+        const iv = crypto.randomBytes(12);
 
-      // Create AES-256-GCM cipher with the KEK
-      const cipher = crypto.createCipheriv('aes-256-gcm', kek, iv);
+        // Create AES-256-GCM cipher with the KEK
+        const cipher = crypto.createCipheriv('aes-256-gcm', kek, iv);
 
-      // Encrypt the DEK
-      const encryptedDek = Buffer.concat([
-        cipher.update(dek),
-        cipher.final(),
-      ]);
+        // Encrypt the DEK
+        const encryptedDek = Buffer.concat([
+          cipher.update(dek),
+          cipher.final(),
+        ]);
 
-      // Get the authentication tag
-      const authTag = cipher.getAuthTag();
+        // Get the authentication tag
+        const authTag = cipher.getAuthTag();
 
-      // Return IV + encrypted DEK + auth tag as a single Buffer
-      return Buffer.concat([iv, encryptedDek, authTag]);
-    } catch (error) {
-      throw new KeyManagementError(
-        `Failed to wrap DEK for patient ${patientId}: ${error.message}`
-      );
-    }
+        // Return IV + encrypted DEK + auth tag as a single Buffer
+        return Buffer.concat([iv, encryptedDek, authTag]);
+      } catch (error) {
+        throw new KeyManagementError(
+          `Failed to wrap DEK for patient ${patientId}: ${error.message}`
+        );
+      }
+    });
   }
 
   /**
@@ -118,39 +123,41 @@ export class KeyManagementService {
    * Requirements: 7.1, 13.2, 13.4
    */
   async unwrapDek(encryptedDek: Buffer, patientId: string): Promise<Buffer> {
-    // Retrieve the patient's KEK
-    const kek = this.keks.get(patientId);
-    if (!kek) {
-      throw new KeyManagementError(
-        `KEK not found for patient ${patientId}. Ensure KEK is initialized.`
-      );
-    }
+    return this.circuitBreaker.execute('kms', async () => {
+      // Retrieve the patient's KEK
+      const kek = this.keks.get(patientId);
+      if (!kek) {
+        throw new KeyManagementError(
+          `KEK not found for patient ${patientId}. Ensure KEK is initialized.`
+        );
+      }
 
-    try {
-      // Extract components from the encrypted DEK buffer
-      // Format: IV (12 bytes) + encrypted DEK + auth tag (16 bytes)
-      const iv = encryptedDek.subarray(0, 12);
-      const authTag = encryptedDek.subarray(encryptedDek.length - 16);
-      const ciphertext = encryptedDek.subarray(12, encryptedDek.length - 16);
+      try {
+        // Extract components from the encrypted DEK buffer
+        // Format: IV (12 bytes) + encrypted DEK + auth tag (16 bytes)
+        const iv = encryptedDek.subarray(0, 12);
+        const authTag = encryptedDek.subarray(encryptedDek.length - 16);
+        const ciphertext = encryptedDek.subarray(12, encryptedDek.length - 16);
 
-      // Create AES-256-GCM decipher with the KEK
-      const decipher = crypto.createDecipheriv('aes-256-gcm', kek, iv);
+        // Create AES-256-GCM decipher with the KEK
+        const decipher = crypto.createDecipheriv('aes-256-gcm', kek, iv);
 
-      // Set the authentication tag for verification
-      decipher.setAuthTag(authTag);
+        // Set the authentication tag for verification
+        decipher.setAuthTag(authTag);
 
-      // Decrypt the DEK
-      const dek = Buffer.concat([
-        decipher.update(ciphertext),
-        decipher.final(),
-      ]);
+        // Decrypt the DEK
+        const dek = Buffer.concat([
+          decipher.update(ciphertext),
+          decipher.final(),
+        ]);
 
-      return dek;
-    } catch (error) {
-      throw new KeyManagementError(
-        `Failed to unwrap DEK for patient ${patientId}: ${error.message}`
-      );
-    }
+        return dek;
+      } catch (error) {
+        throw new KeyManagementError(
+          `Failed to unwrap DEK for patient ${patientId}: ${error.message}`
+        );
+      }
+    });
   }
 
   /**
