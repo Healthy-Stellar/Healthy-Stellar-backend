@@ -49,7 +49,7 @@ async function main() {
     JSON.stringify(metadata),
   );
   console.log(`    ✓ Record created: ${record.id}`);
-  console.log(`    ✓ IPFS CID: ${record.ipfsCid}`);
+  console.log(`    ✓ IPFS Hash: ${record.ipfsHash}`);
   console.log(`    ✓ Content hash: ${record.contentHash}`);
 
   // ── Step 3: Grant read access to the doctor ───────────────────────────────

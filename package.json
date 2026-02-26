@@ -47,7 +47,8 @@
     "test:sdk": "cd packages/sdk && npm test",
     "check:sdk-drift": "node scripts/check-sdk-drift.js",
     "version:sdk": "node scripts/version-sdk.js",
-    "publish:sdk": "npm publish packages/sdk --access public"
+    "publish:sdk": "npm publish packages/sdk --access public",
+    "docs:generate": "ts-node -r tsconfig-paths/register 'src/SwaggerOpenAPI Documentation with Full Schema Coverage/export-openapi.ts'"
   },
   "repository": {
     "type": "git",

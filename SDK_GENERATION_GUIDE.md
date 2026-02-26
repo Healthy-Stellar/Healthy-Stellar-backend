@@ -32,8 +32,14 @@ packages/sdk/
 ### 1. OpenAPI Specification
 
 The SDK is generated from the OpenAPI spec located at:
-- **Primary**: `docs/openapi.json`
-- **Fallback**: `src/Auto-Generate TypeScript Client SDK from OpenAPI Spec/openapi.json`
+- **Primary**: `docs/openapi.json` (this file is committed to the repo and used by CI)
+- **Fallback**: `src/Auto-Generate TypeScript Client SDK from OpenAPI Spec/openapi.json` (used automatically when the primary file is missing)
+
+You can regenerate `docs/openapi.json` by bootstrapping the application and exporting the OpenAPI document:
+
+```bash
+npm run docs:generate
+```
 
 The spec defines all API endpoints, models, and authentication methods.
 

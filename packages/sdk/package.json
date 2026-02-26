@@ -31,7 +31,8 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "test": "echo \"No SDK tests configured.\""
   },
   "dependencies": {
     "axios": "^1.6.0"
