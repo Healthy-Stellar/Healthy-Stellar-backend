@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { CircuitBreakerService } from '../../common/circuit-breaker/circuit-breaker.service';
 import {
   StellarTxResult,
   StellarVerifyResult,
@@ -34,7 +35,10 @@ export class StellarService {
   // Base delay (ms) for exponential back-off
   private readonly BASE_DELAY_MS = 500;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly circuitBreaker: CircuitBreakerService,
+  ) {
     const network = this.configService.get<string>('STELLAR_NETWORK', 'testnet');
     const isMainnet = network === 'mainnet';
 
@@ -310,7 +314,7 @@ export class StellarService {
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       const startMs = Date.now();
       try {
-        const result = await fn();
+        const result = await this.circuitBreaker.execute('stellar', fn);
         const durationMs = Date.now() - startMs;
 
         this.logOperation({

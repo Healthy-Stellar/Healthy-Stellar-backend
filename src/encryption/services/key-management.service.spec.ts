@@ -2,13 +2,22 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { KeyManagementService } from './key-management.service';
 import { KeyManagementError } from '../errors';
 import * as crypto from 'crypto';
+import { CircuitBreakerService } from '../../common/circuit-breaker/circuit-breaker.service';
 
 describe('KeyManagementService', () => {
   let service: KeyManagementService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [KeyManagementService],
+      providers: [
+        KeyManagementService,
+        {
+          provide: CircuitBreakerService,
+          useValue: {
+            execute: jest.fn().mockImplementation((service, fn) => fn()),
+          },
+        },
+      ],
     }).compile();
 
     service = module.get<KeyManagementService>(KeyManagementService);
@@ -19,7 +28,7 @@ describe('KeyManagementService', () => {
       // Arrange
       const patientId = 'patient-123';
       const dek = crypto.randomBytes(32); // 256-bit DEK
-      
+
       // Initialize KEK for the patient
       service.initializeTestKeks([patientId]);
 
@@ -94,7 +103,7 @@ describe('KeyManagementService', () => {
       // Assert - verify structure
       // IV: 12 bytes, encrypted DEK: 32 bytes, auth tag: 16 bytes
       expect(wrappedDek.length).toBe(60);
-      
+
       // Verify we can unwrap it (round-trip test)
       const unwrappedDek = await service.unwrapDek(wrappedDek, patientId);
       expect(unwrappedDek.equals(dek)).toBe(true);
@@ -233,7 +242,7 @@ describe('KeyManagementService', () => {
       // Arrange
       const patientId = 'patient-unwrap-9';
       service.initializeTestKeks([patientId]);
-      
+
       // Create a buffer that's too short (less than 28 bytes: 12 IV + 16 auth tag)
       const invalidBuffer = Buffer.alloc(20);
 
