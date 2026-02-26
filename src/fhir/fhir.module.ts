@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { FhirController } from './controllers/fhir.controller';
 import { FhirService } from './fhir.service';
 import { BulkExportService } from './services/bulk-export.service';
+import { FhirMapperService } from './services/fhir-mapper.service';
 import { BulkExportProcessor } from './processors/bulk-export.processor';
 import { BulkExportCleanupTask } from './tasks/bulk-export-cleanup.task';
 import { Patient } from '../patients/entities/patient.entity';
@@ -20,7 +21,7 @@ import { BulkExportJob } from './entities/bulk-export-job.entity';
     ScheduleModule.forRoot(),
   ],
   controllers: [FhirController],
-  providers: [FhirService, BulkExportService, BulkExportProcessor, BulkExportCleanupTask],
-  exports: [FhirService, BulkExportService],
+  providers: [FhirService, BulkExportService, FhirMapperService, BulkExportProcessor, BulkExportCleanupTask],
+  exports: [FhirService, BulkExportService, FhirMapperService],
 })
 export class FhirModule {}

@@ -1,14 +1,9 @@
 import { APP_FILTER, APP_GUARD, APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
-import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerModule } from '@nestjs/throttler';
-import { ConfigModule } from '@nestjs/config';
-import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { BillingModule } from './billing/billing.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
@@ -34,6 +29,7 @@ import { MedicalDataValidationPipe } from './common/validation/medical-data.vali
 import { NotificationsModule } from './notifications/notifications.module';
 import { QueueModule } from './queues/queue.module';
 import { TenantConfigModule } from './tenant-config/tenant-config.module';
+import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
 
 const hasBearerAuthUser = (req: any): boolean => {
   const authHeader = req?.headers?.authorization;
@@ -144,6 +140,10 @@ import { AuditModule } from './common/audit/audit.module';
   controllers: [AppController, HealthController],
   providers: [
     AppService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TracingInterceptor,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: TenantInterceptor

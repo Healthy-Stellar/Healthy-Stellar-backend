@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # Jaeger - Distributed Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.53
+    container_name: healthy-stellar-jaeger
+    ports:
+      - "5775:5775/udp"   # Zipkin compact thrift
+      - "6831:6831/udp"   # Jaeger compact thrift
+      - "6832:6832/udp"   # Jaeger binary thrift
+      - "5778:5778"       # Serve configs
+      - "16686:16686"     # Jaeger UI
+      - "14268:14268"     # Jaeger collector HTTP
+      - "14250:14250"     # Jaeger gRPC
+      - "9411:9411"       # Zipkin compatible endpoint
+      - "4317:4317"       # OTLP gRPC
+      - "4318:4318"       # OTLP HTTP
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - COLLECTOR_OTLP_ENABLED=true
+      - LOG_LEVEL=info
+    networks:
+      - healthy-stellar-network
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: healthy-stellar-postgres-dev
+    environment:
+      POSTGRES_DB: healthy_stellar_dev
+      POSTGRES_USER: dev_user
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - healthy-stellar-network
+    restart: unless-stopped
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: healthy-stellar-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - healthy-stellar-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # IPFS Node
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: healthy-stellar-ipfs-dev
+    ports:
+      - "4001:4001"   # P2P
+      - "5001:5001"   # API
+      - "8080:8080"   # Gateway
+    volumes:
+      - ipfs_dev_data:/data/ipfs
+    networks:
+      - healthy-stellar-network
+    restart: unless-stopped
+
+networks:
+  healthy-stellar-network:
+    driver: bridge
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+  ipfs_dev_data:

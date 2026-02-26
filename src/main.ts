@@ -1,3 +1,4 @@
+import './tracing'; // Initialize tracing before any other imports
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -53,8 +54,8 @@ async function bootstrap() {
     origin: corsOrigins,
     credentials: process.env.CORS_CREDENTIALS === 'true',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: ['X-Total-Count', 'X-Page-Count'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Trace-ID'],
+    exposedHeaders: ['X-Total-Count', 'X-Page-Count', 'X-Trace-ID'],
     maxAge: 3600,
   });
   app.useGlobalFilters(new HttpExceptionFilter());
