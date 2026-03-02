@@ -38,6 +38,9 @@ yarn-error.log*
 *.swo
 *.iml
 
+# GitHub
+.github/
+
 # OS
 .DS_Store
 Thumbs.db
