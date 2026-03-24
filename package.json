@@ -53,6 +53,7 @@
     "generate:sdk": "bash scripts/generate-sdk.sh",
     "build:sdk": "cd packages/sdk && npm run build",
     "test:sdk": "cd packages/sdk && npm test",
+    "check:migrations": "node scripts/check-migration-safety.js",
     "check:sdk-drift": "node scripts/check-sdk-drift.js",
     "version:sdk": "node scripts/version-sdk.js",
     "publish:sdk": "npm publish packages/sdk --access public",
