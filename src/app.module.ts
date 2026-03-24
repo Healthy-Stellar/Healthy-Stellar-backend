@@ -48,6 +48,7 @@ import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
 import { GdprModule } from './gdpr/gdpr.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
 import { JobsModule } from './jobs/jobs.module';
+import { GraphqlModule } from './graphql/graphql.module';
 import { AuditModule } from './common/audit/audit.module';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { ThrottlerConfigService } from './common/throttler/throttler-config.service';
@@ -183,6 +184,7 @@ const getUserTrackerFromRequest = (req: any): string => {
     FhirModule,
     AnalyticsModule,
     GdprModule,
+    GraphqlModule,
   ],
   controllers: [AppController],
   providers: [
