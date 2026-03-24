@@ -1,12 +1,19 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { NotFoundException } from '@nestjs/common';
 import { RecordsService } from './records.service';
 import { Record } from '../entities/record.entity';
 import { IpfsService } from './ipfs.service';
 import { StellarService } from './stellar.service';
 import { RecordType } from '../dto/create-record.dto';
 import { SortBy, SortOrder } from '../dto/pagination-query.dto';
+
+jest.mock('qrcode', () => ({
+  toDataURL: jest.fn().mockResolvedValue('data:image/png;base64,mockedQR'),
+}));
+
+import * as QRCode from 'qrcode';
 
 describe('RecordsService', () => {
   let service: RecordsService;
@@ -25,6 +32,7 @@ describe('RecordsService', () => {
 
   const mockStellarService = {
     anchorCid: jest.fn(),
+    createShareLink: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -43,6 +51,8 @@ describe('RecordsService', () => {
           provide: StellarService,
           useValue: mockStellarService,
         },
+        { provide: 'AccessControlService', useValue: { findActiveEmergencyGrant: jest.fn() } },
+        { provide: 'AuditLogService', useValue: { create: jest.fn() } },
       ],
     }).compile();
 
@@ -374,6 +384,40 @@ describe('RecordsService', () => {
 
       expect(mockIpfsService.upload).toHaveBeenCalledWith(buffer);
       expect(mockStellarService.anchorCid).toHaveBeenCalledWith('patient-1', 'cid-123');
+    });
+  });
+
+  describe('generateQrCode', () => {
+    const mockRecord: Record = {
+      id: 'record-1',
+      patientId: 'patient-1',
+      cid: 'cid-1',
+      stellarTxHash: 'tx-1',
+      recordType: RecordType.MEDICAL_REPORT,
+      description: 'Test',
+      createdAt: new Date(),
+    };
+
+    it('should return a base64 QR code data URL', async () => {
+      mockRepository.findOne.mockResolvedValue(mockRecord);
+      mockStellarService.createShareLink.mockResolvedValue('share-token-abc');
+
+      const result = await service.generateQrCode('record-1', 'patient-1');
+
+      expect(result).toBe('data:image/png;base64,mockedQR');
+      expect(mockStellarService.createShareLink).toHaveBeenCalledWith('record-1', 'patient-1');
+      expect(QRCode.toDataURL).toHaveBeenCalledWith(
+        expect.stringContaining('/share/share-token-abc'),
+      );
+    });
+
+    it('should throw NotFoundException when record does not exist', async () => {
+      mockRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.generateQrCode('nonexistent', 'patient-1')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockStellarService.createShareLink).not.toHaveBeenCalled();
     });
   });
 });

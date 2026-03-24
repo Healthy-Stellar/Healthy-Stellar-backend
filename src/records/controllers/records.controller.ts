@@ -95,6 +95,16 @@ export class RecordsController {
     return this.recordsService.findAll(query);
   }
 
+  @Get(':id/qr-code')
+  @ApiOperation({ summary: 'Generate a QR code for a one-time share link (patient only)' })
+  @ApiResponse({ status: 200, description: 'Base64 PNG QR code' })
+  @ApiResponse({ status: 404, description: 'Record not found' })
+  async getQrCode(@Param('id') id: string, @Req() req: any) {
+    const patientId = req.user?.userId || req.user?.id;
+    const qrBase64 = await this.recordsService.generateQrCode(id, patientId);
+    return { qrCode: qrBase64 };
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a single record by ID' })
   @ApiResponse({ status: 200, description: 'Record retrieved successfully' })
