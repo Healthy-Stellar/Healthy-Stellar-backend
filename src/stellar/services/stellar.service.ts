@@ -48,6 +48,7 @@ export class StellarService {
   constructor(
     private readonly configService: ConfigService,
     private readonly circuitBreaker: CircuitBreakerService,
+    private readonly tracingService?: any, // TracingService - optional to avoid circular deps
   ) {
     const rawNetwork = this.configService.get<string>('STELLAR_NETWORK', 'testnet');
     this.network = rawNetwork === 'mainnet' ? 'mainnet' : 'testnet';
@@ -238,6 +239,48 @@ export class StellarService {
    */
   async anchorRecord(patientId: string, cid: string): Promise<StellarTxResult> {
     this.logger.log(`[anchorRecord] patientId=${patientId} cid=${cid}`);
+
+    if (this.tracingService) {
+      return this.tracingService.withSpan(
+        'stellar.anchorRecord',
+        async (span) => {
+          span.setAttribute('stellar.patient_id', patientId);
+          span.setAttribute('stellar.cid', cid);
+          span.setAttribute('stellar.network', this.network);
+          span.setAttribute('stellar.contract_id', this.contractId);
+
+          this.tracingService.addEvent('stellar.anchorRecord.started', {
+            patientId,
+            cid,
+          });
+
+          try {
+            const result = await this.withRetry('anchorRecord', () =>
+              this.invokeContractInternal('anchor_record', [
+                StellarSdk.nativeToScVal(patientId, { type: 'string' }),
+                StellarSdk.nativeToScVal(cid, { type: 'string' }),
+              ]),
+            );
+
+            span.setAttribute('stellar.tx_hash', result.txHash);
+            span.setAttribute('stellar.ledger', result.ledger);
+
+            this.tracingService.addEvent('stellar.anchorRecord.completed', {
+              txHash: result.txHash,
+              ledger: result.ledger,
+            });
+
+            return result;
+          } catch (error) {
+            this.tracingService.addEvent('stellar.anchorRecord.error', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          }
+        },
+      );
+    }
+
     return this.withRetry('anchorRecord', () =>
       this.invokeContractInternal('anchor_record', [
         StellarSdk.nativeToScVal(patientId, { type: 'string' }),
@@ -265,6 +308,49 @@ export class StellarService {
     this.logger.log(
       `[grantAccess] patientId=${patientId} granteeId=${granteeId} recordId=${recordId} expiresAt=${expiresAt.toISOString()}`,
     );
+
+    if (this.tracingService) {
+      return this.tracingService.withSpan(
+        'stellar.grantAccess',
+        async (span) => {
+          span.setAttribute('stellar.patient_id', patientId);
+          span.setAttribute('stellar.grantee_id', granteeId);
+          span.setAttribute('stellar.record_id', recordId);
+          span.setAttribute('stellar.expires_at', expiresAt.toISOString());
+          span.setAttribute('stellar.network', this.network);
+
+          this.tracingService.addEvent('stellar.grantAccess.started', {
+            patientId,
+            granteeId,
+            recordId,
+          });
+
+          try {
+            const result = await this.withRetry('grantAccess', () =>
+              this.invokeContractInternal('grant_access', [
+                StellarSdk.nativeToScVal(patientId, { type: 'string' }),
+                StellarSdk.nativeToScVal(granteeId, { type: 'string' }),
+                StellarSdk.nativeToScVal(recordId, { type: 'string' }),
+                StellarSdk.nativeToScVal(expiresAtMs, { type: 'u64' }),
+              ]),
+            );
+
+            span.setAttribute('stellar.tx_hash', result.txHash);
+            this.tracingService.addEvent('stellar.grantAccess.completed', {
+              txHash: result.txHash,
+            });
+
+            return result;
+          } catch (error) {
+            this.tracingService.addEvent('stellar.grantAccess.error', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          }
+        },
+      );
+    }
+
     return this.withRetry('grantAccess', () =>
       this.invokeContractInternal('grant_access', [
         StellarSdk.nativeToScVal(patientId, { type: 'string' }),
@@ -291,6 +377,47 @@ export class StellarService {
     this.logger.log(
       `[revokeAccess] patientId=${patientId} granteeId=${granteeId} recordId=${recordId}`,
     );
+
+    if (this.tracingService) {
+      return this.tracingService.withSpan(
+        'stellar.revokeAccess',
+        async (span) => {
+          span.setAttribute('stellar.patient_id', patientId);
+          span.setAttribute('stellar.grantee_id', granteeId);
+          span.setAttribute('stellar.record_id', recordId);
+          span.setAttribute('stellar.network', this.network);
+
+          this.tracingService.addEvent('stellar.revokeAccess.started', {
+            patientId,
+            granteeId,
+            recordId,
+          });
+
+          try {
+            const result = await this.withRetry('revokeAccess', () =>
+              this.invokeContractInternal('revoke_access', [
+                StellarSdk.nativeToScVal(patientId, { type: 'string' }),
+                StellarSdk.nativeToScVal(granteeId, { type: 'string' }),
+                StellarSdk.nativeToScVal(recordId, { type: 'string' }),
+              ]),
+            );
+
+            span.setAttribute('stellar.tx_hash', result.txHash);
+            this.tracingService.addEvent('stellar.revokeAccess.completed', {
+              txHash: result.txHash,
+            });
+
+            return result;
+          } catch (error) {
+            this.tracingService.addEvent('stellar.revokeAccess.error', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          }
+        },
+      );
+    }
+
     return this.withRetry('revokeAccess', () =>
       this.invokeContractInternal('revoke_access', [
         StellarSdk.nativeToScVal(patientId, { type: 'string' }),
@@ -310,6 +437,44 @@ export class StellarService {
    */
   async verifyAccess(requesterId: string, recordId: string): Promise<StellarVerifyResult> {
     this.logger.log(`[verifyAccess] requesterId=${requesterId} recordId=${recordId}`);
+
+    if (this.tracingService) {
+      return this.tracingService.withSpan(
+        'stellar.verifyAccess',
+        async (span) => {
+          span.setAttribute('stellar.requester_id', requesterId);
+          span.setAttribute('stellar.record_id', recordId);
+          span.setAttribute('stellar.network', this.network);
+
+          this.tracingService.addEvent('stellar.verifyAccess.started', {
+            requesterId,
+            recordId,
+          });
+
+          try {
+            const result = await this.withRetry('verifyAccess', () => this.simulateVerifyAccess(requesterId, recordId));
+
+            span.setAttribute('stellar.has_access', result.hasAccess);
+            if (result.expiresAt) {
+              span.setAttribute('stellar.expires_at', result.expiresAt);
+            }
+
+            this.tracingService.addEvent('stellar.verifyAccess.completed', {
+              hasAccess: result.hasAccess,
+              expiresAt: result.expiresAt,
+            });
+
+            return result;
+          } catch (error) {
+            this.tracingService.addEvent('stellar.verifyAccess.error', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          }
+        },
+      );
+    }
+
     return this.withRetry('verifyAccess', () => this.simulateVerifyAccess(requesterId, recordId));
   }
 
