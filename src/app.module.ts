@@ -40,7 +40,9 @@ import { ResearchExportModule } from './research-export/research-export.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
 import { JobsModule } from './jobs/jobs.module';
+import { DataRetentionModule } from './data-retention/data-retention.module';
 import { GraphqlModule } from './graphql/graphql.module';
+import { VersioningModule } from './versioning/versioning.module';
 import { AuditModule } from './common/audit/audit.module';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { ThrottlerConfigService } from './common/throttler/throttler-config.service';
@@ -52,6 +54,7 @@ import { MetricsModule } from './metrics/metrics.module';
 import { HttpMetricsInterceptor } from './metrics/interceptors/http-metrics.interceptor';
 import { LoggerModule } from './common/logger/logger.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 
 @Module({
   imports: [
@@ -102,6 +105,7 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
     FhirModule,
     AccessControlModule,
     JobsModule,
+    DataRetentionModule,
     StellarModule,
     AuditModule,
     TenantConfigModule,
@@ -110,6 +114,7 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
     ResearchExportModule,
     ReconciliationModule,
     GraphqlModule,
+    VersioningModule,
   ],
   controllers: [AppController],
   providers: [
@@ -151,6 +156,8 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(RequestContextMiddleware).forRoutes('*');
+    // RequestIdMiddleware runs first to ensure X-Request-Id is set before
+    // RequestContextMiddleware stores it in AsyncLocalStorage
+    consumer.apply(RequestIdMiddleware, RequestContextMiddleware).forRoutes('*');
   }
 }

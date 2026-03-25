@@ -1,10 +1,11 @@
 import { Controller, Get, Version, VERSION_NEUTRAL } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AppService } from './app.service';
 
 @Version(VERSION_NEUTRAL)
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) { }
+  constructor(private readonly appService: AppService) {}
 
   @Get()
   getHello(): string {

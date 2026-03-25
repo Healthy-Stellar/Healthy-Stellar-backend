@@ -1,10 +1,12 @@
 import { Controller, Get, UseGuards, Version, VERSION_NEUTRAL } from '@nestjs/common';
+import { Controller, Get, Version, VERSION_NEUTRAL, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { HealthCheck, HealthCheckService, TypeOrmHealthIndicator } from '@nestjs/terminus';
 import { RedisHealthIndicator } from './indicators/redis.health';
 import { IpfsHealthIndicator } from './indicators/ipfs.health';
 import { StellarHealthIndicator } from './indicators/stellar.health';
 import { DetailedHealthIndicator } from './indicators/detailed-health.indicator';
+import { DetailedHealthIndicator } from './indicators/detailed.health';
 import { Public } from '../common/decorators/public.decorator';
  feat/detailed-health-endpoint
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -14,6 +16,8 @@ import { UserRole } from '../auth/entities/user.entity';
 
 import { CircuitBreakerService } from '../common/circuit-breaker/circuit-breaker.service';
  main
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AdminGuard } from '../auth/guards/admin.guard';
 
 @ApiTags('health')
 @Version(VERSION_NEUTRAL)
@@ -31,6 +35,7 @@ export class HealthController {
 
     private circuitBreaker: CircuitBreakerService,
  main
+    private detailedHealth: DetailedHealthIndicator,
   ) {}
 
   @Get()
@@ -61,6 +66,17 @@ export class HealthController {
       ...healthChecks,
       circuitBreakers: circuitBreakerStates,
     };
+  }
+
+  @Get('detailed')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Detailed admin health diagnostics' })
+  @ApiResponse({ status: 200, description: 'Detailed health report' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden – admin only' })
+  getDetailedHealth() {
+    return this.detailedHealth.getDetailedHealth();
   }
 
   @Get('circuit-breakers')

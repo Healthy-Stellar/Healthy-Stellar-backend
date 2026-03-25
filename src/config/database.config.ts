@@ -3,6 +3,7 @@ import { TypeOrmOptionsFactory, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { AuditSubscriber } from '../common/subscribers/audit.subscriber';
+import { createTypeOrmRetryCallback, MAX_RETRIES, RETRY_DELAY_MS } from '../common/utils/connection-retry.util';
 
 /**
  * TypeORM Database Configuration
@@ -87,8 +88,9 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       },
 
       // Connection retry strategy
-      retryAttempts: 3,
-      retryDelay: 3000,
+      retryAttempts: MAX_RETRIES,
+      retryDelay: RETRY_DELAY_MS,
+      toRetry: createTypeOrmRetryCallback(),
 
       // Slow query profiling threshold (milliseconds)
       maxQueryExecutionTime: this.configService.get<number>('DB_SLOW_QUERY_MS', 100),

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
+import { createRedisRetryStrategy } from '../common/utils/connection-retry.util';
 import { BullBoardModule } from '@bull-board/nestjs';
 import { ExpressAdapter } from '@bull-board/express';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
@@ -19,6 +20,8 @@ import { StellarTransactionProcessor } from './processors/stellar-transaction.pr
           port: configService.get('REDIS_PORT', 6379),
           password: configService.get('REDIS_PASSWORD'),
           db: configService.get('REDIS_DB', 0),
+          maxRetriesPerRequest: null,
+          retryStrategy: createRedisRetryStrategy(),
         },
       }),
       inject: [ConfigService],

@@ -66,12 +66,24 @@ async function bootstrap() {
   // Remove X-Powered-By header
   app.getHttpAdapter().getInstance().disable('x-powered-by');
 
-  // CORS Configuration with explicit origin whitelist
-  const corsOrigins = process.env.CORS_ALLOWED_ORIGINS
-    ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((origin) => origin.trim())
-    : ['http://localhost:3000', 'http://localhost:3001'];
+  // CORS Configuration
+  const isProd = process.env.NODE_ENV === 'production';
+  const defaultOrigins = isProd
+    ? []
+    : ['http://localhost:3000', 'http://localhost:4200'];
+  const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+    : defaultOrigins;
+
+  if (isProd && allowedOrigins.length === 0) {
+    throw new Error('ALLOWED_ORIGINS must be set in production');
+  }
 
   app.enableCors({
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+    maxAge: 86400,
     origin: corsOrigins,
     credentials: process.env.CORS_CREDENTIALS === 'true',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

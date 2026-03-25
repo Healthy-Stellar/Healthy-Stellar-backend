@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PatientsService } from './patients.service';
+import { DataSource } from 'typeorm';
+import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { Patient } from './entities/patient.entity';
 import { aPatient } from '../../test/fixtures/test-data-builder';
 import { generatePatientDemographics } from '../../test/utils/data-anonymization.util';
@@ -20,6 +22,25 @@ describe('PatientsService', () => {
     delete: jest.fn(),
   };
 
+  const mockQueryRunner = {
+    connect: jest.fn(),
+    startTransaction: jest.fn(),
+    commitTransaction: jest.fn(),
+    rollbackTransaction: jest.fn(),
+    release: jest.fn(),
+    manager: {
+      findOne: jest.fn(),
+      update: jest.fn(),
+      find: jest.fn(),
+      save: jest.fn(),
+      create: jest.fn((entity, data) => data),
+    },
+  };
+
+  const mockDataSource = {
+    createQueryRunner: jest.fn().mockReturnValue(mockQueryRunner),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -27,6 +48,10 @@ describe('PatientsService', () => {
         {
           provide: getRepositoryToken(Patient),
           useValue: mockRepository,
+        },
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
         },
       ],
     }).compile();
@@ -292,6 +317,65 @@ describe('PatientsService', () => {
 
       // Assert
       expect(duration).toBeLessThan(100); // Should be < 100ms
+    });
+  });
+
+  describe('adminMergePatients', () => {
+    it('should successfully merge two patients and transfer records inside a transaction', async () => {
+      // Arrange
+      const primaryAddress = 'primary-uuid';
+      const secondaryAddress = 'secondary-uuid';
+      const adminId = 'admin-uuid';
+      const mergeDto = { primaryAddress, secondaryAddress, reason: 'Duplicate' };
+
+      const primaryPatient = aPatient().withId(primaryAddress).build();
+      const secondaryPatient = aPatient().withId(secondaryAddress).build();
+
+      mockQueryRunner.manager.findOne
+        .mockResolvedValueOnce(primaryPatient)
+        .mockResolvedValueOnce(secondaryPatient);
+
+      // Act
+      const result = await service.adminMergePatients(mergeDto, adminId);
+
+      // Assert
+      expect(mockDataSource.createQueryRunner).toHaveBeenCalled();
+      expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.manager.update).toHaveBeenCalledWith('records', { patientId: secondaryAddress }, { patientId: primaryAddress });
+      expect(mockQueryRunner.manager.update).toHaveBeenCalledWith('access_grants', { patientId: secondaryAddress }, { patientId: primaryAddress });
+      expect(secondaryPatient.isActive).toBe(false);
+      expect(mockQueryRunner.manager.save).toHaveBeenCalledWith(Patient, secondaryPatient);
+      expect(mockQueryRunner.manager.save).toHaveBeenCalledWith(AuditLogEntity, expect.objectContaining({ action: 'PATIENT_MERGING' }));
+      expect(mockQueryRunner.manager.save).toHaveBeenCalledWith(AuditLogEntity, expect.objectContaining({ action: 'PATIENT_MERGED' }));
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+      expect(result).toEqual(primaryPatient);
+    });
+
+    it('should rollback transaction if an error occurs', async () => {
+      // Arrange
+      mockQueryRunner.manager.findOne.mockRejectedValueOnce(new Error('DB Error'));
+
+      // Act & Assert
+      await expect(
+        service.adminMergePatients({ primaryAddress: 'a', secondaryAddress: 'b' }, 'admin'),
+      ).rejects.toThrow('DB Error');
+
+      expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException if merging same patient', async () => {
+      const primaryPatient = aPatient().withId('same-id').build();
+      mockQueryRunner.manager.findOne
+        .mockResolvedValueOnce(primaryPatient)
+        .mockResolvedValueOnce(primaryPatient);
+
+      await expect(
+        service.adminMergePatients({ primaryAddress: 'same-id', secondaryAddress: 'same-id' }, 'admin'),
+      ).rejects.toThrow('Cannot merge a patient with itself');
+
+      expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
     });
   });
 });

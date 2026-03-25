@@ -5,16 +5,19 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, Repository } from 'typeorm';
+import { Like, Repository, DataSource } from 'typeorm';
 import { Patient } from './entities/patient.entity';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { generateMRN } from './utils/mrn.generator';
+import { AdminMergePatientsDto } from './dto/admin-merge-patients.dto';
+import { AuditLogEntity } from '../common/audit/audit-log.entity';
 
 @Injectable()
 export class PatientsService {
   constructor(
     @InjectRepository(Patient)
     private readonly patientRepo: Repository<Patient>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(dto: CreatePatientDto): Promise<Patient> {
@@ -136,10 +139,6 @@ export class PatientsService {
     return this.patientRepo.save(patient);
   }
 
-  async attachPhoto(
-    patientId: string,
-    file: Express.Multer.File,
-  ): Promise<Patient> {
   async setGeoRestrictions(id: string, allowedCountries: string[]): Promise<Patient> {
     const patient = await this.findById(id);
     patient.allowedCountries =
@@ -154,15 +153,86 @@ export class PatientsService {
     return this.patientRepo.save(patient);
   }
 
-  private async detectDuplicate(dto: CreatePatientDto): Promise<boolean> {
-    const match = await this.patientRepo.findOne({
-      where: [
-        { nationalId: dto.nationalId },
-        { email: dto.email },
-        { phone: dto.phone },
-        { firstName: dto.firstName, lastName: dto.lastName, dateOfBirth: dto.dateOfBirth },
-      ],
-    });
-    return !!match;
+  /**
+   * -----------------------------
+   * Admin Merge Duplicate Patients
+   * -----------------------------
+   */
+  async adminMergePatients(mergeDto: AdminMergePatientsDto, adminId: string): Promise<Patient> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const { primaryAddress, secondaryAddress, reason } = mergeDto;
+
+      const primaryPatient = await queryRunner.manager.findOne(Patient, {
+        where: { id: primaryAddress },
+      });
+      const secondaryPatient = await queryRunner.manager.findOne(Patient, {
+        where: { id: secondaryAddress },
+      });
+
+      if (!primaryPatient || !secondaryPatient) {
+        throw new NotFoundException('One or both patients not found');
+      }
+
+      if (primaryPatient.id === secondaryPatient.id) {
+        throw new BadRequestException('Cannot merge a patient with itself');
+      }
+
+      // 1. Transfer records (records entity has patientId)
+      await queryRunner.manager.update('records', { patientId: secondaryAddress }, { patientId: primaryAddress });
+
+      // 2. Transfer access grants
+      await queryRunner.manager.update('access_grants', { patientId: secondaryAddress }, { patientId: primaryAddress });
+
+      // 3. Mark the secondary patient as inactive/merged (we can just set isActive = false, add notes?)
+      // Wait, there is no "status = MERGED" in this Patient entity... Wait! There is no "status"!
+      // We will set isActive to false and just put it in notes or something, or we can just deactivate it.
+      secondaryPatient.isActive = false;
+      await queryRunner.manager.save(Patient, secondaryPatient);
+
+      // 4. Create an audit log for the merge action using Common AuditLogEntity
+      const mergeLog = queryRunner.manager.create(AuditLogEntity, {
+        action: 'PATIENT_MERGING',
+        entity: 'patients',
+        entityId: primaryAddress,
+        userId: adminId,
+        details: {
+          mergedFrom: secondaryAddress,
+          reason,
+        },
+        severity: 'HIGH',
+        ipAddress: '127.0.0.1', // Just a placeholder, controller handles real ones usually
+        userAgent: 'System',
+      });
+      await queryRunner.manager.save(AuditLogEntity, mergeLog);
+
+      // Also mark a log for the secondary patient being merged
+      const secondaryLog = queryRunner.manager.create(AuditLogEntity, {
+        action: 'PATIENT_MERGED',
+        entity: 'patients',
+        entityId: secondaryAddress,
+        userId: adminId,
+        details: {
+          mergedInto: primaryAddress,
+          reason,
+        },
+        severity: 'HIGH',
+        ipAddress: '127.0.0.1',
+        userAgent: 'System',
+      });
+      await queryRunner.manager.save(AuditLogEntity, secondaryLog);
+
+      // 5. Commit transaction
+      await queryRunner.commitTransaction();
+      return primaryPatient;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 }

@@ -14,6 +14,15 @@ export class RedisLockService implements OnModuleInit, OnModuleDestroy {
       port: this.configService.get('REDIS_PORT', 6379),
       password: this.configService.get('REDIS_PASSWORD'),
       db: this.configService.get('REDIS_DB', 0),
+      maxRetriesPerRequest: null,
+      retryStrategy: (times: number) => {
+        console.error(`[Redis Lock] Connection attempt ${times} failed.`);
+        if (times >= 10) {
+          console.error(`[Redis Lock] Max connection retries (10) exhausted. Exiting...`);
+          process.exit(1);
+        }
+        return 3000;
+      },
     });
   }
 

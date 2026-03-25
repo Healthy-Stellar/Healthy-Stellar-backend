@@ -6,12 +6,15 @@ import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { ApiKeyService } from '../auth/services/api-key.service';
 import { AuditService } from '../common/audit/audit.service';
 import { AdminController } from './controllers/admin.controller';
+import { AdminPatientsController } from './controllers/admin-patients.controller';
+import { PatientModule } from '../patients/patients.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ApiKey, User, AuditLogEntity]),
+    PatientModule,
   ],
-  controllers: [AdminController],
+  controllers: [AdminController, AdminPatientsController],
   providers: [ApiKeyService, AuditService],
   exports: [ApiKeyService],
 })

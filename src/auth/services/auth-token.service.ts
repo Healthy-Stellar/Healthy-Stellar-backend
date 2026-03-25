@@ -41,7 +41,9 @@ export class AuthTokenService {
   }
 
   /**
-   * Generate refresh token for session renewal
+   * Generate refresh token for session renewal.
+   * Signed with REFRESH_TOKEN_SECRET so access and refresh tokens
+   * cannot be substituted for each other.
    */
   generateRefreshToken(user: User, sessionId: string): string {
     const payload = {
@@ -50,7 +52,11 @@ export class AuthTokenService {
       type: 'refresh',
     };
 
-    return this.jwtService.sign(payload);
+    return this.jwtService.sign(payload, {
+      secret: this.configService.get<string>('REFRESH_TOKEN_SECRET'),
+      expiresIn: '7d',
+      algorithm: 'HS512',
+    });
   }
 
   /**

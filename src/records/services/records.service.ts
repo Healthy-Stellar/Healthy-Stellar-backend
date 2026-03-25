@@ -1,6 +1,9 @@
 import { Injectable, Inject, forwardRef, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Between } from 'typeorm';
+import { SearchRecordsDto } from '../dto/search-records.dto';
+import { SearchRecordsResponseDto, SearchRecordItem } from '../dto/search-records-response.dto';
+import { UserRole } from '../../auth/entities/user.entity';
 import * as QRCode from 'qrcode';
 import { Record } from '../entities/record.entity';
 import { CreateRecordDto } from '../dto/create-record.dto';
@@ -79,7 +82,7 @@ export class RecordsService {
       patientId,
     } = query;
 
-    const where: FindOptionsWhere<Record> = {};
+    const where: FindOptionsWhere<Record> = { isDeleted: false };
     if (recordType) where.recordType = recordType;
     if (patientId) where.patientId = patientId;
     if (fromDate && toDate) {
@@ -124,8 +127,12 @@ export class RecordsService {
     return QRCode.toDataURL(url);
   }
 
-  async findOne(id: string, requesterId?: string): Promise<Record> {
+  async findOne(id: string, requesterId?: string, includeDeleted = false): Promise<Record> {
     const record = await this.recordRepository.findOne({ where: { id } });
+
+    if (!record || (!includeDeleted && record.isDeleted)) {
+      throw new NotFoundException(`Record ${id} not found`);
+    }
 
     if (record && requesterId) {
       const emergencyGrant = await this.accessControlService.findActiveEmergencyGrant(
@@ -195,5 +202,106 @@ export class RecordsService {
       throw new NotFoundException(`No events found for record ${id}`);
     }
     return events;
+  }
+
+  /**
+   * Search records with dynamic filtering via QueryBuilder.
+   *
+   * Access control:
+   *  - Admin / Physician: can search all records, including by arbitrary patientAddress
+   *  - Patient / other roles: always scoped to their own patientId; patientAddress param ignored
+   *
+   * CID masking:
+   *  - Raw IPFS CIDs are only included when the caller is the record owner (patientId === callerId)
+   */
+  async search(
+    dto: SearchRecordsDto,
+    callerId: string,
+    callerRole: string,
+  ): Promise<SearchRecordsResponseDto> {
+    const { patientAddress, providerAddress, type, from, to, q, page = 1, pageSize = 20 } = dto;
+
+    const isPrivileged =
+      callerRole === UserRole.ADMIN || callerRole === (UserRole as any).PHYSICIAN || callerRole === 'physician';
+
+    const qb = this.recordRepository
+      .createQueryBuilder('record')
+      .select([
+        'record.id',
+        'record.patientId',
+        'record.providerId',
+        'record.cid',
+        'record.stellarTxHash',
+        'record.recordType',
+        'record.description',
+        'record.createdAt',
+      ])
+      // Always exclude soft-deleted records from search results
+      .andWhere('record.isDeleted = :isDeleted', { isDeleted: false });
+
+    // ── Access control scoping ────────────────────────────────────────────
+    if (isPrivileged) {
+      // Admin/Physician: honour the optional patientAddress filter
+      if (patientAddress) {
+        qb.andWhere('record.patientId = :patientAddress', { patientAddress });
+      }
+    } else {
+      // Non-privileged: always restrict to own records, ignore patientAddress param
+      qb.andWhere('record.patientId = :callerId', { callerId });
+    }
+
+    // ── Dynamic filters ───────────────────────────────────────────────────
+    if (providerAddress) {
+      qb.andWhere('record.providerId = :providerAddress', { providerAddress });
+    }
+
+    if (type) {
+      qb.andWhere('record.recordType = :type', { type });
+    }
+
+    if (from) {
+      qb.andWhere('record.createdAt >= :from', { from: new Date(from) });
+    }
+
+    if (to) {
+      qb.andWhere('record.createdAt <= :to', { to: new Date(to) });
+    }
+
+    // ── Full-text search on description ───────────────────────────────────
+    if (q) {
+      qb.andWhere('record.description ILIKE :q', { q: `%${q}%` });
+    }
+
+    // ── Pagination ────────────────────────────────────────────────────────
+    const skip = (page - 1) * pageSize;
+    qb.orderBy('record.createdAt', 'DESC').skip(skip).take(pageSize);
+
+    const [records, total] = await qb.getManyAndCount();
+
+    // ── CID masking: strip raw CID for non-owners ─────────────────────────
+    const data: SearchRecordItem[] = records.map((r) => {
+      const isOwner = r.patientId === callerId;
+      return {
+        id: r.id,
+        patientId: r.patientId,
+        providerId: r.providerId ?? null,
+        stellarTxHash: r.stellarTxHash ?? null,
+        recordType: r.recordType,
+        description: r.description ?? null,
+        createdAt: r.createdAt,
+        // Only expose raw CID to the record owner
+        ...(isOwner || isPrivileged ? { cid: r.cid } : {}),
+      };
+    });
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
   }
 }

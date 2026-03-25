@@ -6,12 +6,13 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, In } from 'typeorm';
+import { Repository, Like, In, DataSource } from 'typeorm';
 import { Patient, PatientStatus } from '../entities/patient.entity';
 import { PatientAuditLog } from '../entities/patient-audit-log.entity';
 import { CreatePatientDto } from '../dto/create-patient.dto';
 import { SearchPatientDto } from '../dto/search-patient.dto';
 import { MergePatientsDto } from '../dto/merge-patients.dto';
+import { AdminMergePatientsDto } from '../dto/admin-merge-patients.dto';
 import { MrnGeneratorService } from './mrn-generator.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
 
@@ -24,6 +25,7 @@ export class PatientService {
     private readonly auditLogRepository: Repository<PatientAuditLog>,
     private readonly mrnGenerator: MrnGeneratorService,
     private readonly duplicateDetection: DuplicateDetectionService,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -232,6 +234,96 @@ export class PatientService {
     });
 
     return updated;
+  }
+
+  /**
+   * Admin workflow to merge duplicate patients by address
+   */
+  async adminMergePatients(mergeDto: AdminMergePatientsDto, adminId: string): Promise<Patient> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const { primaryAddress, secondaryAddress, reason } = mergeDto;
+
+      const primaryPatient = await queryRunner.manager.findOne(Patient, {
+        where: { id: primaryAddress },
+      });
+      const secondaryPatient = await queryRunner.manager.findOne(Patient, {
+        where: { id: secondaryAddress },
+      });
+
+      if (!primaryPatient || !secondaryPatient) {
+        throw new NotFoundException('One or both patients not found');
+      }
+
+      if (primaryPatient.id === secondaryPatient.id) {
+        throw new BadRequestException('Cannot merge a patient with itself');
+      }
+
+      // 1. Transfer records
+      await queryRunner.manager.update('records', { patientId: secondaryAddress }, { patientId: primaryAddress });
+
+      // 2. Transfer access grants
+      await queryRunner.manager.update('access_grants', { patientId: secondaryAddress }, { patientId: primaryAddress });
+
+      // 3. Copy audit logs with mergedFrom flag
+      const logsToCopy = await queryRunner.manager.find(PatientAuditLog, {
+        where: { patientId: secondaryAddress },
+      });
+
+      if (logsToCopy.length > 0) {
+        const newLogs = logsToCopy.map((log) => {
+          const newChanges = log.changes ? { ...log.changes } : {};
+          newChanges.mergedFrom = secondaryAddress;
+
+          return queryRunner.manager.create(PatientAuditLog, {
+            ...log,
+            id: undefined, // Create new record
+            patientId: primaryAddress,
+            changes: newChanges,
+          });
+        });
+        await queryRunner.manager.save(PatientAuditLog, newLogs);
+      }
+
+      // 4. Update secondary patient status to MERGED
+      secondaryPatient.status = PatientStatus.MERGED;
+      secondaryPatient.mergedIntoPatientId = primaryAddress;
+      await queryRunner.manager.save(Patient, secondaryPatient);
+
+      // 5. Update primary patient stats / audit log
+      primaryPatient.totalVisits += secondaryPatient.totalVisits;
+      if (
+        secondaryPatient.lastVisitDate &&
+        (!primaryPatient.lastVisitDate || secondaryPatient.lastVisitDate > primaryPatient.lastVisitDate)
+      ) {
+        primaryPatient.lastVisitDate = secondaryPatient.lastVisitDate;
+      }
+      primaryPatient.updatedBy = adminId;
+      const updatedPrimary = await queryRunner.manager.save(Patient, primaryPatient);
+
+      // 6. Create merge audit log on primary
+      const mergeLog = queryRunner.manager.create(PatientAuditLog, {
+        patientId: primaryAddress,
+        userId: adminId,
+        action: 'ADMIN_MERGE',
+        changes: {
+          secondaryPatientId: secondaryAddress,
+          reason,
+        },
+      });
+      await queryRunner.manager.save(PatientAuditLog, mergeLog);
+
+      await queryRunner.commitTransaction();
+      return updatedPrimary;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   /**

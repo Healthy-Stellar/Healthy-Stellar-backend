@@ -11,6 +11,7 @@ import {
   Req,
   Res,
   UseGuards,
+  Version,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -23,13 +24,17 @@ import { PaginationQueryDto } from '../dto/pagination-query.dto';
 import { PaginatedRecordsResponseDto } from '../dto/paginated-response.dto';
 import { RecentRecordDto } from '../dto/recent-record.dto';
 import { RelatedRecordDto } from '../dto/related-record.dto';
+import { SearchRecordsDto } from '../dto/search-records.dto';
+import { SearchRecordsResponseDto } from '../dto/search-records-response.dto';
 import { MedicalRoles } from '../../roles/medical-rbac.decorator';
 import { MedicalRole } from '../../roles/medical-roles.enum';
 import { MedicalRbacGuard } from '../../roles/medical-rbac.guard';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../../auth/guards/admin.guard';
+import { DeprecatedRoute } from '../../common/decorators/deprecated.decorator';
 
 @ApiTags('Records')
+@Version('1')
 @Controller('records')
 export class RecordsController {
   constructor(
@@ -58,6 +63,11 @@ export class RecordsController {
   }
 
   @Get()
+  @DeprecatedRoute({
+    sunsetDate: 'Wed, 01 Jan 2026 00:00:00 GMT',
+    alternativeRoute: '/v1/records/search',
+    reason: 'Use GET /v1/records/search for richer filtering. This endpoint will be removed in v2.',
+  })
   @ApiOperation({ summary: 'List all medical records with pagination, filtering, and sorting' })
   @ApiResponse({
     status: 200,
@@ -111,6 +121,26 @@ export class RecordsController {
     return this.recordsService.findAll(query);
   }
 
+  @Get('search')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Search records with dynamic filtering',
+    description:
+      'Admin/Physician can search all records. Patients are automatically scoped to their own records. ' +
+      'Raw IPFS CIDs are only returned to the record owner.',
+  })
+  @ApiResponse({ status: 200, description: 'Search results', type: SearchRecordsResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  async searchRecords(
+    @Query() dto: SearchRecordsDto,
+    @Req() req: any,
+  ): Promise<SearchRecordsResponseDto> {
+    const callerId: string = req.user?.userId ?? req.user?.id;
+    const callerRole: string = req.user?.role ?? '';
+    return this.recordsService.search(dto, callerId, callerRole);
+  }
+
   @Get(':id/qr-code')
   @ApiOperation({ summary: 'Generate a QR code for a one-time share link (patient only)' })
   @ApiResponse({ status: 200, description: 'Base64 PNG QR code' })
@@ -137,10 +167,15 @@ export class RecordsController {
   @Get(':id')
   @ApiOperation({ summary: 'Get a single record by ID' })
   @ApiResponse({ status: 200, description: 'Record retrieved successfully' })
-  @ApiResponse({ status: 404, description: 'Record not found' })
-  async findOne(@Param('id') id: string, @Req() req: any) {
+  @ApiResponse({ status: 404, description: 'Record not found or deleted' })
+  @ApiQuery({ name: 'includeDeleted', required: false, type: Boolean, description: 'Admin only: include soft-deleted records' })
+  async findOne(@Param('id') id: string, @Req() req: any, @Query('includeDeleted') includeDeleted?: string) {
     const requesterId = req.user?.userId || req.user?.id;
-    return this.recordsService.findOne(id, requesterId);
+    const callerRole: string = req.user?.role ?? '';
+    const isAdmin = callerRole === 'admin';
+    // Only admins may pass includeDeleted=true
+    const showDeleted = isAdmin && includeDeleted === 'true';
+    return this.recordsService.findOne(id, requesterId, showDeleted);
   }
 
   @Get(':id/download')

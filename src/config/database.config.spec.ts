@@ -226,7 +226,7 @@ describe('DatabaseConfig', () => {
       );
     });
 
-    it('should configure retry strategy', () => {
+    it('should configure retry strategy and toRetry behavior', () => {
       // Arrange
       jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
         const config = {
@@ -241,11 +241,29 @@ describe('DatabaseConfig', () => {
       });
 
       // Act
-      const options = databaseConfig.createTypeOrmOptions();
+      const options: any = databaseConfig.createTypeOrmOptions();
 
       // Assert
-      expect(options.retryAttempts).toBe(3);
+      expect(options.retryAttempts).toBe(10);
       expect(options.retryDelay).toBe(3000);
+      expect(typeof options.toRetry).toBe('function');
+
+      const exitSpy = jest.spyOn(process, 'exit').mockImplementation((code?: number | string | null | undefined) => {
+        return undefined as never;
+      });
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      for (let i = 1; i <= 9; i++) {
+        const result = options.toRetry(new Error('test_error'));
+        expect(result).toBe(true);
+        expect(errorSpy).toHaveBeenCalledWith(`[TypeORM] Database connection attempt ${i} failed. Error: test_error`);
+        expect(exitSpy).not.toHaveBeenCalled();
+      }
+
+      const result10 = options.toRetry(new Error('final_error'));
+      expect(result10).toBe(true);
+      expect(errorSpy).toHaveBeenCalledWith(`[TypeORM] Max connection retries (10) exhausted. Exiting...`);
+      expect(exitSpy).toHaveBeenCalledWith(1);
     });
 
     it('should configure query cache', () => {
