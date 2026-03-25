@@ -1,4 +1,4 @@
-import { Injectable, Inject, forwardRef, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Between } from 'typeorm';
 import * as QRCode from 'qrcode';
@@ -7,6 +7,7 @@ import { CreateRecordDto } from '../dto/create-record.dto';
 import { PaginationQueryDto } from '../dto/pagination-query.dto';
 import { PaginatedRecordsResponseDto, PaginationMeta } from '../dto/paginated-response.dto';
 import { RecentRecordDto } from '../dto/recent-record.dto';
+import { SingleRecordResponseDto } from '../dto/single-record-response.dto';
 import { IpfsService } from './ipfs.service';
 import { StellarService } from './stellar.service';
 import { AccessControlService } from '../../access-control/services/access-control.service';
@@ -25,7 +26,7 @@ export class RecordsService {
     private accessControlService: AccessControlService,
     private auditLogService: AuditLogService,
     private eventStore: RecordEventStoreService,
-  ) {}
+  ) { }
 
   async uploadRecord(
     dto: CreateRecordDto,
@@ -153,6 +154,68 @@ export class RecordsService {
     return record;
   }
 
+  /**
+   * Retrieve a single record by ID with full access control enforcement.
+   * - Patient can fetch their own records
+   * - Providers need active access grant
+   * - Returns 404 for non-existent or soft-deleted records
+   * - Response includes record metadata but NOT raw IPFS CID for non-owners
+   * - Audit log entry created on every fetch
+   */
+  async findOneWithAccessControl(
+    recordId: string,
+    requesterId: string,
+    ipAddress: string,
+    userAgent: string,
+  ): Promise<SingleRecordResponseDto> {
+    // 1. Load record from database
+    const record = await this.recordRepository.findOne({ where: { id: recordId } });
+
+    // 2. Check if record exists and is not soft-deleted
+    if (!record || record.isDeleted) {
+      throw new NotFoundException(`Record ${recordId} not found`);
+    }
+
+    // 3. Determine if requester is the owner (patient)
+    const isOwner = record.patientId === requesterId;
+
+    // 4. If not owner, verify access grant
+    if (!isOwner) {
+      const hasAccess = await this.accessControlService.verifyAccess(requesterId, recordId);
+      if (!hasAccess) {
+        throw new ForbiddenException('No active access grant for this record');
+      }
+    }
+
+    // 5. Create audit log entry
+    await this.auditLogService.create({
+      operation: 'RECORD_READ',
+      entityType: 'records',
+      entityId: recordId,
+      userId: requesterId,
+      ipAddress,
+      userAgent,
+      status: 'success',
+      newValues: {
+        recordId,
+        patientId: record.patientId,
+        isOwner,
+      },
+    });
+
+    // 6. Build response - hide CID and Stellar hash from non-owners
+    return {
+      id: record.id,
+      patientId: record.patientId,
+      providerId: record.providerId ?? null,
+      recordType: record.recordType,
+      description: record.description ?? null,
+      createdAt: record.createdAt,
+      cid: isOwner ? record.cid : null,
+      stellarTxHash: isOwner ? record.stellarTxHash : null,
+    };
+  }
+
   async findRecent(): Promise<RecentRecordDto[]> {
     const records = await this.recordRepository.find({
       order: {
@@ -174,6 +237,8 @@ export class RecordsService {
   private truncateAddress(address: string): string {
     if (address.length <= 10) return address;
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  }
+
   /**
    * Derive the current state of a record by replaying its event stream.
    * Falls back to the latest snapshot + delta events for performance.

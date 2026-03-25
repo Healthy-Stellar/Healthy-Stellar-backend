@@ -23,6 +23,7 @@ import { PaginationQueryDto } from '../dto/pagination-query.dto';
 import { PaginatedRecordsResponseDto } from '../dto/paginated-response.dto';
 import { RecentRecordDto } from '../dto/recent-record.dto';
 import { RelatedRecordDto } from '../dto/related-record.dto';
+import { SingleRecordResponseDto } from '../dto/single-record-response.dto';
 import { MedicalRoles } from '../../roles/medical-rbac.decorator';
 import { MedicalRole } from '../../roles/medical-roles.enum';
 import { MedicalRbacGuard } from '../../roles/medical-rbac.guard';
@@ -36,7 +37,7 @@ export class RecordsController {
     private readonly recordsService: RecordsService,
     private readonly recordDownloadService: RecordDownloadService,
     private readonly relatedRecordsService: RelatedRecordsService,
-  ) {}
+  ) { }
 
   @Post()
   @ApiOperation({ summary: 'Upload a new medical record' })
@@ -111,14 +112,6 @@ export class RecordsController {
     return this.recordsService.findAll(query);
   }
 
-  @Get(':id/qr-code')
-  @ApiOperation({ summary: 'Generate a QR code for a one-time share link (patient only)' })
-  @ApiResponse({ status: 200, description: 'Base64 PNG QR code' })
-  @ApiResponse({ status: 404, description: 'Record not found' })
-  async getQrCode(@Param('id') id: string, @Req() req: any) {
-    const patientId = req.user?.userId || req.user?.id;
-    const qrBase64 = await this.recordsService.generateQrCode(id, patientId);
-    return { qrCode: qrBase64 };
   @Get('recent')
   @ApiBearerAuth()
   @UseGuards(MedicalRbacGuard)
@@ -135,12 +128,44 @@ export class RecordsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get a single record by ID' })
-  @ApiResponse({ status: 200, description: 'Record retrieved successfully' })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get a single record by ID',
+    description:
+      'Retrieves a single medical record by its database UUID with full access control enforcement. ' +
+      'Patient can fetch their own records; providers need active access grant. ' +
+      'Returns 404 for non-existent or soft-deleted records. ' +
+      'Response includes record metadata but NOT raw IPFS CID for non-owners. ' +
+      'Audit log entry created on every fetch.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Record retrieved successfully',
+    type: SingleRecordResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 403, description: 'No active access grant for this record' })
+  @ApiResponse({ status: 404, description: 'Record not found or soft-deleted' })
+  async getRecord(
+    @Param('id') id: string,
+    @Req() req: any,
+  ): Promise<SingleRecordResponseDto> {
+    const requesterId: string = req.user?.userId ?? req.user?.id;
+    const ip: string = req.ip ?? 'unknown';
+    const ua: string = req.headers['user-agent'] ?? 'unknown';
+
+    return this.recordsService.findOneWithAccessControl(id, requesterId, ip, ua);
+  }
+
+  @Get(':id/qr-code')
+  @ApiOperation({ summary: 'Generate a QR code for a one-time share link (patient only)' })
+  @ApiResponse({ status: 200, description: 'Base64 PNG QR code' })
   @ApiResponse({ status: 404, description: 'Record not found' })
-  async findOne(@Param('id') id: string, @Req() req: any) {
-    const requesterId = req.user?.userId || req.user?.id;
-    return this.recordsService.findOne(id, requesterId);
+  async getQrCode(@Param('id') id: string, @Req() req: any) {
+    const patientId = req.user?.userId || req.user?.id;
+    const qrBase64 = await this.recordsService.generateQrCode(id, patientId);
+    return { qrCode: qrBase64 };
   }
 
   @Get(':id/download')
@@ -173,6 +198,8 @@ export class RecordsController {
     res.setHeader('Pragma', 'no-cache');
 
     stream.pipe(res);
+  }
+
   @Get(':id/related')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

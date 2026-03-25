@@ -26,4 +26,7 @@ export class Record {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @Column({ default: false })
+  isDeleted: boolean;
 }
