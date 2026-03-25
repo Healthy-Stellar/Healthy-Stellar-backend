@@ -1,0 +1,22 @@
+{
+  "record_accessed": {
+    "subject": "تم الوصول إلى سجلك الطبي",
+    "body": "تم الوصول إلى سجلك الطبي (المعرف: {resourceId}) بواسطة {actorId} في {timestamp}."
+  },
+  "access_granted": {
+    "subject": "تم منح الوصول إلى سجلك",
+    "body": "تم منح الوصول إلى سجلك الطبي (المعرف: {resourceId}) لـ {actorId}."
+  },
+  "access_revoked": {
+    "subject": "تم إلغاء الوصول إلى سجلك",
+    "body": "تم إلغاء الوصول إلى سجلك الطبي (المعرف: {resourceId}) من {actorId}."
+  },
+  "record_uploaded": {
+    "subject": "تم رفع سجل طبي جديد",
+    "body": "تم رفع سجل طبي جديد (المعرف: {resourceId}) بواسطة {actorId}."
+  },
+  "emergency_access": {
+    "subject": "وصول طارئ إلى سجلك",
+    "body": "تم بدء وصول طارئ إلى سجلك الطبي (المعرف: {resourceId}) بواسطة {actorId} في {timestamp}."
+  }
+}

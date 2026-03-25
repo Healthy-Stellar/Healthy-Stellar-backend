@@ -1,0 +1,27 @@
+{
+    "validation": {
+        "NOT_EMPTY": "This field should not be empty.",
+        "IS_STRING": "This field must be a string.",
+        "IS_EMAIL": "This field must be a valid email address.",
+        "IS_INT": "This field must be an integer number.",
+        "IS_DATE": "This field must be a valid date.",
+        "IS_BOOLEAN": "This field must be a boolean value.",
+        "IS_IN": "This field must be one of the following values: {constraints.0}",
+        "MIN_LENGTH": "This field must be longer than or equal to {constraints.0} characters.",
+        "MAX_LENGTH": "This field must be shorter than or equal to {constraints.0} characters.",
+        "IS_ARRAY": "This field must be an array.",
+        "IS_UUID": "This field must be a valid UUID.",
+        "IS_NUMBER": "This field must be a valid number.",
+        "MATCHES": "This field does not match the required pattern."
+    },
+    "errors": {
+        "INTERNAL_SERVER_ERROR": "Internal server error",
+        "UNAUTHORIZED": "Unauthorized access",
+        "NOT_FOUND": "Resource not found",
+        "FORBIDDEN": "Forbidden access",
+        "BAD_REQUEST": "Bad request",
+        "CONFLICT": "Resource conflict",
+        "INVALID_CREDENTIALS": "Invalid credentials provided",
+        "USER_NOT_FOUND": "User not found"
+    }
+}

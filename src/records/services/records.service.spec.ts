@@ -1,12 +1,21 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { NotFoundException } from '@nestjs/common';
 import { RecordsService } from './records.service';
 import { Record } from '../entities/record.entity';
 import { IpfsService } from './ipfs.service';
 import { StellarService } from './stellar.service';
 import { RecordType } from '../dto/create-record.dto';
 import { SortBy, SortOrder } from '../dto/pagination-query.dto';
+import { AccessControlService } from '../../access-control/services/access-control.service';
+import { AuditLogService } from '../../common/services/audit-log.service';
+
+jest.mock('qrcode', () => ({
+  toDataURL: jest.fn().mockResolvedValue('data:image/png;base64,mockedQR'),
+}));
+
+import * as QRCode from 'qrcode';
 
 describe('RecordsService', () => {
   let service: RecordsService;
@@ -17,6 +26,7 @@ describe('RecordsService', () => {
     save: jest.fn(),
     findOne: jest.fn(),
     findAndCount: jest.fn(),
+    find: jest.fn(),
   };
 
   const mockIpfsService = {
@@ -25,6 +35,15 @@ describe('RecordsService', () => {
 
   const mockStellarService = {
     anchorCid: jest.fn(),
+    createShareLink: jest.fn(),
+  };
+
+  const mockAccessControlService = {
+    findActiveEmergencyGrant: jest.fn(),
+  };
+
+  const mockAuditLogService = {
+    create: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -43,6 +62,16 @@ describe('RecordsService', () => {
           provide: StellarService,
           useValue: mockStellarService,
         },
+        { provide: 'AccessControlService', useValue: { findActiveEmergencyGrant: jest.fn() } },
+        { provide: 'AuditLogService', useValue: { create: jest.fn() } },
+        {
+          provide: AccessControlService,
+          useValue: mockAccessControlService,
+        },
+        {
+          provide: AuditLogService,
+          useValue: mockAuditLogService,
+        },
       ],
     }).compile();
 
@@ -50,6 +79,55 @@ describe('RecordsService', () => {
     repository = module.get<Repository<Record>>(getRepositoryToken(Record));
 
     jest.clearAllMocks();
+  });
+
+  describe('findRecent', () => {
+    it('should return the last 50 records with truncated patient address', async () => {
+      const mockRecords: Partial<Record>[] = [
+        {
+          id: 'record-1',
+          patientId: 'patient-address-long-id',
+          recordType: RecordType.MEDICAL_REPORT,
+          createdAt: new Date(),
+        },
+      ];
+
+      mockRepository.find.mockResolvedValue(mockRecords);
+
+      const result = await service.findRecent();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        recordId: 'record-1',
+        patientAddress: 'patien...g-id',
+        providerAddress: 'System',
+        recordType: RecordType.MEDICAL_REPORT,
+        createdAt: expect.any(Date),
+      });
+
+      expect(mockRepository.find).toHaveBeenCalledWith({
+        order: { createdAt: 'DESC' },
+        take: 50,
+        cache: 30000,
+      });
+    });
+
+    it('should not truncate short patient addresses', async () => {
+      const mockRecords: Partial<Record>[] = [
+        {
+          id: 'record-1',
+          patientId: 'short',
+          recordType: RecordType.MEDICAL_REPORT,
+          createdAt: new Date(),
+        },
+      ];
+
+      mockRepository.find.mockResolvedValue(mockRecords);
+
+      const result = await service.findRecent();
+
+      expect(result[0].patientAddress).toBe('short');
+    });
   });
 
   describe('findAll', () => {
@@ -374,6 +452,40 @@ describe('RecordsService', () => {
 
       expect(mockIpfsService.upload).toHaveBeenCalledWith(buffer);
       expect(mockStellarService.anchorCid).toHaveBeenCalledWith('patient-1', 'cid-123');
+    });
+  });
+
+  describe('generateQrCode', () => {
+    const mockRecord: Record = {
+      id: 'record-1',
+      patientId: 'patient-1',
+      cid: 'cid-1',
+      stellarTxHash: 'tx-1',
+      recordType: RecordType.MEDICAL_REPORT,
+      description: 'Test',
+      createdAt: new Date(),
+    };
+
+    it('should return a base64 QR code data URL', async () => {
+      mockRepository.findOne.mockResolvedValue(mockRecord);
+      mockStellarService.createShareLink.mockResolvedValue('share-token-abc');
+
+      const result = await service.generateQrCode('record-1', 'patient-1');
+
+      expect(result).toBe('data:image/png;base64,mockedQR');
+      expect(mockStellarService.createShareLink).toHaveBeenCalledWith('record-1', 'patient-1');
+      expect(QRCode.toDataURL).toHaveBeenCalledWith(
+        expect.stringContaining('/share/share-token-abc'),
+      );
+    });
+
+    it('should throw NotFoundException when record does not exist', async () => {
+      mockRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.generateQrCode('nonexistent', 'patient-1')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockStellarService.createShareLink).not.toHaveBeenCalled();
     });
   });
 });

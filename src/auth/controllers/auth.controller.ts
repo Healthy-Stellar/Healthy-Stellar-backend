@@ -63,11 +63,11 @@ export class AuthController {
     @Req() req: Request,
   ): Promise<AuthResponse> {
     if (!body.role || !Object.values(UserRole).includes(body.role)) {
-      throw new BadRequestException('Invalid role');
+      throw new BadRequestException(I18nContext.current()?.t('errors.INVALID_ROLE') || 'Invalid role');
     }
 
     if (body.role === UserRole.PATIENT) {
-      throw new BadRequestException('Use /register endpoint for patient registration');
+      throw new BadRequestException(I18nContext.current()?.t('errors.USE_REGISTER_ENDPOINT_FOR_PATIENT_REGISTRATION') || 'Use /register endpoint for patient registration');
     }
 
     const result = await this.authService.register(
@@ -106,18 +106,18 @@ export class AuthController {
     const payload = this.authTokenService.verifyRefreshToken(refreshTokenDto.refreshToken);
 
     if (!payload) {
-      throw new BadRequestException('Invalid refresh token');
+      throw new BadRequestException(I18nContext.current()?.t('errors.INVALID_REFRESH_TOKEN') || 'Invalid refresh token');
     }
 
     // Get session and user
     const session = await this.sessionManagementService.getSession(payload.sessionId);
     if (!session) {
-      throw new NotFoundException('Session not found');
+      throw new NotFoundException(I18nContext.current()?.t('errors.SESSION_NOT_FOUND') || 'Session not found');
     }
 
     const user = await this.authService.getUserById(payload.userId);
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(I18nContext.current()?.t('errors.USER_NOT_FOUND') || 'User not found');
     }
 
     // Generate new tokens
@@ -216,7 +216,7 @@ export class AuthController {
     // Verify session belongs to user
     const session = await this.sessionManagementService.getSession(sessionId);
     if (!session || session.userId !== user.userId) {
-      throw new NotFoundException('Session not found');
+      throw new NotFoundException(I18nContext.current()?.t('errors.SESSION_NOT_FOUND') || 'Session not found');
     }
 
     await this.sessionManagementService.revokeSession(sessionId);

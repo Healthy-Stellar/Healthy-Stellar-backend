@@ -2,8 +2,10 @@ import { Module, Global, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AuditLog } from './entities/audit-log.entity';
+import { SensitiveAuditLog } from './entities/sensitive-audit-log.entity';
 import { AuditLogService } from './services/audit-log.service';
 import { DataEncryptionService } from './services/data-encryption.service';
+import { TracingService } from './services/tracing.service';
 import { AuditSubscriber } from './subscribers/audit.subscriber';
 import { RequestContextMiddleware } from './middleware/request-context.middleware';
 import { AuditContextGuard } from './guards/audit-context.guard';
@@ -11,10 +13,11 @@ import { RedisLockService } from './utils/redis-lock.service';
 
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([AuditLog])],
+  imports: [TypeOrmModule.forFeature([AuditLog, SensitiveAuditLog])],
   providers: [
     AuditLogService,
     DataEncryptionService,
+    TracingService,
     {
       provide: 'DATA_SOURCE',
       useFactory: (dataSource: DataSource) => dataSource,
@@ -24,6 +27,7 @@ import { RedisLockService } from './utils/redis-lock.service';
     AuditContextGuard,
     RedisLockService,
   ],
+  exports: [AuditLogService, DataEncryptionService, TracingService, AuditSubscriber, AuditContextGuard, RedisLockService],
   exports: [
     AuditLogService,
     DataEncryptionService,

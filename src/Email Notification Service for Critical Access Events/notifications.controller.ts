@@ -43,7 +43,7 @@ export class NotificationsController {
     const patientId = patientIdQuery ?? body?.patientId;
 
     if (!token || !patientId) {
-      throw new BadRequestException('token and patientId are required');
+      throw new BadRequestException(I18nContext.current()?.t('errors.TOKEN_AND_PATIENTID_ARE_REQUIRED') || 'token and patientId are required');
     }
 
     return this.notificationsService.unsubscribe(patientId, token);

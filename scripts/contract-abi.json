@@ -1,0 +1,43 @@
+{
+  "version": "1.0.0",
+  "methods": [
+    {
+      "name": "anchor_record",
+      "args": [
+        { "name": "patient_id", "type": "string" },
+        { "name": "cid",        "type": "string" }
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "grant_access",
+      "args": [
+        { "name": "patient_id",  "type": "string" },
+        { "name": "grantee_id",  "type": "string" },
+        { "name": "record_id",   "type": "string" },
+        { "name": "expires_at",  "type": "u64"    }
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "revoke_access",
+      "args": [
+        { "name": "patient_id",  "type": "string" },
+        { "name": "grantee_id",  "type": "string" },
+        { "name": "record_id",   "type": "string" }
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "verify_access",
+      "args": [
+        { "name": "requester_id", "type": "string" },
+        { "name": "record_id",    "type": "string" }
+      ],
+      "returns": {
+        "has_access": "bool",
+        "expires_at": "u64"
+      }
+    }
+  ]
+}

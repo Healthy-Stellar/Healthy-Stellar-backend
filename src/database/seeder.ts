@@ -76,6 +76,9 @@ async function seed() {
       lastName: 'Smith',
       role: UserRole.PHYSICIAN,
       isActive: true,
+      isLicenseVerified: true,
+      country: 'USA',
+      isAcceptingPatients: true,
       licenseNumber: 'MD-12345',
       npi: '1234567890',
       specialization: 'Cardiology',
@@ -89,6 +92,9 @@ async function seed() {
       lastName: 'Johnson',
       role: UserRole.PHYSICIAN,
       isActive: true,
+      isLicenseVerified: true,
+      country: 'USA',
+      isAcceptingPatients: false,
       licenseNumber: 'MD-67890',
       npi: '0987654321',
       specialization: 'Neurology',
@@ -104,6 +110,8 @@ async function seed() {
       lastName: 'Williams',
       role: UserRole.NURSE,
       isActive: true,
+      isLicenseVerified: true,
+      country: 'USA',
       licenseNumber: 'RN-11111',
     });
     await userRepository.save(nurse1);
@@ -115,6 +123,8 @@ async function seed() {
       lastName: 'Brown',
       role: UserRole.NURSE,
       isActive: true,
+      isLicenseVerified: true,
+      country: 'USA',
       licenseNumber: 'RN-22222',
     });
     await userRepository.save(nurse2);
@@ -160,6 +170,8 @@ async function seed() {
       lastName: 'Davis',
       role: UserRole.BILLING_STAFF,
       isActive: true,
+      isLicenseVerified: true,
+      country: 'USA',
     });
     await userRepository.save(billingStaff);
     console.log('  ✓ Billing staff created');
@@ -172,6 +184,8 @@ async function seed() {
       lastName: 'Evans',
       role: UserRole.MEDICAL_RECORDS,
       isActive: true,
+      isLicenseVerified: true,
+      country: 'USA',
     });
     await userRepository.save(medicalRecordsStaff);
     console.log('  ✓ Medical records staff created');

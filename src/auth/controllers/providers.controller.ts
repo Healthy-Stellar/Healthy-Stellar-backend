@@ -17,10 +17,13 @@ export class ProvidersController {
   @ApiOperation({
     summary: 'Search provider directory',
     description:
-      'Returns paginated providers. `stellarPublicKey` is returned only for authenticated requests.',
+      'Returns paginated providers. `stellarAddress` is returned only for authenticated requests.',
   })
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'specialty', required: false, type: String })
+  @ApiQuery({ name: 'specialization', required: false, type: String })
+  @ApiQuery({ name: 'country', required: false, type: String })
+  @ApiQuery({ name: 'isAcceptingPatients', required: false, type: Boolean })
   @ApiQuery({ name: 'role', required: false, enum: ['doctor', 'lab', 'insurer'] })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })

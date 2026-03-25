@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { MailService, Patient, Provider, MedicalRecord } from './mail.service';
 import { MailerService } from '@nestjs-modules/mailer';
 import { ConfigService } from '@nestjs/config';
+import { CircuitBreakerService } from '../common/circuit-breaker/circuit-breaker.service';
 
 const mockPatient: Patient = {
   id: 'patient-1',
@@ -47,6 +48,12 @@ describe('MailService', () => {
               };
               return env[key] ?? defaultVal;
             },
+          },
+        },
+        {
+          provide: CircuitBreakerService,
+          useValue: {
+            execute: jest.fn().mockImplementation((service, fn) => fn()),
           },
         },
       ],

@@ -1,4 +1,9 @@
-import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository } from 'typeorm';
 import { Patient } from './entities/patient.entity';
@@ -12,18 +17,13 @@ export class PatientsService {
     private readonly patientRepo: Repository<Patient>,
   ) {}
 
-  /**
-   * -----------------------------
-   * Create a new patient
-   * -----------------------------
-   */
   async create(dto: CreatePatientDto): Promise<Patient> {
     if (dto?.dateOfBirth && Number.isNaN(new Date(dto.dateOfBirth as any).getTime())) {
       throw new BadRequestException('Invalid date of birth');
     }
 
     if ((dto as any)?.mrn) {
-      const existingByMrn = await (this.patientRepo as any).findOneBy?.({ mrn: (dto as any).mrn });
+      const existingByMrn = await this.patientRepo.findOneBy({ mrn: (dto as any).mrn });
       if (existingByMrn) {
         throw new ConflictException('Patient with MRN already exists');
       }
@@ -44,23 +44,14 @@ export class PatientsService {
     return this.patientRepo.save(patient);
   }
 
-  /**
-   * -----------------------------
-   * Find patient by ID
-   * -----------------------------
-   */
   async findById(id: string): Promise<Patient> {
     const patient = await this.patientRepo.findOne({ where: { id } });
     if (!patient) throw new NotFoundException('Patient not found');
     return patient;
   }
 
-  async findAll() {
-    const patients = await this.patientRepo.find();
-    return patients;
   async findByMRN(mrn: string): Promise<Patient | null> {
-    if (!(this.patientRepo as any).findOneBy) return null;
-    return (this.patientRepo as any).findOneBy({ mrn });
+    return this.patientRepo.findOneBy({ mrn });
   }
 
   async findAll(filters?: Record<string, unknown>): Promise<Patient[]> {
@@ -69,31 +60,8 @@ export class PatientsService {
     }
     return this.patientRepo.find();
   }
-  /**
-   * -----------------------------
-   * Search patients (privacy safe)
-   * -----------------------------
-   */
+
   async search(search: string): Promise<Patient[]> {
-    const qb = this.patientRepo.createQueryBuilder('patient');
-
-    if (search && search.trim() !== '') {
-      qb.where(
-        `
-      patient.firstName LIKE :search
-      OR patient.lastName LIKE :search
-      OR patient.nationalId LIKE :search
-      OR DATE_FORMAT(patient.dateOfBirth, '%Y-%m-%d') LIKE :search
-      OR patient.mrn LIKE :search
-      `,
-        {
-          search: `%${search}%`,
-        },
-      );
-    }
-
-    // Limit results for privacy & performance
-    qb.take(20);
     if (!search || search.trim() === '') {
       return this.patientRepo.find({ take: 20 });
     }
@@ -109,9 +77,6 @@ export class PatientsService {
     });
   }
 
-    return qb.getMany();
-  }
-
   /**
    * -----------------------------
    * Admit patient
@@ -120,15 +85,10 @@ export class PatientsService {
   async admit(id: string): Promise<Patient> {
     const patient = await this.findById(id);
     patient.isAdmitted = true;
-    patient.admissionDate = new Date().toISOString().split('T')[0]; // store as YYYY-MM-DD
+    patient.admissionDate = new Date().toISOString().split('T')[0];
     return this.patientRepo.save(patient);
   }
 
-  /**
-   * -----------------------------
-   * Discharge patient
-   * -----------------------------
-   */
   async discharge(id: string): Promise<Patient> {
     const patient = await this.findById(id);
     patient.isAdmitted = false;
@@ -155,33 +115,54 @@ export class PatientsService {
     return !!match;
   }
 
-  async attachPhoto(patientId: string, file: Express.Multer.File): Promise<Patient> {
   async update(id: string, updateData: Partial<Patient>): Promise<Patient> {
-    await (this.patientRepo as any).update(id, updateData);
-    const updated = await (this.patientRepo as any).findOneBy?.({ id });
+    await this.patientRepo.update(id, updateData as any);
+    const updated = await this.patientRepo.findOneBy({ id });
     if (!updated) throw new NotFoundException('Patient not found');
     return updated;
   }
 
   async softDelete(id: string): Promise<void> {
-    await (this.patientRepo as any).update(id, { isActive: false });
+    await this.patientRepo.update(id, { isActive: false } as any);
   }
 
-async attachPhoto(
+  async updateProfile(
+    stellarAddress: string,
+    profileData: Partial<Pick<Patient, 'phone' | 'email' | 'address' | 'contactPreferences' | 'emergencyContact' | 'primaryLanguage' | 'genderIdentity'>>,
+  ): Promise<Patient> {
+    const patient = await this.patientRepo.findOne({ where: { stellarAddress } });
+    if (!patient) throw new NotFoundException('Patient not found');
+    Object.assign(patient, profileData);
+    return this.patientRepo.save(patient);
+  }
+
+  async attachPhoto(
     patientId: string,
     file: Express.Multer.File,
   ): Promise<Patient> {
-    const patient = await this.patientRepo.findOne({
-      where: { id: patientId },
-    });
-
-    if (!patient) {
-      throw new NotFoundException('Patient not found');
-    }
-
-    // Save relative path in DB
-    patient.patientPhotoUrl = `/uploads/patients/photos/${file.filename}`;
-
+  async setGeoRestrictions(id: string, allowedCountries: string[]): Promise<Patient> {
+    const patient = await this.findById(id);
+    patient.allowedCountries =
+      allowedCountries.length > 0 ? allowedCountries.map((c) => c.toUpperCase()) : null;
     return this.patientRepo.save(patient);
+  }
+
+  async attachPhoto(patientId: string, file: Express.Multer.File): Promise<Patient> {
+    const patient = await this.patientRepo.findOne({ where: { id: patientId } });
+    if (!patient) throw new NotFoundException('Patient not found');
+    patient.patientPhotoUrl = `/uploads/patients/photos/${file.filename}`;
+    return this.patientRepo.save(patient);
+  }
+
+  private async detectDuplicate(dto: CreatePatientDto): Promise<boolean> {
+    const match = await this.patientRepo.findOne({
+      where: [
+        { nationalId: dto.nationalId },
+        { email: dto.email },
+        { phone: dto.phone },
+        { firstName: dto.firstName, lastName: dto.lastName, dateOfBirth: dto.dateOfBirth },
+      ],
+    });
+    return !!match;
   }
 }

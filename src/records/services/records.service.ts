@@ -1,12 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Between } from 'typeorm';
+import * as QRCode from 'qrcode';
 import { Record } from '../entities/record.entity';
 import { CreateRecordDto } from '../dto/create-record.dto';
 import { PaginationQueryDto } from '../dto/pagination-query.dto';
 import { PaginatedRecordsResponseDto, PaginationMeta } from '../dto/paginated-response.dto';
+import { RecentRecordDto } from '../dto/recent-record.dto';
 import { IpfsService } from './ipfs.service';
 import { StellarService } from './stellar.service';
+import { AccessControlService } from '../../access-control/services/access-control.service';
+import { AuditLogService } from '../../common/services/audit-log.service';
+import { RecordEventStoreService, RecordState } from './record-event-store.service';
+import { RecordEvent, RecordEventType } from '../entities/record-event.entity';
 
 @Injectable()
 export class RecordsService {
@@ -15,15 +21,21 @@ export class RecordsService {
     private recordRepository: Repository<Record>,
     private ipfsService: IpfsService,
     private stellarService: StellarService,
+    @Inject(forwardRef(() => AccessControlService))
+    private accessControlService: AccessControlService,
+    private auditLogService: AuditLogService,
+    private eventStore: RecordEventStoreService,
   ) {}
 
   async uploadRecord(
     dto: CreateRecordDto,
     encryptedBuffer: Buffer,
+    causedBy?: string,
   ): Promise<{ recordId: string; cid: string; stellarTxHash: string }> {
     const cid = await this.ipfsService.upload(encryptedBuffer);
     const stellarTxHash = await this.stellarService.anchorCid(dto.patientId, cid);
 
+    // Persist to the records table (read model / projection)
     const record = this.recordRepository.create({
       patientId: dto.patientId,
       cid,
@@ -31,8 +43,22 @@ export class RecordsService {
       recordType: dto.recordType,
       description: dto.description,
     });
-
     const savedRecord = await this.recordRepository.save(record);
+
+    // Append the creation event to the event store
+    await this.eventStore.append(
+      savedRecord.id,
+      RecordEventType.RECORD_CREATED,
+      {
+        patientId: dto.patientId,
+        cid,
+        stellarTxHash,
+        recordType: dto.recordType,
+        description: dto.description ?? null,
+        createdAt: savedRecord.createdAt,
+      },
+      causedBy,
+    );
 
     return {
       recordId: savedRecord.id,
@@ -53,17 +79,9 @@ export class RecordsService {
       patientId,
     } = query;
 
-    // Build where clause
     const where: FindOptionsWhere<Record> = {};
-
-    if (recordType) {
-      where.recordType = recordType;
-    }
-
-    if (patientId) {
-      where.patientId = patientId;
-    }
-
+    if (recordType) where.recordType = recordType;
+    if (patientId) where.patientId = patientId;
     if (fromDate && toDate) {
       where.createdAt = Between(new Date(fromDate), new Date(toDate));
     } else if (fromDate) {
@@ -72,40 +90,110 @@ export class RecordsService {
       where.createdAt = Between(new Date(0), new Date(toDate));
     }
 
-    // Calculate pagination
     const skip = (page - 1) * limit;
-
-    // Execute query
     const [data, total] = await this.recordRepository.findAndCount({
       where,
       order: {
-        [sortBy]: order.toUpperCase(),
+        [sortBy]: order.toUpperCase() as any,
       },
+      order: { [sortBy]: order.toUpperCase() },
       take: limit,
       skip,
     });
 
-    // Calculate metadata
     const totalPages = Math.ceil(total / limit);
-    const hasNextPage = page < totalPages;
-    const hasPreviousPage = page > 1;
-
     const meta: PaginationMeta = {
       total,
       page,
       limit,
       totalPages,
-      hasNextPage,
-      hasPreviousPage,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1,
     };
 
-    return {
-      data,
-      meta,
-    };
+    return { data, meta };
   }
 
-  async findOne(id: string): Promise<Record> {
-    return this.recordRepository.findOne({ where: { id } });
+  async generateQrCode(id: string, patientId: string): Promise<string> {
+    const record = await this.recordRepository.findOne({ where: { id } });
+    if (!record) throw new NotFoundException(`Record ${id} not found`);
+
+    const token = await this.stellarService.createShareLink(id, patientId);
+    const appDomain = process.env.APP_DOMAIN || 'https://app.domain.com';
+    const url = `${appDomain}/share/${token}`;
+    return QRCode.toDataURL(url);
+  }
+
+  async findOne(id: string, requesterId?: string): Promise<Record> {
+    const record = await this.recordRepository.findOne({ where: { id } });
+
+    if (record && requesterId) {
+      const emergencyGrant = await this.accessControlService.findActiveEmergencyGrant(
+        record.patientId,
+        requesterId,
+        id,
+      );
+
+      if (emergencyGrant) {
+        await this.auditLogService.create({
+          operation: 'EMERGENCY_ACCESS',
+          entityType: 'records',
+          entityId: id,
+          userId: requesterId,
+          status: 'success',
+          newValues: {
+            patientId: record.patientId,
+            grantId: emergencyGrant.id,
+            recordId: id,
+          },
+        });
+      }
+    }
+
+    return record;
+  }
+
+  async findRecent(): Promise<RecentRecordDto[]> {
+    const records = await this.recordRepository.find({
+      order: {
+        createdAt: 'DESC',
+      },
+      take: 50,
+      cache: 30000, // 30 seconds cache
+    });
+
+    return records.map((record) => ({
+      recordId: record.id,
+      patientAddress: this.truncateAddress(record.patientId),
+      providerAddress: 'System', // As records entity doesn't have providerId yet, defaulting to 'System'
+      recordType: record.recordType,
+      createdAt: record.createdAt,
+    }));
+  }
+
+  private truncateAddress(address: string): string {
+    if (address.length <= 10) return address;
+    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  /**
+   * Derive the current state of a record by replaying its event stream.
+   * Falls back to the latest snapshot + delta events for performance.
+   */
+  async getStateFromEvents(id: string): Promise<RecordState> {
+    const state = await this.eventStore.replayToState(id);
+    if (!state || state.deleted) {
+      throw new NotFoundException(`Record ${id} not found in event store`);
+    }
+    return state;
+  }
+
+  /**
+   * Return the raw event stream for a record (admin only).
+   */
+  async getEventStream(id: string): Promise<RecordEvent[]> {
+    const events = await this.eventStore.getEvents(id);
+    if (events.length === 0) {
+      throw new NotFoundException(`No events found for record ${id}`);
+    }
+    return events;
   }
 }

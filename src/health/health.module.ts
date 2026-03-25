@@ -6,6 +6,7 @@ import { HealthController } from './health.controller';
 import { RedisHealthIndicator } from './indicators/redis.health';
 import { IpfsHealthIndicator } from './indicators/ipfs.health';
 import { StellarHealthIndicator } from './indicators/stellar.health';
+ feat/detailed-health-endpoint
 import { DetailedHealthIndicator } from './indicators/detailed-health.indicator';
 import { QUEUE_NAMES } from '../queues/queue.constants';
 
@@ -26,5 +27,13 @@ import { QUEUE_NAMES } from '../queues/queue.constants';
     StellarHealthIndicator,
     DetailedHealthIndicator,
   ],
+=======
+import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
+
+@Module({
+  imports: [TerminusModule, HttpModule, CircuitBreakerModule],
+  controllers: [HealthController],
+  providers: [RedisHealthIndicator, IpfsHealthIndicator, StellarHealthIndicator],
+ main
 })
 export class HealthModule {}

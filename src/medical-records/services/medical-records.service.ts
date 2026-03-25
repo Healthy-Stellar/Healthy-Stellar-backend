@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, Between } from 'typeorm';
 import { MedicalRecord, MedicalRecordStatus } from '../entities/medical-record.entity';
@@ -113,6 +113,12 @@ export class MedicalRecordsService {
 
     if (record.status === MedicalRecordStatus.DELETED) {
       throw new BadRequestException('Cannot update a deleted record');
+    }
+
+    if (updateDto.expectedVersion !== undefined && record.version !== updateDto.expectedVersion) {
+      throw new ConflictException(
+        `Record has been modified by another user (expected version ${updateDto.expectedVersion}, current version ${record.version}). Please refresh the record and retry your update.`,
+      );
     }
 
     // Store previous content for versioning

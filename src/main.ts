@@ -1,13 +1,22 @@
+import './tracing'; // Initialize tracing before any other imports
 import { NestFactory, Reflector } from '@nestjs/core';
-import { ValidationPipe, VersioningType, VERSION_NEUTRAL } from '@nestjs/common';
+import { VersioningType, VERSION_NEUTRAL } from '@nestjs/common';
+import { I18nValidationPipe } from 'nestjs-i18n';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import helmet from 'helmet';
+import { nonceMiddleware } from './common/middleware/nonce.middleware';
 import { DeprecationInterceptor } from './common/interceptors/deprecation.interceptor';
+import { Logger } from 'nestjs-pino';
+import { applySecurityHeaders } from './security/http-security.config';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+
+  // Use Pino logger
+  app.useLogger(app.get(Logger));
+  app.flushLogs();
 
   // Enable URI-based API Versioning
   app.enableVersioning({
@@ -16,6 +25,11 @@ async function bootstrap() {
     defaultVersion: ['1', VERSION_NEUTRAL],
   });
 
+  // Security headers are shared with the integration test to keep runtime and verification aligned.
+  applySecurityHeaders(app);
+  // Nonce generation middleware for CSP
+  app.use(nonceMiddleware);
+
   // Security Headers - Helmet Configuration
   app.use(
     helmet({
@@ -23,7 +37,7 @@ async function bootstrap() {
         directives: {
           defaultSrc: ["'self'"],
           styleSrc: ["'self'", "'unsafe-inline'"], // Required for Swagger UI
-          scriptSrc: ["'self'"], // No unsafe-inline or unsafe-eval
+          scriptSrc: ["'self'", (req, res: any) => `'nonce-${res.locals.nonce}'`], // Use nonce for inline scripts
           imgSrc: ["'self'", 'data:', 'https:'],
           connectSrc: ["'self'"],
           fontSrc: ["'self'"],
@@ -61,16 +75,16 @@ async function bootstrap() {
     origin: corsOrigins,
     credentials: process.env.CORS_CREDENTIALS === 'true',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: ['X-Total-Count', 'X-Page-Count'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Trace-ID'],
+    exposedHeaders: ['X-Total-Count', 'X-Page-Count', 'X-Trace-ID'],
     maxAge: 3600,
   });
 
   app.useGlobalInterceptors(new DeprecationInterceptor(app.get(Reflector)));
 
-  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalPipes(
-    new ValidationPipe({
+    new I18nValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
@@ -158,8 +172,10 @@ async function bootstrap() {
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
-  console.log(`🏥 Medical System API: http://localhost:${port}`);
-  console.log(`📚 API Documentation: http://localhost:${port}/api`);
+  
+  const logger = app.get(Logger);
+  logger.log(`🏥 Medical System API: http://localhost:${port}`);
+  logger.log(`📚 API Documentation: http://localhost:${port}/api`);
 }
 
 bootstrap();

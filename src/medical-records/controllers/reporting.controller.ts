@@ -1,11 +1,70 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Body, Res, HttpStatus, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Response } from 'express';
 import { ReportingService } from '../services/reporting.service';
+import { ReportGenerationService } from '../services/report-generation.service';
+import { IpfsService } from '../services/ipfs.service';
+import { GenerateReportDto } from '../dto/generate-report.dto';
 
 @ApiTags('Reporting')
 @Controller('reports')
 export class ReportingController {
-  constructor(private readonly reportingService: ReportingService) {}
+  constructor(
+    private readonly reportingService: ReportingService,
+    private readonly reportGenerationService: ReportGenerationService,
+    private readonly ipfsService: IpfsService,
+  ) {}
+
+  @Post('generate')
+  @ApiOperation({ summary: 'Queue a report generation job' })
+  @ApiResponse({ status: 201, description: 'Report generation queued' })
+  async generateReport(@Body() dto: GenerateReportDto) {
+    return this.reportGenerationService.queueReportGeneration(dto.patientId, dto.format);
+  }
+
+  @Get(':jobId/status')
+  @ApiOperation({ summary: 'Get report job status' })
+  @ApiResponse({ status: 200, description: 'Job status retrieved' })
+  async getJobStatus(@Param('jobId') jobId: string) {
+    const status = await this.reportGenerationService.getJobStatus(jobId);
+    
+    if (!status) {
+      throw new NotFoundException('Job not found');
+    }
+
+    return status;
+  }
+
+  @Get(':jobId/download')
+  @ApiOperation({ summary: 'Download generated report' })
+  @ApiResponse({ status: 200, description: 'Report file streamed' })
+  async downloadReport(
+    @Param('jobId') jobId: string,
+    @Query('token') token: string,
+    @Res() res: Response,
+  ) {
+    if (!token) {
+      throw new BadRequestException('Token required');
+    }
+
+    const job = await this.reportGenerationService.validateDownload(jobId, token);
+
+    if (!job) {
+      throw new NotFoundException('Invalid job or token');
+    }
+
+    if (job['error']) {
+      throw new BadRequestException(job['error']);
+    }
+
+    const fileBuffer = await this.ipfsService.getFile(job.ipfsHash);
+    const contentType = job.format === 'pdf' ? 'application/pdf' : 'text/csv';
+    const fileName = `medical-report-${jobId}.${job.format}`;
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(fileBuffer);
+  }
 
   @Get('patient/:patientId/summary')
   @ApiOperation({ summary: 'Get patient medical records summary' })

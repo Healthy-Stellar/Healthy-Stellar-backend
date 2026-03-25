@@ -133,7 +133,7 @@ const { data: record } = await client.records.uploadRecord(
   'patient-uuid-1234',
   JSON.stringify(metadata)
 );
-console.log('Created record:', record.id, 'IPFS CID:', record.ipfsCid);
+console.log('Created record:', record.id, 'IPFS Hash:', record.ipfsHash);
 
 // Download file
 const { data: buffer } = await client.records.downloadRecord(record.id!);

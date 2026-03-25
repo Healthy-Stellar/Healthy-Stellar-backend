@@ -64,6 +64,8 @@ describe('ProviderDirectoryService', () => {
           role: UserRole.PHYSICIAN,
           specialty: 'Cardiology',
           institution: 'General Hospital',
+          country: 'US',
+          isAcceptingPatients: true,
         },
         {
           id: '2',
@@ -71,6 +73,8 @@ describe('ProviderDirectoryService', () => {
           role: UserRole.PHYSICIAN,
           specialty: 'Cardiology',
           institution: 'City Medical Center',
+          country: 'UK',
+          isAcceptingPatients: false,
         },
       ]);
 
@@ -79,7 +83,9 @@ describe('ProviderDirectoryService', () => {
       expect(result.data).toHaveLength(2);
       expect(result.data[0].displayName).toBe('Dr. John Doe');
       expect(result.data[0].specialty).toBe('Cardiology');
-      expect(result.data[0]).not.toHaveProperty('stellarPublicKey');
+      expect(result.data[0].country).toBe('US');
+      expect(result.data[0].isAcceptingPatients).toBe(true);
+      expect(result.data[0]).not.toHaveProperty('stellarAddress');
       expect(result.pagination).toEqual({
         page: 1,
         limit: 20,
@@ -139,7 +145,7 @@ describe('ProviderDirectoryService', () => {
       });
     });
 
-    it('should include stellarPublicKey for authenticated users', async () => {
+    it('should include stellarAddress for authenticated users', async () => {
       const query: ProviderDirectoryQueryDto = {
         page: 1,
         limit: 20,
@@ -153,20 +159,20 @@ describe('ProviderDirectoryService', () => {
           role: UserRole.PHYSICIAN,
           specialty: 'Cardiology',
           institution: 'General Hospital',
-          stellarPublicKey: 'GABC123XYZ',
+          stellarAddress: 'GABC123XYZ',
         },
       ]);
 
       const result = await service.searchProviders(query, true);
 
-      expect(result.data[0]).toHaveProperty('stellarPublicKey', 'GABC123XYZ');
+      expect(result.data[0]).toHaveProperty('stellarAddress', 'GABC123XYZ');
       expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
         'u."stellarPublicKey"',
-        'stellarPublicKey',
+        'stellarAddress',
       );
     });
 
-    it('should exclude stellarPublicKey for unauthenticated users', async () => {
+    it('should exclude stellarAddress for unauthenticated users', async () => {
       const query: ProviderDirectoryQueryDto = {
         page: 1,
         limit: 20,
@@ -185,7 +191,7 @@ describe('ProviderDirectoryService', () => {
 
       const result = await service.searchProviders(query, false);
 
-      expect(result.data[0]).not.toHaveProperty('stellarPublicKey');
+      expect(result.data[0]).not.toHaveProperty('stellarAddress');
     });
 
     it('should filter by role', async () => {
@@ -222,6 +228,78 @@ describe('ProviderDirectoryService', () => {
         expect.stringContaining('ILIKE'),
         { specialty: '%Cardiology%' },
       );
+    });
+
+    it('should filter by specialization (alias for specialty)', async () => {
+      const query: ProviderDirectoryQueryDto = {
+        specialization: 'Neurology',
+        page: 1,
+        limit: 20,
+      };
+
+      mockQueryBuilder.getRawOne.mockResolvedValue({ total: '1' });
+      mockQueryBuilder.getRawMany.mockResolvedValue([]);
+
+      await service.searchProviders(query, false);
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('OR'),
+        { specialty: '%Neurology%' },
+      );
+    });
+
+    it('should filter by country', async () => {
+      const query: ProviderDirectoryQueryDto = {
+        country: 'US',
+        page: 1,
+        limit: 20,
+      };
+
+      mockQueryBuilder.getRawOne.mockResolvedValue({ total: '1' });
+      mockQueryBuilder.getRawMany.mockResolvedValue([]);
+
+      await service.searchProviders(query, false);
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('u.country = :country', {
+        country: 'US',
+      });
+    });
+
+    it('should filter by isAcceptingPatients', async () => {
+      const query: ProviderDirectoryQueryDto = {
+        isAcceptingPatients: true,
+        page: 1,
+        limit: 20,
+      };
+
+      mockQueryBuilder.getRawOne.mockResolvedValue({ total: '1' });
+      mockQueryBuilder.getRawMany.mockResolvedValue([]);
+
+      await service.searchProviders(query, false);
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'u."isAcceptingPatients" = :isAcceptingPatients',
+        { isAcceptingPatients: true },
+      );
+    });
+
+    it('should filter by isLicenseVerified and isActive by default', async () => {
+      const query: ProviderDirectoryQueryDto = {
+        page: 1,
+        limit: 20,
+      };
+
+      mockQueryBuilder.getRawOne.mockResolvedValue({ total: '1' });
+      mockQueryBuilder.getRawMany.mockResolvedValue([]);
+
+      await service.searchProviders(query, false);
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('u."isActive" = :isActive', {
+        isActive: true,
+      });
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('u."isLicenseVerified" = :isVerified', {
+        isVerified: true,
+      });
     });
 
     it('should sort by relevance when search is provided', async () => {

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verificar tu Correo</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: #f5f5f5;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px 20px;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 600;
+    }
+    .content {
+      padding: 30px 20px;
+    }
+    .content h2 {
+      color: #333333;
+      font-size: 20px;
+      margin: 0 0 15px 0;
+    }
+    .content p {
+      color: #555555;
+      line-height: 1.6;
+      margin: 0 0 15px 0;
+    }
+    .code-box {
+      background-color: #f9f9f9;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 20px;
+      margin: 20px 0;
+      text-align: center;
+    }
+    .code-box .code {
+      font-size: 32px;
+      font-weight: 700;
+      color: #667eea;
+      letter-spacing: 4px;
+      font-family: monospace;
+    }
+    .code-box p {
+      margin: 10px 0 0 0;
+      font-size: 13px;
+      color: #888;
+    }
+    .cta-button {
+      display: inline-block;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      text-decoration: none;
+      padding: 12px 30px;
+      border-radius: 6px;
+      margin: 20px 0;
+      font-weight: 600;
+      transition: opacity 0.3s;
+    }
+    .cta-button:hover {
+      opacity: 0.9;
+    }
+    .warning {
+      background-color: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 4px;
+      padding: 12px;
+      margin: 20px 0;
+      color: #856404;
+      font-size: 13px;
+    }
+    .footer {
+      background-color: #f9f9f9;
+      padding: 20px;
+      text-align: center;
+      color: #888888;
+      font-size: 13px;
+      border-top: 1px solid #eeeeee;
+    }
+    .footer a {
+      color: #667eea;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Verificar tu Correo</h1>
+    </div>
+    <div class="content">
+      <h2>¡Bienvenido a MedChain, {{userName}}!</h2>
+      <p>Gracias por registrarte. Para comenzar, verifica tu dirección de correo electrónico ingresando el código a continuación o haciendo clic en el enlace de verificación.</p>
+
+      <div class="code-box">
+        <p>Código de Verificación:</p>
+        <div class="code">{{verificationCode}}</div>
+        <p>Este código expira en 24 horas</p>
+      </div>
+
+      <p>O haz clic en el botón a continuación para verificar directamente:</p>
+      <a href="{{verificationLink}}" class="cta-button">Verificar Dirección de Correo</a>
+
+      <div class="warning">
+        <strong>Aviso de Seguridad:</strong> Si no te registraste en una cuenta de MedChain, ignora este correo. No compartas este código de verificación con nadie.
+      </div>
+
+      <p>Si el botón anterior no funciona, copia y pega este enlace en tu navegador:<br>
+      <a href="{{verificationLink}}">{{verificationLink}}</a></p>
+    </div>
+    <div class="footer">
+      <p>© 2024 MedChain. Todos los derechos reservados.</p>
+      <p><a href="{{privacyUrl}}">Política de Privacidad</a> | <a href="{{termsUrl}}">Términos de Servicio</a></p>
+    </div>
+  </div>
+</body>
+</html>

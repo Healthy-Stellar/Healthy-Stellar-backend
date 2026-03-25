@@ -87,6 +87,7 @@ export class MedicalRecordsController {
   @ApiOperation({ summary: 'Update a medical record' })
   @ApiResponse({ status: 200, description: 'Medical record updated successfully' })
   @ApiResponse({ status: 404, description: 'Medical record not found' })
+  @ApiResponse({ status: 409, description: 'Version conflict - record was modified by another user, refresh and retry' })
   async update(
     @Param('id') id: string,
     @Body() updateDto: UpdateMedicalRecordDto,

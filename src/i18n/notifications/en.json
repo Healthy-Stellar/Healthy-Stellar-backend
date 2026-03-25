@@ -1,0 +1,22 @@
+{
+  "record_accessed": {
+    "subject": "Your medical record was accessed",
+    "body": "Your medical record (ID: {resourceId}) was accessed by {actorId} on {timestamp}."
+  },
+  "access_granted": {
+    "subject": "Access granted to your record",
+    "body": "Access to your medical record (ID: {resourceId}) has been granted to {actorId}."
+  },
+  "access_revoked": {
+    "subject": "Access revoked from your record",
+    "body": "Access to your medical record (ID: {resourceId}) has been revoked from {actorId}."
+  },
+  "record_uploaded": {
+    "subject": "New medical record uploaded",
+    "body": "A new medical record (ID: {resourceId}) has been uploaded by {actorId}."
+  },
+  "emergency_access": {
+    "subject": "Emergency access to your record",
+    "body": "Emergency access to your medical record (ID: {resourceId}) was initiated by {actorId} on {timestamp}."
+  }
+}

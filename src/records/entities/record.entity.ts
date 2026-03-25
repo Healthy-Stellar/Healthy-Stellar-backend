@@ -9,6 +9,9 @@ export class Record {
   @Column()
   patientId: string;
 
+  @Column({ nullable: true })
+  providerId: string;
+
   @Column()
   cid: string;
 

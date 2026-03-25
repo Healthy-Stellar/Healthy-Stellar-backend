@@ -96,6 +96,29 @@ export class Patient {
 
   /**
    * -----------------------------
+   * Stellar / Blockchain Identity
+   * -----------------------------
+   */
+  @Index()
+  @Column({ nullable: true, unique: true })
+  stellarAddress?: string; // immutable once set
+
+  @Column({ nullable: true })
+  nationalIdHash?: string; // SHA-256 hash of national ID — immutable once set
+
+  /**
+   * -----------------------------
+   * Off-chain Profile Metadata
+   * -----------------------------
+   */
+  @Column('json', { nullable: true })
+  contactPreferences?: Record<string, any>; // e.g. { preferredChannel: 'email', language: 'en' }
+
+  @Column('json', { nullable: true })
+  emergencyContact?: Record<string, any>; // e.g. { name, phone, relationship }
+
+  /**
+   * -----------------------------
    * Administrative / Workflow
    * -----------------------------
    */
@@ -110,6 +133,16 @@ export class Patient {
 
   @Column({ default: true })
   isActive: boolean; // archived vs active
+
+  /**
+   * -----------------------------
+   * Geo-Restriction
+   * -----------------------------
+   * ISO 3166-1 alpha-2 country codes that are allowed to access this patient's records.
+   * Empty array = no restriction.
+   */
+  @Column('simple-array', { nullable: true, default: null })
+  allowedCountries: string[] | null;
 
   /**
    * -----------------------------

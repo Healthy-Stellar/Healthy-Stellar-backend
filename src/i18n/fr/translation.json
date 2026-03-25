@@ -1,0 +1,27 @@
+{
+    "validation": {
+        "NOT_EMPTY": "Ce champ ne doit pas être vide.",
+        "IS_STRING": "Ce champ doit être une chaîne de caractères.",
+        "IS_EMAIL": "Ce champ doit être une adresse email valide.",
+        "IS_INT": "Ce champ doit être un nombre entier.",
+        "IS_DATE": "Ce champ doit être une date valide.",
+        "IS_BOOLEAN": "Ce champ doit être une valeur booléenne.",
+        "IS_IN": "Ce champ doit être l'une des valeurs suivantes : {constraints.0}",
+        "MIN_LENGTH": "Ce champ doit comporter au moins {constraints.0} caractères.",
+        "MAX_LENGTH": "Ce champ doit comporter au plus {constraints.0} caractères.",
+        "IS_ARRAY": "Ce champ doit être un tableau.",
+        "IS_UUID": "Ce champ doit être un UUID valide.",
+        "IS_NUMBER": "Ce champ doit être un nombre valide.",
+        "MATCHES": "Ce champ ne correspond pas au format requis."
+    },
+    "errors": {
+        "INTERNAL_SERVER_ERROR": "Erreur interne du serveur",
+        "UNAUTHORIZED": "Accès non autorisé",
+        "NOT_FOUND": "Ressource non trouvée",
+        "FORBIDDEN": "Accès interdit",
+        "BAD_REQUEST": "Mauvaise requête",
+        "CONFLICT": "Conflit de ressource",
+        "INVALID_CREDENTIALS": "Les identifiants fournis sont invalides",
+        "USER_NOT_FOUND": "Utilisateur introuvable"
+    }
+}

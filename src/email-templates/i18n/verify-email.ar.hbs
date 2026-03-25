@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>تحقق من بريدك الإلكتروني</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: #f5f5f5;
+      margin: 0;
+      padding: 20px;
+      direction: rtl;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px 20px;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 600;
+    }
+    .content {
+      padding: 30px 20px;
+    }
+    .content h2 {
+      color: #333333;
+      font-size: 20px;
+      margin: 0 0 15px 0;
+      text-align: right;
+    }
+    .content p {
+      color: #555555;
+      line-height: 1.6;
+      margin: 0 0 15px 0;
+      text-align: right;
+    }
+    .code-box {
+      background-color: #f9f9f9;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 20px;
+      margin: 20px 0;
+      text-align: center;
+    }
+    .code-box .code {
+      font-size: 32px;
+      font-weight: 700;
+      color: #667eea;
+      letter-spacing: 4px;
+      font-family: monospace;
+    }
+    .code-box p {
+      margin: 10px 0 0 0;
+      font-size: 13px;
+      color: #888;
+    }
+    .cta-button {
+      display: inline-block;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      text-decoration: none;
+      padding: 12px 30px;
+      border-radius: 6px;
+      margin: 20px 0;
+      font-weight: 600;
+      transition: opacity 0.3s;
+    }
+    .cta-button:hover {
+      opacity: 0.9;
+    }
+    .warning {
+      background-color: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 4px;
+      padding: 12px;
+      margin: 20px 0;
+      color: #856404;
+      font-size: 13px;
+      text-align: right;
+    }
+    .footer {
+      background-color: #f9f9f9;
+      padding: 20px;
+      text-align: center;
+      color: #888888;
+      font-size: 13px;
+      border-top: 1px solid #eeeeee;
+    }
+    .footer a {
+      color: #667eea;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>تحقق من بريدك الإلكتروني</h1>
+    </div>
+    <div class="content">
+      <h2>أهلا وسهلا في MedChain، {{userName}}!</h2>
+      <p>شكراً على التسجيل. للبدء، يرجى التحقق من عنوان بريدك الإلكتروني بإدخال الكود أدناه أو بالنقر على رابط التحقق.</p>
+
+      <div class="code-box">
+        <p>كود التحقق:</p>
+        <div class="code">{{verificationCode}}</div>
+        <p>ينتهي صلاحية هذا الكود خلال 24 ساعة</p>
+      </div>
+
+      <p>أو انقر على الزر أدناه للتحقق مباشرة:</p>
+      <a href="{{verificationLink}}" class="cta-button">تحقق من عنوان البريد الإلكتروني</a>
+
+      <div class="warning">
+        <strong>إشعار أمان:</strong> إذا لم تقم بالتسجيل في حساب MedChain، يرجى تجاهل هذا البريد. لا تشارك كود التحقق هذا مع أحد.
+      </div>
+
+      <p>إذا كان الزر أعلاه لا يعمل، انسخ والصق هذا الرابط في متصفحك:<br>
+      <a href="{{verificationLink}}">{{verificationLink}}</a></p>
+    </div>
+    <div class="footer">
+      <p>© 2024 MedChain. جميع الحقوق محفوظة.</p>
+      <p><a href="{{privacyUrl}}">سياسة الخصوصية</a> | <a href="{{termsUrl}}">شروط الخدمة</a></p>
+    </div>
+  </div>
+</body>
+</html>

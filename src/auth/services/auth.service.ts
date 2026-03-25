@@ -14,6 +14,7 @@ import { MfaService } from './mfa.service';
 import { SessionManagementService } from './session-management.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { AuditAction } from '../../common/audit/audit-log.entity';
+import { AuditLogService } from '../../common/services/audit-log.service';
 import { RegisterDto, LoginDto, ChangePasswordDto } from '../dto/auth.dto';
 
 export interface AuthResponse {
@@ -43,6 +44,7 @@ export class AuthService {
     private mfaService: MfaService,
     private sessionManagementService: SessionManagementService,
     private auditService: AuditService,
+    private auditLogService: AuditLogService,
   ) {}
 
   /**
@@ -252,6 +254,14 @@ export class AuthService {
       email: user.email,
       ipAddress,
     });
+
+    // Tamper-evident audit log
+    this.auditLogService.log({
+      actorAddress: user.id,
+      action: 'LOGIN',
+      ipAddress,
+      metadata: { email: user.email },
+    }).catch(() => {});
 
     return {
       user: this.formatUser(user),

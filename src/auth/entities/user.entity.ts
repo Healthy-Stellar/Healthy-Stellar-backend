@@ -46,6 +46,15 @@ export class User {
   isActive: boolean;
 
   @Column({ default: false })
+  isLicenseVerified: boolean;
+
+  @Column({ nullable: true, length: 100 })
+  country: string;
+
+  @Column({ default: true })
+  isAcceptingPatients: boolean;
+
+  @Column({ default: false })
   mfaEnabled: boolean;
 
   @Column({ nullable: true })
