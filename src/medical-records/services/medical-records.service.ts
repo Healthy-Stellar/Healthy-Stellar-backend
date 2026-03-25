@@ -9,6 +9,7 @@ import { UpdateMedicalRecordDto } from '../dto/update-medical-record.dto';
 import { SearchMedicalRecordsDto } from '../dto/search-medical-records.dto';
 import { AccessControlService } from '../../access-control/services/access-control.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { ProviderPatientRelationshipService } from '../../provider-patient/services/provider-patient-relationship.service';
 
 @Injectable()
 export class MedicalRecordsService {
@@ -23,20 +24,31 @@ export class MedicalRecordsService {
     private historyRepository: Repository<MedicalHistory>,
     private readonly accessControlService: AccessControlService,
     private readonly auditLogService: AuditLogService,
+    private readonly providerPatientService: ProviderPatientRelationshipService,
   ) {}
 
   async create(
     createDto: CreateMedicalRecordDto,
     userId: string,
     userName?: string,
+    organizationId?: string,
   ): Promise<MedicalRecord> {
     const record = this.medicalRecordRepository.create({
       ...createDto,
       createdBy: userId,
+      organizationId,
       recordDate: createDto.recordDate ? new Date(createDto.recordDate) : new Date(),
     });
 
     const savedRecord = await this.medicalRecordRepository.save(record);
+
+    // Track provider-patient relationship atomically
+    if (savedRecord.providerId) {
+      await this.providerPatientService.upsertRelationship(
+        savedRecord.providerId,
+        savedRecord.patientId,
+      );
+    }
 
     // Reload to get the proper version number
     const recordWithVersion = await this.medicalRecordRepository.findOne({
@@ -80,7 +92,7 @@ export class MedicalRecordsService {
     return savedRecord;
   }
 
-  async findOne(id: string, patientId?: string): Promise<MedicalRecord> {
+  async findOne(id: string, patientId?: string, organizationId?: string): Promise<MedicalRecord> {
     const queryBuilder = this.medicalRecordRepository
       .createQueryBuilder('record')
       .leftJoinAndSelect('record.versions', 'version')
@@ -91,6 +103,10 @@ export class MedicalRecordsService {
 
     if (patientId) {
       queryBuilder.andWhere('record.patientId = :patientId', { patientId });
+    }
+
+    if (organizationId) {
+      queryBuilder.andWhere('record.organizationId = :organizationId', { organizationId });
     }
 
     const record = await queryBuilder.getOne();
@@ -166,7 +182,7 @@ export class MedicalRecordsService {
     return updatedRecord;
   }
 
-  async search(searchDto: SearchMedicalRecordsDto): Promise<{
+  async search(searchDto: SearchMedicalRecordsDto, organizationId?: string): Promise<{
     data: MedicalRecord[];
     total: number;
     page: number;
@@ -186,6 +202,10 @@ export class MedicalRecordsService {
     } = searchDto;
 
     const queryBuilder = this.medicalRecordRepository.createQueryBuilder('record');
+
+    if (organizationId) {
+      queryBuilder.andWhere('record.organizationId = :organizationId', { organizationId });
+    }
 
     if (patientId) {
       queryBuilder.andWhere('record.patientId = :patientId', { patientId });

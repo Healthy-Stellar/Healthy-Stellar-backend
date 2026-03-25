@@ -9,7 +9,6 @@ import {
   Query,
   UseGuards,
   UseInterceptors,
-  Req,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -19,9 +18,13 @@ import { CreateMedicalRecordDto } from '../dto/create-medical-record.dto';
 import { UpdateMedicalRecordDto } from '../dto/update-medical-record.dto';
 import { SearchMedicalRecordsDto } from '../dto/search-medical-records.dto';
 import { AuditInterceptor } from '../../common/audit/audit.interceptor';
+import { CurrentTenant } from '@/tenant';
+import { CurrentUser } from '../../common/decorators/audit-context.decorator';
+import { TenantGuard } from '@/tenant';
 
 @ApiTags('Medical Records')
 @ApiBearerAuth()
+@UseGuards(TenantGuard)
 @UseInterceptors(AuditInterceptor)
 @Controller('medical-records')
 export class MedicalRecordsController {
@@ -31,18 +34,24 @@ export class MedicalRecordsController {
   @ApiOperation({ summary: 'Create a new medical record' })
   @ApiResponse({ status: 201, description: 'Medical record created successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  async create(@Body() createDto: CreateMedicalRecordDto, @Req() req: any) {
-    // Use a valid UUID format for system user, or get from auth
-    const userId = req.user?.id || '00000000-0000-0000-0000-000000000000';
-    const userName = req.user?.name || 'System';
-    return this.medicalRecordsService.create(createDto, userId, userName);
+  async create(
+    @Body() createDto: CreateMedicalRecordDto,
+    @CurrentTenant('tenantId') tenantId: string,
+    @CurrentUser() user: any,
+  ) {
+    const userId = user?.id || '00000000-0000-0000-0000-000000000000';
+    const userName = user?.email || 'System';
+    return this.medicalRecordsService.create(createDto, userId, userName, tenantId);
   }
 
   @Get('search')
   @ApiOperation({ summary: 'Search medical records' })
   @ApiResponse({ status: 200, description: 'Search results' })
-  async search(@Query() searchDto: SearchMedicalRecordsDto) {
-    return this.medicalRecordsService.search(searchDto);
+  async search(
+    @Query() searchDto: SearchMedicalRecordsDto,
+    @CurrentTenant('tenantId') tenantId: string,
+  ) {
+    return this.medicalRecordsService.search(searchDto, tenantId);
   }
 
   @Get('timeline/:patientId')
@@ -56,21 +65,17 @@ export class MedicalRecordsController {
   @ApiOperation({ summary: 'Get a medical record by ID' })
   @ApiResponse({ status: 200, description: 'Medical record retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Medical record not found' })
-  async findOne(@Param('id') id: string, @Query('patientId') patientId?: string, @Req() req?: any) {
-    const record = await this.medicalRecordsService.findOne(id, patientId);
+  async findOne(
+    @Param('id') id: string,
+    @CurrentTenant('tenantId') tenantId: string,
+    @CurrentUser() user: any,
+    @Query('patientId') patientId?: string,
+  ) {
+    const record = await this.medicalRecordsService.findOne(id, patientId, tenantId);
 
-    // Record view for audit trail
     if (patientId) {
-      const userId = req?.user?.userId || req?.user?.id || '00000000-0000-0000-0000-000000000000';
-      const userName = req?.user?.email || 'System';
-      await this.medicalRecordsService.recordView(
-        id,
-        patientId,
-        userId,
-        userName,
-        req?.ip,
-        req?.headers?.['user-agent'],
-      );
+      const userId = user?.id || '00000000-0000-0000-0000-000000000000';
+      await this.medicalRecordsService.recordView(id, patientId, userId, user?.email);
     }
 
     return record;
@@ -90,39 +95,36 @@ export class MedicalRecordsController {
   async update(
     @Param('id') id: string,
     @Body() updateDto: UpdateMedicalRecordDto,
-    @Req() req: any,
+    @CurrentUser() user: any,
     @Query('changeReason') changeReason?: string,
   ) {
-    const userId = req.user?.id || '00000000-0000-0000-0000-000000000000';
-    const userName = req.user?.name || 'System';
+    const userId = user?.id || '00000000-0000-0000-0000-000000000000';
+    const userName = user?.email || 'System';
     return this.medicalRecordsService.update(id, updateDto, userId, userName, changeReason);
   }
 
   @Put(':id/archive')
   @ApiOperation({ summary: 'Archive a medical record' })
   @ApiResponse({ status: 200, description: 'Medical record archived successfully' })
-  async archive(@Param('id') id: string, @Req() req: any) {
-    const userId = req.user?.id || '00000000-0000-0000-0000-000000000000';
-    const userName = req.user?.name || 'System';
-    return this.medicalRecordsService.archive(id, userId, userName);
+  async archive(@Param('id') id: string, @CurrentUser() user: any) {
+    const userId = user?.id || '00000000-0000-0000-0000-000000000000';
+    return this.medicalRecordsService.archive(id, userId, user?.email);
   }
 
   @Put(':id/restore')
   @ApiOperation({ summary: 'Restore an archived medical record' })
   @ApiResponse({ status: 200, description: 'Medical record restored successfully' })
-  async restore(@Param('id') id: string, @Req() req: any) {
-    const userId = req.user?.id || '00000000-0000-0000-0000-000000000000';
-    const userName = req.user?.name || 'System';
-    return this.medicalRecordsService.restore(id, userId, userName);
+  async restore(@Param('id') id: string, @CurrentUser() user: any) {
+    const userId = user?.id || '00000000-0000-0000-0000-000000000000';
+    return this.medicalRecordsService.restore(id, userId, user?.email);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a medical record (soft delete)' })
   @ApiResponse({ status: 204, description: 'Medical record deleted successfully' })
-  async delete(@Param('id') id: string, @Req() req: any) {
-    const userId = req.user?.id || '00000000-0000-0000-0000-000000000000';
-    const userName = req.user?.name || 'System';
-    await this.medicalRecordsService.delete(id, userId, userName);
+  async delete(@Param('id') id: string, @CurrentUser() user: any) {
+    const userId = user?.id || '00000000-0000-0000-0000-000000000000';
+    await this.medicalRecordsService.delete(id, userId, user?.email);
   }
 }

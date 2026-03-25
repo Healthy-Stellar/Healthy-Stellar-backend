@@ -44,6 +44,10 @@ export class MedicalRecord {
   patientId: string;
 
   @Column({ type: 'uuid', nullable: true })
+  @Index()
+  organizationId: string;
+
+  @Column({ type: 'uuid', nullable: true })
   providerId: string;
 
   @Column({ type: 'uuid', nullable: true })
