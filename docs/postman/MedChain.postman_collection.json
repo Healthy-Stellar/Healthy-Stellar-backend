@@ -1,0 +1,1239 @@
+{
+  "info": {
+    "name": "MedChain API",
+    "description": "Blockchain-based medical records management API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "medchain-api"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register Patient",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"patient@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"patient@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/auth/register",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "register"
+                  ]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"user\": {\n    \"id\": \"uuid-here\",\n    \"email\": \"patient@example.com\",\n    \"firstName\": \"John\",\n    \"lastName\": \"Doe\",\n    \"role\": \"patient\",\n    \"mfaEnabled\": false\n  },\n  \"tokens\": {\n    \"accessToken\": \"jwt-token-here\",\n    \"refreshToken\": \"refresh-token-here\",\n    \"expiresIn\": 900\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Register Healthcare Staff",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"doctor@hospital.org\",\n  \"password\": \"SecurePass123!\",\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Smith\",\n  \"role\": \"physician\",\n  \"licenseNumber\": \"MD12345\",\n  \"npi\": \"1234567890\",\n  \"specialty\": \"Cardiology\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register/staff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register",
+                "staff"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('jwt_token', response.tokens.accessToken);",
+                  "    pm.collectionVariables.set('refresh_token', response.tokens.refreshToken);",
+                  "    console.log('JWT token stored in collection variable');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"patient@example.com\",\n  \"password\": \"SecurePass123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"patient@example.com\",\n  \"password\": \"SecurePass123!\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"user\": {\n    \"id\": \"uuid-here\",\n    \"email\": \"patient@example.com\",\n    \"firstName\": \"John\",\n    \"lastName\": \"Doe\",\n    \"role\": \"patient\",\n    \"mfaEnabled\": false\n  },\n  \"tokens\": {\n    \"accessToken\": \"jwt-token-here\",\n    \"refreshToken\": \"refresh-token-here\",\n    \"expiresIn\": 900\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User Sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "sessions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"SecurePass123!\",\n  \"newPassword\": \"NewSecurePass123!\",\n  \"confirmPassword\": \"NewSecurePass123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "change-password"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            }
+          }
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{jwt_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Pre-request script for Auth folder",
+              "// This would fetch a challenge and sign it with Stellar keypair in a real implementation",
+              "// For demo purposes, we'll use the standard login flow",
+              "",
+              "// Example Stellar challenge-response (pseudo-code):",
+              "// const challenge = pm.sendRequest({",
+              "//   url: '{{baseUrl}}/auth/challenge',",
+              "//   method: 'GET'",
+              "// }).then((response) => {",
+              "//   const challenge = response.json().challenge;",
+              "//   // Sign challenge with Stellar keypair",
+              "//   const signature = signWithStellarKeypair(challenge, testSecretKey);",
+              "//   return pm.sendRequest({",
+              "//     url: '{{baseUrl}}/auth/login/stellar',",
+              "//     method: 'POST',",
+              "//     body: {",
+              "//       mode: 'raw',",
+              "//       raw: JSON.stringify({ signature, challenge })",
+              "//     }",
+              "//   });",
+              "// });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Records",
+      "item": [
+        {
+          "name": "List Medical Records",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/records?patientId=patient-uuid&page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "records"
+              ],
+              "query": [
+                {
+                  "key": "patientId",
+                  "value": "patient-uuid"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upload Medical Record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "patientId",
+                  "value": "patient-uuid",
+                  "type": "text"
+                },
+                {
+                  "key": "metadata",
+                  "value": "{\"recordType\":\"LAB_RESULT\",\"title\":\"Blood Test\",\"description\":\"Complete blood count\",\"tags\":[\"blood\",\"cbc\"]}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/records",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "records"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Medical Record",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/records/record-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "records",
+                "record-uuid"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Download Medical Record",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/records/record-uuid/download",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "records",
+                "record-uuid",
+                "download"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Medical Record",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/records/record-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "records",
+                "record-uuid"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Access Control",
+      "item": [
+        {
+          "name": "List Access Grants",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access/grants?page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "access",
+                "grants"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Grant Access",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granteeId\": \"provider-uuid\",\n  \"recordId\": \"record-uuid\",\n  \"permissions\": [\"READ\"],\n  \"expiresAt\": \"2024-12-31T23:59:59Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/access/grants",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "access",
+                "grants"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke Access",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access/grants/grant-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "access",
+                "grants",
+                "grant-uuid"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Received Grants",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/access/received",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "access",
+                "received"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Emergency Access",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"patient-uuid\",\n  \"reason\": \"Emergency surgery required immediate access to medical history\",\n  \"expiresInHours\": 24\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/access/emergency",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "access",
+                "emergency"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Create Staff User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nurse@hospital.org\",\n  \"firstName\": \"Alice\",\n  \"lastName\": \"Johnson\",\n  \"role\": \"nurse\",\n  \"licenseNumber\": \"RN56789\",\n  \"specialty\": \"Emergency Medicine\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/staff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "staff"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Patient",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "Authorization": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newpatient@example.com\",\n  \"firstName\": \"Bob\",\n  \"lastName\": \"Wilson\",\n  \"dateOfBirth\": \"1980-01-01\",\n  \"phoneNumber\": \"+1234567890\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/patients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "patients"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/user-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "user-uuid"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"UpdatedName\",\n  \"specialty\": \"Updated Specialty\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/user-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "user-uuid"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Medical License",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/user-uuid/verify-license?verifiedBy=admin-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "user-uuid",
+                "verify-license"
+              ],
+              "query": [
+                {
+                  "key": "verifiedBy",
+                  "value": "admin-uuid"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Audit",
+      "item": [
+        {
+          "name": "Get Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/audit?patientId=patient-uuid&fromDate=2024-01-01T00:00:00Z&toDate=2024-12-31T23:59:59Z&page=1&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "audit"
+              ],
+              "query": [
+                {
+                  "key": "patientId",
+                  "value": "patient-uuid"
+                },
+                {
+                  "key": "fromDate",
+                  "value": "2024-01-01T00:00:00Z"
+                },
+                {
+                  "key": "toDate",
+                  "value": "2024-12-31T23:59:59Z"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/audit/export?patientId=patient-uuid&fromDate=2024-01-01T00:00:00Z&toDate=2024-12-31T23:59:59Z",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "audit",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "patientId",
+                  "value": "patient-uuid"
+                },
+                {
+                  "key": "fromDate",
+                  "value": "2024-01-01T00:00:00Z"
+                },
+                {
+                  "key": "toDate",
+                  "value": "2024-12-31T23:59:59Z"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FHIR",
+      "item": [
+        {
+          "name": "Get Capability Statement",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fhir/r4/metadata",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fhir",
+                "r4",
+                "metadata"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Patient",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fhir/r4/Patient/patient-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fhir",
+                "r4",
+                "Patient",
+                "patient-uuid"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Patient Documents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fhir/r4/Patient/patient-uuid/DocumentReference",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fhir",
+                "r4",
+                "Patient",
+                "patient-uuid",
+                "DocumentReference"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Document Reference",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fhir/r4/DocumentReference/doc-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fhir",
+                "r4",
+                "DocumentReference",
+                "doc-uuid"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Initiate Bulk Export",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Prefer",
+                "value": "respond-async"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fhir/r4/Patient/$export?_type=Patient,Observation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fhir",
+                "r4",
+                "Patient",
+                "$export"
+              ],
+              "query": [
+                {
+                  "key": "_type",
+                  "value": "Patient,Observation"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Export Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fhir/r4/$export-status/job-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fhir",
+                "r4",
+                "$export-status",
+                "job-uuid"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Get System Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/analytics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "analytics",
+                "overview"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Activity Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/analytics/activity?from=2024-01-01T00:00:00Z&to=2024-12-31T23:59:59Z",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "analytics",
+                "activity"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2024-01-01T00:00:00Z"
+                },
+                {
+                  "key": "to",
+                  "value": "2024-12-31T23:59:59Z"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Top Providers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/analytics/top-providers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "analytics",
+                "top-providers"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "GDPR",
+      "item": [
+        {
+          "name": "Request Data Export",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/gdpr/data-export-request",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "gdpr",
+                "data-export-request"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Request Data Erasure",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/gdpr/erasure-request",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "gdpr",
+                "erasure-request"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get GDPR Requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/gdpr/requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "gdpr",
+                "requests"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Collection-level tests",
+          "pm.test('Status code is not 5xx', function () {",
+          "    pm.expect(pm.response.code).to.not.be.oneOf([500, 501, 502, 503, 504, 505]);",
+          "});",
+          "",
+          "pm.test('Response time is less than 1000ms', function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(1000);",
+          "});",
+          "",
+          "pm.test('Response has required fields', function () {",
+          "    const jsonData = pm.response.json();",
+          "    if (jsonData && typeof jsonData === 'object') {",
+          "        // Check for common required fields based on endpoint",
+          "        if (pm.request.url.path.includes('auth/login') && pm.response.code === 200) {",
+          "            pm.expect(jsonData).to.have.property('tokens');",
+          "            pm.expect(jsonData.tokens).to.have.property('accessToken');",
+          "        }",
+          "        if (pm.request.url.path.includes('records') && pm.response.code === 200) {",
+          "            // Records endpoints should return data",
+          "            pm.expect(jsonData).to.be.an('object');",
+          "        }",
+          "    }",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/v1",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

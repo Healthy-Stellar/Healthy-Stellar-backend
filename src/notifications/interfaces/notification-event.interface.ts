@@ -13,3 +13,16 @@ export interface NotificationEvent {
   timestamp: Date;
   metadata?: Record<string, any>;
 }
+
+export interface NotificationPreferences {
+  userId: string;
+  preferredLanguage: string;
+  emailEnabled?: boolean;
+  pushEnabled?: boolean;
+}
+
+export interface LocalizedNotification {
+  subject: string;
+  body: string;
+  lang: string;
+}

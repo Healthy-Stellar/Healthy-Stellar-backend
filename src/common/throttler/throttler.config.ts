@@ -31,7 +31,12 @@ export class ThrottlerConfigService implements ThrottlerOptionsFactory {
         {
           name: 'default',
           ttl: 60000, // 60 seconds
-          limit: 100, // 100 requests per minute per IP
+          limit: 100, // 100 requests per minute per IP/user
+        },
+        {
+          name: 'api_key',
+          ttl: 60000, // 60 seconds
+          limit: 50, // 50 requests per minute per API key (more restrictive)
         },
       ],
       storage: new ThrottlerStorageRedisService(redis),

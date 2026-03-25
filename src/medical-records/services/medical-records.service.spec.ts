@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { MedicalRecord } from '../entities/medical-record.entity';
+import { ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { MedicalRecord, MedicalRecordStatus, RecordType } from '../entities/medical-record.entity';
+import { MedicalRecordVersion } from '../entities/medical-record-version.entity';
+import { MedicalHistory } from '../entities/medical-history.entity';
+import { MedicalRecordsService } from './medical-records.service';
 import { aMedicalRecord, aPatient } from '../../../test/fixtures/test-data-builder';
 import { generateMedicalRecordData } from '../../../test/utils/data-anonymization.util';
 import { createMockAuditLog } from '../../../test/utils/hipaa-compliance.util';
@@ -12,7 +16,7 @@ import { createMockAuditLog } from '../../../test/utils/hipaa-compliance.util';
  * Tests medical record CRUD operations, access control, versioning, and HIPAA compliance
  */
 describe('MedicalRecordsService', () => {
-  let service: any; // Replace with actual service type
+  let service: MedicalRecordsService;
   let repository: Repository<MedicalRecord>;
 
   const mockRepository = {
@@ -23,9 +27,27 @@ describe('MedicalRecordsService', () => {
     findOneBy: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    createQueryBuilder: jest.fn(),
   };
 
-  const mockAuditService = {
+  const mockVersionRepository = {
+    create: jest.fn(),
+    save: jest.fn(),
+    find: jest.fn(),
+  };
+
+  const mockHistoryRepository = {
+    create: jest.fn(),
+    save: jest.fn(),
+    find: jest.fn(),
+  };
+
+  const mockAccessControlService = {
+    findActiveEmergencyGrant: jest.fn(),
+  };
+
+  const mockAuditLogService = {
+    create: jest.fn(),
     logAccess: jest.fn(),
     logUpdate: jest.fn(),
     logDelete: jest.fn(),
@@ -34,19 +56,31 @@ describe('MedicalRecordsService', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        // MedicalRecordsService, // Uncomment when service exists
+        MedicalRecordsService,
         {
           provide: getRepositoryToken(MedicalRecord),
           useValue: mockRepository,
         },
         {
-          provide: 'AuditService',
-          useValue: mockAuditService,
+          provide: getRepositoryToken(MedicalRecordVersion),
+          useValue: mockVersionRepository,
+        },
+        {
+          provide: getRepositoryToken(MedicalHistory),
+          useValue: mockHistoryRepository,
+        },
+        {
+          provide: 'AccessControlService',
+          useValue: mockAccessControlService,
+        },
+        {
+          provide: 'AuditLogService',
+          useValue: mockAuditLogService,
         },
       ],
     }).compile();
 
-    // service = module.get<MedicalRecordsService>(MedicalRecordsService);
+    service = module.get<MedicalRecordsService>(MedicalRecordsService);
     repository = module.get<Repository<MedicalRecord>>(getRepositoryToken(MedicalRecord));
 
     jest.clearAllMocks();
@@ -152,6 +186,163 @@ describe('MedicalRecordsService', () => {
       // result.forEach(record => {
       //   expect(record.recordType).toBe('lab_result');
       // });
+    });
+  });
+
+  describe('Concurrent Update Prevention (Optimistic Locking)', () => {
+    const buildRecord = (version: number): MedicalRecord =>
+      ({
+        id: 'record-uuid-1',
+        patientId: 'patient-uuid-1',
+        providerId: null,
+        createdBy: 'user-uuid-1',
+        recordType: RecordType.CONSULTATION,
+        title: 'Initial Title',
+        description: 'Initial description',
+        status: MedicalRecordStatus.ACTIVE,
+        recordDate: new Date(),
+        metadata: {},
+        stellarTxHash: null,
+        version,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        updatedBy: null,
+        versions: [],
+        history: [],
+        attachments: [],
+        consents: [],
+      } as MedicalRecord);
+
+    const setupQueryBuilder = (record: MedicalRecord) => {
+      const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(record),
+      };
+      mockRepository.createQueryBuilder.mockReturnValue(qb);
+      return qb;
+    };
+
+    it('should update successfully when expectedVersion matches current version', async () => {
+      const record = buildRecord(3);
+      setupQueryBuilder(record);
+      const updatedRecord = { ...record, title: 'Updated Title', version: 4 };
+      mockRepository.save.mockResolvedValue(updatedRecord);
+      mockVersionRepository.create.mockReturnValue({});
+      mockVersionRepository.save.mockResolvedValue({});
+      mockHistoryRepository.create.mockReturnValue({});
+      mockHistoryRepository.save.mockResolvedValue({});
+
+      const result = await service.update(
+        'record-uuid-1',
+        { title: 'Updated Title', expectedVersion: 3 },
+        'user-uuid-1',
+      );
+
+      expect(result.title).toBe('Updated Title');
+      expect(mockRepository.save).toHaveBeenCalled();
+    });
+
+    it('should throw ConflictException (409) when expectedVersion does not match current version', async () => {
+      const record = buildRecord(5); // current version is 5
+      setupQueryBuilder(record);
+
+      await expect(
+        service.update(
+          'record-uuid-1',
+          { title: 'Stale Update', expectedVersion: 3 }, // client has stale version 3
+          'user-uuid-2',
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should include refresh-and-retry instruction in the 409 error message', async () => {
+      const record = buildRecord(5);
+      setupQueryBuilder(record);
+
+      await expect(
+        service.update(
+          'record-uuid-1',
+          { title: 'Stale Update', expectedVersion: 2 },
+          'user-uuid-2',
+        ),
+      ).rejects.toThrow(/refresh.*retry/i);
+    });
+
+    it('should include both expected and current version numbers in the error message', async () => {
+      const record = buildRecord(7);
+      setupQueryBuilder(record);
+
+      let thrownError: ConflictException;
+      try {
+        await service.update(
+          'record-uuid-1',
+          { title: 'Stale Update', expectedVersion: 4 },
+          'user-uuid-2',
+        );
+      } catch (e) {
+        thrownError = e;
+      }
+
+      expect(thrownError).toBeInstanceOf(ConflictException);
+      expect(thrownError.message).toContain('4');
+      expect(thrownError.message).toContain('7');
+    });
+
+    it('should simulate concurrent update race condition: second writer gets 409', async () => {
+      // Provider A reads version 1
+      const recordAtV1 = buildRecord(1);
+      // Provider B also reads version 1 concurrently
+      const recordAtV2 = buildRecord(2); // after Provider A saved, version is now 2
+
+      // Provider A saves successfully (version matches)
+      setupQueryBuilder(recordAtV1);
+      mockRepository.save.mockResolvedValue({ ...recordAtV1, title: 'Provider A Update', version: 2 });
+      mockVersionRepository.create.mockReturnValue({});
+      mockVersionRepository.save.mockResolvedValue({});
+      mockHistoryRepository.create.mockReturnValue({});
+      mockHistoryRepository.save.mockResolvedValue({});
+
+      const providerAResult = await service.update(
+        'record-uuid-1',
+        { title: 'Provider A Update', expectedVersion: 1 },
+        'provider-a',
+      );
+      expect(providerAResult.title).toBe('Provider A Update');
+
+      // Now Provider B tries to save with stale version 1, but record is now at version 2
+      setupQueryBuilder(recordAtV2);
+
+      await expect(
+        service.update(
+          'record-uuid-1',
+          { title: 'Provider B Update', expectedVersion: 1 }, // stale
+          'provider-b',
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should allow update without expectedVersion (no optimistic locking check)', async () => {
+      const record = buildRecord(10);
+      setupQueryBuilder(record);
+      const updatedRecord = { ...record, title: 'Force Update', version: 11 };
+      mockRepository.save.mockResolvedValue(updatedRecord);
+      mockVersionRepository.create.mockReturnValue({});
+      mockVersionRepository.save.mockResolvedValue({});
+      mockHistoryRepository.create.mockReturnValue({});
+      mockHistoryRepository.save.mockResolvedValue({});
+
+      // No expectedVersion provided — should not throw
+      const result = await service.update(
+        'record-uuid-1',
+        { title: 'Force Update' },
+        'user-uuid-1',
+      );
+
+      expect(result.title).toBe('Force Update');
+      expect(mockRepository.save).toHaveBeenCalled();
     });
   });
 

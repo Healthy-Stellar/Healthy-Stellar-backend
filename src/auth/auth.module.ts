@@ -8,6 +8,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { User } from './entities/user.entity';
 import { MfaEntity } from './entities/mfa.entity';
 import { SessionEntity } from './entities/session.entity';
+import { ApiKey } from './entities/api-key.entity';
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
 
 // Services
@@ -16,7 +17,11 @@ import { PasswordValidationService } from './services/password-validation.servic
 import { AuthTokenService } from './services/auth-token.service';
 import { MfaService } from './services/mfa.service';
 import { SessionManagementService } from './services/session-management.service';
+import { ApiKeyService } from './services/api-key.service';
 import { AuditService } from '../common/audit/audit.service';
+
+// Strategies
+import { ApiKeyStrategy } from './strategies/api-key.strategy';
 
 // Controllers
 import { AuthController } from './controllers/auth.controller';
@@ -28,11 +33,12 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { MfaVerifiedGuard } from './guards/mfa-verified.guard';
 import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
+import { ApiKeyGuard } from './guards/api-key.guard';
 import { ProviderDirectoryService } from './services/provider-directory.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, MfaEntity, SessionEntity, AuditLogEntity]),
+    TypeOrmModule.forFeature([User, MfaEntity, SessionEntity, ApiKey, AuditLogEntity]),
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -52,12 +58,15 @@ import { ProviderDirectoryService } from './services/provider-directory.service'
     AuthTokenService,
     MfaService,
     SessionManagementService,
+    ApiKeyService,
     AuditService,
     ProviderDirectoryService,
+    ApiKeyStrategy,
     JwtAuthGuard,
     OptionalJwtAuthGuard,
     RolesGuard,
     MfaVerifiedGuard,
+    ApiKeyGuard,
   ],
   controllers: [AuthController, MfaController, ProvidersController],
   exports: [
@@ -66,12 +75,14 @@ import { ProviderDirectoryService } from './services/provider-directory.service'
     AuthTokenService,
     MfaService,
     SessionManagementService,
+    ApiKeyService,
     AuditService,
     ProviderDirectoryService,
     JwtAuthGuard,
     OptionalJwtAuthGuard,
     RolesGuard,
     MfaVerifiedGuard,
+    ApiKeyGuard,
   ],
 })
 export class AuthModule {}

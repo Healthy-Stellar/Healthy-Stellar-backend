@@ -73,6 +73,16 @@ export class AccessControlService {
 
     this.logger.log(`Access granted: ${updated.id} for patient ${patientId}`);
 
+    // Tamper-evident audit log
+    this.auditLogService.log({
+      actorAddress: patientId,
+      action: 'GRANT_CHANGE',
+      targetAddress: dto.granteeId,
+      resourceType: 'AccessGrant',
+      resourceId: updated.id,
+      metadata: { recordIds: updated.recordIds, accessLevel: updated.accessLevel },
+    }).catch(() => {});
+
     return updated;
   }
 
@@ -106,6 +116,16 @@ export class AccessControlService {
     });
 
     this.logger.log(`Access revoked: ${grantId} by patient ${patientId}`);
+
+    // Tamper-evident audit log
+    this.auditLogService.log({
+      actorAddress: patientId,
+      action: 'GRANT_REVOKE',
+      targetAddress: finalGrant.granteeId,
+      resourceType: 'AccessGrant',
+      resourceId: finalGrant.id,
+      metadata: { reason: finalGrant.revocationReason },
+    }).catch(() => {});
 
     return finalGrant;
   }

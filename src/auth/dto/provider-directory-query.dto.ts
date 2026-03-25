@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class ProviderDirectoryQueryDto {
   @IsOptional()
@@ -9,6 +9,19 @@ export class ProviderDirectoryQueryDto {
   @IsOptional()
   @IsString()
   specialty?: string;
+
+  @IsOptional()
+  @IsString()
+  specialization?: string;
+
+  @IsOptional()
+  @IsString()
+  country?: string;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isAcceptingPatients?: boolean;
 
   @IsOptional()
   @IsIn(['doctor', 'lab', 'insurer'])

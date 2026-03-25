@@ -10,7 +10,9 @@ interface ProviderDirectoryRecord {
   role: 'doctor' | 'lab' | 'insurer';
   specialty: string | null;
   institution: string | null;
-  stellarPublicKey?: string | null;
+  country: string | null;
+  isAcceptingPatients: boolean;
+  stellarAddress?: string | null;
 }
 
 interface ProviderDirectoryResult {
@@ -47,6 +49,7 @@ export class ProviderDirectoryService {
       .createQueryBuilder('u')
       .where('u.role IN (:...providerRoles)', { providerRoles: this.providerRoles })
       .andWhere('u."isActive" = :isActive', { isActive: true })
+      .andWhere('u."isLicenseVerified" = :isVerified', { isVerified: true })
       .andWhere('u."deletedAt" IS NULL')
       .select('u.id', 'id')
       .addSelect(
@@ -54,20 +57,36 @@ export class ProviderDirectoryService {
         'displayName',
       )
       .addSelect('u.role', 'role')
-      .addSelect(`COALESCE(NULLIF(u."specialty", ''), NULLIF(u."specialization", ''))`, 'specialty')
-      .addSelect('u."institution"', 'institution');
+      .addSelect(`COALESCE(NULLIF(u."specialization", ''), NULLIF(u."specialty", ''))`, 'specialty')
+      .addSelect('u."institution"', 'institution')
+      .addSelect('u."country"', 'country')
+      .addSelect('u."isAcceptingPatients"', 'isAcceptingPatients');
 
     if (includeSensitiveData) {
-      qb.addSelect('u."stellarPublicKey"', 'stellarPublicKey');
+      qb.addSelect('u."stellarPublicKey"', 'stellarAddress');
     }
 
     if (query.role) {
       qb.andWhere('u.role = :role', { role: this.mapRoleAliasToEnum(query.role) });
     }
 
-    if (query.specialty) {
-      qb.andWhere(`COALESCE(u."specialty", u."specialization", '') ILIKE :specialty`, {
-        specialty: `%${query.specialty}%`,
+    if (query.specialty || query.specialization) {
+      const specialtySearch = query.specialty || query.specialization;
+      qb.andWhere(
+        `(COALESCE(u."specialty", '') ILIKE :specialty OR COALESCE(u."specialization", '') ILIKE :specialty)`,
+        {
+          specialty: `%${specialtySearch}%`,
+        },
+      );
+    }
+
+    if (query.country) {
+      qb.andWhere('u.country = :country', { country: query.country });
+    }
+
+    if (query.isAcceptingPatients !== undefined) {
+      qb.andWhere('u."isAcceptingPatients" = :isAcceptingPatients', {
+        isAcceptingPatients: query.isAcceptingPatients,
       });
     }
 
@@ -92,7 +111,9 @@ export class ProviderDirectoryService {
       role: UserRole;
       specialty: string | null;
       institution: string | null;
-      stellarPublicKey?: string | null;
+      country: string | null;
+      isAcceptingPatients: boolean;
+      stellarAddress?: string | null;
     }>();
 
     return {
@@ -102,7 +123,9 @@ export class ProviderDirectoryService {
         role: this.mapRoleEnumToAlias(row.role),
         specialty: row.specialty,
         institution: row.institution,
-        ...(includeSensitiveData ? { stellarPublicKey: row.stellarPublicKey ?? null } : {}),
+        country: row.country,
+        isAcceptingPatients: row.isAcceptingPatients,
+        ...(includeSensitiveData ? { stellarAddress: row.stellarAddress ?? null } : {}),
       })),
       pagination: {
         page,

@@ -1,6 +1,7 @@
 import { Injectable, Inject, forwardRef, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Between } from 'typeorm';
+import * as QRCode from 'qrcode';
 import { Record } from '../entities/record.entity';
 import { CreateRecordDto } from '../dto/create-record.dto';
 import { PaginationQueryDto } from '../dto/pagination-query.dto';
@@ -111,6 +112,16 @@ export class RecordsService {
     };
 
     return { data, meta };
+  }
+
+  async generateQrCode(id: string, patientId: string): Promise<string> {
+    const record = await this.recordRepository.findOne({ where: { id } });
+    if (!record) throw new NotFoundException(`Record ${id} not found`);
+
+    const token = await this.stellarService.createShareLink(id, patientId);
+    const appDomain = process.env.APP_DOMAIN || 'https://app.domain.com';
+    const url = `${appDomain}/share/${token}`;
+    return QRCode.toDataURL(url);
   }
 
   async findOne(id: string, requesterId?: string): Promise<Record> {

@@ -16,6 +16,7 @@ describe('RecordsController', () => {
     uploadRecord: jest.fn(),
     findAll: jest.fn(),
     findOne: jest.fn(),
+    generateQrCode: jest.fn(),
     findRecent: jest.fn(),
   };
 
@@ -257,6 +258,38 @@ describe('RecordsController', () => {
 
       expect(result).toEqual(mockRecord);
       expect(service.findOne).toHaveBeenCalledWith('1');
+    });
+  });
+
+  describe('getQrCode', () => {
+    it('should return a base64 QR code for a valid record', async () => {
+      const qrBase64 = 'data:image/png;base64,abc123';
+      mockRecordsService.generateQrCode.mockResolvedValue(qrBase64);
+
+      const req = { user: { userId: 'patient-1' } };
+      const result = await controller.getQrCode('record-1', req);
+
+      expect(result).toEqual({ qrCode: qrBase64 });
+      expect(service.generateQrCode).toHaveBeenCalledWith('record-1', 'patient-1');
+    });
+
+    it('should use req.user.id as fallback for patientId', async () => {
+      const qrBase64 = 'data:image/png;base64,xyz';
+      mockRecordsService.generateQrCode.mockResolvedValue(qrBase64);
+
+      const req = { user: { id: 'patient-2' } };
+      const result = await controller.getQrCode('record-2', req);
+
+      expect(result).toEqual({ qrCode: qrBase64 });
+      expect(service.generateQrCode).toHaveBeenCalledWith('record-2', 'patient-2');
+    });
+
+    it('should propagate NotFoundException from service', async () => {
+      const { NotFoundException } = await import('@nestjs/common');
+      mockRecordsService.generateQrCode.mockRejectedValue(new NotFoundException('Record not found'));
+
+      const req = { user: { userId: 'patient-1' } };
+      await expect(controller.getQrCode('nonexistent', req)).rejects.toThrow(NotFoundException);
     });
   });
 });

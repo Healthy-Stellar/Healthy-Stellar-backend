@@ -2,6 +2,7 @@ import { Module, Global, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AuditLog } from './entities/audit-log.entity';
+import { SensitiveAuditLog } from './entities/sensitive-audit-log.entity';
 import { AuditLogService } from './services/audit-log.service';
 import { DataEncryptionService } from './services/data-encryption.service';
 import { TracingService } from './services/tracing.service';
@@ -12,7 +13,7 @@ import { RedisLockService } from './utils/redis-lock.service';
 
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([AuditLog])],
+  imports: [TypeOrmModule.forFeature([AuditLog, SensitiveAuditLog])],
   providers: [
     AuditLogService,
     DataEncryptionService,

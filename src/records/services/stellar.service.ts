@@ -17,6 +17,37 @@ export class StellarService {
     this.contract = new StellarSdk.Contract(process.env.STELLAR_CONTRACT_ID || '');
   }
 
+  async createShareLink(recordId: string, patientId: string): Promise<string> {
+    const sourceKeypair = StellarSdk.Keypair.fromSecret(process.env.STELLAR_SECRET_KEY || '');
+    const sourceAccount = await this.server.loadAccount(sourceKeypair.publicKey());
+    const contract = new StellarSdk.Contract(process.env.STELLAR_CONTRACT_ID || '');
+    const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+
+    const operation = contract.call(
+      'create_share_link',
+      StellarSdk.nativeToScVal(recordId, { type: 'string' }),
+      StellarSdk.nativeToScVal(patientId, { type: 'string' }),
+      StellarSdk.nativeToScVal(expiresAt, { type: 'u64' }),
+    );
+
+    const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase:
+        process.env.STELLAR_NETWORK === 'testnet'
+          ? StellarSdk.Networks.TESTNET
+          : StellarSdk.Networks.PUBLIC,
+    })
+      .addOperation(operation)
+      .setTimeout(30)
+      .build();
+
+    transaction.sign(sourceKeypair);
+    const result = await this.server.submitTransaction(transaction);
+    this.logger.log(`Share link created on Stellar: ${result.hash}`);
+    // Return the transaction hash as the share token
+    return result.hash;
+  }
+
   async anchorCid(patientId: string, cid: string): Promise<string> {
     return this.tracingService.withSpan(
       'stellar.anchorCid',

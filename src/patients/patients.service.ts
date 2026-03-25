@@ -77,6 +77,11 @@ export class PatientsService {
     });
   }
 
+  /**
+   * -----------------------------
+   * Admit patient
+   * -----------------------------
+   */
   async admit(id: string): Promise<Patient> {
     const patient = await this.findById(id);
     patient.isAdmitted = true;
@@ -91,6 +96,25 @@ export class PatientsService {
     return this.patientRepo.save(patient);
   }
 
+  /**
+   * -----------------------------
+   * Detect duplicate patient
+   * -----------------------------
+   * Checks: nationalId, email, phone, name + DOB
+   */
+  private async detectDuplicate(dto: CreatePatientDto): Promise<boolean> {
+    const match = await this.patientRepo.findOne({
+      where: [
+        { nationalId: dto.nationalId },
+        { email: dto.email },
+        { phone: dto.phone },
+        { firstName: dto.firstName, lastName: dto.lastName, dateOfBirth: dto.dateOfBirth },
+      ],
+    });
+
+    return !!match;
+  }
+
   async update(id: string, updateData: Partial<Patient>): Promise<Patient> {
     await this.patientRepo.update(id, updateData as any);
     const updated = await this.patientRepo.findOneBy({ id });
@@ -102,6 +126,20 @@ export class PatientsService {
     await this.patientRepo.update(id, { isActive: false } as any);
   }
 
+  async updateProfile(
+    stellarAddress: string,
+    profileData: Partial<Pick<Patient, 'phone' | 'email' | 'address' | 'contactPreferences' | 'emergencyContact' | 'primaryLanguage' | 'genderIdentity'>>,
+  ): Promise<Patient> {
+    const patient = await this.patientRepo.findOne({ where: { stellarAddress } });
+    if (!patient) throw new NotFoundException('Patient not found');
+    Object.assign(patient, profileData);
+    return this.patientRepo.save(patient);
+  }
+
+  async attachPhoto(
+    patientId: string,
+    file: Express.Multer.File,
+  ): Promise<Patient> {
   async setGeoRestrictions(id: string, allowedCountries: string[]): Promise<Patient> {
     const patient = await this.findById(id);
     patient.allowedCountries =
