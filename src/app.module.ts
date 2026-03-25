@@ -11,6 +11,7 @@ import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from './auth/auth.module';
+import { AdminModule } from './admin/admin.module';
 import { BillingModule } from './billing/billing.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
 import { RecordsModule } from './records/records.module';
@@ -160,6 +161,7 @@ const getUserTrackerFromRequest = (req: any): string => {
     CommonModule,
     I18nAppModule,
     AuthModule,
+    AdminModule,
     BillingModule,
     MedicalRecordsModule,
     RecordsModule,
