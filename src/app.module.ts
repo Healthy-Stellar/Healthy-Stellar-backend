@@ -40,6 +40,7 @@ import { ResearchExportModule } from './research-export/research-export.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
 import { JobsModule } from './jobs/jobs.module';
+import { DataRetentionModule } from './data-retention/data-retention.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { AuditModule } from './common/audit/audit.module';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
@@ -102,6 +103,7 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
     FhirModule,
     AccessControlModule,
     JobsModule,
+    DataRetentionModule,
     StellarModule,
     AuditModule,
     TenantConfigModule,
