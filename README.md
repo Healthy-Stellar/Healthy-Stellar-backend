@@ -11,6 +11,7 @@ Comprehensive documentation for the NestJS backend that interfaces with Stellar 
 - [Configuration](#configuration)
 - [Core Modules](#core-modules)
 - [API Endpoints](#api-endpoints)
+- [Postman Collection](#postman-collection)
 - [Database Schema](#database-schema)
 - [Medical Records System](#medical-records-system)
 - [Authentication & Authorization](#authentication--authorization)
@@ -191,6 +192,30 @@ The medical records module provides comprehensive functionality for managing med
 - `GET /reports/activity` - Get activity report
 - `GET /reports/consent` - Get consent report
 - `GET /reports/statistics` - Get statistics
+
+## Postman Collection
+
+A comprehensive Postman collection is available for testing and exploring the API:
+
+- **Location**: `docs/postman/`
+- **Collection**: `MedChain.postman_collection.json`
+- **Environments**: Local, Testnet, and Staging
+- **Documentation**: `docs/postman/README.md`
+
+### Features
+
+- Organized into folders matching API modules (Auth, Records, Access Control, etc.)
+- Pre-configured authentication with automatic JWT token management
+- Collection-level tests for response validation
+- Environment-specific configurations
+- Example requests and responses for all endpoints
+
+### Quick Start
+
+1. Import the collection and environment files into Postman
+2. Select the appropriate environment (Local/Testnet/Staging)
+3. Run the "Login" request in the Auth folder
+4. All subsequent requests will automatically use the JWT token
 
 ## Database Schema
 
