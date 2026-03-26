@@ -55,6 +55,7 @@ import { HttpMetricsInterceptor } from './metrics/interceptors/http-metrics.inte
 import { LoggerModule } from './common/logger/logger.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { EventStoreModule } from './event-store/event-store.module';
 
 @Module({
   imports: [
@@ -115,6 +116,7 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
     ReconciliationModule,
     GraphqlModule,
     VersioningModule,
+    EventStoreModule,
   ],
   controllers: [AppController],
   providers: [
@@ -129,7 +131,6 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
     },
     {
       provide: APP_INTERCEPTOR,
-      useClass: TenantInterceptor
       useClass: TenantInterceptor,
     },
     {
