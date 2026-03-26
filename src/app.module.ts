@@ -44,6 +44,7 @@ import { DataRetentionModule } from './data-retention/data-retention.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { VersioningModule } from './versioning/versioning.module';
 import { LedgerReconciliationModule } from './ledger-reconciliation/ledger-reconciliation.module';
+import { StellarStreamModule } from './stellar-stream/stellar-stream.module';
 import { AuditModule } from './common/audit/audit.module';
 import { CustomThrottlerGuard } from './common/throttler/custom-throttler.guard';
 import { ThrottlerConfigService } from './common/throttler/throttler.config';
@@ -117,11 +118,9 @@ import { EventStoreModule } from './event-store/event-store.module';
     ReconciliationModule,
     GraphqlModule,
     VersioningModule,
-<<<<<<< feature/314-ledger-reconciliation-job
     LedgerReconciliationModule,
-=======
+    StellarStreamModule,
     EventStoreModule,
->>>>>>> main
   ],
   controllers: [AppController],
   providers: [

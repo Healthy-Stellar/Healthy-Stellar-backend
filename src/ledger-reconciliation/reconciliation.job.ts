@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { LedgerReconciliationService } from './ledger-reconciliation.service';
 
-/** Runs every 15 minutes: "0 */15 * * * *" */
-const EVERY_15_MINUTES = '0 */15 * * * *';
+/** Runs every 2 hours as a safety-net behind the SSE stream (Issue #315). */
+const EVERY_2_HOURS = '0 0 */2 * * *';
 
 @Injectable()
 export class ReconciliationJob {
@@ -11,7 +11,7 @@ export class ReconciliationJob {
 
   constructor(private readonly reconciliation: LedgerReconciliationService) {}
 
-  @Cron(EVERY_15_MINUTES)
+  @Cron(EVERY_2_HOURS)
   async handleCron(): Promise<void> {
     this.logger.log('Scheduled ledger reconciliation started');
     const summary = await this.reconciliation.run();
