@@ -82,7 +82,7 @@ export class RecordsController {
     description: 'Page number (default: 1)',
   })
   @ApiQuery({
-    name: 'limit',
+    name: 'pageSize',
     required: false,
     type: Number,
     description: 'Items per page (default: 20, max: 100)',

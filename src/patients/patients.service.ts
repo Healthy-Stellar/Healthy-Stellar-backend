@@ -11,6 +11,9 @@ import { CreatePatientDto } from './dto/create-patient.dto';
 import { generateMRN } from './utils/mrn.generator';
 import { AdminMergePatientsDto } from './dto/admin-merge-patients.dto';
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
+import { PaginationDto } from '../common/dto/pagination.dto';
+import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
+import { PaginationUtil } from '../common/utils/pagination.util';
 
 @Injectable()
 export class PatientsService {
@@ -57,11 +60,24 @@ export class PatientsService {
     return this.patientRepo.findOneBy({ mrn });
   }
 
-  async findAll(filters?: Record<string, unknown>): Promise<Patient[]> {
-    if (filters && Object.keys(filters).length > 0) {
-      return this.patientRepo.find({ where: filters as any });
+  async findAll(
+    paginationDto?: PaginationDto,
+    filters?: Record<string, unknown>,
+  ): Promise<PaginatedResponseDto<Patient>> {
+    if (!paginationDto) {
+      // Backward compatibility: return all patients if no pagination provided
+      const patients =
+        filters && Object.keys(filters).length > 0
+          ? await this.patientRepo.find({ where: filters as any })
+          : await this.patientRepo.find();
+      return PaginationUtil.createResponse(patients, patients.length, 1, patients.length);
     }
-    return this.patientRepo.find();
+
+    return PaginationUtil.paginate(
+      this.patientRepo,
+      paginationDto,
+      filters && Object.keys(filters).length > 0 ? { where: filters as any } : undefined,
+    );
   }
 
   async search(search: string): Promise<Patient[]> {
@@ -80,11 +96,6 @@ export class PatientsService {
     });
   }
 
-  /**
-   * -----------------------------
-   * Admit patient
-   * -----------------------------
-   */
   async admit(id: string): Promise<Patient> {
     const patient = await this.findById(id);
     patient.isAdmitted = true;
@@ -99,12 +110,6 @@ export class PatientsService {
     return this.patientRepo.save(patient);
   }
 
-  /**
-   * -----------------------------
-   * Detect duplicate patient
-   * -----------------------------
-   * Checks: nationalId, email, phone, name + DOB
-   */
   private async detectDuplicate(dto: CreatePatientDto): Promise<boolean> {
     const match = await this.patientRepo.findOne({
       where: [
@@ -131,7 +136,18 @@ export class PatientsService {
 
   async updateProfile(
     stellarAddress: string,
-    profileData: Partial<Pick<Patient, 'phone' | 'email' | 'address' | 'contactPreferences' | 'emergencyContact' | 'primaryLanguage' | 'genderIdentity'>>,
+    profileData: Partial<
+      Pick<
+        Patient,
+        | 'phone'
+        | 'email'
+        | 'address'
+        | 'contactPreferences'
+        | 'emergencyContact'
+        | 'primaryLanguage'
+        | 'genderIdentity'
+      >
+    >,
   ): Promise<Patient> {
     const patient = await this.patientRepo.findOne({ where: { stellarAddress } });
     if (!patient) throw new NotFoundException('Patient not found');
@@ -182,10 +198,18 @@ export class PatientsService {
       }
 
       // 1. Transfer records (records entity has patientId)
-      await queryRunner.manager.update('records', { patientId: secondaryAddress }, { patientId: primaryAddress });
+      await queryRunner.manager.update(
+        'records',
+        { patientId: secondaryAddress },
+        { patientId: primaryAddress },
+      );
 
       // 2. Transfer access grants
-      await queryRunner.manager.update('access_grants', { patientId: secondaryAddress }, { patientId: primaryAddress });
+      await queryRunner.manager.update(
+        'access_grants',
+        { patientId: secondaryAddress },
+        { patientId: primaryAddress },
+      );
 
       // 3. Mark the secondary patient as inactive/merged (we can just set isActive = false, add notes?)
       // Wait, there is no "status = MERGED" in this Patient entity... Wait! There is no "status"!

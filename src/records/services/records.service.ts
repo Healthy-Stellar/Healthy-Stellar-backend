@@ -8,7 +8,7 @@ import * as QRCode from 'qrcode';
 import { Record } from '../entities/record.entity';
 import { CreateRecordDto } from '../dto/create-record.dto';
 import { PaginationQueryDto } from '../dto/pagination-query.dto';
-import { PaginatedRecordsResponseDto, PaginationMeta } from '../dto/paginated-response.dto';
+import { PaginatedRecordsResponseDto } from '../dto/paginated-response.dto';
 import { RecentRecordDto } from '../dto/recent-record.dto';
 import { IpfsService } from './ipfs.service';
 import { StellarService } from './stellar.service';
@@ -16,6 +16,7 @@ import { AccessControlService } from '../../access-control/services/access-contr
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { RecordEventStoreService, RecordState } from './record-event-store.service';
 import { RecordEvent, RecordEventType } from '../entities/record-event.entity';
+import { PaginationUtil } from '../../common/utils/pagination.util';
 
 @Injectable()
 export class RecordsService {
@@ -73,7 +74,7 @@ export class RecordsService {
   async findAll(query: PaginationQueryDto): Promise<PaginatedRecordsResponseDto> {
     const {
       page = 1,
-      limit = 20,
+      pageSize = 20,
       recordType,
       fromDate,
       toDate,
@@ -93,28 +94,16 @@ export class RecordsService {
       where.createdAt = Between(new Date(0), new Date(toDate));
     }
 
-    const skip = (page - 1) * limit;
-    const [data, total] = await this.recordRepository.findAndCount({
-      where,
-      order: {
-        [sortBy]: order.toUpperCase() as any,
+    return PaginationUtil.paginate(
+      this.recordRepository,
+      { page, pageSize },
+      {
+        where,
+        order: {
+          [sortBy]: order.toUpperCase() as any,
+        },
       },
-      order: { [sortBy]: order.toUpperCase() },
-      take: limit,
-      skip,
-    });
-
-    const totalPages = Math.ceil(total / limit);
-    const meta: PaginationMeta = {
-      total,
-      page,
-      limit,
-      totalPages,
-      hasNextPage: page < totalPages,
-      hasPreviousPage: page > 1,
-    };
-
-    return { data, meta };
+    );
   }
 
   async generateQrCode(id: string, patientId: string): Promise<string> {

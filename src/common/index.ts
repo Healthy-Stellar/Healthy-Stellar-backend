@@ -18,6 +18,11 @@ export * from './decorators/audit-context.decorator';
 
 // Utils
 export * from './utils/encryption.util';
+export * from './utils/pagination.util';
+
+// DTOs
+export * from './dto/pagination.dto';
+export * from './dto/paginated-response.dto';
 
 // Transformers
 export * from './transformers/encryption.transformer';

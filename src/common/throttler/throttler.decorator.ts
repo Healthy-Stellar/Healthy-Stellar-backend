@@ -2,6 +2,9 @@ import { SetMetadata } from '@nestjs/common';
 
 export const THROTTLER_LIMIT = 'throttler:limit';
 export const THROTTLER_TTL = 'throttler:ttl';
+export const THROTTLER_CATEGORY = 'throttler:category';
+
+export type RateLimitCategory = 'auth' | 'read' | 'write' | 'admin' | 'default';
 
 /**
  * Custom decorator to set specific rate limits for endpoints
@@ -16,10 +19,56 @@ export const RateLimit = (limit: number, ttl: number = 60) => {
 };
 
 /**
- * Predefined rate limit for authentication endpoints
- * 10 requests per minute
+ * Set rate limit category for endpoint
+ * @param category - Rate limit category (auth, read, write, admin)
  */
-export const AuthRateLimit = () => RateLimit(10, 60);
+export const RateLimitCategory = (category: RateLimitCategory) => {
+  return SetMetadata(THROTTLER_CATEGORY, category);
+};
+
+/**
+ * Predefined rate limit for authentication endpoints
+ * 5 requests per minute per IP
+ */
+export const AuthRateLimit = () => {
+  return (target: any, propertyKey?: string, descriptor?: PropertyDescriptor) => {
+    RateLimit(5, 60)(target, propertyKey, descriptor);
+    RateLimitCategory('auth')(target, propertyKey, descriptor);
+  };
+};
+
+/**
+ * Predefined rate limit for read endpoints
+ * 100 requests per minute per JWT
+ */
+export const ReadRateLimit = () => {
+  return (target: any, propertyKey?: string, descriptor?: PropertyDescriptor) => {
+    RateLimit(100, 60)(target, propertyKey, descriptor);
+    RateLimitCategory('read')(target, propertyKey, descriptor);
+  };
+};
+
+/**
+ * Predefined rate limit for write endpoints
+ * 20 requests per minute per JWT
+ */
+export const WriteRateLimit = () => {
+  return (target: any, propertyKey?: string, descriptor?: PropertyDescriptor) => {
+    RateLimit(20, 60)(target, propertyKey, descriptor);
+    RateLimitCategory('write')(target, propertyKey, descriptor);
+  };
+};
+
+/**
+ * Predefined rate limit for admin endpoints
+ * 50 requests per minute per JWT
+ */
+export const AdminRateLimit = () => {
+  return (target: any, propertyKey?: string, descriptor?: PropertyDescriptor) => {
+    RateLimit(50, 60)(target, propertyKey, descriptor);
+    RateLimitCategory('admin')(target, propertyKey, descriptor);
+  };
+};
 
 /**
  * Predefined rate limit for verification endpoints

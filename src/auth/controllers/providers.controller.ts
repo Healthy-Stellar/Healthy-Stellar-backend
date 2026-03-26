@@ -1,4 +1,14 @@
-import { Controller, Get, Patch, Query, Req, UseGuards, Body, Param, ForbiddenException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Query,
+  Req,
+  UseGuards,
+  Body,
+  Param,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
@@ -17,7 +27,7 @@ export class ProvidersController {
   constructor(
     private readonly providerDirectoryService: ProviderDirectoryService,
     private readonly availabilityService: ProviderAvailabilityService,
-  ) { }
+  ) {}
 
   @Get()
   @UseGuards(OptionalJwtAuthGuard)
@@ -34,7 +44,7 @@ export class ProvidersController {
   @ApiQuery({ name: 'isAcceptingPatients', required: false, type: Boolean })
   @ApiQuery({ name: 'role', required: false, enum: ['doctor', 'lab', 'insurer'] })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
+  @ApiQuery({ name: 'pageSize', required: false, type: Number, example: 20 })
   @ApiResponse({ status: 200, description: 'Providers returned successfully' })
   @ApiResponse({ status: 401, description: 'Invalid or expired token' })
   async findProviders(@Query() query: ProviderDirectoryQueryDto, @Req() req: Request) {
@@ -47,7 +57,8 @@ export class ProvidersController {
   @Throttle({ ip: { limit: 30, ttl: 60000 }, user: { limit: 30, ttl: 60000 } })
   @ApiOperation({
     summary: 'Get available providers',
-    description: 'Returns list of providers accepting patients, optionally filtered by specialization',
+    description:
+      'Returns list of providers accepting patients, optionally filtered by specialization',
   })
   @ApiQuery({ name: 'specialization', required: false, type: String })
   @ApiResponse({ status: 200, description: 'Available providers returned successfully' })

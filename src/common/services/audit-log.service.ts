@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { AuditLog } from '../entities/audit-log.entity';
 import { SensitiveAuditLog } from '../entities/sensitive-audit-log.entity';
 import { QueryAuditLogsDto } from '../audit/dto/query-audit-logs.dto';
+import { PaginatedResponseDto } from '../dto/paginated-response.dto';
+import { PaginationUtil } from '../utils/pagination.util';
 
 export interface CreateAuditLogDto {
   operation: string;
@@ -33,12 +35,7 @@ export interface SensitiveAuditEntry {
   metadata?: Record<string, any>;
 }
 
-export interface PaginatedAuditLogs {
-  data: SensitiveAuditLog[];
-  total: number;
-  page: number;
-  limit: number;
-}
+export type PaginatedAuditLogs = PaginatedResponseDto<SensitiveAuditLog>;
 
 @Injectable()
 export class AuditLogService {
@@ -147,11 +144,9 @@ export class AuditLogService {
    */
   async findAllSensitive(query: QueryAuditLogsDto): Promise<PaginatedAuditLogs> {
     const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const pageSize = query.pageSize ?? 20;
 
-    const qb = this.sensitiveRepo
-      .createQueryBuilder('al')
-      .orderBy('al.timestamp', 'DESC');
+    const qb = this.sensitiveRepo.createQueryBuilder('al').orderBy('al.timestamp', 'DESC');
 
     if (query.actorAddress) {
       qb.andWhere('al.actorAddress = :actorAddress', { actorAddress: query.actorAddress });
@@ -166,9 +161,6 @@ export class AuditLogService {
       qb.andWhere('al.timestamp <= :endDate', { endDate: new Date(query.endDate) });
     }
 
-    const total = await qb.getCount();
-    const data = await qb.skip((page - 1) * limit).take(limit).getMany();
-
-    return { data, total, page, limit };
+    return PaginationUtil.paginateQueryBuilder(qb, { page, pageSize });
   }
 }

@@ -1,8 +1,8 @@
-import { IsString, IsOptional, IsDateString, IsInt, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, IsOptional, IsDateString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { PaginationDto } from '../../dto/pagination.dto';
 
-export class QueryAuditLogsDto {
+export class QueryAuditLogsDto extends PaginationDto {
   @ApiPropertyOptional({ description: 'Filter by actor address' })
   @IsString()
   @IsOptional()
@@ -22,19 +22,4 @@ export class QueryAuditLogsDto {
   @IsDateString()
   @IsOptional()
   endDate?: string;
-
-  @ApiPropertyOptional({ description: 'Page number', default: 1 })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @IsOptional()
-  page?: number = 1;
-
-  @ApiPropertyOptional({ description: 'Items per page (max 100)', default: 20 })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  @IsOptional()
-  limit?: number = 20;
 }

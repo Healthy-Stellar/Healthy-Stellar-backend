@@ -1,6 +1,6 @@
-import { IsOptional, IsInt, Min, Max, IsEnum, IsDateString, IsIn, IsString } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsEnum, IsDateString, IsIn, IsString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { PaginationDto } from '../../common/dto/pagination.dto';
 import { RecordType } from './create-record.dto';
 
 export enum SortBy {
@@ -14,33 +14,7 @@ export enum SortOrder {
   DESC = 'desc',
 }
 
-export class PaginationQueryDto {
-  @ApiPropertyOptional({
-    description: 'Page number (1-indexed)',
-    example: 1,
-    default: 1,
-    minimum: 1,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number = 1;
-
-  @ApiPropertyOptional({
-    description: 'Number of items per page',
-    example: 20,
-    default: 20,
-    minimum: 1,
-    maximum: 100,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number = 20;
-
+export class PaginationQueryDto extends PaginationDto {
   @ApiPropertyOptional({
     description: 'Filter by record type',
     enum: RecordType,

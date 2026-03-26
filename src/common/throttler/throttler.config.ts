@@ -24,6 +24,7 @@ export class ThrottlerConfigService implements ThrottlerOptionsFactory {
         const delay = Math.min(times * 50, 2000);
         return delay;
       },
+      maxRetriesPerRequest: 3,
     });
 
     return {
@@ -31,12 +32,27 @@ export class ThrottlerConfigService implements ThrottlerOptionsFactory {
         {
           name: 'default',
           ttl: 60000, // 60 seconds
-          limit: 100, // 100 requests per minute per IP/user
+          limit: 100, // 100 requests per minute
         },
         {
-          name: 'api_key',
+          name: 'auth',
           ttl: 60000, // 60 seconds
-          limit: 50, // 50 requests per minute per API key (more restrictive)
+          limit: 5, // 5 requests per minute for auth endpoints
+        },
+        {
+          name: 'read',
+          ttl: 60000, // 60 seconds
+          limit: 100, // 100 requests per minute for read endpoints
+        },
+        {
+          name: 'write',
+          ttl: 60000, // 60 seconds
+          limit: 20, // 20 requests per minute for write endpoints
+        },
+        {
+          name: 'admin',
+          ttl: 60000, // 60 seconds
+          limit: 50, // 50 requests per minute for admin endpoints
         },
       ],
       storage: new ThrottlerStorageRedisService(redis),

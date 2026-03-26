@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProviderDirectoryQueryDto } from '../dto/provider-directory-query.dto';
 import { User, UserRole } from '../entities/user.entity';
+import { PaginationUtil } from '../../common/utils/pagination.util';
+import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
 
 interface ProviderDirectoryRecord {
   id: string;
@@ -13,15 +15,6 @@ interface ProviderDirectoryRecord {
   country: string | null;
   isAcceptingPatients: boolean;
   stellarAddress?: string | null;
-}
-
-interface ProviderDirectoryResult {
-  data: ProviderDirectoryRecord[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-  };
 }
 
 @Injectable()
@@ -40,10 +33,10 @@ export class ProviderDirectoryService {
   async searchProviders(
     query: ProviderDirectoryQueryDto,
     includeSensitiveData: boolean,
-  ): Promise<ProviderDirectoryResult> {
+  ): Promise<PaginatedResponseDto<ProviderDirectoryRecord>> {
     const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 20;
-    const offset = (page - 1) * limit;
+    const pageSize = Number(query.pageSize) || 20;
+    const offset = (page - 1) * pageSize;
 
     const qb = this.usersRepository
       .createQueryBuilder('u')
@@ -105,7 +98,7 @@ export class ProviderDirectoryService {
       .orderBy()
       .select('COUNT(DISTINCT u.id)', 'total')
       .getRawOne<{ total: string }>();
-    const rows = await qb.offset(offset).limit(limit).getRawMany<{
+    const rows = await qb.offset(offset).limit(pageSize).getRawMany<{
       id: string;
       displayName: string;
       role: UserRole;
@@ -116,23 +109,19 @@ export class ProviderDirectoryService {
       stellarAddress?: string | null;
     }>();
 
-    return {
-      data: rows.map((row) => ({
-        id: row.id,
-        displayName: row.displayName,
-        role: this.mapRoleEnumToAlias(row.role),
-        specialty: row.specialty,
-        institution: row.institution,
-        country: row.country,
-        isAcceptingPatients: row.isAcceptingPatients,
-        ...(includeSensitiveData ? { stellarAddress: row.stellarAddress ?? null } : {}),
-      })),
-      pagination: {
-        page,
-        limit,
-        total: Number(totalRow?.total || 0),
-      },
-    };
+    const data = rows.map((row) => ({
+      id: row.id,
+      displayName: row.displayName,
+      role: this.mapRoleEnumToAlias(row.role),
+      specialty: row.specialty,
+      institution: row.institution,
+      country: row.country,
+      isAcceptingPatients: row.isAcceptingPatients,
+      ...(includeSensitiveData ? { stellarAddress: row.stellarAddress ?? null } : {}),
+    }));
+
+    const total = Number(totalRow?.total || 0);
+    return PaginationUtil.createResponse(data, total, page, pageSize);
   }
 
   private mapRoleAliasToEnum(role: 'doctor' | 'lab' | 'insurer'): UserRole {
