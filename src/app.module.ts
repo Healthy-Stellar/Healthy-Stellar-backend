@@ -43,6 +43,7 @@ import { JobsModule } from './jobs/jobs.module';
 import { DataRetentionModule } from './data-retention/data-retention.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { VersioningModule } from './versioning/versioning.module';
+import { LedgerReconciliationModule } from './ledger-reconciliation/ledger-reconciliation.module';
 import { AuditModule } from './common/audit/audit.module';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { ThrottlerConfigService } from './common/throttler/throttler-config.service';
@@ -115,6 +116,7 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
     ReconciliationModule,
     GraphqlModule,
     VersioningModule,
+    LedgerReconciliationModule,
   ],
   controllers: [AppController],
   providers: [
@@ -129,7 +131,6 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
     },
     {
       provide: APP_INTERCEPTOR,
-      useClass: TenantInterceptor
       useClass: TenantInterceptor,
     },
     {
