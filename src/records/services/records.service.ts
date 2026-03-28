@@ -1,4 +1,10 @@
-import { Injectable, Inject, forwardRef, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Inject,
+  forwardRef,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Between, DataSource } from 'typeorm';
 import { Record } from '../entities/record.entity';
@@ -11,7 +17,10 @@ import { IpfsService } from './ipfs.service';
 import { StellarService } from './stellar.service';
 import { AccessControlService } from '../../access-control/services/access-control.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
-import { ProviderPatientRelationshipService } from '../../provider-patient/services/provider-patient-relationship.service';
+import { RecordEventStoreService, RecordState } from './record-event-store.service';
+import { RecordEvent, RecordEventType } from '../entities/record-event.entity';
+import { RecordResponseDto } from '../dto/record-response.dto';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @Injectable()
 export class RecordsService {
@@ -90,17 +99,13 @@ export class RecordsService {
       where.createdAt = Between(new Date(0), new Date(toDate));
     }
 
-    return PaginationUtil.paginate(
-      this.recordRepository,
-      { page, pageSize },
-      {
-        where,
-        order: {
-          [sortBy]: order.toUpperCase() as any,
-        },
-      },
-    );
-  }
+    const skip = (page - 1) * limit;
+    const [data, total] = await this.recordRepository.findAndCount({
+      where,
+      order: { [sortBy]: order.toUpperCase() },
+      take: limit,
+      skip,
+    });
 
   async generateQrCode(id: string, patientId: string): Promise<string> {
     const record = await this.recordRepository.findOne({ where: { id } });
@@ -163,6 +168,58 @@ export class RecordsService {
     return record;
   }
 
+  async findOneById(
+    id: string,
+    requesterId: string,
+    requesterRole: UserRole,
+    preloadedRecord?: Record,
+  ): Promise<RecordResponseDto> {
+    const record =
+      preloadedRecord ??
+      (await this.recordRepository.findOne({
+        where: { id },
+      }));
+
+    if (!record) {
+      throw new NotFoundException(`Record ${id} not found`);
+    }
+
+    const canAccess = await this.accessControlService.canAccessRecord(
+      record.patientId,
+      requesterId,
+      requesterRole,
+      record.id,
+    );
+
+    if (!canAccess) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const isOwner = record.patientId === requesterId;
+
+    await this.auditLogService.create({
+      operation: 'RECORD_FETCH',
+      entityType: 'records',
+      entityId: record.id,
+      userId: requesterId,
+      status: 'success',
+      newValues: {
+        patientId: record.patientId,
+        accessType: isOwner ? 'owner' : 'grantee',
+      },
+    });
+
+    return {
+      id: record.id,
+      patientId: record.patientId,
+      recordType: record.recordType,
+      description: record.description ?? null,
+      stellarTxHash: record.stellarTxHash,
+      createdAt: record.createdAt,
+      ...(isOwner ? { cid: record.cid } : {}),
+    };
+  }
+
   async findRecent(): Promise<RecentRecordDto[]> {
     const records = await this.recordRepository.find({
       order: {
@@ -185,6 +242,7 @@ export class RecordsService {
     if (address.length <= 10) return address;
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
   }
+
   /**
    * Derive the current state of a record by replaying its event stream.
    * Falls back to the latest snapshot + delta events for performance.

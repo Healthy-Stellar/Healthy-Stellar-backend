@@ -19,7 +19,7 @@ describe('RecordsController', () => {
     uploadRecord: jest.fn(),
     findAll: jest.fn(),
     findOne: jest.fn(),
-    generateQrCode: jest.fn(),
+    findOneById: jest.fn(),
     findRecent: jest.fn(),
   };
 
@@ -102,6 +102,37 @@ describe('RecordsController', () => {
 
       expect(result).toEqual(expectedResult);
       expect(service.findRecent).toHaveBeenCalled();
+    });
+  });
+
+  describe('findOne', () => {
+    it('should fetch a single record for the authenticated user', async () => {
+      const expectedResult = {
+        id: 'record-1',
+        patientId: 'patient-1',
+        recordType: RecordType.MEDICAL_REPORT,
+        description: 'Test record',
+        stellarTxHash: 'tx-1',
+        createdAt: new Date('2024-01-15'),
+        cid: 'cid-1',
+      };
+
+      mockRecordsService.findOneById.mockResolvedValue(expectedResult);
+
+      const req = {
+        user: { userId: 'patient-1', role: 'patient' },
+        record: { id: 'record-1' },
+      };
+
+      const result = await controller.findOne('record-1', req);
+
+      expect(result).toEqual(expectedResult);
+      expect(service.findOneById).toHaveBeenCalledWith(
+        'record-1',
+        'patient-1',
+        'patient',
+        req.record,
+      );
     });
   });
 

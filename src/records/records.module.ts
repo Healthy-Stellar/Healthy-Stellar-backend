@@ -23,10 +23,7 @@ import { RecordDiffService } from './services/record-diff.service';
 import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
 import { AccessControlModule } from '../access-control/access-control.module';
 import { MedicalRbacModule } from '../roles/medical-rbac.module';
-import { EncryptionModule } from '../encryption/encryption.module';
-import { AuditModule } from '../common/audit/audit.module';
-import { RecordDownloadService } from './services/record-download.service';
-import { RecordAttachmentUploadService } from './services/record-attachment-upload.service';
+import { RecordAccessGuard } from './guards/record-access.guard';
 
 @Module({
   imports: [
@@ -63,5 +60,16 @@ import { RecordAttachmentUploadService } from './services/record-attachment-uplo
     RecordAttachmentUploadService,
     RecordSyncService,
   ],
+  controllers: [RecordsController, RecordTemplateController],
+  providers: [
+    RecordsService,
+    RecordTemplateService,
+    IpfsService,
+    StellarService,
+    IpfsWithBreakerService,
+    RecordEventStoreService,
+    RecordAccessGuard,
+  ],
+  exports: [RecordsService, RecordTemplateService, IpfsWithBreakerService, RecordEventStoreService],
 })
 export class RecordsModule {}

@@ -13,7 +13,7 @@ import { CreateAccessGrantDto } from '../dto/create-access-grant.dto';
 import { CreateEmergencyAccessDto } from '../dto/create-emergency-access.dto';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { SorobanQueueService } from './soroban-queue.service';
-import { User } from '../../auth/entities/user.entity';
+import { User, UserRole } from '../../auth/entities/user.entity';
 import { AuditLogService } from '../../common/services/audit-log.service';
 
 @Injectable()
@@ -337,6 +337,39 @@ export class AccessControlService {
     return activeGrants;
   }
 
+  async canAccessRecord(
+    patientId: string,
+    requesterId: string,
+    requesterRole: UserRole,
+    recordId: string,
+  ): Promise<boolean> {
+    if (patientId === requesterId) {
+      return true;
+    }
+
+    if (requesterRole === UserRole.PATIENT) {
+      return false;
+    }
+
+    const grants = await this.findRelevantActiveGrants(patientId, requesterId);
+    const now = new Date();
+
+    for (const grant of grants) {
+      if (grant.expiresAt && grant.expiresAt <= now) {
+        if (grant.status !== GrantStatus.EXPIRED) {
+          await this.grantRepository.update(grant.id, { status: GrantStatus.EXPIRED });
+        }
+        continue;
+      }
+
+      if (grant.recordIds.includes('*') || grant.recordIds.includes(recordId)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private async findRelevantActiveGrants(
     patientId: string,
     granteeId: string,
@@ -351,23 +384,23 @@ export class AccessControlService {
     });
   }
 
-    async verifyAccess(requesterId: string, recordId: string): Promise<boolean> {
-      this.logger.log(`Verifying access for requester ${requesterId} on record ${recordId}`);
+  async verifyAccess(requesterId: string, recordId: string): Promise<boolean> {
+    this.logger.log(`Verifying access for requester ${requesterId} on record ${recordId}`);
 
-      const grants = await this.grantRepository.find({
-        where: {
-          granteeId: requesterId,
-          status: GrantStatus.ACTIVE,
-        },
-      });
+    const grants = await this.grantRepository.find({
+      where: {
+        granteeId: requesterId,
+        status: GrantStatus.ACTIVE,
+      },
+    });
 
-      const now = new Date();
-      const validGrant = grants.find((grant) => {
-        const hasRecord = grant.recordIds.includes(recordId);
-        const notExpired = !grant.expiresAt || grant.expiresAt > now;
-        return hasRecord && notExpired;
-      });
+    const now = new Date();
+    const validGrant = grants.find((grant) => {
+      const hasRecord = grant.recordIds.includes(recordId);
+      const notExpired = !grant.expiresAt || grant.expiresAt > now;
+      return hasRecord && notExpired;
+    });
 
-      return !!validGrant;
-    }
+    return !!validGrant;
+  }
 }

@@ -11,8 +11,8 @@ import {
   Req,
   Res,
   UseGuards,
-  Version,
-  ParseIntPipe,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -43,7 +43,9 @@ import { MedicalRole } from '../../roles/medical-roles.enum';
 import { MedicalRbacGuard } from '../../roles/medical-rbac.guard';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../../auth/guards/admin.guard';
-import { DeprecatedRoute } from '../../common/decorators/deprecated.decorator';
+import { JwtPayload } from '../../auth/services/auth-token.service';
+import { RecordResponseDto } from '../dto/record-response.dto';
+import { RecordAccessGuard } from '../guards/record-access.guard';
 
 @ApiTags('Records')
 @Version('1')
@@ -293,112 +295,21 @@ export class RecordsController {
   // ── Existing endpoints ──────────────────────────────────────────────────────
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard, RecordAccessGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get a single record by ID' })
-  @ApiResponse({ status: 200, description: 'Record retrieved successfully' })
-  @ApiResponse({ status: 404, description: 'Record not found or deleted' })
-  @ApiQuery({ name: 'includeDeleted', required: false, type: Boolean, description: 'Admin only: include soft-deleted records' })
-  @ApiQuery({ name: 'version', required: false, type: Number, description: 'Retrieve a specific historical version' })
-  async findOne(
-    @Param('id') id: string,
-    @Req() req: any,
-    @Query('includeDeleted') includeDeleted?: string,
-    @Query('version') version?: string,
-  ) {
-    const requesterId = req.user?.userId || req.user?.id;
-    const callerRole: string = req.user?.role ?? '';
-    const isAdmin = callerRole === 'admin';
-    const showDeleted = isAdmin && includeDeleted === 'true';
-    const versionNum = version !== undefined ? parseInt(version, 10) : undefined;
-    return this.recordsService.findOne(id, requesterId, showDeleted, versionNum);
-  }
-
-  @Get(':id/download')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Download and decrypt a record file' })
-  @ApiResponse({ status: 200, description: 'Decrypted file streamed to client' })
-  @ApiResponse({ status: 401, description: 'Unauthenticated' })
-  @ApiResponse({ status: 403, description: 'No active access grant' })
-  @ApiResponse({ status: 404, description: 'Record not found' })
-  async downloadRecord(
-    @Param('id') id: string,
-    @Req() req: any,
-    @Res() res: Response,
-  ): Promise<void> {
-    const requesterId: string = req.user?.userId ?? req.user?.id;
-    const ip: string = req.ip ?? 'unknown';
-    const ua: string = req.headers['user-agent'] ?? 'unknown';
-
-    const { stream, contentType, filename } = await this.recordDownloadService.download(
-      id,
-      requesterId,
-      ip,
-      ua,
-    );
-
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-
-    stream.pipe(res);
-  }
-
-  @Post(':id/attachments')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Upload an encrypted attachment to a record',
-    description:
-      'Upload a file (PDF, DICOM, image) that will be encrypted and stored on IPFS. ' +
-      'File size limit: 50MB. Allowed MIME types: application/pdf, image/jpeg, image/png, application/dicom.',
+  @ApiResponse({
+    status: 200,
+    description: 'Record retrieved successfully',
+    type: RecordResponseDto,
   })
-  @ApiResponse({ status: 201, description: 'Attachment uploaded successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid file or validation error' })
-  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
   @ApiResponse({ status: 404, description: 'Record not found' })
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB
-      },
-    }),
-  )
-  async uploadAttachment(
-    @Param('id') recordId: string,
-    @UploadedFile() file: Express.Multer.File,
-    @Body() dto: CreateAttachmentDto,
-    @Req() req: any,
-  ) {
-    if (!file) {
-      throw new BadRequestException('File is required');
-    }
-
-    const uploadedBy: string = req.user?.userId ?? req.user?.id;
-
-    return this.recordAttachmentUploadService.uploadAttachment(
-      recordId,
-      file,
-      uploadedBy,
-    );
-  }
-
-  @Get(':id/related')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Get related records',
-    description:
-      'Returns up to 10 records related to the given record, scored by: ' +
-      'same type (3pts), same provider (2pts), within ±30 days (1pt). ' +
-      'Access control is enforced on every returned record.',
-  })
-  @ApiResponse({ status: 200, description: 'Related records returned', type: [RelatedRecordDto] })
-  @ApiResponse({ status: 403, description: 'Access denied to source record' })
-  @ApiResponse({ status: 404, description: 'Source record not found' })
-  async getRelated(@Param('id') id: string, @Req() req: any): Promise<RelatedRecordDto[]> {
-    const requesterId = req.user?.userId || req.user?.id;
-    return this.relatedRecordsService.findRelated(id, requesterId);
+  async findOne(@Param('id') id: string, @Req() req: any): Promise<RecordResponseDto> {
+    const user = req.user as JwtPayload;
+    return this.recordsService.findOneById(id, user.userId, user.role, req.record);
   }
 
   @Get(':id/events')

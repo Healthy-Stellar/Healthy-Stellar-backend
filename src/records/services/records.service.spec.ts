@@ -10,39 +10,14 @@ import { StellarService } from './stellar.service';
 import { RecordEventStoreService } from './record-event-store.service';
 import { AccessControlService } from '../../access-control/services/access-control.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
-import { RecordType } from '../dto/create-record.dto';
-import { SortBy, SortOrder } from '../dto/pagination-query.dto';
-import { RecordEventType } from '../entities/record-event.entity';
+import { RecordEventStoreService } from './record-event-store.service';
+import { UserRole } from '../../auth/entities/user.entity';
 
-// ── QRCode mock ────────────────────────────────────────────────────────────────
-jest.mock('qrcode', () => ({
-  toDataURL: jest.fn().mockResolvedValue('data:image/png;base64,mockedQR'),
-}));
-import * as QRCode from 'qrcode';
+describe('RecordsService', () => {
+  let service: RecordsService;
+  let repository: Repository<Record>;
 
-// ── Shared fixtures ────────────────────────────────────────────────────────────
-const BASE_RECORD: Record = {
-  id: 'record-1',
-  patientId: 'patient-abc-123',
-  providerId: null,
-  cid: 'Qm-cid-1',
-  stellarTxHash: 'tx-hash-1',
-  recordType: RecordType.MEDICAL_REPORT,
-  description: 'Annual check-up',
-  createdAt: new Date('2024-06-01T00:00:00Z'),
-};
-
-const SAVED_RECORD = {
-  ...BASE_RECORD,
-  id: 'record-789',
-  cid: 'Qm-cid-new',
-  stellarTxHash: 'tx-hash-new',
-  createdAt: new Date('2024-06-15T00:00:00Z'),
-};
-
-// ── Mock factories (fresh per test via beforeEach) ─────────────────────────────
-function makeMocks() {
-  const repo = {
+  const mockRepository = {
     create: jest.fn(),
     save: jest.fn(),
     findOne: jest.fn(),
@@ -57,7 +32,10 @@ function makeMocks() {
     createShareLink: jest.fn(),
   };
 
-  const accessControl = { findActiveEmergencyGrant: jest.fn() };
+  const mockAccessControlService = {
+    findActiveEmergencyGrant: jest.fn(),
+    canAccessRecord: jest.fn(),
+  };
 
   const auditLog = { create: jest.fn() };
 
@@ -67,35 +45,42 @@ function makeMocks() {
     replayToState: jest.fn(),
   };
 
-  return { repo, ipfs, stellar, accessControl, auditLog, eventStore };
-}
-
-// ── Module builder ─────────────────────────────────────────────────────────────
-async function buildModule(mocks: ReturnType<typeof makeMocks>) {
-  const module: TestingModule = await Test.createTestingModule({
-    providers: [
-      RecordsService,
-      { provide: getRepositoryToken(Record), useValue: mocks.repo },
-      { provide: IpfsService, useValue: mocks.ipfs },
-      { provide: StellarService, useValue: mocks.stellar },
-      { provide: AccessControlService, useValue: mocks.accessControl },
-      { provide: AuditLogService, useValue: mocks.auditLog },
-      { provide: RecordEventStoreService, useValue: mocks.eventStore },
-    ],
-  }).compile();
-
-  return module.get(RecordsService);
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-describe('RecordsService', () => {
-  let service: RecordsService;
-  let mocks: ReturnType<typeof makeMocks>;
+  const mockEventStore = {
+    append: jest.fn(),
+    replayToState: jest.fn(),
+    getEvents: jest.fn(),
+  };
 
   beforeEach(async () => {
-    mocks = makeMocks();
-    service = await buildModule(mocks);
-  });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        RecordsService,
+        {
+          provide: getRepositoryToken(Record),
+          useValue: mockRepository,
+        },
+        {
+          provide: IpfsService,
+          useValue: mockIpfsService,
+        },
+        {
+          provide: StellarService,
+          useValue: mockStellarService,
+        },
+        {
+          provide: AccessControlService,
+          useValue: mockAccessControlService,
+        },
+        {
+          provide: AuditLogService,
+          useValue: mockAuditLogService,
+        },
+        {
+          provide: RecordEventStoreService,
+          useValue: mockEventStore,
+        },
+      ],
+    }).compile();
 
   afterEach(() => jest.clearAllMocks());
 
@@ -598,12 +583,120 @@ describe('RecordsService', () => {
     });
   });
 
-  // ── getEventStream ───────────────────────────────────────────────────────────
-  describe('getEventStream', () => {
-    const mockEvents = [
-      { id: 'evt-1', recordId: 'record-1', eventType: RecordEventType.RECORD_CREATED, sequenceNumber: 1, payload: {}, causedBy: null, timestamp: new Date() },
-      { id: 'evt-2', recordId: 'record-1', eventType: RecordEventType.RECORD_UPDATED, sequenceNumber: 2, payload: {}, causedBy: null, timestamp: new Date() },
-    ];
+  describe('findOneById', () => {
+    const mockRecord: Record = {
+      id: 'record-1',
+      patientId: 'patient-1',
+      cid: 'cid-secret',
+      stellarTxHash: 'tx-1',
+      recordType: RecordType.MEDICAL_REPORT,
+      description: 'Test record',
+      createdAt: new Date('2024-01-15'),
+    };
+
+    it('returns the full record including cid for the owning patient', async () => {
+      mockRepository.findOne.mockResolvedValue(mockRecord);
+      mockAccessControlService.canAccessRecord.mockResolvedValue(true);
+
+      const result = await service.findOneById('record-1', 'patient-1', UserRole.PATIENT);
+
+      expect(result).toEqual({
+        id: 'record-1',
+        patientId: 'patient-1',
+        recordType: RecordType.MEDICAL_REPORT,
+        description: 'Test record',
+        stellarTxHash: 'tx-1',
+        createdAt: mockRecord.createdAt,
+        cid: 'cid-secret',
+      });
+      expect(mockAccessControlService.canAccessRecord).toHaveBeenCalledWith(
+        'patient-1',
+        'patient-1',
+        UserRole.PATIENT,
+        'record-1',
+      );
+      expect(mockAuditLogService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: 'RECORD_FETCH',
+          entityId: 'record-1',
+          userId: 'patient-1',
+          newValues: expect.objectContaining({ accessType: 'owner' }),
+        }),
+      );
+    });
+
+    it('returns the record without cid for a grantee with an active grant', async () => {
+      mockRepository.findOne.mockResolvedValue(mockRecord);
+      mockAccessControlService.canAccessRecord.mockResolvedValue(true);
+
+      const result = await service.findOneById('record-1', 'provider-1', UserRole.PHYSICIAN);
+
+      expect(result).toEqual({
+        id: 'record-1',
+        patientId: 'patient-1',
+        recordType: RecordType.MEDICAL_REPORT,
+        description: 'Test record',
+        stellarTxHash: 'tx-1',
+        createdAt: mockRecord.createdAt,
+      });
+      expect(result).not.toHaveProperty('cid');
+      expect(mockAuditLogService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: 'RECORD_FETCH',
+          entityId: 'record-1',
+          userId: 'provider-1',
+          newValues: expect.objectContaining({ accessType: 'grantee' }),
+        }),
+      );
+    });
+
+    it('throws when a requester is not authorized to access the record', async () => {
+      mockRepository.findOne.mockResolvedValue(mockRecord);
+      mockAccessControlService.canAccessRecord.mockResolvedValue(false);
+
+      await expect(
+        service.findOneById('record-1', 'outsider-1', UserRole.PHYSICIAN),
+      ).rejects.toThrow('Access denied');
+
+      expect(mockAuditLogService.create).not.toHaveBeenCalled();
+    });
+
+    it('throws when the record does not exist', async () => {
+      mockRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.findOneById('missing-record', 'patient-1', UserRole.PATIENT),
+      ).rejects.toThrow('Record missing-record not found');
+
+      expect(mockAccessControlService.canAccessRecord).not.toHaveBeenCalled();
+      expect(mockAuditLogService.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('uploadRecord', () => {
+    it('should upload a record successfully', async () => {
+      const dto = {
+        patientId: 'patient-1',
+        recordType: RecordType.MEDICAL_REPORT,
+        description: 'Test record',
+      };
+
+      const buffer = Buffer.from('encrypted data');
+
+      mockIpfsService.upload.mockResolvedValue('cid-123');
+      mockStellarService.anchorCid.mockResolvedValue('tx-hash-456');
+      mockRepository.create.mockReturnValue({
+        id: 'record-789',
+        ...dto,
+        cid: 'cid-123',
+        stellarTxHash: 'tx-hash-456',
+      });
+      mockRepository.save.mockResolvedValue({
+        id: 'record-789',
+        ...dto,
+        cid: 'cid-123',
+        stellarTxHash: 'tx-hash-456',
+      });
 
     it('returns the event array when events exist', async () => {
       mocks.eventStore.getEvents.mockResolvedValue(mockEvents);
