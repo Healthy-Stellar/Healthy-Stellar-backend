@@ -19,17 +19,11 @@ import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { UserRole } from '../../auth/entities/user.entity';
 import { ApiKeyThrottlerGuard } from '../../common/throttler/api-key-throttler.guard';
+import { IpAllowlistGuard } from '../../common/guards/ip-allowlist.guard';
 
 @ApiTags('Admin - API Keys')
 @Controller('admin/api-keys')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
-@ApiBearerAuth()
-export class AdminController {
-
-@ApiTags('Admin - API Keys')
-@Controller('admin/api-keys')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(IpAllowlistGuard, JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 @ApiBearerAuth()
 export class AdminController {

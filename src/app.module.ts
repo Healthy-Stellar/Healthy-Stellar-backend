@@ -36,8 +36,7 @@ import { MedicalDataValidationPipe } from './common/validation/medical-data.vali
 import { TenantConfigModule } from './tenant-config/tenant-config.module';
 import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
 import { GdprModule } from './gdpr/gdpr.module';
-import { ResearchExportModule } from './research-export/research-export.module';
-import { ReconciliationModule } from './reconciliation/reconciliation.module';
+import { ProviderPatientModule } from './provider-patient/provider-patient.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
 import { JobsModule } from './jobs/jobs.module';
 import { DataRetentionModule } from './data-retention/data-retention.module';
@@ -123,6 +122,9 @@ import { BullBoardAuthMiddleware } from './queues/middleware/bull-board-auth.mid
     LedgerReconciliationModule,
     StellarStreamModule,
     EventStoreModule,
+    ProjectionsModule,
+    CqrsModule,
+    ProviderPatientModule,
   ],
   controllers: [AppController],
   providers: [

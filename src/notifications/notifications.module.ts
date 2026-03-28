@@ -1,16 +1,15 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
-import { NotificationsGateway } from './notifications.gateway';
 import { NotificationsService, MAILER_SERVICE } from './services/notifications.service';
 import { NotificationQueueService } from './services/notification-queue.service';
 import { NotificationPreferencesService } from './services/notification-preferences.service';
 import { OnChainEventListenerService } from './services/on-chain-event-listener.service';
 import { NotificationTemplateService } from './services/notification-template.service';
-import { WsAuthGuard } from './guards/ws-auth.guard';
 import { NotificationPreference } from './entities/notification-preference.entity';
 import { AuthModule } from '../auth/auth.module';
 import { I18nAppModule } from '../i18n/i18n.module';
+import { PubSubModule } from '../pubsub/pubsub.module';
 
 function buildMailerProvider() {
   try {
@@ -31,22 +30,23 @@ const mailerProvider = buildMailerProvider();
   imports: [
     ConfigModule,
     AuthModule,
+    I18nAppModule,
+    PubSubModule,
     TypeOrmModule.forFeature([NotificationPreference]),
   ],
-  imports: [AuthModule, I18nAppModule],
   providers: [
-    NotificationsGateway,
     NotificationsService,
     NotificationQueueService,
     NotificationPreferencesService,
     OnChainEventListenerService,
-    WsAuthGuard,
+    NotificationTemplateService,
     ...(mailerProvider ? [mailerProvider] : []),
   ],
-  exports: [NotificationsService, NotificationPreferencesService, OnChainEventListenerService],
+  exports: [
+    NotificationsService,
+    NotificationPreferencesService,
+    OnChainEventListenerService,
     NotificationTemplateService,
-    WsAuthGuard,
   ],
-  exports: [NotificationsService],
 })
 export class NotificationsModule {}

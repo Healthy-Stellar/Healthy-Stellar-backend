@@ -1,41 +1,49 @@
-import { Resolver, Query, Args, ID, Context } from '@nestjs/graphql';
+import { Args, Context, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
-import { MedicalRecordType } from '../types/medical-record.type';
-import { GqlAuthGuard } from '../guards/gql-auth.guard';
-import { GqlRolesGuard } from '../guards/gql-roles.guard';
-import { Roles } from '../../auth/decorators/roles.decorator';
-import { UserRole } from '../../auth/entities/user.entity';
 import { RecordsService } from '../../records/services/records.service';
+import { MedicalRecordType } from '../types/schema.types';
+import { AddRecordInput } from '../types/inputs';
+import { GqlAuthGuard, CurrentUser } from '../guards/gql-auth.guard';
+import { DataLoaderService } from '../dataloaders/dataloader.service';
 
 @Resolver(() => MedicalRecordType)
-@UseGuards(GqlAuthGuard, GqlRolesGuard)
+@UseGuards(GqlAuthGuard)
 export class RecordsResolver {
   constructor(private readonly recordsService: RecordsService) {}
 
-  @Query(() => [MedicalRecordType], { description: 'List records for the authenticated patient' })
-  async myRecords(@Context() ctx: any): Promise<MedicalRecordType[]> {
-    const patientId = ctx.req.user?.userId ?? ctx.req.user?.id;
-    const result = await this.recordsService.findAll({ patientId } as any);
-    return result.data as any;
-  }
-
-  @Query(() => MedicalRecordType, { nullable: true, description: 'Get a single record by ID' })
+  @Query(() => MedicalRecordType, { nullable: true })
   async record(
     @Args('id', { type: () => ID }) id: string,
     @Context() ctx: any,
-  ): Promise<MedicalRecordType | null> {
-    const requesterId = ctx.req.user?.userId ?? ctx.req.user?.id;
-    return this.recordsService.findOne(id, requesterId) as any;
+  ): Promise<MedicalRecordType> {
+    const loader: DataLoaderService = ctx.loaders;
+    return loader.records.load(id) as any;
   }
 
-  @Query(() => [MedicalRecordType], { description: 'Admin/Physician: list records with optional patient filter' })
-  @Roles(UserRole.ADMIN, UserRole.PHYSICIAN)
+  @Query(() => [MedicalRecordType])
   async records(
-    @Args('patientId', { type: () => ID, nullable: true }) patientId?: string,
-    @Args('limit', { defaultValue: 20 }) limit?: number,
-    @Args('page', { defaultValue: 1 }) page?: number,
+    @Args('patientId', { type: () => ID }) patientId: string,
+    @CurrentUser() user: any,
   ): Promise<MedicalRecordType[]> {
-    const result = await this.recordsService.findAll({ patientId, limit, page } as any);
-    return result.data as any;
+    const result = await this.recordsService.findAll({ patientId } as any);
+    return (result?.data ?? []) as any;
+  }
+
+  @Mutation(() => MedicalRecordType)
+  async addRecord(
+    @Args('input') input: AddRecordInput,
+    @CurrentUser() user: any,
+  ): Promise<MedicalRecordType> {
+    const { recordId } = await this.recordsService.uploadRecord(
+      {
+        patientId: input.patientId,
+        cid: input.cid,
+        recordType: input.recordType as any,
+        description: input.description,
+      } as any,
+      Buffer.from(''),
+      user?.sub,
+    );
+    return this.recordsService.findOne(recordId) as any;
   }
 }

@@ -1,55 +1,41 @@
-import { Resolver, Query, Mutation, Args, ID, Context } from '@nestjs/graphql';
+import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
-import { AccessGrantType } from '../types/access-grant.type';
-import { GqlAuthGuard } from '../guards/gql-auth.guard';
-import { GqlRolesGuard } from '../guards/gql-roles.guard';
-import { Roles } from '../../auth/decorators/roles.decorator';
-import { UserRole } from '../../auth/entities/user.entity';
 import { AccessControlService } from '../../access-control/services/access-control.service';
+import { AccessGrantType } from '../types/schema.types';
+import { GrantAccessInput, RevokeAccessInput } from '../types/inputs';
+import { GqlAuthGuard, CurrentUser } from '../guards/gql-auth.guard';
 
 @Resolver(() => AccessGrantType)
-@UseGuards(GqlAuthGuard, GqlRolesGuard)
+@UseGuards(GqlAuthGuard)
 export class AccessGrantsResolver {
   constructor(private readonly accessControlService: AccessControlService) {}
 
-  @Query(() => [AccessGrantType], { description: 'List active grants for the authenticated patient' })
-  async myGrants(@Context() ctx: any): Promise<AccessGrantType[]> {
-    const patientId = ctx.req.user?.userId ?? ctx.req.user?.id;
+  @Query(() => [AccessGrantType])
+  async accessGrants(
+    @Args('patientId', { type: () => ID }) patientId: string,
+  ): Promise<AccessGrantType[]> {
     return this.accessControlService.getPatientGrants(patientId) as any;
   }
 
-  @Query(() => [AccessGrantType], { description: 'List grants received by the authenticated provider' })
-  async receivedGrants(@Context() ctx: any): Promise<AccessGrantType[]> {
-    const granteeId = ctx.req.user?.userId ?? ctx.req.user?.id;
-    return this.accessControlService.getReceivedGrants(granteeId) as any;
-  }
-
-  @Mutation(() => AccessGrantType, { description: 'Grant access to a provider' })
-  @Roles(UserRole.PATIENT)
+  @Mutation(() => AccessGrantType)
   async grantAccess(
-    @Args('granteeId', { type: () => ID }) granteeId: string,
-    @Args('recordIds', { type: () => [ID] }) recordIds: string[],
-    @Args('accessLevel') accessLevel: string,
-    @Args('expiresAt', { nullable: true }) expiresAt: string,
-    @Context() ctx: any,
+    @Args('input') input: GrantAccessInput,
+    @CurrentUser() user: any,
   ): Promise<AccessGrantType> {
-    const patientId = ctx.req.user?.userId ?? ctx.req.user?.id;
-    return this.accessControlService.grantAccess(patientId, {
-      granteeId,
-      recordIds,
-      accessLevel: accessLevel as any,
-      expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+    return this.accessControlService.grantAccess(input.patientId, {
+      granteeId: input.granteeId,
+      recordIds: input.recordIds,
+      accessLevel: input.accessLevel as any,
+      expiresAt: input.expiresAt?.toISOString(),
     }) as any;
   }
 
-  @Mutation(() => AccessGrantType, { description: 'Revoke an existing access grant' })
-  @Roles(UserRole.PATIENT)
+  @Mutation(() => Boolean)
   async revokeAccess(
-    @Args('grantId', { type: () => ID }) grantId: string,
-    @Args('reason', { nullable: true }) reason: string,
-    @Context() ctx: any,
-  ): Promise<AccessGrantType> {
-    const patientId = ctx.req.user?.userId ?? ctx.req.user?.id;
-    return this.accessControlService.revokeAccess(grantId, patientId, reason) as any;
+    @Args('input') input: RevokeAccessInput,
+    @CurrentUser() user: any,
+  ): Promise<boolean> {
+    await this.accessControlService.revokeAccess(input.grantId, user?.sub ?? '', input.reason);
+    return true;
   }
 }

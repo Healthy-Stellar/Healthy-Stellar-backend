@@ -10,6 +10,7 @@ import { MedicalRecordConsent } from './entities/medical-record-consent.entity';
 import { ClinicalNote } from './entities/clinical-note.entity';
 import { ReportJob } from './entities/report-job.entity';
 import { AccessControlModule } from '../access-control/access-control.module';
+import { ProviderPatientModule } from '../provider-patient/provider-patient.module';
 import { QUEUE_NAMES } from '../queues/queue.constants';
 
 import { MedicalRecordsService } from './services/medical-records.service';
@@ -35,6 +36,7 @@ import { ReportProcessor } from './processors/report.processor';
 @Module({
   imports: [
     AccessControlModule,
+    ProviderPatientModule,
     TypeOrmModule.forFeature([
       MedicalRecord,
       MedicalRecordVersion,

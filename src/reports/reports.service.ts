@@ -39,6 +39,10 @@ export class ReportsService {
       status: ReportStatus.PENDING,
     });
     await this.reportJobRepository.save(job);
+    this.notificationsService.emitJobStatusUpdated(job.id, ReportStatus.PENDING, {
+      patientId,
+      message: 'Report request accepted',
+    });
 
     // Call async generation without awaiting
     this.generateReport(job.id, patientId, format).catch((err) => {
@@ -116,6 +120,10 @@ export class ReportsService {
   private async generateReport(jobId: string, patientId: string, format: ReportFormat) {
     try {
       await this.reportJobRepository.update(jobId, { status: ReportStatus.PROCESSING });
+      this.notificationsService.emitJobStatusUpdated(jobId, ReportStatus.PROCESSING, {
+        patientId,
+        message: 'Report generation in progress',
+      });
 
       const patient = await this.entityManager.findOne(User, { where: { id: patientId } });
       const records = await this.entityManager.find(MedicalRecord, {
@@ -158,6 +166,10 @@ export class ReportsService {
         downloadToken,
         expiresAt,
       });
+      this.notificationsService.emitJobStatusUpdated(jobId, ReportStatus.COMPLETED, {
+        patientId,
+        message: 'Report generation completed',
+      });
 
       const downloadUrl = `${this.configService.get<string>('API_URL') || 'http://localhost:3000'}/api/v1/reports/${jobId}/download?token=${downloadToken}`;
 
@@ -185,6 +197,10 @@ export class ReportsService {
       await this.reportJobRepository.update(jobId, {
         status: ReportStatus.FAILED,
         errorDetails: error.message,
+      });
+      this.notificationsService.emitJobStatusUpdated(jobId, ReportStatus.FAILED, {
+        patientId,
+        message: error?.message || 'Report generation failed',
       });
     }
   }

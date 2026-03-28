@@ -1,68 +1,53 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test } from '@nestjs/testing';
+import { ExecutionContext } from '@nestjs/common';
 import { RecordsResolver } from './records.resolver';
 import { RecordsService } from '../../records/services/records.service';
+import { GqlAuthGuard } from '../guards/gql-auth.guard';
+
+const mockRecord = { id: 'r-1', patientId: 'p-1', cid: 'Qm1', recordType: 'LAB', createdAt: new Date() };
 
 const mockRecordsService = {
-  findAll: jest.fn(),
-  findOne: jest.fn(),
+  findAll: jest.fn().mockResolvedValue({ data: [mockRecord], total: 1 }),
+  findOne: jest.fn().mockResolvedValue(mockRecord),
+  uploadRecord: jest.fn().mockResolvedValue({ recordId: 'r-1', cid: 'Qm1', stellarTxHash: 'tx1' }),
 };
 
 describe('RecordsResolver', () => {
   let resolver: RecordsResolver;
 
   beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+    const module = await Test.createTestingModule({
       providers: [
         RecordsResolver,
         { provide: RecordsService, useValue: mockRecordsService },
       ],
-    }).compile();
-
-    resolver = module.get<RecordsResolver>(RecordsResolver);
-    jest.clearAllMocks();
+    })
+      .overrideGuard(GqlAuthGuard)
+      .useValue({ canActivate: (_ctx: ExecutionContext) => true })
+      .compile();
+    resolver = module.get(RecordsResolver);
   });
 
-  const ctx = { req: { user: { userId: 'patient-1' } } };
-
-  describe('myRecords', () => {
-    it('returns records for the authenticated patient', async () => {
-      const records = [{ id: 'r1', patientId: 'patient-1' }];
-      mockRecordsService.findAll.mockResolvedValue({ data: records, meta: {} });
-
-      const result = await resolver.myRecords(ctx);
-
-      expect(mockRecordsService.findAll).toHaveBeenCalledWith({ patientId: 'patient-1' });
-      expect(result).toEqual(records);
-    });
+  it('record uses DataLoader', async () => {
+    const loader = { records: { load: jest.fn().mockResolvedValue(mockRecord) } };
+    const result = await resolver.record('r-1', { loaders: loader } as any);
+    expect(loader.records.load).toHaveBeenCalledWith('r-1');
+    expect(result).toEqual(mockRecord);
   });
 
-  describe('record', () => {
-    it('returns a single record by id', async () => {
-      const record = { id: 'r1', patientId: 'patient-1' };
-      mockRecordsService.findOne.mockResolvedValue(record);
-
-      const result = await resolver.record('r1', ctx);
-
-      expect(mockRecordsService.findOne).toHaveBeenCalledWith('r1', 'patient-1');
-      expect(result).toEqual(record);
-    });
-
-    it('returns null when record not found', async () => {
-      mockRecordsService.findOne.mockResolvedValue(null);
-      const result = await resolver.record('missing', ctx);
-      expect(result).toBeNull();
-    });
+  it('records returns list for patient', async () => {
+    const result = await resolver.records('p-1', { sub: 'u-1', role: 'physician' });
+    expect(Array.isArray(result)).toBe(true);
+    expect(mockRecordsService.findAll).toHaveBeenCalledWith({ patientId: 'p-1' });
   });
 
-  describe('records', () => {
-    it('returns paginated records for admin', async () => {
-      const records = [{ id: 'r1' }, { id: 'r2' }];
-      mockRecordsService.findAll.mockResolvedValue({ data: records, meta: {} });
-
-      const result = await resolver.records('patient-1', 20, 1);
-
-      expect(mockRecordsService.findAll).toHaveBeenCalledWith({ patientId: 'patient-1', limit: 20, page: 1 });
-      expect(result).toEqual(records);
-    });
+  it('addRecord uploads and returns record', async () => {
+    const result = await resolver.addRecord(
+      { patientId: 'p-1', cid: 'Qm1', recordType: 'LAB' },
+      { sub: 'u-1' },
+    );
+    expect(mockRecordsService.uploadRecord).toHaveBeenCalled();
+    expect(mockRecordsService.findOne).toHaveBeenCalledWith('r-1');
+    expect(result).toEqual(mockRecord);
   });
 });

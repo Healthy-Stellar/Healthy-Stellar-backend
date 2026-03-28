@@ -1,73 +1,52 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Scope } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import * as DataLoader from 'dataloader';
-import { User } from '../../auth/entities/user.entity';
-import { AccessGrant } from '../../access-control/entities/access-grant.entity';
+import { Patient } from '../../patients/entities/patient.entity';
 import { Record } from '../../records/entities/record.entity';
+import { AccessGrant } from '../../access-control/entities/access-grant.entity';
+import { User } from '../../users/entities/user.entity';
 
-/**
- * DataLoaderService
- *
- * Creates per-request DataLoader instances to batch and cache DB lookups,
- * solving the N+1 query problem for nested GraphQL resolvers.
- *
- * A new instance is created per request via the GQL context factory.
- */
-@Injectable()
+@Injectable({ scope: Scope.REQUEST })
 export class DataLoaderService {
-  constructor(
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
-    @InjectRepository(AccessGrant)
-    private readonly grantRepo: Repository<AccessGrant>,
-    @InjectRepository(Record)
-    private readonly recordRepo: Repository<Record>,
-  ) {}
+  readonly patients: DataLoader<string, Patient>;
+  readonly records: DataLoader<string, Record>;
+  readonly grantsByPatient: DataLoader<string, AccessGrant[]>;
+  readonly providers: DataLoader<string, User>;
 
-  /** Batch-load users by ID */
-  createUserLoader(): DataLoader<string, User | null> {
-    return new DataLoader<string, User | null>(async (ids: readonly string[]) => {
-      const users = await this.userRepo.findBy({ id: In([...ids]) });
-      const map = new Map(users.map((u) => [u.id, u]));
+  constructor(
+    @InjectRepository(Patient) patientRepo: Repository<Patient>,
+    @InjectRepository(Record) recordRepo: Repository<Record>,
+    @InjectRepository(AccessGrant) grantRepo: Repository<AccessGrant>,
+    @InjectRepository(User) userRepo: Repository<User>,
+  ) {
+    this.patients = new DataLoader<string, Patient>(async (ids) => {
+      const rows = await patientRepo.findBy({ id: In([...ids]) });
+      const map = new Map(rows.map((r) => [r.id, r]));
       return ids.map((id) => map.get(id) ?? null);
     });
-  }
 
-  /** Batch-load access grants by patientId */
-  createGrantsByPatientLoader(): DataLoader<string, AccessGrant[]> {
-    return new DataLoader<string, AccessGrant[]>(async (patientIds: readonly string[]) => {
-      const grants = await this.grantRepo.findBy({ patientId: In([...patientIds]) });
+    this.records = new DataLoader<string, Record>(async (ids) => {
+      const rows = await recordRepo.findBy({ id: In([...ids]) });
+      const map = new Map(rows.map((r) => [r.id, r]));
+      return ids.map((id) => map.get(id) ?? null);
+    });
+
+    this.grantsByPatient = new DataLoader<string, AccessGrant[]>(async (patientIds) => {
+      const rows = await grantRepo.findBy({ patientId: In([...patientIds]) });
       const map = new Map<string, AccessGrant[]>();
-      for (const g of grants) {
+      for (const g of rows) {
         const list = map.get(g.patientId) ?? [];
         list.push(g);
         map.set(g.patientId, list);
       }
       return patientIds.map((id) => map.get(id) ?? []);
     });
-  }
 
-  /** Batch-load records by patientId */
-  createRecordsByPatientLoader(): DataLoader<string, Record[]> {
-    return new DataLoader<string, Record[]>(async (patientIds: readonly string[]) => {
-      const records = await this.recordRepo.findBy({ patientId: In([...patientIds]) });
-      const map = new Map<string, Record[]>();
-      for (const r of records) {
-        const list = map.get(r.patientId) ?? [];
-        list.push(r);
-        map.set(r.patientId, list);
-      }
-      return patientIds.map((id) => map.get(id) ?? []);
+    this.providers = new DataLoader<string, User>(async (ids) => {
+      const rows = await userRepo.findBy({ id: In([...ids]) });
+      const map = new Map(rows.map((r) => [r.id, r]));
+      return ids.map((id) => map.get(id) ?? null);
     });
-  }
-
-  /** Build a fresh set of loaders for a single request */
-  createLoaders() {
-    return {
-      userLoader: this.createUserLoader(),
-      grantsByPatientLoader: this.createGrantsByPatientLoader(),
-      recordsByPatientLoader: this.createRecordsByPatientLoader(),
-    };
   }
 }

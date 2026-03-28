@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between } from 'typeorm';
+import { Repository, Like, Between, DataSource } from 'typeorm';
 import { MedicalRecord, MedicalRecordStatus } from '../entities/medical-record.entity';
 import { MedicalRecordVersion } from '../entities/medical-record-version.entity';
 import { MedicalHistory, HistoryEventType } from '../entities/medical-history.entity';
@@ -22,6 +22,7 @@ export class MedicalRecordsService {
     private versionRepository: Repository<MedicalRecordVersion>,
     @InjectRepository(MedicalHistory)
     private historyRepository: Repository<MedicalHistory>,
+    private readonly dataSource: DataSource,
     private readonly accessControlService: AccessControlService,
     private readonly auditLogService: AuditLogService,
     private readonly providerPatientService: ProviderPatientRelationshipService,
@@ -33,69 +34,70 @@ export class MedicalRecordsService {
     userName?: string,
     organizationId?: string,
   ): Promise<MedicalRecord> {
-    const record = this.medicalRecordRepository.create({
-      ...createDto,
-      createdBy: userId,
-      organizationId,
-      recordDate: createDto.recordDate ? new Date(createDto.recordDate) : new Date(),
-    });
+    return this.dataSource.transaction(async (manager) => {
+      const record = manager.create(MedicalRecord, {
+        ...createDto,
+        createdBy: userId,
+        organizationId,
+        recordDate: createDto.recordDate ? new Date(createDto.recordDate) : new Date(),
+      });
 
-    const savedRecord = await this.medicalRecordRepository.save(record);
+      const savedRecord = await manager.save(record);
 
-    // Track provider-patient relationship atomically
-    if (savedRecord.providerId) {
-      await this.providerPatientService.upsertRelationship(
-        savedRecord.providerId,
+      // Track provider-patient relationship atomically
+      if (savedRecord.providerId) {
+        await manager.query(
+          `INSERT INTO provider_patient_relationships
+             ("providerId", "patientId", "firstInteractionAt", "recordCount")
+           VALUES ($1, $2, NOW(), 1)
+           ON CONFLICT ("providerId", "patientId")
+           DO UPDATE SET
+             "recordCount" = provider_patient_relationships."recordCount" + 1`,
+          [savedRecord.providerId, savedRecord.patientId],
+        );
+      }
+
+      // Reload to get the proper version number
+      const recordWithVersion = await manager.findOne(MedicalRecord, {
+        where: { id: savedRecord.id },
+      });
+
+      // Create initial version
+      const currentContent = JSON.stringify({
+        title: recordWithVersion.title,
+        description: recordWithVersion.description,
+        recordType: recordWithVersion.recordType,
+        status: recordWithVersion.status,
+        metadata: recordWithVersion.metadata,
+      });
+
+      try {
+        await this.createVersion(
+          recordWithVersion,
+          null,
+          currentContent,
+          userId,
+          userName,
+          'Initial record creation',
+        );
+      } catch (error) {
+        this.logger.error(`Failed to create initial version: ${error.message}`, error.stack);
+        // Continue even if version creation fails
+      }
+
+      // Create history entry
+      await this.createHistoryEntry(
+        savedRecord.id,
         savedRecord.patientId,
-      );
-    }
-
-    // Reload to get the proper version number
-    const recordWithVersion = await this.medicalRecordRepository.findOne({
-      where: { id: savedRecord.id },
-    });
-
-    // Create initial version
-    const currentContent = JSON.stringify({
-      title: recordWithVersion.title,
-      description: recordWithVersion.description,
-      recordType: recordWithVersion.recordType,
-      status: recordWithVersion.status,
-      metadata: recordWithVersion.metadata,
-    });
-
-    try {
-      await this.createVersion(
-        recordWithVersion,
-        null,
-        currentContent,
+        HistoryEventType.CREATED,
+        'Medical record created',
         userId,
         userName,
-        'Initial record creation',
       );
-    } catch (error) {
-      this.logger.error(`Failed to create initial version: ${error.message}`, error.stack);
-      // Continue even if version creation fails
-    }
 
-    // Create history entry
-    await this.createHistoryEntry(
-      savedRecord.id,
-      savedRecord.patientId,
-      HistoryEventType.CREATED,
-      'Medical record created',
-      userId,
-      userName,
-    );
-
-    this.logger.log(`Medical record created: ${savedRecord.id} by user ${userId}`);
-    return savedRecord;
-  }
-
-  async findOne(id: string, patientId?: string, organizationId?: string): Promise<MedicalRecord> {
-    const queryBuilder = this.medicalRecordRepository
-      .createQueryBuilder('record')
-      .leftJoinAndSelect('record.versions', 'version')
+      this.logger.log(`Medical record created: ${savedRecord.id} by user ${userId}`);
+      return savedRecord;
+    });
       .leftJoinAndSelect('record.attachments', 'attachment')
       .leftJoinAndSelect('record.consents', 'consent')
       .where('record.id = :id', { id })

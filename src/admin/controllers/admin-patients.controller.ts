@@ -14,10 +14,11 @@ import { UserRole } from '../../auth/entities/user.entity';
 import { PatientsService } from '../../patients/patients.service';
 import { AdminMergePatientsDto } from '../../patients/dto/admin-merge-patients.dto';
 import { Patient } from '../../patients/entities/patient.entity';
+import { IpAllowlistGuard } from '../../common/guards/ip-allowlist.guard';
 
 @ApiTags('Admin - Patients')
 @Controller('admin/patients')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(IpAllowlistGuard, JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 @ApiBearerAuth()
 export class AdminPatientsController {

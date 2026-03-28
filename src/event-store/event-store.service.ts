@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import { EventBus } from '@nestjs/cqrs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { EventEntity } from './event.entity';
-import { AggregateSnapshotEntity, AggregateSnapshot } from './aggregate-snapshot.entity';
+import { AggregateSnapshotEntity } from './aggregate-snapshot.entity';
 import { DomainEvent } from './domain-events';
 import { ConcurrencyException } from './concurrency.exception';
+import { DomainEventPublished } from '../projections/domain-event-published.event';
 
-/** A snapshot is taken every SNAPSHOT_INTERVAL events. */
 export const SNAPSHOT_INTERVAL = 50;
 
 @Injectable()
@@ -17,16 +18,9 @@ export class EventStoreService {
     @InjectRepository(AggregateSnapshotEntity)
     private readonly snapshotRepo: Repository<AggregateSnapshotEntity>,
     private readonly dataSource: DataSource,
+    private readonly eventBus: EventBus,
   ) {}
 
-  /**
-   * Append one or more events to the store for a given aggregate.
-   *
-   * @param aggregateId     - UUID of the aggregate root.
-   * @param events          - Ordered list of domain events to persist.
-   * @param expectedVersion - The caller's view of the current version (0 = new aggregate).
-   *                          Throws ConcurrencyException if the actual version differs.
-   */
   async append(
     aggregateId: string,
     events: DomainEvent[],
@@ -34,8 +28,9 @@ export class EventStoreService {
   ): Promise<void> {
     if (events.length === 0) return;
 
+    const savedEntities: EventEntity[] = [];
+
     await this.dataSource.transaction(async (manager) => {
-      // Pessimistic lock: read the current head version for this aggregate.
       const lastEvent = await manager
         .createQueryBuilder(EventEntity, 'e')
         .where('e.aggregate_id = :aggregateId', { aggregateId })
@@ -60,20 +55,34 @@ export class EventStoreService {
           metadata: domainEvent.metadata ?? {},
           version: nextVersion++,
         });
-        await manager.save(EventEntity, entity);
+        const saved = await manager.save(EventEntity, entity);
+        savedEntities.push(saved);
       }
 
-      // Take a snapshot every SNAPSHOT_INTERVAL events.
       const headVersion = nextVersion - 1;
       if (headVersion % SNAPSHOT_INTERVAL === 0) {
         await this._rebuildSnapshot(aggregateId, manager);
       }
     });
+
+    // Publish to EventBus after successful transaction
+    for (const entity of savedEntities) {
+      this.eventBus.publish(
+        new DomainEventPublished(
+          {
+            eventType: entity.eventType,
+            aggregateId: entity.aggregateId,
+            aggregateType: entity.aggregateType,
+            payload: entity.payload,
+            metadata: entity.metadata,
+            version: entity.version,
+          },
+          entity.version,
+        ),
+      );
+    }
   }
 
-  /**
-   * Return all events for an aggregate, optionally starting from a given version.
-   */
   async getEvents(aggregateId: string, fromVersion = 1): Promise<DomainEvent[]> {
     const rows = await this.eventRepo
       .createQueryBuilder('e')
@@ -85,10 +94,7 @@ export class EventStoreService {
     return rows.map((r) => this._rowToDomainEvent(r));
   }
 
-  /**
-   * Return the latest snapshot for an aggregate, or null if none exists.
-   */
-  async getSnapshot(aggregateId: string): Promise<AggregateSnapshot | null> {
+  async getSnapshot(aggregateId: string) {
     const row = await this.snapshotRepo.findOne({
       where: { aggregateId },
       order: { version: 'DESC' },
@@ -101,8 +107,6 @@ export class EventStoreService {
       state: row.state,
     };
   }
-
-  // ── Private helpers ─────────────────────────────────────────────────────────
 
   private async _rebuildSnapshot(
     aggregateId: string,
@@ -117,8 +121,6 @@ export class EventStoreService {
     if (rows.length === 0) return;
 
     const lastRow = rows[rows.length - 1];
-
-    // Build a simple state projection from all events.
     const state = rows.reduce<Record<string, unknown>>(
       (acc, row) => ({ ...acc, ...row.payload }),
       {},
@@ -142,6 +144,7 @@ export class EventStoreService {
       aggregateType: row.aggregateType,
       payload: row.payload,
       metadata: row.metadata,
+      version: row.version,
     };
   }
 }

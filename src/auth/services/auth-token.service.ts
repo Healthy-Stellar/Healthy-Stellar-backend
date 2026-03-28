@@ -9,6 +9,7 @@ export interface JwtPayload {
   role: UserRole;
   mfaEnabled: boolean;
   sessionId: string;
+  organizationId: string;
 }
 
 export interface TokenPair {
@@ -35,6 +36,7 @@ export class AuthTokenService {
       role: user.role,
       mfaEnabled: user.mfaEnabled && mfaVerified,
       sessionId,
+      organizationId: user.organizationId ?? null,
     };
 
     return this.jwtService.sign(payload);
