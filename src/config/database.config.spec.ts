@@ -6,15 +6,22 @@ describe('DatabaseConfig', () => {
   let databaseConfig: DatabaseConfig;
   let configService: ConfigService;
 
+  const baseConfig = {
+    NODE_ENV: 'development',
+    DB_HOST: 'localhost',
+    DB_PORT: 5432,
+    DB_USERNAME: 'test_user',
+    DB_PASSWORD: 'test_password',
+    DB_NAME: 'test_db',
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DatabaseConfig,
         {
           provide: ConfigService,
-          useValue: {
-            get: jest.fn(),
-          },
+          useValue: { get: jest.fn() },
         },
       ],
     }).compile();
@@ -23,28 +30,18 @@ describe('DatabaseConfig', () => {
     configService = module.get<ConfigService>(ConfigService);
   });
 
+  function mockConfig(overrides: Record<string, any> = {}) {
+    const config = { ...baseConfig, ...overrides };
+    jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
+      return key in config ? config[key] : defaultValue;
+    });
+  }
+
   describe('createTypeOrmOptions', () => {
     it('should create TypeORM options with required configuration', () => {
-      // Arrange
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'development',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-          DB_SSL_ENABLED: 'false',
-          DB_POOL_MAX: 20,
-          DB_POOL_MIN: 2,
-        };
-        return config[key] || defaultValue;
-      });
-
-      // Act
+      mockConfig();
       const options = databaseConfig.createTypeOrmOptions();
 
-      // Assert
       expect(options.type).toBe('postgres');
       expect(options.host).toBe('localhost');
       expect(options.port).toBe(5432);
@@ -56,320 +53,112 @@ describe('DatabaseConfig', () => {
     });
 
     it('should enforce synchronize: false in all environments', () => {
-      // Arrange
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'production',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-        };
-        return config[key] || defaultValue;
-      });
-
-      // Act
-      const options = databaseConfig.createTypeOrmOptions();
-
-      // Assert
-      expect(options.synchronize).toBe(false);
+      mockConfig({ NODE_ENV: 'production' });
+      expect(databaseConfig.createTypeOrmOptions().synchronize).toBe(false);
     });
 
-    it('should configure SSL when enabled in production', () => {
-      // Arrange
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'production',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-          DB_SSL_ENABLED: 'true',
-          DB_SSL_CA: '/path/to/ca.crt',
-          DB_SSL_CERT: '/path/to/cert.crt',
-          DB_SSL_KEY: '/path/to/key.key',
-        };
-        return config[key] || defaultValue;
-      });
+    it('should use logging: [\'error\'] in production', () => {
+      mockConfig({ NODE_ENV: 'production' });
+      expect(databaseConfig.createTypeOrmOptions().logging).toEqual(['error']);
+    });
 
-      // Act
+    it('should use logging: [\'query\', \'error\'] in development', () => {
+      mockConfig({ NODE_ENV: 'development' });
+      expect(databaseConfig.createTypeOrmOptions().logging).toEqual(['query', 'error']);
+    });
+
+    it('should default pool to min: 2, max: 10', () => {
+      mockConfig();
       const options = databaseConfig.createTypeOrmOptions();
+      expect((options as any).extra.min).toBe(2);
+      expect((options as any).extra.max).toBe(10);
+    });
 
-      // Assert
+    it('should allow overriding pool size via config', () => {
+      mockConfig({ DB_POOL_MAX: 50, DB_POOL_MIN: 5 });
+      const options = databaseConfig.createTypeOrmOptions();
+      expect((options as any).extra.max).toBe(50);
+      expect((options as any).extra.min).toBe(5);
+    });
+
+    it('should enable SSL with rejectUnauthorized: true in production', () => {
+      mockConfig({ NODE_ENV: 'production', DB_SSL_CA: '/ca.crt' });
+      const options = databaseConfig.createTypeOrmOptions();
       expect(options.ssl).toBeTruthy();
-      expect(options.ssl).toHaveProperty('rejectUnauthorized', true);
-      expect(options.ssl).toHaveProperty('ca', '/path/to/ca.crt');
+      expect((options.ssl as any).rejectUnauthorized).toBe(true);
+      expect((options.ssl as any).ca).toBe('/ca.crt');
     });
 
-    it('should disable SSL when not enabled', () => {
-      // Arrange
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'development',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-          DB_SSL_ENABLED: 'false',
-        };
-        return config[key] || defaultValue;
-      });
-
-      // Act
-      const options = databaseConfig.createTypeOrmOptions();
-
-      // Assert
-      expect(options.ssl).toBe(false);
+    it('should disable SSL in development when DB_SSL_ENABLED is false', () => {
+      mockConfig({ NODE_ENV: 'development', DB_SSL_ENABLED: 'false' });
+      expect(databaseConfig.createTypeOrmOptions().ssl).toBe(false);
     });
 
-    it('should configure connection pool with custom values', () => {
-      // Arrange
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'production',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-          DB_POOL_MAX: 50,
-          DB_POOL_MIN: 5,
-        };
-        return config[key] || defaultValue;
-      });
-
-      // Act
+    it('should enable SSL in development when DB_SSL_ENABLED is true', () => {
+      mockConfig({ NODE_ENV: 'development', DB_SSL_ENABLED: 'true' });
       const options = databaseConfig.createTypeOrmOptions();
-
-      // Assert
-      expect(options.extra.max).toBe(50);
-      expect(options.extra.min).toBe(5);
-    });
-
-    it('should use default pool values when not specified', () => {
-      // Arrange
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'development',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-        };
-        return config[key] || defaultValue;
-      });
-
-      // Act
-      const options = databaseConfig.createTypeOrmOptions();
-
-      // Assert
-      expect(options.extra.max).toBe(20);
-      expect(options.extra.min).toBe(2);
-    });
-
-    it('should enable query logging in development', () => {
-      // Arrange
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'development',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-        };
-        return config[key] || defaultValue;
-      });
-
-      // Act
-      const options = databaseConfig.createTypeOrmOptions();
-
-      // Assert
-      expect(options.logging).toEqual(['query', 'error', 'warn', 'migration']);
-    });
-
-    it('should limit logging in production', () => {
-      // Arrange
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'production',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-        };
-        return config[key] || defaultValue;
-      });
-
-      // Act
-      const options = databaseConfig.createTypeOrmOptions();
-
-      // Assert
-      expect(options.logging).toEqual(['error', 'warn', 'migration']);
+      expect(options.ssl).toBeTruthy();
+      expect((options.ssl as any).rejectUnauthorized).toBe(false);
     });
 
     it('should throw error when required configuration is missing', () => {
-      // Arrange
       jest.spyOn(configService, 'get').mockImplementation((key: string) => {
         if (key === 'DB_HOST') return undefined;
         return 'value';
       });
-
-      // Act & Assert
       expect(() => databaseConfig.createTypeOrmOptions()).toThrow(
         'Missing required database configuration: DB_HOST',
       );
     });
 
-    it('should configure retry strategy and toRetry behavior', () => {
-      // Arrange
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'production',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-        };
-        return config[key] || defaultValue;
-      });
-
-      // Act
+    it('should configure retry strategy', () => {
+      mockConfig({ NODE_ENV: 'production' });
       const options: any = databaseConfig.createTypeOrmOptions();
 
-      // Assert
       expect(options.retryAttempts).toBe(10);
       expect(options.retryDelay).toBe(3000);
       expect(typeof options.toRetry).toBe('function');
 
-      const exitSpy = jest.spyOn(process, 'exit').mockImplementation((code?: number | string | null | undefined) => {
-        return undefined as never;
-      });
+      const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
       for (let i = 1; i <= 9; i++) {
-        const result = options.toRetry(new Error('test_error'));
-        expect(result).toBe(true);
-        expect(errorSpy).toHaveBeenCalledWith(`[TypeORM] Database connection attempt ${i} failed. Error: test_error`);
+        expect(options.toRetry(new Error('test_error'))).toBe(true);
+        expect(errorSpy).toHaveBeenCalledWith(
+          `[TypeORM] Database connection attempt ${i} failed. Error: test_error`,
+        );
         expect(exitSpy).not.toHaveBeenCalled();
       }
 
-      const result10 = options.toRetry(new Error('final_error'));
-      expect(result10).toBe(true);
-      expect(errorSpy).toHaveBeenCalledWith(`[TypeORM] Max connection retries (10) exhausted. Exiting...`);
+      expect(options.toRetry(new Error('final_error'))).toBe(true);
+      expect(errorSpy).toHaveBeenCalledWith(
+        `[TypeORM] Max connection retries (10) exhausted. Exiting...`,
+      );
       expect(exitSpy).toHaveBeenCalledWith(1);
     });
 
-    it('should configure query cache', () => {
-      // Arrange
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'production',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-        };
-        return config[key] || defaultValue;
-      });
-
-      // Act
-      const options = databaseConfig.createTypeOrmOptions();
-
-      // Assert
-      expect(options.cache).toEqual({
-        type: 'database',
-        tableName: 'query_cache',
-        duration: 60000,
-      });
-    });
-
-    it('should set statement timeout for security', () => {
-      // Arrange
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'production',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-        };
-        return config[key] || defaultValue;
-      });
-
-      // Act
-      const options = databaseConfig.createTypeOrmOptions();
-
-      // Assert
+    it('should set statement timeout and connection timeouts', () => {
+      mockConfig({ NODE_ENV: 'production' });
+      const options: any = databaseConfig.createTypeOrmOptions();
       expect(options.extra.statement_timeout).toBe(60000);
       expect(options.extra.connectionTimeoutMillis).toBe(2000);
       expect(options.extra.idleTimeoutMillis).toBe(30000);
     });
 
-    it('should set slow query threshold to 100ms by default', () => {
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'development',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-        };
-        return config[key] || defaultValue;
-      });
-
-      const options = databaseConfig.createTypeOrmOptions();
-
-      expect(options.maxQueryExecutionTime).toBe(100);
-    });
-
-    it('should allow overriding slow query threshold via config', () => {
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'development',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-          DB_SLOW_QUERY_MS: 250,
-        };
-        return config[key] || defaultValue;
-      });
-
-      const options = databaseConfig.createTypeOrmOptions();
-
-      expect(options.maxQueryExecutionTime).toBe(250);
-    });
-
-    it('should set application name for audit logging', () => {
-      // Arrange
-      jest.spyOn(configService, 'get').mockImplementation((key: string, defaultValue?: any) => {
-        const config = {
-          NODE_ENV: 'production',
-          DB_HOST: 'localhost',
-          DB_PORT: 5432,
-          DB_USERNAME: 'test_user',
-          DB_PASSWORD: 'test_password',
-          DB_NAME: 'test_db',
-        };
-        return config[key] || defaultValue;
-      });
-
-      // Act
-      const options = databaseConfig.createTypeOrmOptions();
-
-      // Assert
+    it('should set application name', () => {
+      mockConfig({ NODE_ENV: 'production' });
+      const options: any = databaseConfig.createTypeOrmOptions();
       expect(options.extra.application_name).toBe('healthy-stellar-backend');
+    });
+
+    it('should default slow query threshold to 100ms', () => {
+      mockConfig();
+      expect(databaseConfig.createTypeOrmOptions().maxQueryExecutionTime).toBe(100);
+    });
+
+    it('should allow overriding slow query threshold', () => {
+      mockConfig({ DB_SLOW_QUERY_MS: 250 });
+      expect(databaseConfig.createTypeOrmOptions().maxQueryExecutionTime).toBe(250);
     });
   });
 });

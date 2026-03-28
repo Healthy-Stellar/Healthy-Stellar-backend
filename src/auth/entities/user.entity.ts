@@ -92,6 +92,10 @@ export class User {
   @Column({ nullable: true, length: 255 })
   institution: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  @Index()
+  organizationId: string;
+
   @Column({ nullable: true, length: 255, select: false })
   stellarPublicKey: string;
 

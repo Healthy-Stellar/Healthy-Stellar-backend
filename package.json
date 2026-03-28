@@ -30,6 +30,8 @@
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/config/database.config.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/config/database.config.ts",
     "seed": "ts-node -r tsconfig-paths/register src/database/seeder.ts",
+    "seed:test": "ts-node -r tsconfig-paths/register src/database/seeder.test.ts",
+    "seed:clear": "ts-node -r tsconfig-paths/register src/database/seeder.clear.ts",
     "benchmark:db": "ts-node scripts/benchmark-database-performance.ts",
     "explain:queries": "ts-node scripts/explain-query-plans.ts",
     "load-test": "k6 run --out json=load-tests/results/production-latest.json load-tests/production-load-test.js && node load-tests/scripts/ci-gate.js",

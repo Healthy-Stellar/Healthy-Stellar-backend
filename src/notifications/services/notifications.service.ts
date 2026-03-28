@@ -78,6 +78,16 @@ export class NotificationsService {
     });
   }
 
+  emitRecordAmended(actorId: string, resourceId: string, metadata?: Record<string, any>): void {
+    this.emitEvent({
+      eventType: NotificationEventType.RECORD_AMENDED,
+      actorId,
+      resourceId,
+      timestamp: new Date(),
+      metadata,
+    });
+  }
+
   async notifyOnChainEvent(
     eventType: NotificationEventType,
     actorId: string,
