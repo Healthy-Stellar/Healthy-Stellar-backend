@@ -58,8 +58,7 @@ import { LoggerModule } from './common/logger/logger.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { EventStoreModule } from './event-store/event-store.module';
-import { ProjectionsModule } from './projections/projections.module';
-import { CqrsModule } from '@nestjs/cqrs';
+import { BullBoardAuthMiddleware } from './queues/middleware/bull-board-auth.middleware';
 
 @Module({
   imports: [
@@ -169,5 +168,8 @@ export class AppModule implements NestModule {
     // RequestIdMiddleware runs first to ensure X-Request-Id is set before
     // RequestContextMiddleware stores it in AsyncLocalStorage
     consumer.apply(RequestIdMiddleware, RequestContextMiddleware).forRoutes('*');
+
+    // Protect Bull Board dashboard with authentication
+    consumer.apply(BullBoardAuthMiddleware).forRoutes('/admin/queues');
   }
 }

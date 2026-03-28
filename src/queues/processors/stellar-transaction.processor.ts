@@ -1,9 +1,10 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { context, propagation, trace } from '@opentelemetry/api';
 import { QUEUE_NAMES, JOB_TYPES } from '../queue.constants';
 import { StellarTransactionJobDto } from '../dto/stellar-transaction-job.dto';
+import { StellarContractService } from '../../blockchain/stellar-contract.service';
 
 @Processor(QUEUE_NAMES.STELLAR_TRANSACTIONS, {
   concurrency: 5,
@@ -11,6 +12,13 @@ import { StellarTransactionJobDto } from '../dto/stellar-transaction-job.dto';
 export class StellarTransactionProcessor extends WorkerHost {
   private readonly logger = new Logger(StellarTransactionProcessor.name);
   private readonly tracer = trace.getTracer('healthy-stellar-backend');
+
+  constructor(
+    @Inject(StellarContractService)
+    private readonly stellarContractService: StellarContractService,
+  ) {
+    super();
+  }
 
   async process(job: Job<StellarTransactionJobDto>): Promise<any> {
     const { operationType, params, initiatedBy, correlationId, traceContext } = job.data;
@@ -20,7 +28,7 @@ export class StellarTransactionProcessor extends WorkerHost {
       ? propagation.extract(context.active(), traceContext)
       : context.active();
 
-    return context.with(extractedContext, () => {
+    return context.with(extractedContext, async () => {
       const span = this.tracer.startSpan('queue.process.stellarTransaction', {
         attributes: {
           'queue.name': QUEUE_NAMES.STELLAR_TRANSACTIONS,
@@ -28,6 +36,7 @@ export class StellarTransactionProcessor extends WorkerHost {
           'queue.operation_type': operationType,
           'queue.correlation_id': correlationId,
           'queue.attempt': job.attemptsMade,
+          'queue.initiated_by': initiatedBy,
         },
       });
 
@@ -37,76 +46,139 @@ export class StellarTransactionProcessor extends WorkerHost {
             `Processing ${operationType} job ${job.id} (correlation: ${correlationId}, traceId: ${span.spanContext().traceId})`,
           );
 
+          job.progress(10);
+
           let result;
           switch (operationType) {
             case JOB_TYPES.ANCHOR_RECORD:
-              result = await this.handleAnchorRecord(params, initiatedBy);
+              result = await this.handleAnchorRecord(params, initiatedBy, job);
               break;
             case JOB_TYPES.GRANT_ACCESS:
-              result = await this.handleGrantAccess(params, initiatedBy);
+              result = await this.handleGrantAccess(params, initiatedBy, job);
               break;
             case JOB_TYPES.REVOKE_ACCESS:
-              result = await this.handleRevokeAccess(params, initiatedBy);
+              result = await this.handleRevokeAccess(params, initiatedBy, job);
               break;
             default:
               throw new Error(`Unknown operation type: ${operationType}`);
           }
 
-          span.addEvent('queue.job.completed');
-          span.end();
+          span.addEvent('queue.job.completed', {
+            'queue.result': JSON.stringify(result),
+          });
+          this.logger.log(
+            `Job ${job.id} completed successfully - ${operationType}`,
+          );
+
           return result;
         } catch (error) {
           span.recordException(error as Error);
-          span.end();
+          span.addEvent('queue.job.failed', {
+            'error.message': (error as Error).message,
+            'error.stack': (error as Error).stack,
+          });
+
           this.logger.error(
-            `Job ${job.id} failed: ${error.message}`,
-            error.stack,
+            `Job ${job.id} failed on attempt ${job.attemptsMade + 1}: ${(error as Error).message}`,
+            (error as Error).stack,
           );
           throw error;
+        } finally {
+          span.end();
         }
       });
     });
-    this.logger.log(`Processing ${operationType} job ${job.id} (correlation: ${correlationId})`);
-
-    try {
-      switch (operationType) {
-        case JOB_TYPES.ANCHOR_RECORD:
-          return await this.handleAnchorRecord(params, initiatedBy);
-        case JOB_TYPES.GRANT_ACCESS:
-          return await this.handleGrantAccess(params, initiatedBy);
-        case JOB_TYPES.REVOKE_ACCESS:
-          return await this.handleRevokeAccess(params, initiatedBy);
-        default:
-          throw new Error(`Unknown operation type: ${operationType}`);
-      }
-    } catch (error) {
-      this.logger.error(`Job ${job.id} failed: ${error.message}`, error.stack);
-      throw error;
-    }
   }
 
-  private async handleAnchorRecord(params: any, initiatedBy: string) {
-    this.logger.log(`Anchoring record to Stellar blockchain`);
-    // TODO: Implement Stellar smart contract interaction
-    await this.simulateBlockchainOperation();
-    return { txHash: 'mock_tx_hash', status: 'anchored' };
+  private async handleAnchorRecord(
+    params: any,
+    initiatedBy: string,
+    job: Job,
+  ): Promise<any> {
+    this.logger.log(
+      `[AnchorRecord] Anchoring record - patientId: ${params.patientId}, cid: ${params.cid}`,
+    );
+    job.progress(30);
+
+    const result = await this.stellarContractService.anchorRecord({
+      patientId: params.patientId,
+      cid: params.cid,
+    });
+
+    job.progress(90);
+    this.logger.log(
+      `[AnchorRecord] Successfully anchored record - patientId: ${params.patientId}`,
+    );
+
+    return {
+      txHash: result.txHash || 'unknown',
+      status: 'anchored',
+      patientId: params.patientId,
+      cid: params.cid,
+      timestamp: new Date().toISOString(),
+    };
   }
 
-  private async handleGrantAccess(params: any, initiatedBy: string) {
-    this.logger.log(`Granting access on Stellar blockchain`);
-    // TODO: Implement Stellar smart contract interaction
-    await this.simulateBlockchainOperation();
-    return { txHash: 'mock_tx_hash', status: 'access_granted' };
+  private async handleGrantAccess(
+    params: any,
+    initiatedBy: string,
+    job: Job,
+  ): Promise<any> {
+    this.logger.log(
+      `[GrantAccess] Granting access - patientId: ${params.patientId}, granteeId: ${params.granteeId}, recordId: ${params.recordId}`,
+    );
+    job.progress(30);
+
+    const result = await this.stellarContractService.grantAccess({
+      patientId: params.patientId,
+      granteeId: params.granteeId,
+      recordId: params.recordId,
+      expirationTime: params.expirationTime || Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, // 7 days default
+    });
+
+    job.progress(90);
+    this.logger.log(
+      `[GrantAccess] Successfully granted access - patientId: ${params.patientId}, granteeId: ${params.granteeId}`,
+    );
+
+    return {
+      txHash: result.txHash || 'unknown',
+      status: 'access_granted',
+      patientId: params.patientId,
+      granteeId: params.granteeId,
+      recordId: params.recordId,
+      timestamp: new Date().toISOString(),
+    };
   }
 
-  private async handleRevokeAccess(params: any, initiatedBy: string) {
-    this.logger.log(`Revoking access on Stellar blockchain`);
-    // TODO: Implement Stellar smart contract interaction
-    await this.simulateBlockchainOperation();
-    return { txHash: 'mock_tx_hash', status: 'access_revoked' };
-  }
+  private async handleRevokeAccess(
+    params: any,
+    initiatedBy: string,
+    job: Job,
+  ): Promise<any> {
+    this.logger.log(
+      `[RevokeAccess] Revoking access - patientId: ${params.patientId}, granteeId: ${params.granteeId}, recordId: ${params.recordId}`,
+    );
+    job.progress(30);
 
-  private async simulateBlockchainOperation(): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, 1000));
+    const result = await this.stellarContractService.revokeAccess({
+      patientId: params.patientId,
+      granteeId: params.granteeId,
+      recordId: params.recordId,
+    });
+
+    job.progress(90);
+    this.logger.log(
+      `[RevokeAccess] Successfully revoked access - patientId: ${params.patientId}, granteeId: ${params.granteeId}`,
+    );
+
+    return {
+      txHash: result.txHash || 'unknown',
+      status: 'access_revoked',
+      patientId: params.patientId,
+      granteeId: params.granteeId,
+      recordId: params.recordId,
+      timestamp: new Date().toISOString(),
+    };
   }
 }
