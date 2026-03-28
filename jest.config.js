@@ -46,6 +46,26 @@ module.exports = {
       },
     },
     {
+      displayName: 'compliance',
+      testMatch: ['<rootDir>/test/compliance/**/*.spec.ts'],
+      moduleFileExtensions: ['js', 'json', 'ts'],
+      rootDir: '.',
+      transform: {
+        '^.+\\.(t|j)s$': 'ts-jest',
+      },
+      testEnvironment: 'node',
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+        '^@test/(.*)$': '<rootDir>/test/$1',
+      },
+      setupFilesAfterEnv: ['<rootDir>/test/setup-unit.ts'],
+      globals: {
+        'ts-jest': {
+          isolatedModules: true,
+        },
+      },
+    },
+    {
       displayName: 'e2e',
       testMatch: ['<rootDir>/test/**/*.e2e-spec.ts'],
       moduleFileExtensions: ['js', 'json', 'ts'],

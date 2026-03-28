@@ -13,6 +13,8 @@ import { MedicalRecordVersion } from './medical-record-version.entity';
 import { MedicalHistory } from './medical-history.entity';
 import { MedicalAttachment } from './medical-attachment.entity';
 import { MedicalRecordConsent } from './medical-record-consent.entity';
+import { PhiGcmTransformer } from '../../common/transformers/phi-gcm.transformer';
+import { PhiDeterministicTransformer } from '../../common/transformers/phi-deterministic.transformer';
 
 export enum MedicalRecordStatus {
   ACTIVE = 'active',
@@ -31,6 +33,10 @@ export enum RecordType {
   EMERGENCY = 'emergency',
   OTHER = 'other',
 }
+
+// Singleton transformer instances (constructed once, key read once at startup)
+const gcmTransformer = new PhiGcmTransformer();
+const deterministicTransformer = new PhiDeterministicTransformer();
 
 @Entity('medical_records')
 @Index(['patientId', 'createdAt'])
@@ -60,11 +66,38 @@ export class MedicalRecord {
   })
   recordType: RecordType;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  /**
+   * PHI: free-text title — encrypted with randomised AES-256-GCM.
+   * Column type changed to text to hold base64 ciphertext.
+   */
+  @Column({ type: 'text', nullable: true, transformer: gcmTransformer })
   title: string;
 
-  @Column({ type: 'text', nullable: true })
+  /**
+   * PHI: free-text clinical description / notes — randomised AES-256-GCM.
+   */
+  @Column({ type: 'text', nullable: true, transformer: gcmTransformer })
   description: string;
+
+  /**
+   * PHI: diagnosis codes (ICD-10 etc.) stored as comma-separated string.
+   * Deterministic encryption preserves equality-search capability.
+   */
+  @Column({ type: 'text', nullable: true, transformer: deterministicTransformer })
+  diagnosis: string;
+
+  /**
+   * PHI: searchable tags (e.g. "hypertension,diabetes").
+   * Deterministic encryption preserves equality-search capability.
+   */
+  @Column({ type: 'text', nullable: true, transformer: deterministicTransformer })
+  tags: string;
+
+  /**
+   * PHI: free-text clinical notes — randomised AES-256-GCM.
+   */
+  @Column({ type: 'text', nullable: true, transformer: gcmTransformer })
+  notes: string;
 
   @Column({
     type: 'enum',
