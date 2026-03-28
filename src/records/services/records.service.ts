@@ -6,6 +6,7 @@ import { SearchRecordsResponseDto, SearchRecordItem } from '../dto/search-record
 import { UserRole } from '../../auth/entities/user.entity';
 import * as QRCode from 'qrcode';
 import { Record } from '../entities/record.entity';
+import { RecordVersion } from '../entities/record-version.entity';
 import { CreateRecordDto } from '../dto/create-record.dto';
 import { PaginationQueryDto } from '../dto/pagination-query.dto';
 import { PaginatedRecordsResponseDto } from '../dto/paginated-response.dto';
@@ -17,6 +18,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { RecordEventStoreService, RecordState } from './record-event-store.service';
 import { RecordEvent, RecordEventType } from '../entities/record-event.entity';
 import { PaginationUtil } from '../../common/utils/pagination.util';
+import { RecordVersionService } from './record-version.service';
 
 @Injectable()
 export class RecordsService {
@@ -29,6 +31,8 @@ export class RecordsService {
     private accessControlService: AccessControlService,
     private auditLogService: AuditLogService,
     private eventStore: RecordEventStoreService,
+    @Inject(forwardRef(() => RecordVersionService))
+    private recordVersionService: RecordVersionService,
   ) {}
 
   async uploadRecord(
@@ -62,6 +66,14 @@ export class RecordsService {
         createdAt: savedRecord.createdAt,
       },
       causedBy,
+    );
+
+    // Persist version 1 — the immutable original
+    await this.recordVersionService.createInitialVersion(
+      savedRecord.id,
+      cid,
+      stellarTxHash,
+      causedBy ?? dto.patientId,
     );
 
     return {
@@ -116,7 +128,12 @@ export class RecordsService {
     return QRCode.toDataURL(url);
   }
 
-  async findOne(id: string, requesterId?: string, includeDeleted = false): Promise<Record> {
+  async findOne(
+    id: string,
+    requesterId?: string,
+    includeDeleted = false,
+    version?: number,
+  ): Promise<Record | (Record & { _version: RecordVersion })> {
     const record = await this.recordRepository.findOne({ where: { id } });
 
     if (!record || (!includeDeleted && record.isDeleted)) {
@@ -146,6 +163,19 @@ export class RecordsService {
       }
     }
 
+    // If a specific version is requested, overlay the versioned CID and hash
+    if (version !== undefined) {
+      const recordVersion = await this.recordVersionService.findVersion(id, version);
+      if (!recordVersion) {
+        throw new NotFoundException(`Version ${version} of record ${id} not found`);
+      }
+      return Object.assign(Object.create(Object.getPrototypeOf(record)), record, {
+        cid: recordVersion.cid,
+        stellarTxHash: recordVersion.stellarTxHash,
+        _version: recordVersion,
+      });
+    }
+
     return record;
   }
 
@@ -170,6 +200,8 @@ export class RecordsService {
   private truncateAddress(address: string): string {
     if (address.length <= 10) return address;
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  }
+
   /**
    * Derive the current state of a record by replaying its event stream.
    * Falls back to the latest snapshot + delta events for performance.

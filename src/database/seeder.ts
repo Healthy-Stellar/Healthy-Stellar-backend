@@ -1,4 +1,5 @@
 import { DataSource } from 'typeorm';
+import { faker } from '@faker-js/faker';
 import { User, UserRole } from '../auth/entities/user.entity';
 import {
   MedicalRecord,
@@ -10,372 +11,187 @@ import {
   AccessLevel,
   GrantStatus,
 } from '../access-control/entities/access-grant.entity';
+import { AuditLogEntity, AuditAction } from '../common/audit/audit-log.entity';
 import * as argon2 from 'argon2';
 import { dataSourceOptions } from '../config/database.config';
 
-/**
- * Database Seeder for Local Development
- *
- * Seeds the database with test data:
- * - Test patients, doctors, and medical staff
- * - Sample medical records
- * - Access grants for testing
- *
- * Usage:
- *   npm run seed
- *
- * WARNING: Only use in development environments!
- */
+const SEED_TAG = 'seeder_generated';
+
+/** Generate a valid-format Stellar public key (G + 55 base32 chars) */
+function fakeStellarAddress(): string {
+  const base32Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let key = 'G';
+  for (let i = 0; i < 55; i++) {
+    key += base32Chars[Math.floor(Math.random() * base32Chars.length)];
+  }
+  return key;
+}
 
 async function seed() {
   console.log('🌱 Starting database seeding...');
 
-  // Initialize data source
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('❌ Cannot run seeder in production environment!');
+  }
+
   const dataSource = new DataSource(dataSourceOptions);
   await dataSource.initialize();
   console.log('✅ Database connection established');
 
   try {
-    // Clear existing data (development only!)
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('❌ Cannot run seeder in production environment!');
+    const userRepo = dataSource.getRepository(User);
+    const recordRepo = dataSource.getRepository(MedicalRecord);
+    const grantRepo = dataSource.getRepository(AccessGrant);
+    const auditRepo = dataSource.getRepository(AuditLogEntity);
+
+    // ── Idempotency: skip if already seeded ──────────────────────────────────
+    const alreadySeeded = await userRepo.findOne({
+      where: { institution: SEED_TAG },
+    });
+    if (alreadySeeded) {
+      console.log('⚠️  Seed data already present – skipping (idempotent run).');
+      return;
     }
 
-    console.log('🗑️  Clearing existing data...');
-    await dataSource.query('TRUNCATE TABLE access_grants CASCADE');
-    await dataSource.query('TRUNCATE TABLE medical_records CASCADE');
-    await dataSource.query('TRUNCATE TABLE mfa_devices CASCADE');
-    await dataSource.query('TRUNCATE TABLE sessions CASCADE');
-    await dataSource.query('TRUNCATE TABLE users CASCADE');
-
-    // Hash password for all test users
     const testPassword = await argon2.hash('Test123!@#');
 
-    // Create test users
-    console.log('👥 Creating test users...');
-    const userRepository = dataSource.getRepository(User);
+    // ── 10 Providers ─────────────────────────────────────────────────────────
+    console.log('👨‍⚕️  Creating 10 providers...');
+    const providerRoles = [UserRole.PHYSICIAN, UserRole.NURSE];
+    const providers: User[] = [];
+    for (let i = 0; i < 10; i++) {
+      const role = providerRoles[i % 2];
+      const provider = userRepo.create({
+        email: faker.internet.email({ provider: 'healthystellar.dev' }),
+        passwordHash: testPassword,
+        firstName: faker.person.firstName(),
+        lastName: faker.person.lastName(),
+        role,
+        isActive: true,
+        isLicenseVerified: true,
+        country: faker.location.countryCode('alpha-2'),
+        isAcceptingPatients: faker.datatype.boolean(),
+        licenseNumber: `${role === UserRole.PHYSICIAN ? 'MD' : 'RN'}-${faker.string.numeric(6)}`,
+        npi: faker.string.numeric(10),
+        specialization: faker.helpers.arrayElement([
+          'Cardiology',
+          'Neurology',
+          'Pediatrics',
+          'Oncology',
+          'General Practice',
+        ]),
+        institution: SEED_TAG,
+      });
+      providers.push(await userRepo.save(provider));
+    }
+    console.log('  ✓ Providers created');
 
-    // Admin user
-    const admin = userRepository.create({
-      email: 'admin@healthystellar.com',
-      passwordHash: testPassword,
-      firstName: 'Admin',
-      lastName: 'User',
-      role: UserRole.ADMIN,
-      isActive: true,
-      mfaEnabled: false,
-    });
-    await userRepository.save(admin);
-    console.log('  ✓ Admin user created');
-
-    // Physicians
-    const physician1 = userRepository.create({
-      email: 'dr.smith@healthystellar.com',
-      passwordHash: testPassword,
-      firstName: 'John',
-      lastName: 'Smith',
-      role: UserRole.PHYSICIAN,
-      isActive: true,
-      isLicenseVerified: true,
-      country: 'USA',
-      isAcceptingPatients: true,
-      licenseNumber: 'MD-12345',
-      npi: '1234567890',
-      specialization: 'Cardiology',
-    });
-    await userRepository.save(physician1);
-
-    const physician2 = userRepository.create({
-      email: 'dr.johnson@healthystellar.com',
-      passwordHash: testPassword,
-      firstName: 'Sarah',
-      lastName: 'Johnson',
-      role: UserRole.PHYSICIAN,
-      isActive: true,
-      isLicenseVerified: true,
-      country: 'USA',
-      isAcceptingPatients: false,
-      licenseNumber: 'MD-67890',
-      npi: '0987654321',
-      specialization: 'Neurology',
-    });
-    await userRepository.save(physician2);
-    console.log('  ✓ Physicians created');
-
-    // Nurses
-    const nurse1 = userRepository.create({
-      email: 'nurse.williams@healthystellar.com',
-      passwordHash: testPassword,
-      firstName: 'Emily',
-      lastName: 'Williams',
-      role: UserRole.NURSE,
-      isActive: true,
-      isLicenseVerified: true,
-      country: 'USA',
-      licenseNumber: 'RN-11111',
-    });
-    await userRepository.save(nurse1);
-
-    const nurse2 = userRepository.create({
-      email: 'nurse.brown@healthystellar.com',
-      passwordHash: testPassword,
-      firstName: 'Michael',
-      lastName: 'Brown',
-      role: UserRole.NURSE,
-      isActive: true,
-      isLicenseVerified: true,
-      country: 'USA',
-      licenseNumber: 'RN-22222',
-    });
-    await userRepository.save(nurse2);
-    console.log('  ✓ Nurses created');
-
-    // Patients
-    const patient1 = userRepository.create({
-      email: 'patient1@example.com',
-      passwordHash: testPassword,
-      firstName: 'Alice',
-      lastName: 'Anderson',
-      role: UserRole.PATIENT,
-      isActive: true,
-    });
-    await userRepository.save(patient1);
-
-    const patient2 = userRepository.create({
-      email: 'patient2@example.com',
-      passwordHash: testPassword,
-      firstName: 'Bob',
-      lastName: 'Baker',
-      role: UserRole.PATIENT,
-      isActive: true,
-    });
-    await userRepository.save(patient2);
-
-    const patient3 = userRepository.create({
-      email: 'patient3@example.com',
-      passwordHash: testPassword,
-      firstName: 'Carol',
-      lastName: 'Carter',
-      role: UserRole.PATIENT,
-      isActive: true,
-    });
-    await userRepository.save(patient3);
+    // ── 50 Patients ──────────────────────────────────────────────────────────
+    console.log('🧑‍🤝‍🧑 Creating 50 patients...');
+    const patients: User[] = [];
+    for (let i = 0; i < 50; i++) {
+      const patient = userRepo.create({
+        email: faker.internet.email(),
+        passwordHash: testPassword,
+        firstName: faker.person.firstName(),
+        lastName: faker.person.lastName(),
+        role: UserRole.PATIENT,
+        isActive: true,
+        stellarPublicKey: fakeStellarAddress(),
+        institution: SEED_TAG,
+      });
+      patients.push(await userRepo.save(patient));
+    }
     console.log('  ✓ Patients created');
 
-    // Billing staff
-    const billingStaff = userRepository.create({
-      email: 'billing@healthystellar.com',
-      passwordHash: testPassword,
-      firstName: 'David',
-      lastName: 'Davis',
-      role: UserRole.BILLING_STAFF,
-      isActive: true,
-      isLicenseVerified: true,
-      country: 'USA',
-    });
-    await userRepository.save(billingStaff);
-    console.log('  ✓ Billing staff created');
-
-    // Medical records staff
-    const medicalRecordsStaff = userRepository.create({
-      email: 'records@healthystellar.com',
-      passwordHash: testPassword,
-      firstName: 'Emma',
-      lastName: 'Evans',
-      role: UserRole.MEDICAL_RECORDS,
-      isActive: true,
-      isLicenseVerified: true,
-      country: 'USA',
-    });
-    await userRepository.save(medicalRecordsStaff);
-    console.log('  ✓ Medical records staff created');
-
-    // Create medical records
-    console.log('📋 Creating medical records...');
-    const medicalRecordRepository = dataSource.getRepository(MedicalRecord);
-
-    // Patient 1 records
-    const record1 = medicalRecordRepository.create({
-      patientId: patient1.id,
-      providerId: physician1.id,
-      createdBy: physician1.id,
-      recordType: RecordType.CONSULTATION,
-      title: 'Annual Physical Examination',
-      description:
-        'Routine annual physical examination. Patient reports no major health concerns. Vital signs normal.',
-      status: MedicalRecordStatus.ACTIVE,
-      recordDate: new Date('2024-01-15'),
-      metadata: {
-        bloodPressure: '120/80',
-        heartRate: 72,
-        temperature: 98.6,
-        weight: 165,
-        height: 70,
-      },
-    });
-    await medicalRecordRepository.save(record1);
-
-    const record2 = medicalRecordRepository.create({
-      patientId: patient1.id,
-      providerId: physician1.id,
-      createdBy: physician1.id,
-      recordType: RecordType.LAB_RESULT,
-      title: 'Blood Work - Complete Metabolic Panel',
-      description: 'Complete metabolic panel results. All values within normal range.',
-      status: MedicalRecordStatus.ACTIVE,
-      recordDate: new Date('2024-01-20'),
-      metadata: {
-        glucose: 95,
-        sodium: 140,
-        potassium: 4.2,
-        chloride: 102,
-        co2: 24,
-      },
-    });
-    await medicalRecordRepository.save(record2);
-
-    // Patient 2 records
-    const record3 = medicalRecordRepository.create({
-      patientId: patient2.id,
-      providerId: physician2.id,
-      createdBy: physician2.id,
-      recordType: RecordType.DIAGNOSIS,
-      title: 'Migraine Headache Diagnosis',
-      description: 'Patient presents with recurring headaches. Diagnosed with migraine headaches.',
-      status: MedicalRecordStatus.ACTIVE,
-      recordDate: new Date('2024-02-01'),
-      metadata: {
-        icd10Code: 'G43.909',
-        severity: 'moderate',
-        frequency: 'weekly',
-      },
-    });
-    await medicalRecordRepository.save(record3);
-
-    const record4 = medicalRecordRepository.create({
-      patientId: patient2.id,
-      providerId: physician2.id,
-      createdBy: physician2.id,
-      recordType: RecordType.PRESCRIPTION,
-      title: 'Migraine Medication Prescription',
-      description: 'Prescribed sumatriptan for migraine management.',
-      status: MedicalRecordStatus.ACTIVE,
-      recordDate: new Date('2024-02-01'),
-      metadata: {
-        medication: 'Sumatriptan',
-        dosage: '50mg',
-        frequency: 'as needed',
-        quantity: 9,
-        refills: 2,
-      },
-    });
-    await medicalRecordRepository.save(record4);
-
-    // Patient 3 records
-    const record5 = medicalRecordRepository.create({
-      patientId: patient3.id,
-      providerId: physician1.id,
-      createdBy: physician1.id,
-      recordType: RecordType.TREATMENT,
-      title: 'Hypertension Treatment Plan',
-      description:
-        'Treatment plan for newly diagnosed hypertension. Lifestyle modifications and medication.',
-      status: MedicalRecordStatus.ACTIVE,
-      recordDate: new Date('2024-02-10'),
-      metadata: {
-        diagnosis: 'Essential Hypertension',
-        icd10Code: 'I10',
-        treatmentPlan: 'Lifestyle modifications, low sodium diet, regular exercise, medication',
-      },
-    });
-    await medicalRecordRepository.save(record5);
-
-    const record6 = medicalRecordRepository.create({
-      patientId: patient3.id,
-      providerId: physician1.id,
-      createdBy: nurse1.id,
-      recordType: RecordType.CONSULTATION,
-      title: 'Follow-up Visit - Blood Pressure Check',
-      description:
-        'Follow-up visit to monitor blood pressure. Patient responding well to treatment.',
-      status: MedicalRecordStatus.ACTIVE,
-      recordDate: new Date('2024-02-24'),
-      metadata: {
-        bloodPressure: '128/82',
-        notes: 'Improved from previous visit',
-      },
-    });
-    await medicalRecordRepository.save(record6);
-
+    // ── 200 Medical Records ──────────────────────────────────────────────────
+    console.log('📋 Creating 200 medical records...');
+    const recordTypes = Object.values(RecordType);
+    const records: MedicalRecord[] = [];
+    for (let i = 0; i < 200; i++) {
+      const patient = patients[i % patients.length];
+      const provider = providers[i % providers.length];
+      const record = recordRepo.create({
+        patientId: patient.id,
+        providerId: provider.id,
+        createdBy: provider.id,
+        recordType: faker.helpers.arrayElement(recordTypes),
+        title: faker.lorem.sentence({ min: 3, max: 7 }),
+        description: faker.lorem.paragraph(),
+        status: MedicalRecordStatus.ACTIVE,
+        recordDate: faker.date.past({ years: 2 }),
+        metadata: {
+          notes: faker.lorem.sentence(),
+          icd10: `${faker.string.alpha({ length: 1, casing: 'upper' })}${faker.string.numeric(2)}`,
+        },
+      });
+      records.push(await recordRepo.save(record));
+    }
     console.log('  ✓ Medical records created');
 
-    // Create access grants
-    console.log('🔐 Creating access grants...');
-    const accessGrantRepository = dataSource.getRepository(AccessGrant);
-
-    // Grant physician1 access to patient1's records
-    const grant1 = accessGrantRepository.create({
-      patientId: patient1.id,
-      granteeId: physician1.id,
-      recordIds: [record1.id, record2.id],
-      accessLevel: AccessLevel.READ_WRITE,
-      status: GrantStatus.ACTIVE,
-      expiresAt: new Date('2025-12-31'),
-    });
-    await accessGrantRepository.save(grant1);
-
-    // Grant physician2 access to patient2's records
-    const grant2 = accessGrantRepository.create({
-      patientId: patient2.id,
-      granteeId: physician2.id,
-      recordIds: [record3.id, record4.id],
-      accessLevel: AccessLevel.READ_WRITE,
-      status: GrantStatus.ACTIVE,
-      expiresAt: new Date('2025-12-31'),
-    });
-    await accessGrantRepository.save(grant2);
-
-    // Grant nurse1 read access to patient3's records
-    const grant3 = accessGrantRepository.create({
-      patientId: patient3.id,
-      granteeId: nurse1.id,
-      recordIds: [record5.id, record6.id],
-      accessLevel: AccessLevel.READ,
-      status: GrantStatus.ACTIVE,
-      expiresAt: new Date('2025-12-31'),
-    });
-    await accessGrantRepository.save(grant3);
-
+    // ── 30 Access Grants ─────────────────────────────────────────────────────
+    console.log('🔐 Creating 30 access grants...');
+    for (let i = 0; i < 30; i++) {
+      const patient = patients[i % patients.length];
+      const grantee = providers[i % providers.length];
+      // pick 1-3 records belonging to this patient (or any records as fallback)
+      const patientRecords = records.filter((r) => r.patientId === patient.id);
+      const pool = patientRecords.length ? patientRecords : records;
+      const slice = faker.helpers.arrayElements(pool, { min: 1, max: 3 });
+      const grant = grantRepo.create({
+        patientId: patient.id,
+        granteeId: grantee.id,
+        recordIds: slice.map((r) => r.id),
+        accessLevel: faker.helpers.arrayElement(Object.values(AccessLevel)),
+        status: GrantStatus.ACTIVE,
+        expiresAt: faker.date.future({ years: 1 }),
+      });
+      await grantRepo.save(grant);
+    }
     console.log('  ✓ Access grants created');
 
-    console.log('\n✅ Database seeding completed successfully!');
-    console.log('\n📊 Summary:');
-    console.log(
-      '  - Users: 10 (1 admin, 2 physicians, 2 nurses, 3 patients, 1 billing, 1 records)',
-    );
-    console.log('  - Medical Records: 6');
-    console.log('  - Access Grants: 3');
-    console.log('\n🔑 Test Credentials:');
-    console.log('  Email: admin@healthystellar.com');
-    console.log('  Email: dr.smith@healthystellar.com');
-    console.log('  Email: patient1@example.com');
-    console.log('  Password (all users): Test123!@#');
+    // ── 100 Audit Log Entries ────────────────────────────────────────────────
+    console.log('📝 Creating 100 audit log entries...');
+    const auditActions = Object.values(AuditAction);
+    const severities: Array<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = [
+      'LOW',
+      'MEDIUM',
+      'HIGH',
+      'CRITICAL',
+    ];
+    const allUsers = [...providers, ...patients];
+    for (let i = 0; i < 100; i++) {
+      const user = allUsers[i % allUsers.length];
+      const entry = auditRepo.create({
+        userId: user.id,
+        action: faker.helpers.arrayElement(auditActions),
+        entity: faker.helpers.arrayElement(['User', 'MedicalRecord', 'AccessGrant']),
+        entityId: faker.string.uuid(),
+        description: faker.lorem.sentence(),
+        severity: faker.helpers.arrayElement(severities),
+        ipAddress: faker.internet.ip(),
+        userAgent: faker.internet.userAgent(),
+        details: { seeded: true },
+      });
+      await auditRepo.save(entry);
+    }
+    console.log('  ✓ Audit log entries created');
+
+    console.log('\n✅ Seeding completed!');
+    console.log('  Providers : 10');
+    console.log('  Patients  : 50');
+    console.log('  Records   : 200');
+    console.log('  Grants    : 30');
+    console.log('  Audit logs: 100');
+    console.log('\n🔑 All seeded users share password: Test123!@#');
   } catch (error) {
     console.error('❌ Seeding failed:', error);
     throw error;
   } finally {
     await dataSource.destroy();
-    console.log('🔌 Database connection closed');
   }
 }
 
-// Run seeder
 seed()
-  .then(() => {
-    console.log('✨ Seeding process completed');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('💥 Seeding process failed:', error);
-    process.exit(1);
-  });
+  .then(() => process.exit(0))
+  .catch(() => process.exit(1));

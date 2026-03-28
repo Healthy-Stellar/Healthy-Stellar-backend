@@ -7,14 +7,13 @@ import { createTypeOrmRetryCallback, MAX_RETRIES, RETRY_DELAY_MS } from '../comm
 
 /**
  * TypeORM Database Configuration
- * HIPAA-Compliant PostgreSQL Configuration
  *
- * Security Requirements:
- * - synchronize: false in ALL environments (schema changes via migrations only)
- * - SSL/TLS encryption for production
- * - Connection pooling with limits
- * - Query timeout enforcement
- * - Audit logging enabled
+ * Acceptance criteria (#208):
+ * - TypeORM configured via @nestjs/typeorm and ConfigService
+ * - Connection pool: min: 2, max: 10
+ * - synchronize: false in all environments (migrations only)
+ * - logging: ['error'] in production, ['query', 'error'] in development
+ * - SSL enabled for production database connection
  */
 @Injectable()
 export class DatabaseConfig implements TypeOrmOptionsFactory {
@@ -22,7 +21,6 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
 
   createTypeOrmOptions(): TypeOrmModuleOptions {
     const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
-    const sslEnabled = this.configService.get<string>('DB_SSL_ENABLED', 'false') === 'true';
 
     // Validate required configuration
     const requiredVars = ['DB_HOST', 'DB_PORT', 'DB_USERNAME', 'DB_PASSWORD', 'DB_NAME'];
@@ -40,15 +38,20 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       password: this.configService.get<string>('DB_PASSWORD'),
       database: this.configService.get<string>('DB_NAME'),
 
-      // SSL/TLS Configuration for encrypted connections (HIPAA requirement)
-      ssl: sslEnabled
+      // SSL: always enabled in production; opt-in via DB_SSL_ENABLED in other envs
+      ssl: isProduction
         ? {
-            rejectUnauthorized: isProduction,
+            rejectUnauthorized: true,
             ca: this.configService.get<string>('DB_SSL_CA'),
             cert: this.configService.get<string>('DB_SSL_CERT'),
             key: this.configService.get<string>('DB_SSL_KEY'),
           }
-        : false,
+        : this.configService.get<string>('DB_SSL_ENABLED') === 'true'
+          ? {
+              rejectUnauthorized: false,
+              ca: this.configService.get<string>('DB_SSL_CA'),
+            }
+          : false,
 
       // Entity and Migration paths
       entities: [__dirname + '/../**/*.entity{.ts,.js}'],
@@ -56,101 +59,61 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       subscribers: [AuditSubscriber],
 
       // CRITICAL: synchronize MUST be false in ALL environments
-      // All schema changes MUST go through versioned migrations
       synchronize: false,
-
-      // Migrations should be run manually with proper audit trail
       migrationsRun: false,
 
-      // Logging configuration for audit trail
-      // Logging configuration for audit trail and query profiling
-      logging: isProduction
-        ? ['error', 'warn', 'migration']
-        : ['query', 'error', 'warn', 'migration'],
-      logger: 'advanced-console',
+      // logging: ['error'] in production, ['query', 'error'] in development
+      logging: isProduction ? ['error'] : ['query', 'error'],
 
-      // Connection pool configuration for HIPAA compliance
+      // Connection pool: min 2, max 10
       extra: {
-        // Maximum connection pool size
-        max: this.configService.get<number>('DB_POOL_MAX', 20),
-        // Minimum connection pool size
+        max: this.configService.get<number>('DB_POOL_MAX', 10),
         min: this.configService.get<number>('DB_POOL_MIN', 2),
-        // Connection timeout (default 2 seconds)
         connectionTimeoutMillis: this.configService.get<number>('DB_CONNECTION_TIMEOUT_MS', 2000),
-        // Idle timeout (default 30 seconds)
         idleTimeoutMillis: this.configService.get<number>('DB_IDLE_TIMEOUT_MS', 30000),
-        // Statement timeout (60 seconds) - prevent long-running queries
         statement_timeout: 60000,
-        // Application name for audit logging
         application_name: 'healthy-stellar-backend',
-        // Enable SSL mode
-        ...(sslEnabled && { sslmode: 'require' }),
       },
 
-      // Connection retry strategy
       retryAttempts: MAX_RETRIES,
       retryDelay: RETRY_DELAY_MS,
       toRetry: createTypeOrmRetryCallback(),
 
-      // Slow query profiling threshold (milliseconds)
       maxQueryExecutionTime: this.configService.get<number>('DB_SLOW_QUERY_MS', 100),
-
-      // Enable automatic query result caching
-      cache: {
-        type: 'database',
-        tableName: 'query_cache',
-        duration: 60000, // 1 minute
-      },
     };
   }
 }
 
 /**
- * DataSource configuration for TypeORM CLI (migrations)
- * Used by: npm run migration:generate, migration:run, migration:revert
- *
- * Configuration is loaded from environment variables via DATABASE_URL or individual vars
+ * DataSource configuration for TypeORM CLI (migrations).
+ * Used by: npm run migration:run, migration:revert, migration:generate
  */
 export const dataSourceOptions: DataSourceOptions = {
   type: 'postgres',
-
-  // Support DATABASE_URL for simplified configuration
   url: process.env.DATABASE_URL,
-
-  // Fallback to individual environment variables
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432', 10),
   username: process.env.DB_USERNAME,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
 
-  // SSL Configuration
+  // SSL enabled for production
   ssl:
-    process.env.DB_SSL_ENABLED === 'true'
-      ? {
-          rejectUnauthorized: process.env.NODE_ENV === 'production',
-          ca: process.env.DB_SSL_CA,
-          cert: process.env.DB_SSL_CERT,
-          key: process.env.DB_SSL_KEY,
-        }
-      : false,
+    process.env.NODE_ENV === 'production'
+      ? { rejectUnauthorized: true }
+      : process.env.DB_SSL_ENABLED === 'true'
+        ? { rejectUnauthorized: false }
+        : false,
 
-  // Entity and Migration paths
   entities: [__dirname + '/../**/*.entity{.ts,.js}'],
   migrations: [__dirname + '/../migrations/*{.ts,.js}'],
   subscribers: [AuditSubscriber],
 
-  // CRITICAL: synchronize MUST be false
   synchronize: false,
 
-  // Enable logging in development
-  logging: process.env.NODE_ENV !== 'production',
-  
-  // Enable detailed logging in development for profiling
   logging:
-    process.env.NODE_ENV === 'production'
-      ? ['error', 'warn', 'migration']
-      : ['query', 'error', 'warn', 'migration'],
+    process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error'],
+
   maxQueryExecutionTime: parseInt(process.env.DB_SLOW_QUERY_MS || '100', 10),
 };
 

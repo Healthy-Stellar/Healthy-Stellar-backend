@@ -5,6 +5,18 @@ function makeCtx(ip: string, headers: Record<string, string> = {}): ExecutionCon
   return {
     switchToHttp: () => ({
       getRequest: () => ({ ip, headers, socket: { remoteAddress: ip } }),
+import { ConfigService } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
+import { IpAllowlistGuard } from './ip-allowlist.guard';
+
+function makeContext(ip: string, headers: Record<string, string> = {}): ExecutionContext {
+  return {
+    switchToHttp: () => ({
+      getRequest: () => ({
+        ip,
+        socket: { remoteAddress: ip },
+        headers,
+      }),
     }),
   } as unknown as ExecutionContext;
 }
