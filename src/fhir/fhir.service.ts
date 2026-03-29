@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Patient } from '../patients/entities/patient.entity';
@@ -7,6 +7,19 @@ import { MedicalRecordConsent } from '../medical-records/entities/medical-record
 import { MedicalHistory } from '../medical-records/entities/medical-history.entity';
 import { FhirMapper } from './mappers/fhir.mapper';
 import { FhirCapabilityStatement } from './dto/fhir-resources.dto';
+
+const PROVENANCE_SUPPORTED_TYPES = ['DocumentReference', 'Patient', 'Consent'] as const;
+type ProvenanceSupportedType = (typeof PROVENANCE_SUPPORTED_TYPES)[number];
+
+function parseFhirReference(ref: string): { resourceType: string; resourceId: string } {
+  const parts = ref.split('/');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new BadRequestException(
+      `Invalid FHIR reference "${ref}". Expected format: ResourceType/id`,
+    );
+  }
+  return { resourceType: parts[0], resourceId: parts[1] };
+}
 
 @Injectable()
 export class FhirService {
@@ -29,9 +42,21 @@ export class FhirService {
         {
           mode: 'server',
           resource: [
-            { type: 'Patient', interaction: [{ code: 'read' }, { code: 'search-type' }] },
-            { type: 'DocumentReference', interaction: [{ code: 'read' }, { code: 'search-type' }] },
-            { type: 'Consent', interaction: [{ code: 'read' }] },
+            {
+              type: 'Patient',
+              interaction: [{ code: 'read' }, { code: 'search-type' }],
+              operation: [{ name: 'provenance', definition: 'OperationDefinition/provenance' }],
+            },
+            {
+              type: 'DocumentReference',
+              interaction: [{ code: 'read' }, { code: 'search-type' }],
+              operation: [{ name: 'provenance', definition: 'OperationDefinition/provenance' }],
+            },
+            {
+              type: 'Consent',
+              interaction: [{ code: 'read' }],
+              operation: [{ name: 'provenance', definition: 'OperationDefinition/provenance' }],
+            },
             { type: 'Provenance', interaction: [{ code: 'search-type' }] },
           ],
         },
@@ -67,8 +92,29 @@ export class FhirService {
   }
 
   async getProvenance(target: string) {
-    const recordId = target.replace('DocumentReference/', '');
-    const history = await this.historyRepo.find({ where: { medicalRecordId: recordId } });
+    const { resourceType, resourceId } = parseFhirReference(target);
+
+    if (!(PROVENANCE_SUPPORTED_TYPES as readonly string[]).includes(resourceType)) {
+      throw new NotFoundException(
+        `Provenance is not supported for resource type "${resourceType}". ` +
+          `Supported types: ${PROVENANCE_SUPPORTED_TYPES.join(', ')}`,
+      );
+    }
+
+    // Verify the referenced resource exists before querying history
+    const repoMap: Record<ProvenanceSupportedType, () => Promise<boolean>> = {
+      DocumentReference: () =>
+        this.recordRepo.existsBy({ id: resourceId }),
+      Patient: () =>
+        this.patientRepo.existsBy({ id: resourceId }),
+      Consent: () =>
+        this.consentRepo.existsBy({ id: resourceId }),
+    };
+
+    const exists = await repoMap[resourceType as ProvenanceSupportedType]();
+    if (!exists) throw new NotFoundException(`${resourceType}/${resourceId} not found`);
+
+    const history = await this.historyRepo.find({ where: { medicalRecordId: resourceId } });
     return {
       resourceType: 'Bundle',
       type: 'searchset',
