@@ -9,10 +9,12 @@ import {
 import { PatientsService } from './patients.service';
 import { Patient } from './entities/patient.entity';
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
+import { RedisLockService } from '../common/utils/redis-lock.service';
+import { StellarService } from '../stellar/services/stellar.service';
 import { aPatient } from '../../test/fixtures/test-data-builder';
 
 // ─── Blockchain mock (Stellar SDK is mocked globally in setup-unit.ts) ────────
-const mockStellarInvokeContract = jest.fn();
+const mockStellarInvokeContract = jest.fn().mockResolvedValue({ txHash: 'tx-hash' });
 const mockStellarGetPatient = jest.fn();
 const mockStellarDeregister = jest.fn();
 
@@ -53,6 +55,12 @@ const mockDataSource = {
   createQueryRunner: jest.fn().mockReturnValue(mockQR),
 };
 
+// ─── Redis lock mock ──────────────────────────────────────────────────────────
+const mockRedisLock = {
+  acquireLock: jest.fn().mockResolvedValue(true),
+  releaseLock: jest.fn().mockResolvedValue(undefined),
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function makeValidDto(overrides: Record<string, any> = {}) {
   return {
@@ -73,6 +81,8 @@ describe('PatientsService', () => {
         PatientsService,
         { provide: getRepositoryToken(Patient), useValue: mockRepo },
         { provide: DataSource, useValue: mockDataSource },
+        { provide: RedisLockService, useValue: mockRedisLock },
+        { provide: StellarService, useValue: { invokeContract: mockStellarInvokeContract } },
       ],
     }).compile();
 
@@ -267,6 +277,11 @@ describe('PatientsService', () => {
   // adminMergePatients — transaction coverage
   // ═══════════════════════════════════════════════════════════════════════════
   describe('adminMergePatients', () => {
+    beforeEach(() => {
+      mockRedisLock.acquireLock.mockResolvedValue(true);
+      mockRedisLock.releaseLock.mockResolvedValue(undefined);
+    });
+
     it('success — merges two patients and commits transaction', async () => {
       const primary = aPatient().withId('primary-id').build();
       const secondary = aPatient().withId('secondary-id').build();
@@ -274,13 +289,14 @@ describe('PatientsService', () => {
       mockQR.manager.findOne
         .mockResolvedValueOnce(primary)
         .mockResolvedValueOnce(secondary);
+      mockStellarInvokeContract.mockResolvedValue({ txHash: 'tx-hash' });
 
       const result = await service.adminMergePatients(
         { primaryAddress: 'primary-id', secondaryAddress: 'secondary-id', reason: 'Duplicate' },
         'admin-id',
       );
 
-      expect(mockQR.startTransaction).toHaveBeenCalled();
+      expect(mockQR.startTransaction).toHaveBeenCalledWith('SERIALIZABLE');
       expect(mockQR.manager.update).toHaveBeenCalledWith(
         'records',
         { patientId: 'secondary-id' },
@@ -288,6 +304,16 @@ describe('PatientsService', () => {
       );
       expect(mockQR.manager.update).toHaveBeenCalledWith(
         'access_grants',
+        { patientId: 'secondary-id' },
+        { patientId: 'primary-id' },
+      );
+      expect(mockQR.manager.update).toHaveBeenCalledWith(
+        'billing',
+        { patientId: 'secondary-id' },
+        { patientId: 'primary-id' },
+      );
+      expect(mockQR.manager.update).toHaveBeenCalledWith(
+        'prescriptions',
         { patientId: 'secondary-id' },
         { patientId: 'primary-id' },
       );
@@ -303,10 +329,40 @@ describe('PatientsService', () => {
       );
       expect(mockQR.commitTransaction).toHaveBeenCalled();
       expect(mockQR.release).toHaveBeenCalled();
+      expect(mockRedisLock.releaseLock).toHaveBeenCalledTimes(2);
       expect(result).toEqual(primary);
     });
 
-    it('rolls back transaction on DB error', async () => {
+    it('acquires distributed Redis locks for both patients', async () => {
+      const primary = aPatient().withId('p1').build();
+      const secondary = aPatient().withId('p2').build();
+      mockQR.manager.findOne.mockResolvedValueOnce(primary).mockResolvedValueOnce(secondary);
+
+      await service.adminMergePatients(
+        { primaryAddress: 'p1', secondaryAddress: 'p2' },
+        'admin-id',
+      );
+
+      expect(mockRedisLock.acquireLock).toHaveBeenCalledTimes(2);
+      expect(mockRedisLock.acquireLock).toHaveBeenCalledWith('merge:p1', expect.any(Number));
+      expect(mockRedisLock.acquireLock).toHaveBeenCalledWith('merge:p2', expect.any(Number));
+    });
+
+    it('throws ConflictException and releases locks when Redis lock cannot be acquired', async () => {
+      mockRedisLock.acquireLock.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+      await expect(
+        service.adminMergePatients(
+          { primaryAddress: 'a', secondaryAddress: 'b' },
+          'admin-id',
+        ),
+      ).rejects.toThrow(ConflictException);
+
+      expect(mockRedisLock.releaseLock).toHaveBeenCalledTimes(2);
+      expect(mockQR.startTransaction).not.toHaveBeenCalled();
+    });
+
+    it('rolls back transaction and releases locks on DB error', async () => {
       mockQR.manager.findOne.mockRejectedValueOnce(new Error('DB Error'));
 
       await expect(
@@ -318,6 +374,7 @@ describe('PatientsService', () => {
 
       expect(mockQR.rollbackTransaction).toHaveBeenCalled();
       expect(mockQR.release).toHaveBeenCalled();
+      expect(mockRedisLock.releaseLock).toHaveBeenCalledTimes(2);
     });
 
     it('throws BadRequestException when merging a patient with itself', async () => {
@@ -349,6 +406,62 @@ describe('PatientsService', () => {
       ).rejects.toThrow(NotFoundException);
 
       expect(mockQR.rollbackTransaction).toHaveBeenCalled();
+    });
+
+    it('emits PatientMerged event to event store (audit log)', async () => {
+      const primary = aPatient().withId('primary-id').build();
+      const secondary = aPatient().withId('secondary-id').build();
+      mockQR.manager.findOne.mockResolvedValueOnce(primary).mockResolvedValueOnce(secondary);
+
+      await service.adminMergePatients(
+        { primaryAddress: 'primary-id', secondaryAddress: 'secondary-id', reason: 'Test' },
+        'admin-id',
+      );
+
+      expect(mockQR.manager.save).toHaveBeenCalledWith(
+        AuditLogEntity,
+        expect.objectContaining({
+          action: 'PATIENT_MERGED',
+          entity: 'Patient',
+          entityId: 'primary-id',
+          details: expect.objectContaining({ primaryId: 'primary-id', secondaryId: 'secondary-id' }),
+        }),
+      );
+    });
+
+    it('Stellar invokeContract is called after commit (fire-and-forget)', async () => {
+      const primary = aPatient().withId('primary-id').build();
+      const secondary = aPatient().withId('secondary-id').build();
+      mockQR.manager.findOne.mockResolvedValueOnce(primary).mockResolvedValueOnce(secondary);
+      mockStellarInvokeContract.mockResolvedValue({ txHash: 'tx-hash' });
+
+      await service.adminMergePatients(
+        { primaryAddress: 'primary-id', secondaryAddress: 'secondary-id' },
+        'admin-id',
+      );
+
+      // Allow the fire-and-forget promise to settle
+      await Promise.resolve();
+
+      expect(mockStellarInvokeContract).toHaveBeenCalledWith(
+        expect.any(String),
+        'merge_patient',
+        [],
+      );
+    });
+
+    it('Stellar failure does not affect the merge result', async () => {
+      const primary = aPatient().withId('primary-id').build();
+      const secondary = aPatient().withId('secondary-id').build();
+      mockQR.manager.findOne.mockResolvedValueOnce(primary).mockResolvedValueOnce(secondary);
+      mockStellarInvokeContract.mockRejectedValue(new Error('Stellar down'));
+
+      await expect(
+        service.adminMergePatients(
+          { primaryAddress: 'primary-id', secondaryAddress: 'secondary-id' },
+          'admin-id',
+        ),
+      ).resolves.toEqual(primary);
     });
   });
 

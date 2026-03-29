@@ -11,17 +11,18 @@ import { GeoRestrictionGuard } from './guards/geo-restriction.guard';
 import { AuthModule } from '../auth/auth.module';
 import { PatientProvidersController } from './controllers/patient-providers.controller';
 import { PatientProvidersService } from './services/patient-providers.service';
+import { CommonModule } from '../common/common.module';
+import { StellarModule } from '../stellar/stellar.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Patient, MedicalHistory, AccessGrant]),
     AuthModule,
+    CommonModule,
+    StellarModule,
   ],
   controllers: [PatientsController, PatientProvidersController],
-  providers: [PatientsService, PatientPrivacyGuard, PatientProvidersService],
-  exports: [PatientsService],
-  controllers: [PatientsController],
-  providers: [PatientsService, PatientTimelineService, PatientPrivacyGuard, GeoRestrictionGuard],
+  providers: [PatientsService, PatientTimelineService, PatientPrivacyGuard, GeoRestrictionGuard, PatientProvidersService],
   exports: [PatientsService, PatientTimelineService, GeoRestrictionGuard],
 })
-export class PatientModule { }
+export class PatientModule {}

@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  VersionColumn,
   Index,
 } from 'typeorm';
 import {
@@ -169,6 +170,10 @@ export class Patient {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  /** Optimistic concurrency — incremented by TypeORM on every save */
+  @VersionColumn({ default: 0 })
+  version: number;
 }
 
 export default Patient;
