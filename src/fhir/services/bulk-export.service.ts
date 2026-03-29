@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { BulkExportJob, ExportJobStatus } from '../entities/bulk-export-job.entity';
@@ -9,7 +9,8 @@ import { MedicalRecord } from '../../medical-records/entities/medical-record.ent
 import { MedicalRecordConsent } from '../../medical-records/entities/medical-record-consent.entity';
 import { MedicalHistory } from '../../medical-records/entities/medical-history.entity';
 import { FhirMapper } from '../mappers/fhir.mapper';
-import { Readable } from 'stream';
+
+const BATCH_SIZE = parseInt(process.env.BULK_EXPORT_BATCH_SIZE ?? '500', 10);
 
 @Injectable()
 export class BulkExportService {
@@ -90,7 +91,7 @@ export class BulkExportService {
       const isAdmin = job.requesterRole === 'ADMIN';
 
       for (const type of job.resourceTypes) {
-        const { url, count } = await this.exportResourceType(type, job.requesterId, isAdmin);
+        const { url, count } = await this.exportResourceType(type, job.requesterId, isAdmin, job);
         outputFiles.push({ type, url, count });
       }
 
@@ -109,46 +110,89 @@ export class BulkExportService {
     type: string,
     requesterId: string,
     isAdmin: boolean,
+    job: BulkExportJob,
   ): Promise<{ url: string; count: number }> {
-    let resources = [];
+    const chunks: string[] = [];
+    let count = 0;
 
-    switch (type) {
-      case 'Patient':
-        const patients = isAdmin
-          ? await this.patientRepo.find()
-          : await this.patientRepo.find({ where: { id: requesterId } });
-        resources = patients.map((p) => FhirMapper.toPatient(p));
-        break;
+    const append = async (lines: string[]) => {
+      if (!lines.length) return;
+      chunks.push(lines.join('\n'));
+      count += lines.length;
+      job.totalResources += lines.length;
+      await this.jobRepo.save(job);
+    };
 
-      case 'DocumentReference':
-        const records = isAdmin
-          ? await this.recordRepo.find()
-          : await this.recordRepo.find({ where: { patientId: requesterId } });
-        resources = records.map((r) => FhirMapper.toDocumentReference(r));
-        break;
+    if (type === 'Patient') {
+      await this.paginate(
+        (skip, take) =>
+          isAdmin
+            ? this.patientRepo.find({ skip, take, order: { id: 'ASC' } })
+            : this.patientRepo.find({ where: { id: requesterId }, skip, take }),
+        async (batch) => append(batch.map((p) => JSON.stringify(FhirMapper.toPatient(p)))),
+      );
+    } else if (type === 'DocumentReference') {
+      await this.paginate(
+        (skip, take) =>
+          isAdmin
+            ? this.recordRepo.find({ skip, take, order: { id: 'ASC' } })
+            : this.recordRepo.find({ where: { patientId: requesterId }, skip, take, order: { id: 'ASC' } }),
+        async (batch) => append(batch.map((r) => JSON.stringify(FhirMapper.toDocumentReference(r)))),
+      );
+    } else if (type === 'Consent') {
+      await this.paginate(
+        (skip, take) =>
+          isAdmin
+            ? this.consentRepo.find({ skip, take, order: { id: 'ASC' } })
+            : this.consentRepo.find({ where: { patientId: requesterId }, skip, take, order: { id: 'ASC' } }),
+        async (batch) => append(batch.map((c) => JSON.stringify(FhirMapper.toConsent(c)))),
+      );
+    } else if (type === 'Provenance') {
+      // Collect record IDs in batches to avoid unbounded IN clause
+      const recordIds: string[] = [];
+      await this.paginate(
+        (skip, take) =>
+          isAdmin
+            ? this.recordRepo.find({ select: { id: true }, skip, take, order: { id: 'ASC' } })
+            : this.recordRepo.find({ select: { id: true }, where: { patientId: requesterId }, skip, take, order: { id: 'ASC' } }),
+        async (batch) => { recordIds.push(...batch.map((r) => r.id)); },
+      );
 
-      case 'Consent':
-        const consents = isAdmin
-          ? await this.consentRepo.find()
-          : await this.consentRepo.find({ where: { patientId: requesterId } });
-        resources = consents.map((c) => FhirMapper.toConsent(c));
-        break;
-
-      case 'Provenance':
-        const recordIds = isAdmin
-          ? (await this.recordRepo.find()).map((r) => r.id)
-          : (await this.recordRepo.find({ where: { patientId: requesterId } })).map((r) => r.id);
-        const histories = await this.historyRepo.find({
-          where: { medicalRecordId: In(recordIds) },
-        });
-        resources = FhirMapper.toProvenance(histories);
-        break;
+      // Page through history using the collected IDs in slices
+      for (let i = 0; i < recordIds.length; i += BATCH_SIZE) {
+        const idSlice = recordIds.slice(i, i + BATCH_SIZE);
+        await this.paginate(
+          (skip, take) =>
+            this.historyRepo
+              .createQueryBuilder('h')
+              .where('h.medicalRecordId IN (:...ids)', { ids: idSlice })
+              .orderBy('h.id', 'ASC')
+              .skip(skip)
+              .take(take)
+              .getMany(),
+          async (batch) => append(FhirMapper.toProvenance(batch).map((r) => JSON.stringify(r))),
+        );
+      }
     }
 
-    const ndjson = resources.map((r) => JSON.stringify(r)).join('\n');
-    const ipfsUrl = await this.uploadToIPFS(ndjson);
+    const ndjson = chunks.join('\n');
+    const url = await this.uploadToIPFS(ndjson);
+    return { url, count };
+  }
 
-    return { url: ipfsUrl, count: resources.length };
+  /** Generic keyset-style paginator using skip/take. */
+  private async paginate<T>(
+    fetcher: (skip: number, take: number) => Promise<T[]>,
+    handler: (batch: T[]) => Promise<void>,
+  ): Promise<void> {
+    let skip = 0;
+    while (true) {
+      const batch = await fetcher(skip, BATCH_SIZE);
+      if (!batch.length) break;
+      await handler(batch);
+      if (batch.length < BATCH_SIZE) break;
+      skip += BATCH_SIZE;
+    }
   }
 
   private async uploadToIPFS(content: string): Promise<string> {
