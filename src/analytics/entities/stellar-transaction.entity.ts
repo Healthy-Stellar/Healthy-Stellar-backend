@@ -9,6 +9,7 @@ import {
 @Entity('stellar_transactions')
 @Index(['txHash'], { unique: true })
 @Index(['createdAt'])
+@Index(['organizationId'])
 export class StellarTransaction {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -27,6 +28,9 @@ export class StellarTransaction {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
+
+  @Column({ type: 'uuid', nullable: true })
+  organizationId: string;
 
   @CreateDateColumn()
   createdAt: Date;
