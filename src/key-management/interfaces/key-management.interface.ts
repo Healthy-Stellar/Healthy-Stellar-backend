@@ -21,3 +21,12 @@ export interface KeyManagementService {
   decryptDEK(encryptedKey: EncryptedKey): Promise<Buffer>;
   rotateMasterKey(): Promise<void>;
 }
+
+/** Strategy interface for pluggable KMS backends */
+export interface KeyManagementStrategy {
+  generateDEK(patientAddress: string): Promise<DataKeyResult>;
+  decryptDEK(encryptedKey: EncryptedKey): Promise<Buffer>;
+  rotateMasterKey(): Promise<void>;
+}
+
+export const KEY_MANAGEMENT_STRATEGY = 'KEY_MANAGEMENT_STRATEGY';

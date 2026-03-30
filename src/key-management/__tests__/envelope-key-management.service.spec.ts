@@ -34,8 +34,9 @@ function buildModule(configOverrides: Record<string, string> = {}) {
 
 async function createService(
   configOverrides: Record<string, string> = {},
+  nodeEnv = 'test',
 ): Promise<{ service: EnvelopeKeyManagementService; mockRepo: ReturnType<typeof buildModule>['mockRepo'] }> {
-  const { config, mockRepo } = buildModule(configOverrides);
+  const { config, mockRepo } = buildModule({ NODE_ENV: nodeEnv, ...configOverrides });
 
   const module: TestingModule = await Test.createTestingModule({
     providers: [
@@ -226,6 +227,32 @@ describe('EnvelopeKeyManagementService', () => {
           {
             provide: ConfigService,
             useValue: { get: jest.fn((k: string) => k === 'MASTER_KEY' ? 'deadbeef' : undefined) },
+          },
+          {
+            provide: getRepositoryToken(PatientDekEntity),
+            useValue: { find: jest.fn(), save: jest.fn() },
+          },
+        ],
+      }).compile();
+
+      const svc = module.get<EnvelopeKeyManagementService>(EnvelopeKeyManagementService);
+      expect(() => svc.onModuleInit()).toThrow(KeyManagementException);
+    });
+
+    it('onModuleInit throws in production environment', async () => {
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          EnvelopeKeyManagementService,
+          {
+            provide: ConfigService,
+            useValue: {
+              get: jest.fn((k: string, def?: string) => {
+                if (k === 'NODE_ENV') return 'production';
+                if (k === 'MASTER_KEY') return MASTER_KEY_HEX;
+                if (k === 'MASTER_KEY_VERSION') return 'v1';
+                return def;
+              }),
+            },
           },
           {
             provide: getRepositoryToken(PatientDekEntity),

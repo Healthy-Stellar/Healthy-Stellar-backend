@@ -2,8 +2,13 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
-import { EncryptedKey, DataKeyResult, KeyManagementService } from '../interfaces/key-management.interface';
+import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
+import {
+  EncryptedKey,
+  DataKeyResult,
+  KeyManagementService,
+  KeyManagementStrategy,
+} from '../interfaces/key-management.interface';
 import { PatientDekEntity } from '../entities/patient-dek.entity';
 import { KeyManagementException, KeyRotationException } from '../exceptions/key-management.exceptions';
 
@@ -13,7 +18,7 @@ const TAG_BYTES = 16;
 const KEY_BYTES = 32;
 
 @Injectable()
-export class EnvelopeKeyManagementService implements KeyManagementService, OnModuleInit {
+export class EnvelopeKeyManagementService implements KeyManagementService, KeyManagementStrategy, OnModuleInit {
   private readonly logger = new Logger(EnvelopeKeyManagementService.name);
 
   /** Active master key — loaded from env/HSM, never logged */
@@ -27,6 +32,13 @@ export class EnvelopeKeyManagementService implements KeyManagementService, OnMod
   ) {}
 
   onModuleInit(): void {
+    const env = this.config.get<string>('NODE_ENV', 'development');
+    if (env === 'production') {
+      throw new KeyManagementException(
+        'LocalKeyManagementStrategy (EnvelopeKeyManagementService) must not be used in production. ' +
+          'Set KEY_MANAGEMENT_PROVIDER=aws or KEY_MANAGEMENT_PROVIDER=gcp.',
+      );
+    }
     this.loadMasterKey();
   }
 
