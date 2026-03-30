@@ -7,6 +7,14 @@ import {
   Index,
 } from 'typeorm';
 
+export enum ControlledSubstanceSchedule {
+  SCHEDULE_I = 'CI',
+  SCHEDULE_II = 'CII',
+  SCHEDULE_III = 'CIII',
+  SCHEDULE_IV = 'CIV',
+  SCHEDULE_V = 'CV',
+}
+
 @Entity('drugs')
 export class Drug {
   @PrimaryGeneratedColumn('uuid')
@@ -63,6 +71,9 @@ export class Drug {
 
   @Column({ default: false })
   controlledSubstance: boolean;
+
+  @Column({ nullable: true, type: 'enum', enum: ControlledSubstanceSchedule })
+  controlledSubstanceSchedule: ControlledSubstanceSchedule;
 
   @Column({ nullable: true })
   scheduleClass: string;

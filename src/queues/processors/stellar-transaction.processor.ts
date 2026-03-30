@@ -1,27 +1,72 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger, Inject } from '@nestjs/common';
+import { Logger, Inject, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { context, propagation, trace } from '@opentelemetry/api';
+import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
 import { QUEUE_NAMES, JOB_TYPES } from '../queue.constants';
 import { StellarTransactionJobDto } from '../dto/stellar-transaction-job.dto';
 import { StellarContractService } from '../../blockchain/stellar-contract.service';
 
+const IDEMPOTENCY_TTL_SECONDS = 86400; // 24 hours
+
 @Processor(QUEUE_NAMES.STELLAR_TRANSACTIONS, {
   concurrency: 5,
 })
-export class StellarTransactionProcessor extends WorkerHost {
+export class StellarTransactionProcessor extends WorkerHost implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(StellarTransactionProcessor.name);
   private readonly tracer = trace.getTracer('healthy-stellar-backend');
+  private redis: Redis;
 
   constructor(
     @Inject(StellarContractService)
     private readonly stellarContractService: StellarContractService,
+    private readonly configService: ConfigService,
   ) {
     super();
   }
 
+  onModuleInit(): void {
+    this.redis = new Redis({
+      host: this.configService.get('REDIS_HOST', 'localhost'),
+      port: this.configService.get('REDIS_PORT', 6379),
+      password: this.configService.get('REDIS_PASSWORD'),
+      db: this.configService.get('REDIS_DB', 0),
+      maxRetriesPerRequest: null,
+    });
+  }
+
+  onModuleDestroy(): void {
+    this.redis?.disconnect();
+  }
+
+  private idempotencyKey(correlationId: string): string {
+    return `stellar:idempotency:${correlationId}`;
+  }
+
+  private async getCachedResult(correlationId: string): Promise<any | null> {
+    const raw = await this.redis.get(this.idempotencyKey(correlationId));
+    return raw ? JSON.parse(raw) : null;
+  }
+
+  private async cacheResult(correlationId: string, result: any): Promise<void> {
+    await this.redis.set(
+      this.idempotencyKey(correlationId),
+      JSON.stringify(result),
+      'EX',
+      IDEMPOTENCY_TTL_SECONDS,
+    );
+  }
+
   async process(job: Job<StellarTransactionJobDto>): Promise<any> {
     const { operationType, params, initiatedBy, correlationId, traceContext } = job.data;
+
+    // Idempotency check — short-circuit if this correlationId already succeeded
+    const cached = await this.getCachedResult(correlationId);
+    if (cached) {
+      this.logger.log(`[Idempotency] Returning cached result for correlation: ${correlationId}`);
+      return cached;
+    }
 
     // Extract trace context from job data
     const extractedContext = traceContext
@@ -62,6 +107,8 @@ export class StellarTransactionProcessor extends WorkerHost {
             default:
               throw new Error(`Unknown operation type: ${operationType}`);
           }
+
+          await this.cacheResult(correlationId, result);
 
           span.addEvent('queue.job.completed', {
             'queue.result': JSON.stringify(result),

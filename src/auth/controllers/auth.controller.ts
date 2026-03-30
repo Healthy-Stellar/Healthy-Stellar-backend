@@ -6,6 +6,7 @@ import {
   UseGuards,
   Get,
   Req,
+  Param,
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
@@ -221,26 +222,55 @@ export class AuthController {
     return sessions.map((session) => ({
       id: session.id,
       ipAddress: session.ipAddress,
+      userAgent: session.userAgent,
       deviceId: session.deviceId,
+      lastActive: session.updatedAt,
       createdAt: session.createdAt,
       expiresAt: session.expiresAt,
     }));
   }
 
   /**
-   * Revoke session
+   * Terminate a specific session
+   */
+  @Delete('sessions/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Terminate a specific session' })
+  @ApiResponse({ status: 200, description: 'Session terminated' })
+  @ApiResponse({ status: 404, description: 'Session not found' })
+  async deleteSession(
+    @Param('id') id: string,
+    @Req() req: Request,
+  ): Promise<{ message: string }> {
+    const user = req.user as JwtPayload;
+    const session = await this.sessionManagementService.getUserSessions(user.userId).then(
+      (sessions) => sessions.find((s) => s.id === id),
+    );
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+    await this.sessionManagementService.revokeSession(id);
+    return { message: 'Session terminated' };
+  }
+
+  /**
+   * Revoke session (legacy endpoint)
    */
   @Post('sessions/:sessionId/revoke')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Revoke a specific session' })
-  async revokeSession(@Req() req: Request, sessionId: string): Promise<{ message: string }> {
+  async revokeSession(
+    @Param('sessionId') sessionId: string,
+    @Req() req: Request,
+  ): Promise<{ message: string }> {
     const user = req.user as JwtPayload;
-    // Verify session belongs to user
-    const session = await this.sessionManagementService.getSession(sessionId);
-    if (!session || session.userId !== user.userId) {
-      throw new NotFoundException(I18nContext.current()?.t('errors.SESSION_NOT_FOUND') || 'Session not found');
+    const session = await this.sessionManagementService.getUserSessions(user.userId).then(
+      (sessions) => sessions.find((s) => s.id === sessionId),
+    );
+    if (!session) {
+      throw new NotFoundException('Session not found');
     }
-
     await this.sessionManagementService.revokeSession(sessionId);
     return { message: 'Session revoked' };
   }

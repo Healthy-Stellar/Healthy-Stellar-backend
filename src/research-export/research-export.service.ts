@@ -1,11 +1,10 @@
 import {
   Injectable,
   ForbiddenException,
-  NotFoundException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
@@ -14,26 +13,81 @@ import { MedicalRecord } from '../medical-records/entities/medical-record.entity
 import { Patient } from '../patients/entities/patient.entity';
 import { AccessGrant, GrantStatus } from '../access-control/entities/access-grant.entity';
 import { AuditService } from '../common/audit/audit.service';
-import { AuditAction } from '../common/audit/audit-log.entity';
 import {
   ResearchExportFiltersDto,
   AnonymizedRecord,
   AnonymizedExport,
 } from './dto/research-export.dto';
 
-/** HIPAA Safe Harbor — 18 identifier patterns to strip from free text */
-const PII_PATTERNS: RegExp[] = [
-  /\b\d{3}-\d{2}-\d{4}\b/g,                          // SSN
-  /\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/g,              // phone
-  /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,     // email
-  /\b\d{1,5}\s[\w\s]{1,30}(street|st|avenue|ave|road|rd|blvd|drive|dr|lane|ln|way)\b/gi, // street address
-  /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\b/gi, // full dates
-  /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,                  // MM/DD/YYYY dates
-  /\b\d{5}(-\d{4})?\b/g,                              // ZIP codes
-  /\b[A-Z]{2}\d{6,9}\b/g,                             // license / passport numbers
-  /\bMRN[:\s]?\d+\b/gi,                               // MRN references
-  /\b(Dr\.?|Mr\.?|Mrs\.?|Ms\.?|Prof\.?)\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)?\b/g, // titled names
+// ─── HIPAA Safe Harbor — regex pass (structural identifiers) ─────────────────
+// These cover identifiers that have a reliable lexical form (SSN, phone, email,
+// dates, ZIP, MRN, account/license numbers, URLs, IP addresses, fax numbers).
+// Free-text names are handled by the NER pass below.
+const STRUCTURAL_PII_PATTERNS: RegExp[] = [
+  /\b\d{3}-\d{2}-\d{4}\b/g,                                                                    // SSN
+  /(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b/g,                                       // phone / fax
+  /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,                                              // email
+  /\bhttps?:\/\/\S+/gi,                                                                         // URL
+  /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g,                                                  // IP address
+  /\b\d{1,5}\s[\w\s]{1,30}(street|st\.?|avenue|ave\.?|road|rd\.?|blvd\.?|drive|dr\.?|lane|ln\.?|way|court|ct\.?|place|pl\.?)\b/gi, // street address
+  /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\b/gi, // Month DD, YYYY
+  /\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b/g,                                                       // MM/DD/YYYY and variants
+  /\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b/g,                                                         // YYYY-MM-DD
+  /\b\d{5}(-\d{4})?\b/g,                                                                       // ZIP / ZIP+4
+  /\b[A-Z]{1,2}\d{6,9}\b/g,                                                                    // passport / license numbers
+  /\bMRN[:\s#]?\d+\b/gi,                                                                       // MRN
+  /\b(account|acct|policy|member|device|serial|certificate|license)\s*(no\.?|number|#|id)?[:\s]\s*[\w-]{4,}\b/gi, // account/policy/device IDs
 ];
+
+/**
+ * NER-based name redaction.
+ *
+ * We implement a lightweight, dependency-free NER pass using a combination of:
+ *  1. Titled-name patterns  (Dr. Jane Smith, Mr. John Doe, etc.)
+ *  2. Possessive / subject patterns common in clinical notes
+ *     ("Patient John Doe reports…", "patient Jane Smith was…")
+ *  3. Capitalised bi/tri-gram heuristic for remaining proper-noun sequences
+ *     that survived the structural pass (catches "John Doe" in isolation).
+ *
+ * This is intentionally conservative — it may over-redact some clinical terms
+ * that happen to be capitalised, which is the correct trade-off for HIPAA.
+ */
+function nerRedact(text: string): string {
+  // Pass 1 — titled names (Dr., Mr., Mrs., Ms., Prof., Nurse, etc.)
+  let out = text.replace(
+    /\b(Dr\.?|Mr\.?|Mrs\.?|Ms\.?|Miss|Prof\.?|Nurse|RN|MD|DO|PA|NP)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/g,
+    '[REDACTED]',
+  );
+
+  // Pass 2 — "Patient/patient <Name>" and "patient <Name> <Name>" patterns
+  out = out.replace(
+    /\b(patient|pt\.?|subject|participant|client)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\b/gi,
+    (_, label) => label, // keep the label word, drop the name
+  );
+
+  // Pass 3 — standalone capitalised bi/tri-grams not preceded by a sentence-start
+  // indicator (i.e., not the first word of a sentence). This catches "John Doe"
+  // embedded mid-sentence.
+  out = out.replace(
+    /(?<=[a-z,;:.]\s{1,3})[A-Z][a-z]{1,20}\s+[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]{1,20})?\b/g,
+    '[REDACTED]',
+  );
+
+  return out;
+}
+
+/**
+ * Full de-identification pipeline:
+ *  1. Structural regex pass (reliable lexical identifiers)
+ *  2. NER pass (names in free text)
+ */
+export function stripPii(text: string): string {
+  const afterStructural = STRUCTURAL_PII_PATTERNS.reduce(
+    (t, re) => t.replace(re, '[REDACTED]'),
+    text,
+  );
+  return nerRedact(afterStructural).trim();
+}
 
 @Injectable()
 export class ResearchExportService {
@@ -67,12 +121,28 @@ export class ResearchExportService {
 
     const records = await this.fetchRecords(filters);
     const patientIds = [...new Set(records.map((r) => r.patientId))];
-    const patients = await this.patientRepo.findByIds(patientIds);
+
+    // Fix: findByIds removed in TypeORM 0.3.x — use find + In() operator
+    const patients = patientIds.length
+      ? await this.patientRepo.find({ where: { id: In(patientIds) } })
+      : [];
     const patientMap = new Map(patients.map((p) => [p.id, p]));
 
     const anonymized = this.anonymizeAndSuppress(records, patientMap);
-
     const exportId = uuidv4();
+
+    // dryRun: return sample without persisting to S3 or emitting audit log
+    if (filters.dryRun) {
+      return {
+        exportId,
+        researcherId,
+        recordCount: anonymized.length,
+        exportedAt: new Date().toISOString(),
+        storageRef: null,
+        records: anonymized.slice(0, 10),
+      };
+    }
+
     const storageRef = await this.persist(exportId, researcherId, anonymized);
 
     await this.auditService.logDataExport(
@@ -139,7 +209,6 @@ export class ResearchExportService {
     records: MedicalRecord[],
     patientMap: Map<string, Patient>,
   ): AnonymizedRecord[] {
-    // Group by patientId to apply small-group suppression (< 3 patients per group)
     const byPatient = new Map<string, MedicalRecord[]>();
     for (const r of records) {
       const list = byPatient.get(r.patientId) ?? [];
@@ -147,10 +216,9 @@ export class ResearchExportService {
       byPatient.set(r.patientId, list);
     }
 
-    // Suppress entire patient groups with fewer than 3 records (k-anonymity floor)
     const suppressed: AnonymizedRecord[] = [];
     for (const [patientId, patientRecords] of byPatient) {
-      if (patientRecords.length < 3) continue; // suppress small groups
+      if (patientRecords.length < 3) continue; // k-anonymity floor
 
       const patient = patientMap.get(patientId);
       for (const record of patientRecords) {
@@ -169,19 +237,17 @@ export class ResearchExportService {
       region: patient ? this.toRegion(patient.address) : 'unknown',
       yearOfRecord: record.recordDate ? new Date(record.recordDate).getFullYear() : 0,
       recordType: record.recordType,
-      clinicalSummary: this.stripPii(record.description ?? record.title ?? ''),
+      clinicalSummary: stripPii(record.description ?? record.title ?? ''),
     };
   }
 
   // ─── HIPAA Safe Harbor Helpers ─────────────────────────────────────────────
 
-  /** Rule 1 — Replace direct identifier with one-way hash (no re-linkage possible) */
   pseudonymize(patientId: string): string {
     const salt = this.config.get<string>('ANONYMIZATION_SALT', 'default-salt');
     return createHash('sha256').update(`${salt}:${patientId}`).digest('hex').slice(0, 16);
   }
 
-  /** Rule 2 — Generalize DOB to 5-year age bracket; ages ≥ 90 collapsed to "90+" */
   toAgeBracket(dateOfBirth: string): string {
     if (!dateOfBirth) return 'unknown';
     const age = new Date().getFullYear() - new Date(dateOfBirth).getFullYear();
@@ -190,18 +256,15 @@ export class ResearchExportService {
     return `${lower}-${lower + 4}`;
   }
 
-  /** Rule 3 — Reduce address to region (state/country) only; strip city, street, ZIP */
   toRegion(address: unknown): string {
     if (!address) return 'unknown';
     const addr = typeof address === 'string' ? address : JSON.stringify(address);
-    // Extract last meaningful token as a rough state/country approximation
-    const parts = addr.replace(/\d{5}(-\d{4})?/g, '').split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
+    const parts = addr
+      .replace(/\d{5}(-\d{4})?/g, '')
+      .split(/[,\n]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
     return parts[parts.length - 1] ?? 'unknown';
-  }
-
-  /** Rule 4 — Strip all 18 HIPAA Safe Harbor PII patterns from free text */
-  stripPii(text: string): string {
-    return PII_PATTERNS.reduce((t, re) => t.replace(re, '[REDACTED]'), text).trim();
   }
 
   // ─── Storage ───────────────────────────────────────────────────────────────

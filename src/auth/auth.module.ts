@@ -39,6 +39,7 @@ import { ApiKeyGuard } from './guards/api-key.guard';
 import { ProviderDirectoryService } from './services/provider-directory.service';
 
 import { RefreshTokenStoreService } from './services/refresh-token-store.service';
+import { SessionCleanupTask } from './tasks/session-cleanup.task';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { RefreshTokenStoreService } from './services/refresh-token-store.service
     RolesGuard,
     MfaVerifiedGuard,
     ApiKeyGuard,
+    SessionCleanupTask,
   ],
   controllers: [AuthController, MfaController, ProvidersController],
   exports: [

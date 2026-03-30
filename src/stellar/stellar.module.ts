@@ -6,6 +6,9 @@ import { StellarFeeService } from './services/stellar-fee.service';
 import { StellarCacheService } from './services/stellar-cache.service';
 import { StellarService } from './services/stellar.service';
 import { StellarWithBreakerService } from './services/stellar-with-breaker.service';
+import { StellarTransactionRetryService } from './services/stellar-transaction-retry.service';
+import { StellarTransactionQueueService } from './services/stellar-transaction-queue.service';
+import { StellarRecoveryManagerService } from './services/stellar-recovery-manager.service';
 import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
 
 @Module({
@@ -18,7 +21,22 @@ import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.
     }),
   ],
   controllers: [StellarController],
-  providers: [StellarFeeService, StellarCacheService, StellarService, StellarWithBreakerService],
-  exports: [StellarFeeService, StellarService, StellarWithBreakerService],
+  providers: [
+    StellarFeeService,
+    StellarCacheService,
+    StellarService,
+    StellarWithBreakerService,
+    StellarTransactionRetryService,
+    StellarTransactionQueueService,
+    StellarRecoveryManagerService,
+  ],
+  exports: [
+    StellarFeeService,
+    StellarService,
+    StellarWithBreakerService,
+    StellarTransactionRetryService,
+    StellarTransactionQueueService,
+    StellarRecoveryManagerService,
+  ],
 })
 export class StellarModule {}

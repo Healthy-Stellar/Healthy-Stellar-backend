@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   Index,
 } from 'typeorm';
+import { ControlledSubstanceSchedule } from './drug.entity';
 
 @Entity('prescriptions')
 export class Prescription {
@@ -40,6 +41,9 @@ export class Prescription {
 
   @Column()
   refillsRemaining: number;
+
+  @Column({ nullable: true, type: 'enum', enum: ControlledSubstanceSchedule })
+  controlledSubstanceSchedule: ControlledSubstanceSchedule;
 
   @Column('text')
   instructions: string;

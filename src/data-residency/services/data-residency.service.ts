@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataResidencyRegion } from '../../enums/data-residency.enum';
+import { DATA_RESIDENCY_CONFIG_KEY } from '../config/data-residency.config';
 
 /**
  * Regional infrastructure configuration
@@ -22,87 +23,66 @@ export interface RegionalConfig {
  * Manages regional configuration for data residency
  */
 @Injectable()
-export class DataResidencyService {
+export class DataResidencyService implements OnModuleInit {
   private readonly logger = new Logger(DataResidencyService.name);
-
-  private readonly regionConfigs: Record<DataResidencyRegion, RegionalConfig> = {
-    [DataResidencyRegion.EU]: {
-      horizonUrl:
-        process.env.STELLAR_HORIZON_EU_URL ||
-        'https://horizon.eu.stellar.org',
-      ipfsNodes: (
-        process.env.IPFS_NODES_EU || 'https://ipfs-eu-1.infura.io:5001'
-      ).split(','),
-      databaseConfig: {
-        host:
-          process.env.DB_HOST_EU ||
-          'postgres-eu.internal.example.com',
-        port: parseInt(process.env.DB_PORT_EU || '5432', 10),
-        database: process.env.DB_NAME_EU || 'healthy_stellar_eu',
-      },
-      awsRegion: 'eu-west-1',
-      dataCenter: 'Frankfurt',
-      description: 'EU Data Center (GDPR Compliant)',
-    },
-    [DataResidencyRegion.US]: {
-      horizonUrl:
-        process.env.STELLAR_HORIZON_US_URL ||
-        'https://horizon.us.stellar.org',
-      ipfsNodes: (
-        process.env.IPFS_NODES_US || 'https://ipfs-us-1.infura.io:5001'
-      ).split(','),
-      databaseConfig: {
-        host:
-          process.env.DB_HOST_US ||
-          'postgres-us.internal.example.com',
-        port: parseInt(process.env.DB_PORT_US || '5432', 10),
-        database: process.env.DB_NAME_US || 'healthy_stellar_us',
-      },
-      awsRegion: 'us-east-1',
-      dataCenter: 'N. Virginia',
-      description: 'US Data Center (HIPAA Compliant)',
-    },
-    [DataResidencyRegion.APAC]: {
-      horizonUrl:
-        process.env.STELLAR_HORIZON_APAC_URL ||
-        'https://horizon.apac.stellar.org',
-      ipfsNodes: (
-        process.env.IPFS_NODES_APAC ||
-        'https://ipfs-apac-1.infura.io:5001'
-      ).split(','),
-      databaseConfig: {
-        host:
-          process.env.DB_HOST_APAC ||
-          'postgres-apac.internal.example.com',
-        port: parseInt(process.env.DB_PORT_APAC || '5432', 10),
-        database: process.env.DB_NAME_APAC || 'healthy_stellar_apac',
-      },
-      awsRegion: 'ap-southeast-1',
-      dataCenter: 'Singapore',
-      description: 'APAC Data Center (PDPA Compliant)',
-    },
-    [DataResidencyRegion.AFRICA]: {
-      horizonUrl:
-        process.env.STELLAR_HORIZON_AFRICA_URL ||
-        'https://horizon.africa.stellar.org',
-      ipfsNodes: (
-        process.env.IPFS_NODES_AFRICA ||
-        'https://ipfs-africa-1.infura.io:5001'
-      ).split(','),
-      databaseConfig: {
-        host:
-          process.env.DB_HOST_AFRICA ||
-          'postgres-africa.internal.example.com',
-        port: parseInt(process.env.DB_PORT_AFRICA || '5432', 10),
-        database: process.env.DB_NAME_AFRICA || 'healthy_stellar_africa',
-      },
-      awsRegion: 'af-south-1',
-      dataCenter: 'Cape Town',
-      description: 'Africa Data Center (POPIA Compliant)',
-    },
-  };
+  private regionConfigs: Record<DataResidencyRegion, RegionalConfig>;
 
   constructor(private configService: ConfigService) {}
+
+  onModuleInit(): void {
+    const cfg = (key: string) => this.configService.get(`${DATA_RESIDENCY_CONFIG_KEY}.${key}`);
+
+    this.regionConfigs = {
+      [DataResidencyRegion.EU]: {
+        horizonUrl: cfg('eu.horizonUrl'),
+        ipfsNodes: cfg('eu.ipfsNodes'),
+        databaseConfig: {
+          host: cfg('eu.dbHost'),
+          port: cfg('eu.dbPort'),
+          database: cfg('eu.dbName'),
+        },
+        awsRegion: 'eu-west-1',
+        dataCenter: 'Frankfurt',
+        description: 'EU Data Center (GDPR Compliant)',
+      },
+      [DataResidencyRegion.US]: {
+        horizonUrl: cfg('us.horizonUrl'),
+        ipfsNodes: cfg('us.ipfsNodes'),
+        databaseConfig: {
+          host: cfg('us.dbHost'),
+          port: cfg('us.dbPort'),
+          database: cfg('us.dbName'),
+        },
+        awsRegion: 'us-east-1',
+        dataCenter: 'N. Virginia',
+        description: 'US Data Center (HIPAA Compliant)',
+      },
+      [DataResidencyRegion.APAC]: {
+        horizonUrl: cfg('apac.horizonUrl'),
+        ipfsNodes: cfg('apac.ipfsNodes'),
+        databaseConfig: {
+          host: cfg('apac.dbHost'),
+          port: cfg('apac.dbPort'),
+          database: cfg('apac.dbName'),
+        },
+        awsRegion: 'ap-southeast-1',
+        dataCenter: 'Singapore',
+        description: 'APAC Data Center (PDPA Compliant)',
+      },
+      [DataResidencyRegion.AFRICA]: {
+        horizonUrl: cfg('africa.horizonUrl'),
+        ipfsNodes: cfg('africa.ipfsNodes'),
+        databaseConfig: {
+          host: cfg('africa.dbHost'),
+          port: cfg('africa.dbPort'),
+          database: cfg('africa.dbName'),
+        },
+        awsRegion: 'af-south-1',
+        dataCenter: 'Cape Town',
+        description: 'Africa Data Center (POPIA Compliant)',
+      },
+    };
+  }
 
   /**
    * Get regional configuration for a specific region

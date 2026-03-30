@@ -1,4 +1,4 @@
-import { IsOptional, IsEnum, IsString } from 'class-validator';
+import { IsOptional, IsEnum, IsString, IsBoolean } from 'class-validator';
 import { RecordType } from '../../medical-records/entities/medical-record.entity';
 
 export class ResearchExportFiltersDto {
@@ -17,6 +17,11 @@ export class ResearchExportFiltersDto {
   @IsString()
   @IsOptional()
   region?: string;
+
+  /** When true, returns a sample of de-identified records without writing to S3. */
+  @IsBoolean()
+  @IsOptional()
+  dryRun?: boolean;
 }
 
 export interface AnonymizedRecord {
@@ -34,6 +39,6 @@ export interface AnonymizedExport {
   researcherId: string;
   recordCount: number;
   exportedAt: string;
-  storageRef: string;     // S3 key or IPFS CID
+  storageRef: string | null; // null when dryRun=true
   records: AnonymizedRecord[];
 }

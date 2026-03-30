@@ -1,12 +1,13 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In, IsNull } from 'typeorm';
 import {
   CriticalValueAlert,
   AlertStatus,
   NotificationMethod,
 } from '../entities/critical-value-alert.entity';
 import { LabResultValue } from '../entities/lab-result-value.entity';
+import { NotificationsService } from '../../notifications/services/notifications.service';
 
 @Injectable()
 export class CriticalAlertsService {
@@ -17,6 +18,7 @@ export class CriticalAlertsService {
     private alertRepository: Repository<CriticalValueAlert>,
     @InjectRepository(LabResultValue)
     private resultValueRepository: Repository<LabResultValue>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(data: {
@@ -201,4 +203,62 @@ export class CriticalAlertsService {
 
     return saved;
   }
+
+  /**
+   * Notify the ordering provider via NotificationsService and mark alert as NOTIFIED.
+   */
+  async notifyProvider(
+    alertId: string,
+    testName: string,
+    value: number,
+    unit: string,
+    patientId: string,
+  ): Promise<void> {
+    const alert = await this.findOne(alertId);
+
+    this.notificationsService.emitRecordAmended(alert.notifiedTo, alertId, {
+      type: 'critical_value',
+      testName,
+      value,
+      unit,
+      patientId,
+      alertId,
+      notifiedAt: new Date().toISOString(),
+    });
+
+    await this.notify(alertId, NotificationMethod.SYSTEM, 'system', 'system');
+    this.logger.log(`Provider ${alert.notifiedTo} notified for critical alert ${alertId}`);
+  }
+
+  /**
+   * Returns alerts that are PENDING or NOTIFIED and have not been acknowledged,
+   * used by the supervisor endpoint.
+   */
+  async findUnacknowledged(): Promise<CriticalValueAlert[]> {
+    return this.alertRepository.find({
+      where: { status: In([AlertStatus.PENDING, AlertStatus.NOTIFIED, AlertStatus.ESCALATED]) },
+      relations: [
+        'resultValue',
+        'resultValue.parameter',
+        'resultValue.labResult',
+        'resultValue.labResult.orderItem',
+        'resultValue.labResult.orderItem.labOrder',
+      ],
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  /**
+   * Returns NOTIFIED alerts older than the given threshold (ms) that have not been acknowledged.
+   * Used by the escalation scheduler.
+   */
+  async findPendingEscalation(olderThanMs: number): Promise<CriticalValueAlert[]> {
+    const cutoff = new Date(Date.now() - olderThanMs);
+    return this.alertRepository
+      .createQueryBuilder('alert')
+      .where('alert.status = :status', { status: AlertStatus.NOTIFIED })
+      .andWhere('alert.notificationDate < :cutoff', { cutoff })
+      .getMany();
+  }
 }
+

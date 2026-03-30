@@ -2,68 +2,59 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import { EncryptedKey, DataKeyResult, KeyManagementService } from '../interfaces/key-management.interface';
 import { PatientDekEntity } from '../entities/patient-dek.entity';
+import { KeyRotationLog } from '../entities/key-rotation-log.entity';
 import { KeyManagementException, KeyRotationException } from '../exceptions/key-management.exceptions';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_BYTES = 12;
-const TAG_BYTES = 16;
 const KEY_BYTES = 32;
 
 @Injectable()
 export class EnvelopeKeyManagementService implements KeyManagementService, OnModuleInit {
   private readonly logger = new Logger(EnvelopeKeyManagementService.name);
 
-  /** Active master key — loaded from env/HSM, never logged */
-  private masterKey: Buffer;
-  private masterKeyVersion: string;
+  /** All loaded master keys keyed by version — supports dual-key during rotation */
+  private readonly masterKeys = new Map<string, Buffer>();
+  private activeMasterKeyVersion: string;
 
   constructor(
     private readonly config: ConfigService,
     @InjectRepository(PatientDekEntity)
     private readonly dekRepo: Repository<PatientDekEntity>,
+    @InjectRepository(KeyRotationLog)
+    private readonly rotationLogRepo: Repository<KeyRotationLog>,
   ) {}
 
   onModuleInit(): void {
-    this.loadMasterKey();
+    this.loadMasterKeys();
   }
 
   // ─── Public API ────────────────────────────────────────────────────────────
 
-  /**
-   * Generates a fresh 256-bit DEK for a patient, encrypts it with the master
-   * key, persists the encrypted form, and returns both.
-   * The caller MUST zero the plainKey after use and MUST NOT persist it.
-   */
   async generateDEK(patientAddress: string): Promise<DataKeyResult> {
     const plainKey = randomBytes(KEY_BYTES);
-    const encryptedKey = this.encryptWithMasterKey(plainKey);
-
+    const encryptedKey = this.encryptWithActiveKey(plainKey);
     await this.persistDek(patientAddress, encryptedKey);
-
     return { encryptedKey, plainKey };
   }
 
-  /**
-   * Decrypts an encrypted DEK using the master key version recorded on the
-   * EncryptedKey. Throws if the master key version is unknown or auth fails.
-   */
   async decryptDEK(encryptedKey: EncryptedKey): Promise<Buffer> {
-    return this.decryptWithMasterKey(encryptedKey);
+    return this.decryptWithKey(encryptedKey);
   }
 
   /**
-   * Re-encrypts every stored DEK with the new master key.
-   * Atomically updates each row; rolls back on any failure.
+   * Three-phase key rotation:
+   *   Phase 1 — Operator sets MASTER_KEY_NEW + MASTER_KEY_NEW_VERSION in env.
+   *   Phase 2 — Call rotateMasterKey(): re-encrypts all DEKs with the new key.
+   *   Phase 3 — Operator removes MASTER_KEY_PREV / MASTER_KEY_PREV_VERSION from env.
    *
-   * Key rotation procedure:
-   *   1. Set MASTER_KEY_NEW + MASTER_KEY_NEW_VERSION in env/HSM.
-   *   2. Call rotateMasterKey() (or trigger via admin endpoint).
-   *   3. After success, promote NEW → current and remove OLD.
+   * During phase 2 the service holds both keys in memory so any in-flight
+   * decryption against the old version continues to work.
    */
-  async rotateMasterKey(): Promise<void> {
+  async rotateMasterKey(operatorId: string): Promise<{ reencryptedCount: number }> {
     const newKeyHex = this.config.get<string>('MASTER_KEY_NEW');
     const newVersion = this.config.get<string>('MASTER_KEY_NEW_VERSION');
 
@@ -76,11 +67,26 @@ export class EnvelopeKeyManagementService implements KeyManagementService, OnMod
       throw new KeyRotationException('all', 'MASTER_KEY_NEW must be 32 bytes (64 hex chars)');
     }
 
-    const deks = await this.dekRepo.find();
-    this.logger.log(`Starting master key rotation for ${deks.length} DEKs`);
+    const oldVersion = this.activeMasterKeyVersion;
 
-    for (const dek of deks) {
-      try {
+    // Register new key in memory immediately so concurrent decryptions keep working
+    this.masterKeys.set(newVersion, newMasterKey);
+
+    const logEntry = this.rotationLogRepo.create({
+      oldKeyVersion: oldVersion,
+      newKeyVersion: newVersion,
+      operatorId,
+      phase: 'started',
+      reencryptedCount: 0,
+    });
+    await this.rotationLogRepo.save(logEntry);
+
+    const deks = await this.dekRepo.find();
+    this.logger.log(`Starting master key rotation for ${deks.length} DEKs (${oldVersion} → ${newVersion})`);
+
+    let reencryptedCount = 0;
+    try {
+      for (const dek of deks) {
         const encryptedKey: EncryptedKey = {
           ciphertext: Buffer.from(dek.ciphertext, 'hex'),
           iv: Buffer.from(dek.iv, 'hex'),
@@ -90,41 +96,71 @@ export class EnvelopeKeyManagementService implements KeyManagementService, OnMod
 
         const plainDek = await this.decryptDEK(encryptedKey);
         const reEncrypted = this.encryptWithKey(plainDek, newMasterKey, newVersion);
-        plainDek.fill(0); // zero plaintext immediately
+        plainDek.fill(0);
 
         await this.persistDek(dek.patientAddress, reEncrypted);
-      } catch (err) {
-        throw new KeyRotationException(dek.patientAddress, err.message);
+        reencryptedCount++;
       }
+    } catch (err) {
+      await this.rotationLogRepo.update(logEntry.id, {
+        phase: 'failed',
+        errorMessage: err.message,
+        completedAt: new Date(),
+        reencryptedCount,
+      });
+      throw new KeyRotationException('batch', err.message);
     }
 
-    // Promote new key as active
-    this.masterKey = newMasterKey;
-    this.masterKeyVersion = newVersion;
-    this.logger.log(`Master key rotation complete — active version: ${newVersion}`);
+    // Promote new key as active; keep old key available for any in-flight requests
+    this.activeMasterKeyVersion = newVersion;
+
+    await this.rotationLogRepo.update(logEntry.id, {
+      phase: 'completed',
+      reencryptedCount,
+      completedAt: new Date(),
+    });
+
+    this.logger.log(`Master key rotation complete — active version: ${newVersion}, re-encrypted: ${reencryptedCount}`);
+    return { reencryptedCount };
+  }
+
+  async getRotationStatus(): Promise<KeyRotationLog[]> {
+    return this.rotationLogRepo.find({ order: { startedAt: 'DESC' }, take: 20 });
   }
 
   // ─── Private helpers ───────────────────────────────────────────────────────
 
-  private loadMasterKey(): void {
+  /**
+   * Loads the active master key plus any previous key still needed during a
+   * rotation window (MASTER_KEY_PREV / MASTER_KEY_PREV_VERSION).
+   */
+  private loadMasterKeys(): void {
     const hex = this.config.get<string>('MASTER_KEY');
     const version = this.config.get<string>('MASTER_KEY_VERSION', 'v1');
 
-    if (!hex) {
-      throw new KeyManagementException('MASTER_KEY environment variable is required');
-    }
+    if (!hex) throw new KeyManagementException('MASTER_KEY environment variable is required');
 
     const key = Buffer.from(hex, 'hex');
-    if (key.length !== KEY_BYTES) {
-      throw new KeyManagementException('MASTER_KEY must be 32 bytes (64 hex chars)');
-    }
+    if (key.length !== KEY_BYTES) throw new KeyManagementException('MASTER_KEY must be 32 bytes (64 hex chars)');
 
-    this.masterKey = key;
-    this.masterKeyVersion = version;
+    this.masterKeys.set(version, key);
+    this.activeMasterKeyVersion = version;
+
+    // Load previous key if present (dual-key support during rotation window)
+    const prevHex = this.config.get<string>('MASTER_KEY_PREV');
+    const prevVersion = this.config.get<string>('MASTER_KEY_PREV_VERSION');
+    if (prevHex && prevVersion) {
+      const prevKey = Buffer.from(prevHex, 'hex');
+      if (prevKey.length === KEY_BYTES) {
+        this.masterKeys.set(prevVersion, prevKey);
+        this.logger.log(`Loaded previous master key version ${prevVersion} for rotation window`);
+      }
+    }
   }
 
-  private encryptWithMasterKey(plaintext: Buffer): EncryptedKey {
-    return this.encryptWithKey(plaintext, this.masterKey, this.masterKeyVersion);
+  private encryptWithActiveKey(plaintext: Buffer): EncryptedKey {
+    const key = this.masterKeys.get(this.activeMasterKeyVersion)!;
+    return this.encryptWithKey(plaintext, key, this.activeMasterKeyVersion);
   }
 
   private encryptWithKey(plaintext: Buffer, key: Buffer, version: string): EncryptedKey {
@@ -135,8 +171,11 @@ export class EnvelopeKeyManagementService implements KeyManagementService, OnMod
     return { ciphertext, iv, authTag, masterKeyVersion: version };
   }
 
-  private decryptWithMasterKey(encryptedKey: EncryptedKey): Buffer {
-    const key = this.resolveKeyForVersion(encryptedKey.masterKeyVersion);
+  private decryptWithKey(encryptedKey: EncryptedKey): Buffer {
+    const key = this.masterKeys.get(encryptedKey.masterKeyVersion);
+    if (!key) {
+      throw new KeyManagementException(`Unknown master key version: ${encryptedKey.masterKeyVersion}`);
+    }
     try {
       const decipher = createDecipheriv(ALGORITHM, key, encryptedKey.iv);
       decipher.setAuthTag(encryptedKey.authTag);
@@ -144,19 +183,6 @@ export class EnvelopeKeyManagementService implements KeyManagementService, OnMod
     } catch {
       throw new KeyManagementException('DEK decryption failed — possible tampering or wrong master key');
     }
-  }
-
-  private resolveKeyForVersion(version: string): Buffer {
-    if (version === this.masterKeyVersion) return this.masterKey;
-
-    // Support one previous version during rotation window
-    const prevHex = this.config.get<string>('MASTER_KEY_PREV');
-    const prevVersion = this.config.get<string>('MASTER_KEY_PREV_VERSION');
-    if (prevHex && version === prevVersion) {
-      return Buffer.from(prevHex, 'hex');
-    }
-
-    throw new KeyManagementException(`Unknown master key version: ${version}`);
   }
 
   private async persistDek(patientAddress: string, encryptedKey: EncryptedKey): Promise<void> {
