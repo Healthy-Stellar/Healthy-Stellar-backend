@@ -51,7 +51,7 @@ export class TenantInterceptor implements NestInterceptor {
 
     // Set search_path and RLS session variable for this connection
     await this.dataSource.query(`SET search_path TO "${schemaName}", public`);
-    await this.dataSource.query(`SET app.current_tenant_id = '${tenant.id}'`);
+    await this.dataSource.query(`SELECT set_config('app.current_tenant_id', $1, false)`, [tenant.id]);
 
     // Store tenant context using AsyncLocalStorage
     return new Observable((observer) => {

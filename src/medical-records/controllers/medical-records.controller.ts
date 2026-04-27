@@ -124,28 +124,28 @@ export class MedicalRecordsController {
     return this.medicalRecordsService.archive(id, userId, user?.email, tenantId);
   }
 
-    @Param('id') id: string,
-    @CurrentUser() user: any,
-    @CurrentTenant('tenantId') tenantId?: string,
-  ) {
-    const userId = user?.id || '00000000-0000-0000-0000-000000000000';
-    return this.medicalRecordsService.restore(id, userId, user?.email, tenantId
+  @Put(':id/restore')
+  @ApiOperation({ summary: 'Restore an archived medical record' })
   @ApiResponse({ status: 200, description: 'Medical record restored successfully' })
-  async restore(@Param('id') id: string, @CurrentUser() user: any) {
-    const userI
+  async restore(
     @Param('id') id: string,
     @CurrentUser() user: any,
-    @CurrentTenant('tenantId') tenantId?: string,
+    @CurrentTenant('tenantId') tenantId: string,
   ) {
     const userId = user?.id || '00000000-0000-0000-0000-000000000000';
-    await this.medicalRecordsService.delete(id, userId, user?.email, tenantId
+    return this.medicalRecordsService.restore(id, userId, user?.email, tenantId);
+  }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a medical record (soft delete)' })
   @ApiResponse({ status: 204, description: 'Medical record deleted successfully' })
-  async delete(@Param('id') id: string, @CurrentUser() user: any) {
+  async delete(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @CurrentTenant('tenantId') tenantId: string,
+  ) {
     const userId = user?.id || '00000000-0000-0000-0000-000000000000';
-    await this.medicalRecordsService.delete(id, userId, user?.email);
+    await this.medicalRecordsService.delete(id, userId, user?.email, tenantId);
   }
 }

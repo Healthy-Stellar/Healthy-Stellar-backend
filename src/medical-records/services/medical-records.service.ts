@@ -103,17 +103,24 @@ export class MedicalRecordsService {
       this.logger.log(`Medical record created: ${savedRecord.id} by user ${userId}`);
       return savedRecord;
     });
+  }
+
+  async findOne(id: string, patientId?: string, organizationId?: string): Promise<MedicalRecord> {
+    if (!organizationId) {
+      throw new BadRequestException('organizationId is required');
+    }
+
+    const queryBuilder = this.medicalRecordRepository
+      .createQueryBuilder('record')
+      .leftJoinAndSelect('record.versions', 'version')
       .leftJoinAndSelect('record.attachments', 'attachment')
       .leftJoinAndSelect('record.consents', 'consent')
       .where('record.id = :id', { id })
+      .andWhere('record.organizationId = :organizationId', { organizationId })
       .orderBy('version.createdAt', 'DESC');
 
     if (patientId) {
       queryBuilder.andWhere('record.patientId = :patientId', { patientId });
-    }
-
-    if (organizationId) {
-      queryBuilder.andWhere('record.organizationId = :organizationId', { organizationId });
     }
 
     const record = await queryBuilder.getOne();
@@ -133,6 +140,7 @@ export class MedicalRecordsService {
     changeReason?: string,
     organizationId?: string,
   ): Promise<MedicalRecord> {
+    if (!organizationId) throw new BadRequestException('organizationId is required');
     const record = await this.findOne(id, undefined, organizationId);
 
     if (record.status === MedicalRecordStatus.DELETED) {
@@ -204,6 +212,8 @@ export class MedicalRecordsService {
     page: number;
     limit: number;
   }> {
+    if (!organizationId) throw new BadRequestException('organizationId is required');
+
     const {
       patientId,
       recordType,
@@ -219,9 +229,7 @@ export class MedicalRecordsService {
 
     const queryBuilder = this.medicalRecordRepository.createQueryBuilder('record');
 
-    if (organizationId) {
-      queryBuilder.andWhere('record.organizationId = :organizationId', { organizationId });
-    }
+    queryBuilder.andWhere('record.organizationId = :organizationId', { organizationId });
 
     if (patientId) {
       queryBuilder.andWhere('record.patientId = :patientId', { patientId });
@@ -270,29 +278,24 @@ export class MedicalRecordsService {
   }
 
   async getTimeline(patientId: string, limit: number = 50, organizationId?: string): Promise<MedicalHistory[]> {
-    const where: any = { patientId };
-    
-    if (organizationId) {
-      where.organizationId = organizationId;
-    }
+    if (!organizationId) throw new BadRequestException('organizationId is required');
 
     return this.historyRepository.find({
-      where,
+      where: { patientId, organizationId } as any,
       order: { eventDate: 'DESC' },
       take: limit,
     });
   }
 
   async getVersions(recordId: string, organizationId?: string): Promise<MedicalRecordVersion[]> {
-    // Verify that the record belongs to the tenant
-    if (organizationId) {
-      const record = await this.medicalRecordRepository.findOne({
-        where: { id: recordId, organizationId },
-      });
+    if (!organizationId) throw new BadRequestException('organizationId is required');
 
-      if (!record) {
-        throw new NotFoundException(`Medical record with ID ${recordId} not found or does not belong to your organization`);
-      }
+    const record = await this.medicalRecordRepository.findOne({
+      where: { id: recordId, organizationId },
+    });
+
+    if (!record) {
+      throw new NotFoundException(`Medical record with ID ${recordId} not found or does not belong to your organization`);
     }
 
     return this.versionRepository.find({
