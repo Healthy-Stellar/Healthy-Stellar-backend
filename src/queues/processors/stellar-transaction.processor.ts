@@ -7,6 +7,7 @@ import Redis from 'ioredis';
 import { QUEUE_NAMES, JOB_TYPES } from '../queue.constants';
 import { StellarTransactionJobDto } from '../dto/stellar-transaction-job.dto';
 import { StellarWithBreakerService } from '../../stellar/services/stellar-with-breaker.service';
+import { verifyQueuePayload } from '../queue-payload.util';
 
 const IDEMPOTENCY_TTL_SECONDS = 86400; // 24 hours
 
@@ -59,6 +60,9 @@ export class StellarTransactionProcessor extends WorkerHost implements OnModuleI
 
   async process(job: Job<StellarTransactionJobDto>): Promise<any> {
     const { operationType, params, initiatedBy, correlationId, traceContext } = job.data;
+
+    // Integrity check — reject tampered payloads before any processing
+    verifyQueuePayload(job.data, this.configService.getOrThrow<string>('QUEUE_HMAC_SECRET'));
 
     // Idempotency check — short-circuit if this correlationId already succeeded
     const cached = await this.getCachedResult(correlationId);

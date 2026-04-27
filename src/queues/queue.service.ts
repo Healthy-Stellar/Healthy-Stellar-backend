@@ -4,9 +4,11 @@ import { Queue, Job } from 'bullmq';
 import { Observable } from 'rxjs';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { context, propagation, trace } from '@opentelemetry/api';
+import { ConfigService } from '@nestjs/config';
 import { QUEUE_NAMES, JOB_STATUS } from './queue.constants';
 import { StellarTransactionJobDto } from './dto/stellar-transaction-job.dto';
 import { TracingService } from '../common/services/tracing.service';
+import { signQueuePayload } from './queue-payload.util';
 
 interface JobDispatchResult {
   jobId: string;
@@ -32,7 +34,13 @@ export class QueueService {
     private reportsQueue: Queue,
     private readonly tracingService: TracingService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly configService: ConfigService,
   ) {}
+
+  private signedPayload(data: Record<string, any>): Record<string, any> {
+    const secret = this.configService.getOrThrow<string>('QUEUE_HMAC_SECRET');
+    return { ...data, _sig: signQueuePayload(data, secret) };
+  }
 
   /**
    * Dispatch Soroban contract write operation to background queue
@@ -49,11 +57,11 @@ export class QueueService {
       const traceContext: Record<string, string> = {};
       propagation.inject(context.active(), traceContext);
 
-      const enrichedJobData = {
+      const enrichedJobData = this.signedPayload({
         ...jobData,
         traceContext,
         traceId: this.tracingService.getCurrentTraceId(),
-      };
+      });
 
       const job = await this.contractWritesQueue.add(
         jobData.operationType,
@@ -106,11 +114,11 @@ export class QueueService {
         propagation.inject(context.active(), traceContext);
 
         // Add trace context to job data
-        const enrichedJobData = {
+        const enrichedJobData = this.signedPayload({
           ...jobData,
           traceContext,
           traceId: this.tracingService.getCurrentTraceId(),
-        };
+        });
 
         const job = await this.stellarQueue.add(
           jobData.operationType,
@@ -156,11 +164,11 @@ export class QueueService {
       const traceContext: Record<string, string> = {};
       propagation.inject(context.active(), traceContext);
 
-      const enrichedJobData = {
+      const enrichedJobData = this.signedPayload({
         ...jobData,
         traceContext,
         traceId: this.tracingService.getCurrentTraceId(),
-      };
+      });
 
       const job = await this.ipfsQueue.add('upload', enrichedJobData, {
         jobId: jobData.correlationId,
@@ -198,11 +206,11 @@ export class QueueService {
         const traceContext: Record<string, string> = {};
         propagation.inject(context.active(), traceContext);
 
-        const enrichedJobData = {
+        const enrichedJobData = this.signedPayload({
           ...jobData,
           traceContext,
           traceId: this.tracingService.getCurrentTraceId(),
-        };
+        });
 
         const job = await this.eventIndexingQueue.add(
           'indexEvent',

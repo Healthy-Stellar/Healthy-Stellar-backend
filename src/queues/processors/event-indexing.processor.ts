@@ -2,7 +2,9 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { context, propagation, trace } from '@opentelemetry/api';
+import { ConfigService } from '@nestjs/config';
 import { QUEUE_NAMES } from '../queue.constants';
+import { verifyQueuePayload } from '../queue-payload.util';
 
 /**
  * EventIndexingProcessor
@@ -17,12 +19,19 @@ export class EventIndexingProcessor extends WorkerHost {
   private readonly logger = new Logger(EventIndexingProcessor.name);
   private readonly tracer = trace.getTracer('healthy-stellar-backend');
 
+  constructor(private readonly configService: ConfigService) {
+    super();
+  }
+
   /**
    * Process event indexing job
    */
   async process(job: Job<any>): Promise<any> {
     const { eventType, data, contractAddress, correlationId, traceContext } =
       job.data;
+
+    // Integrity check — reject tampered payloads before any processing
+    verifyQueuePayload(job.data, this.configService.getOrThrow<string>('QUEUE_HMAC_SECRET'));
 
     // Extract trace context from job data
     const extractedContext = traceContext

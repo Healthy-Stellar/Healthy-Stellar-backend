@@ -2,8 +2,10 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, Inject } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { context, propagation, trace } from '@opentelemetry/api';
+import { ConfigService } from '@nestjs/config';
 import { QUEUE_NAMES, JOB_TYPES } from '../queue.constants';
 import { StellarContractService } from '../../blockchain/stellar-contract.service';
+import { verifyQueuePayload } from '../queue-payload.util';
 
 /**
  * ContractWritesProcessor
@@ -21,6 +23,7 @@ export class ContractWritesProcessor extends WorkerHost {
   constructor(
     @Inject(StellarContractService)
     private readonly stellarContractService: StellarContractService,
+    private readonly configService: ConfigService,
   ) {
     super();
   }
@@ -31,6 +34,9 @@ export class ContractWritesProcessor extends WorkerHost {
   async process(job: Job<any>): Promise<any> {
     const { operationType, params, initiatedBy, correlationId, traceContext } =
       job.data;
+
+    // Integrity check — reject tampered payloads before any processing
+    verifyQueuePayload(job.data, this.configService.getOrThrow<string>('QUEUE_HMAC_SECRET'));
 
     // Extract trace context from job data
     const extractedContext = traceContext
