@@ -1,4 +1,5 @@
 // Simple test to verify MAR system functionality
+import { Logger } from '@nestjs/common';
 import {
   MedicationAdministrationRecord,
   AdministrationStatus,
@@ -22,9 +23,11 @@ import {
   ReconciliationStatus,
 } from './entities/medication-reconciliation.entity';
 
+const logger = new Logger('MarTest');
+
 // Test entity creation
 function testEntityCreation() {
-  console.log('Testing MAR entity creation...');
+  logger.log('Testing MAR entity creation...');
 
   // Test MAR record
   const mar = new MedicationAdministrationRecord();
@@ -36,7 +39,7 @@ function testEntityCreation() {
   mar.scheduledTime = new Date();
   mar.administrationDate = new Date().toISOString().split('T')[0];
 
-  console.log('MAR record created:', {
+  logger.log('MAR record created:', {
     patientId: mar.patientId,
     medicationName: mar.medicationName,
     status: mar.status,
@@ -52,7 +55,7 @@ function testEntityCreation() {
   missedDose.scheduledTime = new Date();
   missedDose.missedDate = new Date().toISOString().split('T')[0];
 
-  console.log('Missed dose created:', {
+  logger.log('Missed dose created:', {
     patientId: missedDose.patientId,
     reason: missedDose.reason,
     followUpStatus: missedDose.followUpStatus,
@@ -71,7 +74,7 @@ function testEntityCreation() {
   adr.reporterName = 'Test Reporter';
   adr.reporterRole = 'nurse';
 
-  console.log('ADR created:', {
+  logger.log('ADR created:', {
     patientId: adr.patientId,
     severity: adr.severity,
     reactionType: adr.reactionType,
@@ -87,7 +90,7 @@ function testEntityCreation() {
   verification.nurseId = 'test-nurse-id';
   verification.nurseName = 'Test Nurse';
 
-  console.log('Barcode verification created:', {
+  logger.log('Barcode verification created:', {
     verificationType: verification.verificationType,
     status: verification.status,
     scannedBarcode: verification.scannedBarcode,
@@ -102,33 +105,33 @@ function testEntityCreation() {
   reconciliation.initiatedByName = 'Test User';
   reconciliation.initiatedByRole = 'nurse';
 
-  console.log('Reconciliation created:', {
+  logger.log('Reconciliation created:', {
     patientId: reconciliation.patientId,
     reconciliationType: reconciliation.reconciliationType,
     status: reconciliation.status,
   });
 
-  console.log('All entities created successfully!');
+  logger.log('All entities created successfully!');
   return true;
 }
 
 // Test enum values
 function testEnums() {
-  console.log('Testing enum values...');
+  logger.log('Testing enum values...');
 
-  console.log('Administration Status:', Object.values(AdministrationStatus));
-  console.log('Administration Route:', Object.values(AdministrationRoute));
-  console.log('Missed Dose Reason:', Object.values(MissedDoseReason));
-  console.log('Follow Up Status:', Object.values(FollowUpStatus));
-  console.log('Reaction Severity:', Object.values(ReactionSeverity));
-  console.log('Reaction Type:', Object.values(ReactionType));
-  console.log('Reaction Status:', Object.values(ReactionStatus));
-  console.log('Verification Type:', Object.values(VerificationType));
-  console.log('Verification Status:', Object.values(VerificationStatus));
-  console.log('Reconciliation Type:', Object.values(ReconciliationType));
-  console.log('Reconciliation Status:', Object.values(ReconciliationStatus));
+  logger.log('Administration Status:', Object.values(AdministrationStatus));
+  logger.log('Administration Route:', Object.values(AdministrationRoute));
+  logger.log('Missed Dose Reason:', Object.values(MissedDoseReason));
+  logger.log('Follow Up Status:', Object.values(FollowUpStatus));
+  logger.log('Reaction Severity:', Object.values(ReactionSeverity));
+  logger.log('Reaction Type:', Object.values(ReactionType));
+  logger.log('Reaction Status:', Object.values(ReactionStatus));
+  logger.log('Verification Type:', Object.values(VerificationType));
+  logger.log('Verification Status:', Object.values(VerificationStatus));
+  logger.log('Reconciliation Type:', Object.values(ReconciliationType));
+  logger.log('Reconciliation Status:', Object.values(ReconciliationStatus));
 
-  console.log('All enums tested successfully!');
+  logger.log('All enums tested successfully!');
   return true;
 }
 
@@ -137,10 +140,10 @@ export function runMarTests() {
   try {
     testEntityCreation();
     testEnums();
-    console.log('✅ All MAR system tests passed!');
+    logger.log('✅ All MAR system tests passed!');
     return true;
   } catch (error) {
-    console.error('❌ MAR system test failed:', error);
+    logger.error('❌ MAR system test failed:', error);
     return false;
   }
 }

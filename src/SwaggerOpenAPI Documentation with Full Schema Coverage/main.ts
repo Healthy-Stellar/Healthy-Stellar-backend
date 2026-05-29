@@ -1,11 +1,12 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import * as basicAuth from 'express-basic-auth';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const logger = new Logger('Bootstrap');
 
   // Global validation pipe
   app.useGlobalPipes(
@@ -81,8 +82,8 @@ async function bootstrap() {
       `,
     });
 
-    console.log(`📖 Swagger UI → http://localhost:3000/api/docs`);
-    console.log(`📄 OpenAPI JSON → http://localhost:3000/api/docs-json`);
+    logger.log(`📖 Swagger UI → http://localhost:3000/api/docs`);
+    logger.log(`📄 OpenAPI JSON → http://localhost:3000/api/docs-json`);
   }
 
   await app.listen(3000);

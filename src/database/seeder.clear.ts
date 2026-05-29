@@ -4,6 +4,7 @@
  * Does NOT truncate tables – safe to run alongside real data.
  */
 import { DataSource, In } from 'typeorm';
+import { Logger } from '@nestjs/common';
 import { User } from '../auth/entities/user.entity';
 import { MedicalRecord } from '../medical-records/entities/medical-record.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
@@ -11,9 +12,10 @@ import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { dataSourceOptions } from '../config/database.config';
 
 const SEED_TAGS = ['seeder_generated', 'test_seeder_generated'];
+const logger = new Logger('SeederClear');
 
 async function clear() {
-  console.log('🗑️  Clearing seeded data...');
+  logger.log('🗑️  Clearing seeded data...');
 
   if (process.env.NODE_ENV === 'production') {
     throw new Error('❌ Cannot run seed:clear in production!');
@@ -33,7 +35,7 @@ async function clear() {
     const seededUserIds = seededUsers.map((u) => u.id);
 
     if (!seededUserIds.length) {
-      console.log('ℹ️  No seeded data found.');
+      logger.log('ℹ️  No seeded data found.');
       return;
     }
 
@@ -60,7 +62,7 @@ async function clear() {
       await userRepo.remove(seededUsers);
     }
 
-    console.log(`✅ Cleared seeded data (${seededUserIds.length} users and related records).`);
+    logger.log(`✅ Cleared seeded data (${seededUserIds.length} users and related records).`);
   } finally {
     await dataSource.destroy();
   }
@@ -69,6 +71,6 @@ async function clear() {
 clear()
   .then(() => process.exit(0))
   .catch((e) => {
-    console.error('❌ Clear failed:', e);
+    logger.error('❌ Clear failed:', e);
     process.exit(1);
   });

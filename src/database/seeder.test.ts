@@ -4,6 +4,7 @@
  */
 import { DataSource } from 'typeorm';
 import { faker } from '@faker-js/faker';
+import { Logger } from '@nestjs/common';
 import { User, UserRole } from '../auth/entities/user.entity';
 import {
   MedicalRecord,
@@ -20,6 +21,7 @@ import * as argon2 from 'argon2';
 import { dataSourceOptions } from '../config/database.config';
 
 const SEED_TAG = 'test_seeder_generated';
+const logger = new Logger('SeederTest');
 
 function fakeStellarAddress(): string {
   const base32Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -31,7 +33,7 @@ function fakeStellarAddress(): string {
 }
 
 async function seedTest() {
-  console.log('🌱 Starting TEST database seeding (minimal)...');
+  logger.log('🌱 Starting TEST database seeding (minimal)...');
 
   const dataSource = new DataSource(dataSourceOptions);
   await dataSource.initialize();
@@ -45,7 +47,7 @@ async function seedTest() {
     // Idempotency check
     const alreadySeeded = await userRepo.findOne({ where: { institution: SEED_TAG } });
     if (alreadySeeded) {
-      console.log('⚠️  Test seed data already present – skipping.');
+      logger.log('⚠️  Test seed data already present – skipping.');
       return;
     }
 
@@ -138,7 +140,7 @@ async function seedTest() {
       );
     }
 
-    console.log('✅ Test seeding completed (2 providers, 3 patients, 5 records, 2 grants, 3 logs)');
+    logger.log('✅ Test seeding completed (2 providers, 3 patients, 5 records, 2 grants, 3 logs)');
   } finally {
     await dataSource.destroy();
   }
@@ -147,6 +149,6 @@ async function seedTest() {
 seedTest()
   .then(() => process.exit(0))
   .catch((e) => {
-    console.error(e);
+    logger.error(e);
     process.exit(1);
   });

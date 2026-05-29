@@ -1,9 +1,10 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const logger = new Logger('Bootstrap');
 
   // Enable validation pipes
   app.useGlobalPipes(
@@ -22,10 +23,11 @@ async function bootstrap() {
 
   const port = parseInt(process.env.APP_PORT || '3000');
   await app.listen(port);
-  console.log(`Application is running on: http://localhost:${port}`);
+  logger.log(`Application is running on: http://localhost:${port}`);
 }
 
 bootstrap().catch((err) => {
-  console.error('Failed to start application:', err);
+  const logger = new Logger('Bootstrap');
+  logger.error('Failed to start application:', err);
   process.exit(1);
 });
