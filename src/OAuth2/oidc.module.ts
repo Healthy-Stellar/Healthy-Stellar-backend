@@ -9,7 +9,7 @@ import { OidcService } from './oidc.service';
 import { OidcController } from './oidc.controller';
 import { buildOidcConfig } from './oidc.config';
 import { UsersModule } from '../users/users.module';
-import { User } from '../users/entities/user.entity';
+import { User } from '../auth/entities/user.entity';
 
 /**
  * Self-contained OIDC / OAuth2 SSO module.

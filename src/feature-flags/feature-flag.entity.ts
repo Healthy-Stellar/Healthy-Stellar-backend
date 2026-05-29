@@ -32,9 +32,9 @@ export class FeatureFlag {
   @Column({ type: 'int', default: 0 })
   rolloutPercentage: number;
 
-  /** Comma-separated user/tenant IDs for ALLOWLIST strategy */
-  @Column({ type: 'text', nullable: true })
-  allowlist: string;
+  /** User/tenant IDs for ALLOWLIST strategy */
+  @Column({ type: 'simple-array', nullable: true })
+  allowlist: string[];
 
   @Column({ type: 'text', nullable: true })
   description: string;

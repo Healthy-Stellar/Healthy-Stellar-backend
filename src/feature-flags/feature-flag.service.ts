@@ -8,7 +8,7 @@ export interface UpsertFeatureFlagDto {
   enabled: boolean;
   strategy?: RolloutStrategy;
   rolloutPercentage?: number;
-  allowlist?: string;
+  allowlist?: string[];
   description?: string;
 }
 
@@ -33,8 +33,8 @@ export class FeatureFlagService {
         return (hash % 100) < flag.rolloutPercentage;
       }
       case RolloutStrategy.ALLOWLIST: {
-        if (!actorId || !flag.allowlist) return false;
-        return flag.allowlist.split(',').map((s) => s.trim()).includes(actorId);
+        if (!actorId || !flag.allowlist || flag.allowlist.length === 0) return false;
+        return flag.allowlist.includes(actorId);
       }
       default:
         return true;

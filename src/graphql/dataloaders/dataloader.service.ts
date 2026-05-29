@@ -5,7 +5,7 @@ import * as DataLoader from 'dataloader';
 import { Patient } from '../../patients/entities/patient.entity';
 import { Record } from '../../records/entities/record.entity';
 import { AccessGrant } from '../../access-control/entities/access-grant.entity';
-import { User } from '../../users/entities/user.entity';
+import { User } from '../../auth/entities/user.entity';
 
 @Injectable({ scope: Scope.REQUEST })
 export class DataLoaderService {

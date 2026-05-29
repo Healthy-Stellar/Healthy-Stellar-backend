@@ -2,7 +2,7 @@ import { Injectable, Scope } from '@nestjs/common';
 import * as DataLoader from 'dataloader';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import { UserEntity } from '../../users/entities/user.entity';
+import { User as UserEntity } from '../../auth/entities/user.entity';
 
 /**
  * UserDataLoader is REQUEST-scoped so each GraphQL operation

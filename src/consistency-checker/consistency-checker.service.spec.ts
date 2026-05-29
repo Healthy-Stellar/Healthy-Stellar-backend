@@ -5,7 +5,7 @@ import { ConsistencyCheckerService } from './consistency-checker.service';
 import { MedicalRecord } from '../medical-records/entities/medical-record.entity';
 import { MedicalRecordVersion } from '../medical-records/entities/medical-record-version.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
-import { User } from '../users/entities/user.entity';
+import { User } from '../auth/entities/user.entity';
 import { Patient } from '../patients/entities/patient.entity';
 import { StellarTransaction } from '../analytics/entities/stellar-transaction.entity';
 

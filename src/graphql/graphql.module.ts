@@ -12,7 +12,7 @@ import { GraphQLError } from 'graphql';
 import { Patient } from '../patients/entities/patient.entity';
 import { Record } from '../records/entities/record.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
-import { User } from '../users/entities/user.entity';
+import { User } from '../auth/entities/user.entity';
 
 import { RecordsModule } from '../records/records.module';
 import { AccessControlModule } from '../access-control/access-control.module';

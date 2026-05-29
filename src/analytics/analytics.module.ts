@@ -4,7 +4,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as redisStore from 'cache-manager-ioredis';
 
-import { User } from '../users/entities/user.entity';
+import { User } from '../auth/entities/user.entity';
 import { MedicalRecord } from '../medical-records/entities/medical-record.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
 import { StellarTransaction } from './entities/stellar-transaction.entity';

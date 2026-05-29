@@ -6,10 +6,12 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  OneToOne,
 } from 'typeorm';
 import { MfaEntity } from './mfa.entity';
 import { SessionEntity } from './session.entity';
 import { AuditLogEntity } from '../../common/audit/audit-log.entity';
+import type { Patient } from '../../users/entities/patient.entity';
 
 export enum UserRole {
   ADMIN = 'admin',
@@ -19,6 +21,13 @@ export enum UserRole {
   BILLING_STAFF = 'billing_staff',
   MEDICAL_RECORDS = 'medical_records',
   SUPER_ADMIN = 'super_admin',
+}
+
+export enum UserStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  PENDING_VERIFICATION = 'PENDING_VERIFICATION',
 }
 
 @Entity('users')
@@ -88,6 +97,7 @@ export class User {
 
   @Column({ default: true })
   emergencyAccessEnabled: boolean;
+
   @Column({ nullable: true, length: 255 })
   specialty: string;
 
@@ -107,6 +117,28 @@ export class User {
   @Column({ type: 'simple-array', nullable: true })
   permissions: string[];
 
+  /** User status (active, suspended, etc.) */
+  @Column({ type: 'enum', enum: UserStatus, default: UserStatus.ACTIVE })
+  status: UserStatus;
+
+  @Column({ type: 'date', nullable: true })
+  licenseExpiryDate: Date;
+
+  @Column({ nullable: true })
+  department: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  licenseVerifiedAt: Date;
+
+  @Column({ nullable: true })
+  verifiedBy: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastAccessRevocationAt: Date;
+
+  @Column({ nullable: true })
+  revocationReason: string;
+
   @CreateDateColumn()
   createdAt: Date;
 
@@ -115,6 +147,9 @@ export class User {
 
   @Column({ nullable: true })
   deletedAt: Date;
+
+  @OneToOne(() => Patient, (patient) => patient.user, { nullable: true })
+  patientProfile: Patient;
 
   @OneToMany(() => MfaEntity, (mfa) => mfa.user, { cascade: true })
   mfaDevices: MfaEntity[];

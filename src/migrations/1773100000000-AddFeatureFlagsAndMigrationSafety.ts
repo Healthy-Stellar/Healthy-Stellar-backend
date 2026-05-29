@@ -25,7 +25,7 @@ export class AddFeatureFlagsAndMigrationSafety1773100000000 implements Migration
               default: "'ALL'",
             },
             { name: 'rolloutPercentage', type: 'int', default: 0 },
-            { name: 'allowlist', type: 'text', isNullable: true },
+            { name: 'allowlist', type: 'simple-array', isNullable: true },
             { name: 'description', type: 'text', isNullable: true },
             { name: 'updatedBy', type: 'uuid', isNullable: true },
             { name: 'createdAt', type: 'timestamp', default: 'CURRENT_TIMESTAMP' },

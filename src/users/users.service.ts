@@ -7,12 +7,12 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { User } from './entities/user.entity';
+import { User, UserStatus } from '../auth/entities/user.entity';
 import { Patient } from './entities/patient.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { MedicalRole, UserStatus } from './enums/medical-role.enum';
+import { MedicalRole } from './enums/medical-role.enum';
 
 @Injectable()
 export class UsersService {
@@ -36,7 +36,7 @@ export class UsersService {
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
     const user = this.usersRepository.create({
       ...createUserDto,
-      password: hashedPassword,
+      passwordHash: hashedPassword,
       status: UserStatus.PENDING_VERIFICATION,
     });
 
@@ -52,7 +52,7 @@ export class UsersService {
     const hashedPassword = await bcrypt.hash(createPatientDto.password, 10);
     const user = this.usersRepository.create({
       email: createPatientDto.email,
-      password: hashedPassword,
+      passwordHash: hashedPassword,
       firstName: createPatientDto.firstName,
       lastName: createPatientDto.lastName,
       role: MedicalRole.PATIENT,

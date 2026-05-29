@@ -12,7 +12,7 @@ import { DataSource, Repository } from 'typeorm';
 import * as StellarSdk from 'stellar-sdk';
 
 import { OidcIdentity } from './entities/oidc-identity.entity';
-import { User } from '../users/entities/user.entity';
+import { User } from '../auth/entities/user.entity';
 import { OidcVerifiedProfile } from './oidc.strategy';
 import {
   LinkStellarAddressDto,
