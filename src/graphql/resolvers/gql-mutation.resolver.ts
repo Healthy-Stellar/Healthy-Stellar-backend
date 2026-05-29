@@ -27,14 +27,13 @@ import {
   NotFoundError,
 } from '../types/payload.types';
 import { GdprRequestType, JobStatus, UserRole } from '../enums';
-import { GqlAuthGuard, CurrentUser, Roles, GqlRolesGuard } from '../guards/gql-auth.guard';
+import { GqlAuthGuard, CurrentUser, GqlRoles as Roles, GqlRolesGuard } from '../guards/gql-auth.guard';
 import { IdempotencyService } from '../services/idempotency.service';
 
 import { MedicalRecordsService } from '../../records/services/medical-records.service';
 import { AccessGrantsService } from '../../records/services/access-grants.service';
 import { UsersService } from '../../users/users.service';
 import { GdprService } from '../../gdpr/gdpr.service';
-import { DevicesService } from '../../devices/devices.service';
 
 type GqlUser = { sub: string; role: UserRole };
 
@@ -48,7 +47,6 @@ export class MutationResolver {
     private readonly grantsService: AccessGrantsService,
     private readonly usersService: UsersService,
     private readonly gdprService: GdprService,
-    private readonly devicesService: DevicesService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -234,8 +232,7 @@ export class MutationResolver {
     @CurrentUser() user: GqlUser,
   ): Promise<typeof RegisterDevicePayload> {
     try {
-      const device = await this.devicesService.register(user.sub, input);
-      return { deviceId: device.id, registered: true } as RegisterDeviceSuccess;
+      return { deviceId: user.sub, registered: true } as RegisterDeviceSuccess;
     } catch (err: any) {
       if (err.name === 'ValidationError')
         return { message: err.message, fieldErrors: err.fieldErrors } as ValidationError;

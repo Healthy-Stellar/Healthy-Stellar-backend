@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import { Appointment, AppointmentStatus, MedicalPriority } from '../entities/appointment.entity';
 import { DoctorAvailability } from '../entities/doctor-availability.entity';
 import { CreateAppointmentDto } from '../dto/create-appointment.dto';
+import { AuditService } from '../../common/audit/audit.service';
 
 /** How many minutes before the appointment start a join token becomes valid. */
 const TOKEN_VALID_BEFORE_MINUTES = 15;
@@ -18,6 +19,7 @@ export class AppointmentService {
     @InjectRepository(DoctorAvailability)
     private availabilityRepository: Repository<DoctorAvailability>,
     private readonly jwtService: JwtService,
+    private readonly auditService: AuditService,
   ) {}
 
   async create(createAppointmentDto: CreateAppointmentDto): Promise<Appointment> {
@@ -54,7 +56,21 @@ export class AppointmentService {
       telemedicineLink: roomId ? `https://telemedicine.app/room/${roomId}` : null,
     });
 
-    return this.appointmentRepository.save(appointment);
+    const saved = await this.appointmentRepository.save(appointment);
+
+    // Audit log: APPOINTMENT_CREATED
+    await this.auditService.log({
+      actorId: createAppointmentDto.patientId,
+      action: 'APPOINTMENT_CREATED',
+      resourceId: saved.id,
+      resourceType: 'Appointment',
+      timestamp: new Date(),
+    }).catch((err) => {
+      // Non-blocking: log failure but don't throw
+      console.error('Failed to log appointment creation audit event:', err.message);
+    });
+
+    return saved;
   }
 
   async findAll(): Promise<Appointment[]> {
@@ -98,7 +114,25 @@ export class AppointmentService {
     }
 
     appointment.status = status;
-    return this.appointmentRepository.save(appointment);
+    const updated = await this.appointmentRepository.save(appointment);
+
+    // Audit log appropriate action based on status change
+    const auditAction =
+      status === AppointmentStatus.CANCELLED
+        ? 'APPOINTMENT_CANCELLED'
+        : 'APPOINTMENT_UPDATED';
+
+    await this.auditService.log({
+      actorId: appointment.patientId,
+      action: auditAction,
+      resourceId: id,
+      resourceType: 'Appointment',
+      timestamp: new Date(),
+    }).catch((err) => {
+      console.error(`Failed to log appointment status change audit event: ${err.message}`);
+    });
+
+    return updated;
   }
 
   async getAvailableSlots(doctorId: string, date: Date): Promise<string[]> {

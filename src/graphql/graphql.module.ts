@@ -18,18 +18,33 @@ import { RecordsModule } from '../records/records.module';
 import { AccessControlModule } from '../access-control/access-control.module';
 import { UsersModule } from '../users/users.module';
 import { PatientModule } from '../patients/patients.module';
+import { GdprModule } from '../gdpr/gdpr.module';
 
 import { GqlAuthGuard, GqlRolesGuard } from './guards/gql-auth.guard';
 import { DataLoaderService } from './dataloaders/dataloader.service';
+import { UserDataLoader } from './dataloaders/user.dataloader';
+import { RecordDataLoader } from './dataloaders/record.dataloader';
+
+// Resolvers — original graphql module
 import { PatientResolver } from './resolvers/patient.resolver';
 import { RecordsResolver } from './resolvers/records.resolver';
 import { AccessGrantsResolver } from './resolvers/access-grants.resolver';
-import { UsersResolver } from './resolvers/users.resolver';
-import { AuditLogsResolver } from './resolvers/audit-logs.resolver';
-import { TenantsResolver } from './resolvers/tenants.resolver';
+import { ProviderResolver } from './resolvers/provider.resolver';
+import { ProvidersResolver } from './resolvers/providers.resolver';
 import { RealtimeEventsResolver } from './resolvers/realtime-events.resolver';
-import { PUB_SUB } from './resolvers/subscriptions.resolver';
 import { RecordEventsResolver } from './subscriptions/record-events.resolver';
+import { MedicalRecordResolver } from './resolvers/medical-record.resolver';
+import { AccessGrantResolver } from './resolvers/access-grant.resolver';
+
+// Resolvers — consolidated from graphql-queries
+import { QueryResolver, MedicalRecordFieldResolver, AccessGrantFieldResolver, AuditLogFieldResolver } from './resolvers/gql-query.resolver';
+import { MutationResolver } from './resolvers/gql-mutation.resolver';
+
+// Services
+import { IdempotencyService } from './services/idempotency.service';
+
+// Plugins
+import { ComplexityPlugin } from './plugins/complexity.plugin';
 
 // Services from other modules
 import { AuthModule } from '../auth/auth.module';
@@ -45,6 +60,8 @@ import { GraphqlPubSubService } from '../pubsub/services/graphql-pubsub.service'
     AccessControlModule,
     AuthModule,
     PubSubModule,
+    UsersModule,
+    GdprModule,
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
       imports: [ConfigModule, AuthModule, PubSubModule],
@@ -169,20 +186,38 @@ import { GraphqlPubSubService } from '../pubsub/services/graphql-pubsub.service'
     }),
   ],
   providers: [
-    { provide: PUB_SUB, useValue: new PubSub() },
+    { provide: 'GQL_PUB_SUB', useValue: new PubSub() },
     GqlAuthGuard,
     GqlRolesGuard,
     DataLoaderService,
+    UserDataLoader,
+    RecordDataLoader,
+
+    // Original resolvers
     PatientResolver,
     RecordsResolver,
     AccessGrantsResolver,
-    UsersResolver,
-    AuditLogsResolver,
-    TenantsResolver,
+    ProviderResolver,
+    ProvidersResolver,
     RealtimeEventsResolver,
     RecordEventsResolver,
+    MedicalRecordResolver,
+    AccessGrantResolver,
+
+    // Consolidated advanced resolvers
+    QueryResolver,
+    MedicalRecordFieldResolver,
+    AccessGrantFieldResolver,
+    AuditLogFieldResolver,
+    MutationResolver,
+
+    // Services
+    IdempotencyService,
+
+    // Plugins
+    ComplexityPlugin,
   ],
-  exports: [GqlAuthGuard, GqlRolesGuard, PUB_SUB],
+  exports: [GqlAuthGuard, GqlRolesGuard, 'GQL_PUB_SUB'],
 })
 export class GraphqlModule {}
 

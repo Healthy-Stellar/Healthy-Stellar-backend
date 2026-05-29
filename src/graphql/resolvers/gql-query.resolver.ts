@@ -16,7 +16,7 @@ import { AccessGrant } from '../types/access-grant.type';
 import { AuditLog, AuditLogConnection } from '../types/audit-log.type';
 import { RecordFilterInput, PaginationInput } from '../inputs';
 import { GrantStatus, UserRole } from '../enums';
-import { GqlAuthGuard, GqlRolesGuard, CurrentUser, Roles } from '../guards/gql-auth.guard';
+import { GqlAuthGuard, GqlRolesGuard, CurrentUser, GqlRoles as Roles } from '../guards/gql-auth.guard';
 import { UserDataLoader } from '../dataloaders/user.dataloader';
 import { RecordDataLoader } from '../dataloaders/record.dataloader';
 import { buildConnection } from '../utils/pagination.util';

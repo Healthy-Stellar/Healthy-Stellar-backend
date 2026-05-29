@@ -19,6 +19,9 @@ import { AppointmentController } from './controllers/appointment.controller';
 import { ConsultationController } from './controllers/consultation.controller';
 import { DoctorAvailabilityController } from './controllers/doctor-availability.controller';
 
+// Audit logging
+import { AuditModule } from '../common/audit/audit.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -31,6 +34,7 @@ import { DoctorAvailabilityController } from './controllers/doctor-availability.
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: '15m' },
     }),
+    AuditModule,
   ],
   controllers: [AppointmentController, ConsultationController, DoctorAvailabilityController],
   providers: [AppointmentService, ConsultationService, ReminderService, DoctorAvailabilityService],
