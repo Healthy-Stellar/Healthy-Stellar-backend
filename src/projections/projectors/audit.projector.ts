@@ -11,22 +11,13 @@ import {
   AccessRevokedEvent,
 } from './domain-events';
 import { CheckpointService } from '../checkpoint/checkpoint.service';
+import { AuditLogProjection } from '../entities/audit-log-projection.entity';
 
 type AuditableEvent =
   | RecordUploadedEvent
   | RecordAmendedEvent
   | AccessGrantedEvent
   | AccessRevokedEvent;
-
-class AuditLog {
-  id: string;
-  eventType: string;
-  entityId: string;
-  actorId: string;
-  payload: Record<string, unknown>;
-  eventVersion: number;
-  occurredAt: Date;
-}
 
 const PROJECTOR_NAME = 'AuditProjector';
 
@@ -35,8 +26,8 @@ export class AuditProjector implements IEventHandler<AuditableEvent> {
   private readonly logger = new Logger(AuditProjector.name);
 
   constructor(
-    @InjectRepository(AuditLog)
-    private readonly auditRepo: Repository<AuditLog>,
+    @InjectRepository(AuditLogProjection)
+    private readonly auditRepo: Repository<AuditLogProjection>,
     private readonly checkpoints: CheckpointService,
     @InjectQueue('projection-dlq') private readonly dlq: Queue,
   ) {}
@@ -53,14 +44,13 @@ export class AuditProjector implements IEventHandler<AuditableEvent> {
       await this.auditRepo
         .createQueryBuilder()
         .insert()
-        .into(AuditLog)
+        .into(AuditLogProjection)
         .values({
-          id: () => 'gen_random_uuid()',
+          aggregateId: this.extractEntityId(event),
+          aggregateType: this.extractAggregateType(event),
           eventType: event.constructor.name,
-          entityId: this.extractEntityId(event),
-          actorId: this.extractActorId(event),
           payload: event as unknown as Record<string, unknown>,
-          eventVersion: event.version,
+          version: event.version,
           occurredAt: event.occurredAt,
         })
         .orIgnore() // idempotent: unique on event_version enforced at DB level
@@ -93,5 +83,12 @@ export class AuditProjector implements IEventHandler<AuditableEvent> {
     if (event instanceof RecordAmendedEvent) return event.amendedBy;
     if (event instanceof AccessGrantedEvent) return event.grantedBy;
     return event.revokedBy;
+  }
+
+  private extractAggregateType(event: AuditableEvent): string {
+    if (event instanceof RecordUploadedEvent || event instanceof RecordAmendedEvent) {
+      return 'MedicalRecord';
+    }
+    return 'AccessGrant';
   }
 }

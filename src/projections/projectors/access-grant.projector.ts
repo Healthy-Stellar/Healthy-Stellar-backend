@@ -6,17 +6,7 @@ import { Queue } from 'bull';
 import { Logger } from '@nestjs/common';
 import { AccessGrantedEvent, AccessRevokedEvent } from './domain-events';
 import { CheckpointService } from '../checkpoint/checkpoint.service';
-
-class AccessGrantReadModel {
-  id: string;
-  patientId: string;
-  providerId: string;
-  grantedBy: string;
-  isActive: boolean;
-  expiresAt: Date | null;
-  grantedAt: Date;
-  revokedAt: Date | null;
-}
+import { AccessGrantReadModel } from '../entities/access-grant-read.entity';
 
 const PROJECTOR_NAME = 'AccessGrantProjector';
 
@@ -68,14 +58,14 @@ export class AccessGrantProjector implements IEventHandler<
       .insert()
       .into(AccessGrantReadModel)
       .values({
-        id: event.grantId,
+        aggregateId: event.grantId,
         patientId: event.patientId,
-        providerId: event.providerId,
+        grantedTo: event.providerId,
         grantedBy: event.grantedBy,
-        isActive: true,
+        status: 'ACTIVE',
         expiresAt: event.expiresAt,
-        grantedAt: event.occurredAt,
-        revokedAt: null,
+        version: 1,
+        updatedAt: event.occurredAt,
       })
       .orIgnore()
       .execute();
@@ -85,8 +75,11 @@ export class AccessGrantProjector implements IEventHandler<
     await this.readRepo
       .createQueryBuilder()
       .update(AccessGrantReadModel)
-      .set({ isActive: false, revokedAt: event.occurredAt })
-      .where('id = :id AND is_active = true', { id: event.grantId })
+      .set({ status: 'REVOKED', revokedBy: event.revokedBy, updatedAt: event.occurredAt })
+      .where('aggregate_id = :aggregateId AND status = :activeStatus', {
+        aggregateId: event.grantId,
+        activeStatus: 'ACTIVE',
+      })
       .execute();
   }
 }

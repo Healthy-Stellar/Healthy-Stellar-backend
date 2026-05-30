@@ -6,17 +6,7 @@ import { Queue } from 'bull';
 import { Logger } from '@nestjs/common';
 import { RecordUploadedEvent, RecordAmendedEvent } from './domain-events';
 import { CheckpointService } from '../checkpoint/checkpoint.service';
-
-// Stub entity — replace with actual MedicalRecord read-model entity
-class MedicalRecordReadModel {
-  id: string;
-  patientId: string;
-  cid: string;
-  recordType: string;
-  uploadedBy: string;
-  latestVersion: number;
-  updatedAt: Date;
-}
+import { MedicalRecordReadModel } from '../entities/medical-record-read.entity';
 
 const PROJECTOR_NAME = 'RecordProjector';
 
@@ -68,12 +58,12 @@ export class RecordProjector implements IEventHandler<RecordUploadedEvent | Reco
       .insert()
       .into(MedicalRecordReadModel)
       .values({
-        id: event.recordId,
+        aggregateId: event.recordId,
         patientId: event.patientId,
         cid: event.cid,
         recordType: event.recordType,
         uploadedBy: event.uploadedBy,
-        latestVersion: 1,
+        version: 1,
         updatedAt: event.occurredAt,
       })
       .orIgnore() // idempotent: ignore duplicate inserts
@@ -86,11 +76,11 @@ export class RecordProjector implements IEventHandler<RecordUploadedEvent | Reco
       .update(MedicalRecordReadModel)
       .set({
         cid: event.newCid,
-        latestVersion: event.newVersion,
+        version: event.newVersion,
         updatedAt: event.occurredAt,
       })
-      .where('id = :id AND latest_version < :newVersion', {
-        id: event.recordId,
+      .where('aggregate_id = :aggregateId AND version < :newVersion', {
+        aggregateId: event.recordId,
         newVersion: event.newVersion,
       })
       .execute();

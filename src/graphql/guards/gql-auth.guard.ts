@@ -15,6 +15,9 @@ import { SessionManagementService } from '../../auth/services/session-management
 export const ROLES_KEY = 'gql_roles';
 export const GqlRoles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);
 
+// Alias used by query/mutation resolvers migrated from graphql-queries
+export const Roles = GqlRoles;
+
 export const CurrentUser = createParamDecorator((_: unknown, ctx: ExecutionContext) =>
   GqlExecutionContext.create(ctx).getContext().req?.user,
 );
