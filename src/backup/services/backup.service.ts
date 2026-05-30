@@ -254,26 +254,42 @@ export class BackupService {
     );
   }
 
-  private async backupDatabaseIncremental(outputPath: string, _sinceDate: Date): Promise<void> {
+  private async backupDatabaseIncremental(outputPath: string, sinceDate: Date): Promise<void> {
     const dbHost = validateDbHost(process.env.DB_HOST || 'localhost');
     const dbPort = validateDbPort(process.env.DB_PORT || '5432');
     const dbName = validateDbIdentifier(process.env.DB_NAME || 'healthy_stellar', 'DB_NAME');
     const dbUser = validateDbIdentifier(process.env.DB_USERNAME || 'medical_user', 'DB_USERNAME');
 
-    // Export only changed data using WAL archiving or timestamp-based queries
+    // Timestamp-filtered logical export: only rows modified at or after sinceDate.
+    // Each auditable table exposes an `updatedAt` / `created_at` column; we export
+    // only those rows via COPY … TO STDOUT and collect them into a single NDJSON file.
+    const tables = [
+      { name: 'medical_records',         tsCol: '"updatedAt"' },
+      { name: 'medical_record_versions', tsCol: '"createdAt"' },
+      { name: 'medical_history',         tsCol: '"eventDate"' },
+      { name: 'medical_attachments',     tsCol: '"createdAt"' },
+      { name: 'medical_record_consents', tsCol: '"createdAt"' },
+      { name: 'audit_logs',              tsCol: '"createdAt"' },
+      { name: 'access_grants',           tsCol: '"updatedAt"' },
+    ];
+
+    const sinceDateIso = sinceDate.toISOString();
+    const queries = tables
+      .map(
+        (t) =>
+          `\\copy (SELECT row_to_json(t) FROM (SELECT * FROM ${t.name} WHERE ${t.tsCol} >= '${sinceDateIso}') t) TO STDOUT`,
+      )
+      .join('\n');
+
     await spawnAsync(
-      'pg_dump',
+      'psql',
       [
         '-h', dbHost,
         '-p', dbPort,
         '-U', dbUser,
         '-d', dbName,
-        '--format=custom',
-        '--verbose',
-        '--clean',
-        '--no-owner',
-        '--no-privileges',
-        `--file=${outputPath}.pgdump`,
+        '-o', `${outputPath}.pgdump`,
+        '-c', queries,
       ],
       {
         env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD },

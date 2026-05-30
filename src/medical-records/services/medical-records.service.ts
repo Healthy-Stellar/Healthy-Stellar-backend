@@ -71,20 +71,15 @@ export class MedicalRecordsService {
         metadata: recordWithVersion.metadata,
       });
 
-      try {
-        await this.createVersion(
-          recordWithVersion,
-          null,
-          currentContent,
-          userId,
-          userName,
-          'Initial record creation',
-          manager,
-        );
-      } catch (error) {
-        this.logger.error(`Failed to create initial version: ${error.message}`, error.stack);
-        // Continue even if version creation fails
-      }
+      await this.createVersion(
+        recordWithVersion,
+        null,
+        currentContent,
+        userId,
+        userName,
+        'Initial record creation',
+        manager,
+      );
 
       // Create history entry
       await this.createHistoryEntry(

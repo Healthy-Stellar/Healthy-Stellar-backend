@@ -125,6 +125,7 @@ export class GdprProcessor extends WorkerHost {
     try {
       // 1. Anonymize user data
       const user = await this.userRepository.findOne({ where: { id: data.userId } });
+      const dataSubjectEmail = user?.email; // capture before anonymization
       if (user) {
         user.firstName = '[DELETED]';
         user.lastName = '[DELETED]';
@@ -205,6 +206,16 @@ export class GdprProcessor extends WorkerHost {
         }
       } catch (e) {
         this.logger.warn(`Failed to notify DPO: ${e.message}`);
+      }
+
+      // Notify data subject that erasure is complete (GDPR Art. 12)
+      if (dataSubjectEmail) {
+        await this.notificationsService.sendEmail(
+          dataSubjectEmail,
+          'Your data erasure request has been completed',
+          'ErasureConfirmation',
+          { requestId: data.requestId },
+        );
       }
 
       await this.gdprRequestRepository.update(data.requestId, {
