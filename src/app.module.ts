@@ -73,6 +73,21 @@ import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor';
 import { DlqModule } from './dlq/dlq.module';
 import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
 import { IncidentModule } from './incident/incident.module';
+import { BullModule } from '@nestjs/bullmq';
+import { AuthModule } from './auth/auth.module';
+
+@Module({
+  imports: [
+    BullModule.forRoot({
+      connection: {
+        host: process.env.REDIS_HOST ?? 'localhost',
+        port: Number(process.env.REDIS_PORT ?? 6379),
+      },
+    }),
+    AuthModule,
+    // … all your existing imports stay here
+  ],
+})
 
 @Module({
   imports: [
