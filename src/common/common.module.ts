@@ -14,11 +14,12 @@ import { AuditContextGuard } from './guards/audit-context.guard';
 import { DatabaseQueryGuard } from './guards/database-query.guard';
 import { RedisLockService } from './utils/redis-lock.service';
 import { QueryPerformanceController } from './controllers/query-performance.controller';
+import { ErrorDocumentationController } from './controllers/error-documentation.controller';
 
 @Global()
 @Module({
   imports: [TypeOrmModule.forFeature([AuditLog, SensitiveAuditLog])],
-  controllers: [QueryPerformanceController],
+  controllers: [QueryPerformanceController, ErrorDocumentationController],
   providers: [
     AuditLogService,
     DataEncryptionService,

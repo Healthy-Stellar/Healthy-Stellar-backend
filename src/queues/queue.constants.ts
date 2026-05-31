@@ -7,6 +7,7 @@ export const QUEUE_NAMES = {
   FHIR_BULK_EXPORT: 'fhir-bulk-export',
   REPORTS: 'reports',
   EHR_IMPORT: 'ehr-import',
+  WEBHOOK_DELIVERY: 'webhook-delivery',
 } as const;
 
 export const JOB_TYPES = {
@@ -17,6 +18,7 @@ export const JOB_TYPES = {
   UPLOAD_TO_IPFS: 'uploadToIpfs',
   INDEX_CONTRACT_EVENT: 'indexContractEvent',
   VERIFY_ACCESS: 'verifyAccess',
+  WEBHOOK_DELIVER: 'webhook-deliver',
 } as const;
 
 export const JOB_STATUS = {

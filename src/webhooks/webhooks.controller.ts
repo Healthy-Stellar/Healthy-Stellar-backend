@@ -1,8 +1,17 @@
-import { Controller, Post, Body, HttpCode, Inject, Logger } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, Inject, Logger, Get, Param, UseGuards, Req, Query, Delete } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { IpfsService } from '../stellar/services/ipfs.service';
 import { QueueService } from '../queues/queue.service';
 import { ConfigService } from '@nestjs/config';
+import { WebhookDeliveryService } from './services/webhook-delivery.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { WebhookDelivery, WebhookDeliveryStatus } from './entities/webhook-delivery.entity';
 
+@ApiTags('webhooks')
 @Controller('webhooks')
 export class WebhooksController {
   private readonly logger = new Logger(WebhooksController.name);
@@ -11,6 +20,9 @@ export class WebhooksController {
     private readonly ipfsService: IpfsService,
     private readonly queueService: QueueService,
     private readonly configService: ConfigService,
+    private readonly webhookService: WebhookDeliveryService,
+    @InjectRepository(WebhookDelivery)
+    private readonly deliveryRepository: Repository<WebhookDelivery>,
   ) {}
 
   @Post('ipfs')
@@ -78,4 +90,90 @@ export class WebhooksController {
       return { received: false, error: error.message };
     }
   }
+
+  // ── Dead-Letter Queue Management ──────────────────────────────────────────
+
+  @Get('dead-letter')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List failed webhook deliveries (dead-letter queue)' })
+  @ApiQuery({ name: 'status', required: false, enum: WebhookDeliveryStatus })
+  @ApiQuery({ name: 'subscriptionId', required: false })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  async getDeadLetterQueue(
+    @Query('status') status?: WebhookDeliveryStatus,
+    @Query('subscriptionId') subscriptionId?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const where: any = {};
+    if (status) where.status = status;
+    if (subscriptionId) where.subscriptionId = subscriptionId;
+
+    const [items, total] = await this.deliveryRepository.findAndCount({
+      where,
+      relations: ['subscription'],
+      skip: offset ? parseInt(offset, 10) : 0,
+      take: limit ? Math.min(parseInt(limit, 10), 100) : 50,
+      order: { createdAt: 'DESC' },
+    });
+
+    return { items, total };
+  }
+
+  @Get('dead-letter/:deliveryId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get details of a failed webhook delivery' })
+  @ApiParam({ name: 'deliveryId', type: String })
+  async getDeadLetterItem(@Param('deliveryId') deliveryId: string) {
+    return this.deliveryRepository.findOne({
+      where: { id: deliveryId },
+      relations: ['subscription'],
+    });
+  }
+
+  @Post('dead-letter/:deliveryId/replay')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Replay a failed webhook delivery from dead-letter queue' })
+  @ApiParam({ name: 'deliveryId', type: String })
+  @HttpCode(200)
+  async replayDeadLetterItem(
+    @Param('deliveryId') deliveryId: string,
+    @Req() req: any,
+  ) {
+    const userId = req.user?.id || 'unknown';
+    await this.webhookService.replayDelivery(deliveryId, userId);
+    return { success: true, message: 'Webhook delivery queued for replay' };
+  }
+
+  @Delete('dead-letter/:deliveryId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Discard a failed webhook delivery' })
+  @ApiParam({ name: 'deliveryId', type: String })
+  @HttpCode(200)
+  async discardDeadLetterItem(
+    @Param('deliveryId') deliveryId: string,
+  ) {
+    const delivery = await this.deliveryRepository.findOne({
+      where: { id: deliveryId },
+    });
+
+    if (!delivery) {
+      return { error: 'Delivery not found', success: false };
+    }
+
+    delivery.status = WebhookDeliveryStatus.FAILED; // Mark as discarded
+    await this.deliveryRepository.save(delivery);
+
+    return { success: true, message: 'Webhook delivery discarded' };
+  }
 }
+

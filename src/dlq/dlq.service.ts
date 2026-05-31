@@ -45,6 +45,8 @@ export class DlqService {
     private readonly reportsQueue: Queue,
     @InjectQueue(QUEUE_NAMES.EHR_IMPORT)
     private readonly ehrImportQueue: Queue,
+    @InjectQueue(QUEUE_NAMES.WEBHOOK_DELIVERY)
+    private readonly webhookQueue: Queue,
   ) {
     this.queues = new Map([
       [QUEUE_NAMES.STELLAR_TRANSACTIONS, this.stellarQueue],
@@ -54,6 +56,7 @@ export class DlqService {
       [QUEUE_NAMES.EMAIL_NOTIFICATIONS, this.emailQueue],
       [QUEUE_NAMES.REPORTS, this.reportsQueue],
       [QUEUE_NAMES.EHR_IMPORT, this.ehrImportQueue],
+      [QUEUE_NAMES.WEBHOOK_DELIVERY, this.webhookQueue],
     ]);
   }
 
