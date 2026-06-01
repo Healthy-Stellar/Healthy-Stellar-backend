@@ -3,6 +3,8 @@ import {
   BadRequestException,
   NotFoundException,
   InternalServerErrorException,
+  UnprocessableEntityException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -22,8 +24,18 @@ const ALLOWED_MIME_TYPES = [
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
+// Magic bytes signatures for file type detection
+const MAGIC_BYTES: Record<string, { mimeType: string; signature: Buffer }[]> = {
+  'application/pdf': [{ mimeType: 'application/pdf', signature: Buffer.from([0x25, 0x50, 0x44, 0x46]) }], // %PDF
+  'image/jpeg': [{ mimeType: 'image/jpeg', signature: Buffer.from([0xff, 0xd8, 0xff]) }], // FFD8FF
+  'image/png': [{ mimeType: 'image/png', signature: Buffer.from([0x89, 0x50, 0x4e, 0x47]) }], // .PNG
+  'application/dicom': [{ mimeType: 'application/dicom', signature: Buffer.from('DICM') }], // DICM
+};
+
 @Injectable()
 export class RecordAttachmentUploadService {
+  private readonly logger = new Logger(RecordAttachmentUploadService.name);
+
   constructor(
     @InjectRepository(RecordAttachment)
     private attachmentRepository: Repository<RecordAttachment>,
@@ -185,6 +197,20 @@ export class RecordAttachmentUploadService {
   }
 
   /**
+   * Detect file type from magic bytes
+   */
+  private detectFileType(buffer: Buffer): string | null {
+    for (const [mimeType, signatures] of Object.entries(MAGIC_BYTES)) {
+      for (const { signature } of signatures) {
+        if (buffer.length >= signature.length && buffer.subarray(0, signature.length).equals(signature)) {
+          return mimeType;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
    * Validate file before encryption
    */
   private validateFile(file: Express.Multer.File): void {
@@ -208,6 +234,21 @@ export class RecordAttachmentUploadService {
 
     if (file.size === 0) {
       throw new BadRequestException('File is empty');
+    }
+
+    // Magic bytes content inspection
+    const detectedType = this.detectFileType(file.buffer);
+    if (detectedType && detectedType !== file.mimetype) {
+      this.logger.warn('File type mismatch detected', {
+        declaredType: file.mimetype,
+        detectedType,
+        filename: file.originalname,
+        fileSize: file.size,
+      });
+
+      throw new UnprocessableEntityException(
+        `File content does not match declared type. Declared: ${file.mimetype}, Detected: ${detectedType}`,
+      );
     }
   }
 

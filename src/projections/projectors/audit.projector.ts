@@ -53,7 +53,7 @@ export class AuditProjector implements IEventHandler<AuditableEvent> {
           version: event.version,
           occurredAt: event.occurredAt,
         })
-        .orIgnore() // idempotent: unique on event_version enforced at DB level
+        .orIgnore()
         .execute();
 
       await this.checkpoints.advance(PROJECTOR_NAME, event.version);
