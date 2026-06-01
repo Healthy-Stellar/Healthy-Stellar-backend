@@ -1,12 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, Not } from 'typeorm';
+import { Repository, Between, Not, FindOptionsWhere } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import { Appointment, AppointmentStatus, MedicalPriority } from '../entities/appointment.entity';
 import { DoctorAvailability } from '../entities/doctor-availability.entity';
 import { CreateAppointmentDto } from '../dto/create-appointment.dto';
 import { AuditService } from '../../common/audit/audit.service';
+import { TenantContext } from '../../tenant/context/tenant.context';
+import { getRequestContext } from '../../common/middleware/request-context.middleware';
+import { UserRole } from '../../auth/entities/user.entity';
 
 /** How many minutes before the appointment start a join token becomes valid. */
 const TOKEN_VALID_BEFORE_MINUTES = 15;
@@ -22,7 +25,39 @@ export class AppointmentService {
     private readonly auditService: AuditService,
   ) {}
 
+  /**
+   * Generates a TypeORM where object that enforces tenant and user-level isolation.
+   * @private
+   */
+  private getScopedWhere(baseWhere: FindOptionsWhere<Appointment> = {}): FindOptionsWhere<Appointment> {
+    const tenantId = TenantContext.getTenantId();
+    const context = getRequestContext();
+
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context missing');
+    }
+
+    const scopedWhere: FindOptionsWhere<Appointment> = {
+      ...baseWhere,
+      tenantId,
+    };
+
+    if (context?.role === UserRole.PATIENT) {
+      scopedWhere.patientId = context.userId;
+    } else if (context?.role === UserRole.PHYSICIAN) {
+      scopedWhere.doctorId = context.userId;
+    }
+    // Admins and other staff can see all within tenant by default
+
+    return scopedWhere;
+  }
+
   async create(createAppointmentDto: CreateAppointmentDto): Promise<Appointment> {
+    const tenantId = TenantContext.getTenantId();
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context missing');
+    }
+
     const appointmentDate = new Date(createAppointmentDto.appointmentDate);
 
     // Check doctor availability
@@ -51,6 +86,7 @@ export class AppointmentService {
 
     const appointment = this.appointmentRepository.create({
       ...createAppointmentDto,
+      tenantId,
       appointmentDate,
       telemedicineRoomId: roomId,
       telemedicineLink: roomId ? `https://telemedicine.app/room/${roomId}` : null,
@@ -64,6 +100,7 @@ export class AppointmentService {
       action: 'APPOINTMENT_CREATED',
       resourceId: saved.id,
       resourceType: 'Appointment',
+      tenantId,
       timestamp: new Date(),
     }).catch((err) => {
       // Non-blocking: log failure but don't throw
@@ -75,6 +112,7 @@ export class AppointmentService {
 
   async findAll(): Promise<Appointment[]> {
     return this.appointmentRepository.find({
+      where: this.getScopedWhere(),
       relations: ['consultationNotes'],
       order: { appointmentDate: 'ASC' },
     });
@@ -82,14 +120,14 @@ export class AppointmentService {
 
   async findByPriority(priority: MedicalPriority): Promise<Appointment[]> {
     return this.appointmentRepository.find({
-      where: { priority },
+      where: this.getScopedWhere({ priority }),
       relations: ['consultationNotes'],
       order: { appointmentDate: 'ASC' },
     });
   }
 
   async findByDoctor(doctorId: string, date?: Date): Promise<Appointment[]> {
-    const whereCondition: any = { doctorId };
+    const whereCondition: FindOptionsWhere<Appointment> = { doctorId };
 
     if (date) {
       const startOfDay = new Date(date);
@@ -101,14 +139,16 @@ export class AppointmentService {
     }
 
     return this.appointmentRepository.find({
-      where: whereCondition,
+      where: this.getScopedWhere(whereCondition),
       relations: ['consultationNotes'],
       order: { appointmentDate: 'ASC' },
     });
   }
 
   async updateStatus(id: string, status: AppointmentStatus): Promise<Appointment> {
-    const appointment = await this.appointmentRepository.findOne({ where: { id } });
+    const appointment = await this.appointmentRepository.findOne({ 
+      where: this.getScopedWhere({ id }) 
+    });
     if (!appointment) {
       throw new NotFoundException(`Appointment with ID ${id} not found`);
     }
@@ -127,6 +167,7 @@ export class AppointmentService {
       action: auditAction,
       resourceId: id,
       resourceType: 'Appointment',
+      tenantId: appointment.tenantId,
       timestamp: new Date(),
     }).catch((err) => {
       console.error(`Failed to log appointment status change audit event: ${err.message}`);
@@ -136,6 +177,11 @@ export class AppointmentService {
   }
 
   async getAvailableSlots(doctorId: string, date: Date): Promise<string[]> {
+    const tenantId = TenantContext.getTenantId();
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context missing');
+    }
+
     const dayOfWeek = date.getDay() || 7; // Convert Sunday (0) to 7
 
     const availability = await this.availabilityRepository.findOne({
@@ -157,11 +203,11 @@ export class AppointmentService {
     endOfDay.setHours(23, 59, 59, 999);
 
     const existingAppointments = await this.appointmentRepository.find({
-      where: {
+      where: this.getScopedWhere({
         doctorId,
         appointmentDate: Between(startOfDay, endOfDay),
         status: Not(AppointmentStatus.CANCELLED),
-      },
+      }),
     });
 
     return this.calculateAvailableSlots(availability, existingAppointments, date);
@@ -172,6 +218,7 @@ export class AppointmentService {
     appointmentDate: Date,
     duration: number,
   ): Promise<boolean> {
+    const tenantId = TenantContext.getTenantId();
     const dayOfWeek = appointmentDate.getDay() || 7;
 
     const availability = await this.availabilityRepository.findOne({
@@ -200,11 +247,11 @@ export class AppointmentService {
     const endOfSlot = new Date(appointmentDate.getTime() + duration * 60000);
 
     const conflictingAppointments = await this.appointmentRepository.count({
-      where: {
+      where: this.getScopedWhere({
         doctorId,
         appointmentDate: Between(startOfSlot, endOfSlot),
         status: Not(AppointmentStatus.CANCELLED),
-      },
+      }),
     });
 
     return conflictingAppointments === 0;
@@ -266,12 +313,18 @@ export class AppointmentService {
     id: string,
     participantId: string,
   ): Promise<{ token: string; roomUrl: string }> {
+    const tenantId = TenantContext.getTenantId();
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context missing');
+    }
+
     // Load the sensitive columns that are excluded from normal selects
     const appointment = await this.appointmentRepository
       .createQueryBuilder('a')
       .addSelect('a.telemedicine_room_id', 'a_telemedicineRoomId')
       .addSelect('a.telemedicine_link', 'a_telemedicineLink')
       .where('a.id = :id', { id })
+      .andWhere('a.tenant_id = :tenantId', { tenantId })
       .getOne();
 
     if (!appointment) throw new NotFoundException(`Appointment ${id} not found`);

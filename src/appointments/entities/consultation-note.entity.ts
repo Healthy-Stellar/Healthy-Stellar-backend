@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { Appointment } from './appointment.entity';
 
@@ -23,10 +24,14 @@ export class ConsultationNote {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index()
+  @Column({ name: 'tenant_id', type: 'uuid' })
+  tenantId: string;
+
   @Column({ name: 'appointment_id' })
   appointmentId: string;
 
-  @ManyToOne(() => Appointment, (appointment) => appointment.consultationNotes)
+  @ManyToOne(() => Appointment, (appointment: Appointment) => appointment.consultationNotes)
   @JoinColumn({ name: 'appointment_id' })
   appointment: Appointment;
 

@@ -1,12 +1,16 @@
-import { Controller, Get, Post, Body, Param, Patch } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Param, Patch, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import {
   DoctorAvailabilityService,
   CreateDoctorAvailabilityDto,
 } from '../services/doctor-availability.service';
 import { AvailabilityStatus } from '../entities/doctor-availability.entity';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
 
 @ApiTags('Doctor Availability')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('doctor-availability')
 export class DoctorAvailabilityController {
   constructor(private readonly availabilityService: DoctorAvailabilityService) {}

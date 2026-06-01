@@ -1,12 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, FindOptionsWhere } from 'typeorm';
 import {
   AppointmentReminder,
   ReminderType,
   ReminderStatus,
 } from '../entities/appointment-reminder.entity';
 import { Appointment } from '../entities/appointment.entity';
+import { TenantContext } from '../../tenant/context/tenant.context';
 
 @Injectable()
 export class ReminderService {
@@ -19,12 +20,35 @@ export class ReminderService {
     private appointmentRepository: Repository<Appointment>,
   ) {}
 
+  /**
+   * Generates a TypeORM where object that enforces tenant isolation.
+   * @private
+   */
+  private getScopedWhere(baseWhere: FindOptionsWhere<AppointmentReminder> = {}): FindOptionsWhere<AppointmentReminder> {
+    const tenantId = TenantContext.getTenantId();
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context missing');
+    }
+
+    return {
+      ...baseWhere,
+      tenantId,
+    };
+  }
+
   async scheduleReminder(
     appointmentId: string,
     type: ReminderType,
     hoursBeforeAppointment: number = 24,
   ): Promise<AppointmentReminder> {
-    const appointment = await this.appointmentRepository.findOne({ where: { id: appointmentId } });
+    const tenantId = TenantContext.getTenantId();
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context missing');
+    }
+
+    const appointment = await this.appointmentRepository.findOne({ 
+      where: { id: appointmentId, tenantId } 
+    });
     if (!appointment) {
       throw new Error('Appointment not found');
     }
@@ -36,6 +60,7 @@ export class ReminderService {
     const message = this.generateReminderMessage(appointment, type);
 
     const reminder = this.reminderRepository.create({
+      tenantId,
       appointmentId,
       type,
       scheduledTime,
@@ -47,17 +72,21 @@ export class ReminderService {
   }
 
   async getPendingReminders(): Promise<AppointmentReminder[]> {
+    // Note: This might be called by a background task, so tenant context might need to be handled differently.
+    // However, for this fix, we'll enforce the same pattern.
     return this.reminderRepository.find({
-      where: {
+      where: this.getScopedWhere({
         status: ReminderStatus.PENDING,
         scheduledTime: LessThan(new Date()),
-      },
+      }),
       order: { scheduledTime: 'ASC' },
     });
   }
 
   async markAsSent(reminderId: string): Promise<AppointmentReminder> {
-    const reminder = await this.reminderRepository.findOne({ where: { id: reminderId } });
+    const reminder = await this.reminderRepository.findOne({ 
+      where: this.getScopedWhere({ id: reminderId }) 
+    });
     if (!reminder) {
       throw new Error('Reminder not found');
     }
@@ -69,7 +98,9 @@ export class ReminderService {
   }
 
   async markAsFailed(reminderId: string, errorMessage: string): Promise<AppointmentReminder> {
-    const reminder = await this.reminderRepository.findOne({ where: { id: reminderId } });
+    const reminder = await this.reminderRepository.findOne({ 
+      where: this.getScopedWhere({ id: reminderId }) 
+    });
     if (!reminder) {
       throw new Error('Reminder not found');
     }

@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  Index,
 } from 'typeorm';
 import { ConsultationNote } from './consultation-note.entity';
 
@@ -38,6 +39,10 @@ export enum MedicalPriority {
 export class Appointment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Index()
+  @Column({ name: 'tenant_id', type: 'uuid' })
+  tenantId: string;
 
   @Column({ name: 'patient_id' })
   patientId: string;
@@ -86,7 +91,7 @@ export class Appointment {
   @Column({ name: 'reminder_sent_at', nullable: true })
   reminderSentAt: Date;
 
-  @OneToMany(() => ConsultationNote, (note) => note.appointment)
+  @OneToMany(() => ConsultationNote, (note: ConsultationNote) => note.appointment)
   consultationNotes: ConsultationNote[];
 
   @CreateDateColumn({ name: 'created_at' })
