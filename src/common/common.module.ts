@@ -15,10 +15,11 @@ import { DatabaseQueryGuard } from './guards/database-query.guard';
 import { RedisLockService } from './utils/redis-lock.service';
 import { QueryPerformanceController } from './controllers/query-performance.controller';
 import { ErrorDocumentationController } from './controllers/error-documentation.controller';
+import { CacheModule } from './cache/cache.module';
 
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([AuditLog, SensitiveAuditLog])],
+  imports: [TypeOrmModule.forFeature([AuditLog, SensitiveAuditLog]), CacheModule],
   controllers: [QueryPerformanceController, ErrorDocumentationController],
   providers: [
     AuditLogService,

@@ -1,11 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
-import { ServiceUnavailableException, BadRequestException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { of, throwError } from 'rxjs';
 import { AxiosResponse, AxiosError } from 'axios';
 import { StellarFeeService } from './stellar-fee.service';
 import { StellarCacheService } from './stellar-cache.service';
+import { FeeEstimationError } from '../exceptions/fee-estimation.exception';
 import { HorizonFeeStatsResponse } from '../interfaces/fee-estimate.interface';
 
 describe('StellarFeeService', () => {
@@ -174,9 +175,7 @@ describe('StellarFeeService', () => {
       jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => timeoutError));
 
       // Act & Assert
-      await expect(service.getFeeEstimate('anchorRecord')).rejects.toThrow(
-        ServiceUnavailableException,
-      );
+      await expect(service.getFeeEstimate('anchorRecord')).rejects.toThrow(FeeEstimationError);
     });
 
     it('should handle Horizon API connection error', async () => {
@@ -187,9 +186,7 @@ describe('StellarFeeService', () => {
       jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => connectionError));
 
       // Act & Assert
-      await expect(service.getFeeEstimate('anchorRecord')).rejects.toThrow(
-        ServiceUnavailableException,
-      );
+      await expect(service.getFeeEstimate('anchorRecord')).rejects.toThrow(FeeEstimationError);
     });
 
     it('should handle Horizon API HTTP error', async () => {
@@ -206,9 +203,7 @@ describe('StellarFeeService', () => {
       jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => httpError));
 
       // Act & Assert
-      await expect(service.getFeeEstimate('anchorRecord')).rejects.toThrow(
-        ServiceUnavailableException,
-      );
+      await expect(service.getFeeEstimate('anchorRecord')).rejects.toThrow(FeeEstimationError);
     });
   });
 
@@ -293,6 +288,47 @@ describe('StellarFeeService', () => {
       expect(operations).toContain('grantAccess');
       expect(operations).toContain('revokeAccess');
       expect(operations).toHaveLength(3);
+    });
+  });
+
+  describe('handleInsufficientFeeError', () => {
+    it('should invalidate cache and re-fetch on INSUFFICIENT_FEE error', async () => {
+      // Arrange
+      const operation = 'anchorRecord';
+      const cacheKey = `fee-estimate:${operation}`;
+      const axiosResponse: AxiosResponse<HorizonFeeStatsResponse> = {
+        data: mockHorizonResponse,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: {} as any,
+      };
+
+      jest.spyOn(cacheService, 'get').mockReturnValue(null);
+      jest.spyOn(cacheService, 'invalidate');
+      jest.spyOn(httpService, 'get').mockReturnValue(of(axiosResponse));
+
+      // Act
+      const result = await service.handleInsufficientFeeError(operation);
+
+      // Assert - cache should be invalidated
+      expect(cacheService.invalidate).toHaveBeenCalledWith(cacheKey);
+      // Fresh fee data should be fetched
+      expect(result).toHaveProperty('baseFee');
+      expect(result).toHaveProperty('recommended');
+      expect(result).toHaveProperty('networkCongestion');
+    });
+
+    it('should surface fee fetch failure as FeeEstimationError', async () => {
+      // Arrange
+      jest.spyOn(cacheService, 'get').mockReturnValue(null);
+      const fetchError = new Error('Network error') as AxiosError;
+      jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => fetchError));
+
+      // Act & Assert
+      await expect(service.getFeeEstimate('anchorRecord')).rejects.toThrow(FeeEstimationError);
+      const error = new FeeEstimationError('test');
+      expect(error.source).toBe('horizon');
     });
   });
 });

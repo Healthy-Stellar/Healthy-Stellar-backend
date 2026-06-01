@@ -1,5 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ConfigDriftService } from './config/config-drift.service';
 import { envValidationSchema } from './config/env.validation';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
@@ -75,12 +75,6 @@ import { DlqModule } from './dlq/dlq.module';
 import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
 import { IncidentModule } from './incident/incident.module';
 import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.interceptor';
-import { PaginationInterceptor } from './common/interceptors/pagination.interceptor';
-import { CqrsModule } from '@nestjs/cqrs';
-import { ResearchExportModule } from './research-export/research-export.module';
-import { ReconciliationModule } from './reconciliation/reconciliation.module';
-import { FeatureFlagModule } from './feature-flags/feature-flag.module';
-import { ProjectionsModule } from './projections/projections.module';
 
 @Module({
   imports: [
@@ -132,7 +126,7 @@ import { ProjectionsModule } from './projections/projections.module';
     HealthModule,
     MetricsModule,
     NotificationsModule,
-    QueueModule.forRoot({ isWorker: false }), // Main app only has queue service, no processors
+    QueueModule.forRoot({ isWorker: false }),
     FhirModule,
     AccessControlModule,
     JobsModule,

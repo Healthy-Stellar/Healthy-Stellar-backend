@@ -9,6 +9,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom, timeout, catchError } from 'rxjs';
 import { AxiosError } from 'axios';
 import { StellarCacheService } from './stellar-cache.service';
+import { FeeEstimationError } from '../exceptions/fee-estimation.exception';
 import {
   FeeEstimateResponse,
   HorizonFeeStatsResponse,
@@ -85,11 +86,11 @@ export class StellarFeeService {
     } catch (error) {
       this.logger.error(`Failed to fetch fee estimate: ${error.message}`, error.stack);
 
-      if (error instanceof ServiceUnavailableException) {
+      if (error instanceof FeeEstimationError) {
         throw error;
       }
 
-      throw new ServiceUnavailableException(
+      throw new FeeEstimationError(
         'Unable to fetch fee estimate from Stellar network. Please try again later.',
       );
     }
@@ -110,7 +111,7 @@ export class StellarFeeService {
           catchError((error: AxiosError) => {
             if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
               this.logger.error('Horizon API request timeout');
-              throw new ServiceUnavailableException(
+              throw new FeeEstimationError(
                 'Stellar Horizon API is not responding. Please try again later.',
               );
             }
@@ -119,13 +120,13 @@ export class StellarFeeService {
               this.logger.error(
                 `Horizon API error: ${error.response.status} - ${error.response.statusText}`,
               );
-              throw new ServiceUnavailableException(
+              throw new FeeEstimationError(
                 `Stellar Horizon API returned error: ${error.response.status}`,
               );
             }
 
             this.logger.error(`Network error connecting to Horizon: ${error.message}`);
-            throw new ServiceUnavailableException(
+            throw new FeeEstimationError(
               'Unable to connect to Stellar Horizon API. The service may be temporarily unavailable.',
             );
           }),
@@ -135,14 +136,14 @@ export class StellarFeeService {
       this.logger.debug('Successfully fetched fee stats from Horizon');
       return response.data;
     } catch (error) {
-      // Re-throw ServiceUnavailableException
-      if (error instanceof ServiceUnavailableException) {
+      // Re-throw FeeEstimationError
+      if (error instanceof FeeEstimationError) {
         throw error;
       }
 
       // Catch any other unexpected errors
       this.logger.error(`Unexpected error fetching fee stats: ${error.message}`);
-      throw new ServiceUnavailableException(
+      throw new FeeEstimationError(
         'An unexpected error occurred while fetching fee estimates.',
       );
     }
@@ -240,5 +241,22 @@ export class StellarFeeService {
    */
   getSupportedOperations(): string[] {
     return ['anchorRecord', 'grantAccess', 'revokeAccess'];
+  }
+
+  /**
+   * Handle INSUFFICIENT_FEE error by invalidating cache and optionally re-fetching
+   * Called from transaction retry logic when INSUFFICIENT_FEE error is detected
+   */
+  async handleInsufficientFeeError(operation: string): Promise<FeeEstimateResponse> {
+    const cacheKey = `fee-estimate:${operation}`;
+
+    // Invalidate the stale fee cache
+    this.cacheService.invalidate(cacheKey);
+    this.logger.warn(
+      `INSUFFICIENT_FEE error detected for ${operation}. Cache invalidated, re-fetching fresh fee data.`,
+    );
+
+    // Re-fetch fresh fee data from Horizon
+    return this.getFeeEstimate(operation);
   }
 }

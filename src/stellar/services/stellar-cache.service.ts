@@ -54,6 +54,16 @@ export class StellarCacheService {
   }
 
   /**
+   * Invalidate a specific cache key
+   */
+  invalidate(key: string): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+      this.logger.debug(`Cache invalidated for key: ${key}`);
+    }
+  }
+
+  /**
    * Clear all cached data
    */
   clear(): void {
