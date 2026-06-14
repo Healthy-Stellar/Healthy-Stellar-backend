@@ -79,6 +79,7 @@ import { OperatorRunbookModule } from './operator-runbook/operator-runbook.modul
 import { IncidentModule } from './incident/incident.module';
 import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.interceptor';
 import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
+import { EventStoreModule } from './event-store/event-store.module';
 
 @Module({
   imports: [
