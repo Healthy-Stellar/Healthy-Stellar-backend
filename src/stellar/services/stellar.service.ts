@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { CircuitBreakerService } from '../../common/circuit-breaker/circuit-breaker.service';
+import { StellarTracingService } from './stellar-tracing.service';
 import {
   StellarTxResult,
   StellarVerifyResult,
@@ -48,7 +49,7 @@ export class StellarService {
   constructor(
     private readonly configService: ConfigService,
     private readonly circuitBreaker: CircuitBreakerService,
-    private readonly tracingService?: any, // TracingService - optional to avoid circular deps
+    private readonly stellarTracing: StellarTracingService,
   ) {
     const rawNetwork = this.configService.get<string>('STELLAR_NETWORK', 'testnet');
     this.network = rawNetwork === 'mainnet' ? 'mainnet' : 'testnet';
@@ -102,7 +103,11 @@ export class StellarService {
       const tx = StellarSdk.TransactionBuilder.fromXDR(xdr, this.networkPassphrase);
       tx.sign(this.sourceKeypair);
 
-      const sendResult = await this.server.sendTransaction(tx);
+      const sendResult = await this.stellarTracing.traceHorizonCall(
+        'sendTransaction',
+        { 'stellar.operation': 'submitTransaction' },
+        () => this.server.sendTransaction(tx),
+      );
       if (sendResult.status === 'ERROR') {
         throw new Error(
           `submitTransaction error: ${JSON.stringify(sendResult.errorResult)}`,
@@ -124,7 +129,11 @@ export class StellarService {
   async getAccount(accountId: string): Promise<StellarAccountInfo> {
     this.logger.log(`[getAccount] accountId=${accountId}`);
     return this.withRetry('getAccount', async () => {
-      const raw = await this.horizonServer.loadAccount(accountId);
+      const raw = await this.stellarTracing.traceHorizonCall(
+        'loadAccount',
+        { 'stellar.account.address': accountId, 'stellar.operation': 'getAccount' },
+        () => this.horizonServer.loadAccount(accountId),
+      );
       return {
         accountId: raw.accountId(),
         sequence: raw.sequenceNumber(),
@@ -155,7 +164,11 @@ export class StellarService {
   ): Promise<InvokeContractResult> {
     this.logger.log(`[invokeContract] contractId=${contractId} method=${method}`);
     return this.withRetry('invokeContract', async () => {
-      const account = await this.horizonServer.loadAccount(this.sourceKeypair.publicKey());
+      const account = await this.stellarTracing.traceHorizonCall(
+        'loadAccount',
+        { 'stellar.account.address': this.sourceKeypair.publicKey(), 'stellar.operation': 'invokeContract' },
+        () => this.horizonServer.loadAccount(this.sourceKeypair.publicKey()),
+      );
       const contract = new StellarSdk.Contract(contractId);
       const operation = contract.call(method, ...args);
 
@@ -167,7 +180,11 @@ export class StellarService {
         .setTimeout(30)
         .build();
 
-      const simResult = await this.server.simulateTransaction(tx);
+      const simResult = await this.stellarTracing.traceHorizonCall(
+        'simulateTransaction',
+        { 'stellar.contract.id': contractId, 'stellar.operation': 'invokeContract' },
+        () => this.server.simulateTransaction(tx),
+      );
       if (StellarSdk.SorobanRpc.Api.isSimulationError(simResult)) {
         throw new Error(`Soroban simulation failed for "${method}": ${simResult.error}`);
       }
@@ -175,7 +192,11 @@ export class StellarService {
       const preparedTx = StellarSdk.SorobanRpc.assembleTransaction(tx, simResult).build();
       preparedTx.sign(this.sourceKeypair);
 
-      const sendResult = await this.server.sendTransaction(preparedTx);
+      const sendResult = await this.stellarTracing.traceHorizonCall(
+        'sendTransaction',
+        { 'stellar.contract.id': contractId, 'stellar.operation': 'invokeContract' },
+        () => this.server.sendTransaction(preparedTx),
+      );
       if (sendResult.status === 'ERROR') {
         throw new Error(
           `invokeContract submission error for "${method}": ${JSON.stringify(sendResult.errorResult)}`,
@@ -211,10 +232,14 @@ export class StellarService {
       `[getContractEvents] contractId=${targetContract} startLedger=${startLedger}`,
     );
     return this.withRetry('getContractEvents', async () => {
-      const response = await this.server.getEvents({
-        startLedger,
-        filters: [{ type: 'contract', contractIds: [targetContract] }],
-      });
+      const response = await this.stellarTracing.traceHorizonCall(
+        'getEvents',
+        { 'stellar.contract.id': targetContract, 'stellar.operation': 'getContractEvents' },
+        () => this.server.getEvents({
+          startLedger,
+          filters: [{ type: 'contract', contractIds: [targetContract] }],
+        }),
+      );
 
       return response.events.map((e: any) => ({
         id: e.id,
@@ -240,45 +265,31 @@ export class StellarService {
   async anchorRecord(patientId: string, cid: string): Promise<StellarTxResult> {
     this.logger.log(`[anchorRecord] patientId=${patientId} cid=${cid}`);
 
-    if (this.tracingService) {
-      return this.tracingService.withSpan(
-        'stellar.anchorRecord',
-        async (span) => {
-          span.setAttribute('stellar.patient_id', patientId);
-          span.setAttribute('stellar.cid', cid);
-          span.setAttribute('stellar.network', this.network);
-          span.setAttribute('stellar.contract_id', this.contractId);
+    this.stellarTracing.addSpanEvent('stellar.anchorRecord.started', {
+      patientId,
+      cid,
+      network: this.network,
+    });
 
-          this.tracingService.addEvent('stellar.anchorRecord.started', {
-            patientId,
-            cid,
-          });
-
-          try {
-            const result = await this.withRetry('anchorRecord', () =>
-              this.invokeContractInternal('anchor_record', [
-                StellarSdk.nativeToScVal(patientId, { type: 'string' }),
-                StellarSdk.nativeToScVal(cid, { type: 'string' }),
-              ]),
-            );
-
-            span.setAttribute('stellar.tx_hash', result.txHash);
-            span.setAttribute('stellar.ledger', result.ledger);
-
-            this.tracingService.addEvent('stellar.anchorRecord.completed', {
-              txHash: result.txHash,
-              ledger: result.ledger,
-            });
-
-            return result;
-          } catch (error) {
-            this.tracingService.addEvent('stellar.anchorRecord.error', {
-              error: error instanceof Error ? error.message : String(error),
-            });
-            throw error;
-          }
-        },
+    try {
+      const result = await this.withRetry('anchorRecord', () =>
+        this.invokeContractInternal('anchor_record', [
+          StellarSdk.nativeToScVal(patientId, { type: 'string' }),
+          StellarSdk.nativeToScVal(cid, { type: 'string' }),
+        ]),
       );
+
+      this.stellarTracing.addSpanEvent('stellar.anchorRecord.completed', {
+        txHash: result.txHash,
+        ledger: result.ledger,
+      });
+
+      return result;
+    } catch (error) {
+      this.stellarTracing.addSpanEvent('stellar.anchorRecord.error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
 
     return this.withRetry('anchorRecord', () =>
@@ -309,56 +320,34 @@ export class StellarService {
       `[grantAccess] patientId=${patientId} granteeId=${granteeId} recordId=${recordId} expiresAt=${expiresAt.toISOString()}`,
     );
 
-    if (this.tracingService) {
-      return this.tracingService.withSpan(
-        'stellar.grantAccess',
-        async (span) => {
-          span.setAttribute('stellar.patient_id', patientId);
-          span.setAttribute('stellar.grantee_id', granteeId);
-          span.setAttribute('stellar.record_id', recordId);
-          span.setAttribute('stellar.expires_at', expiresAt.toISOString());
-          span.setAttribute('stellar.network', this.network);
+    this.stellarTracing.addSpanEvent('stellar.grantAccess.started', {
+      patientId,
+      granteeId,
+      recordId,
+      network: this.network,
+    });
 
-          this.tracingService.addEvent('stellar.grantAccess.started', {
-            patientId,
-            granteeId,
-            recordId,
-          });
-
-          try {
-            const result = await this.withRetry('grantAccess', () =>
-              this.invokeContractInternal('grant_access', [
-                StellarSdk.nativeToScVal(patientId, { type: 'string' }),
-                StellarSdk.nativeToScVal(granteeId, { type: 'string' }),
-                StellarSdk.nativeToScVal(recordId, { type: 'string' }),
-                StellarSdk.nativeToScVal(expiresAtMs, { type: 'u64' }),
-              ]),
-            );
-
-            span.setAttribute('stellar.tx_hash', result.txHash);
-            this.tracingService.addEvent('stellar.grantAccess.completed', {
-              txHash: result.txHash,
-            });
-
-            return result;
-          } catch (error) {
-            this.tracingService.addEvent('stellar.grantAccess.error', {
-              error: error instanceof Error ? error.message : String(error),
-            });
-            throw error;
-          }
-        },
+    try {
+      const result = await this.withRetry('grantAccess', () =>
+        this.invokeContractInternal('grant_access', [
+          StellarSdk.nativeToScVal(patientId, { type: 'string' }),
+          StellarSdk.nativeToScVal(granteeId, { type: 'string' }),
+          StellarSdk.nativeToScVal(recordId, { type: 'string' }),
+          StellarSdk.nativeToScVal(expiresAtMs, { type: 'u64' }),
+        ]),
       );
-    }
 
-    return this.withRetry('grantAccess', () =>
-      this.invokeContractInternal('grant_access', [
-        StellarSdk.nativeToScVal(patientId, { type: 'string' }),
-        StellarSdk.nativeToScVal(granteeId, { type: 'string' }),
-        StellarSdk.nativeToScVal(recordId, { type: 'string' }),
-        StellarSdk.nativeToScVal(expiresAtMs, { type: 'u64' }),
-      ]),
-    );
+      this.stellarTracing.addSpanEvent('stellar.grantAccess.completed', {
+        txHash: result.txHash,
+      });
+
+      return result;
+    } catch (error) {
+      this.stellarTracing.addSpanEvent('stellar.grantAccess.error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   /**
@@ -378,53 +367,33 @@ export class StellarService {
       `[revokeAccess] patientId=${patientId} granteeId=${granteeId} recordId=${recordId}`,
     );
 
-    if (this.tracingService) {
-      return this.tracingService.withSpan(
-        'stellar.revokeAccess',
-        async (span) => {
-          span.setAttribute('stellar.patient_id', patientId);
-          span.setAttribute('stellar.grantee_id', granteeId);
-          span.setAttribute('stellar.record_id', recordId);
-          span.setAttribute('stellar.network', this.network);
+    this.stellarTracing.addSpanEvent('stellar.revokeAccess.started', {
+      patientId,
+      granteeId,
+      recordId,
+      network: this.network,
+    });
 
-          this.tracingService.addEvent('stellar.revokeAccess.started', {
-            patientId,
-            granteeId,
-            recordId,
-          });
-
-          try {
-            const result = await this.withRetry('revokeAccess', () =>
-              this.invokeContractInternal('revoke_access', [
-                StellarSdk.nativeToScVal(patientId, { type: 'string' }),
-                StellarSdk.nativeToScVal(granteeId, { type: 'string' }),
-                StellarSdk.nativeToScVal(recordId, { type: 'string' }),
-              ]),
-            );
-
-            span.setAttribute('stellar.tx_hash', result.txHash);
-            this.tracingService.addEvent('stellar.revokeAccess.completed', {
-              txHash: result.txHash,
-            });
-
-            return result;
-          } catch (error) {
-            this.tracingService.addEvent('stellar.revokeAccess.error', {
-              error: error instanceof Error ? error.message : String(error),
-            });
-            throw error;
-          }
-        },
+    try {
+      const result = await this.withRetry('revokeAccess', () =>
+        this.invokeContractInternal('revoke_access', [
+          StellarSdk.nativeToScVal(patientId, { type: 'string' }),
+          StellarSdk.nativeToScVal(granteeId, { type: 'string' }),
+          StellarSdk.nativeToScVal(recordId, { type: 'string' }),
+        ]),
       );
-    }
 
-    return this.withRetry('revokeAccess', () =>
-      this.invokeContractInternal('revoke_access', [
-        StellarSdk.nativeToScVal(patientId, { type: 'string' }),
-        StellarSdk.nativeToScVal(granteeId, { type: 'string' }),
-        StellarSdk.nativeToScVal(recordId, { type: 'string' }),
-      ]),
-    );
+      this.stellarTracing.addSpanEvent('stellar.revokeAccess.completed', {
+        txHash: result.txHash,
+      });
+
+      return result;
+    } catch (error) {
+      this.stellarTracing.addSpanEvent('stellar.revokeAccess.error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   /**
@@ -438,44 +407,27 @@ export class StellarService {
   async verifyAccess(requesterId: string, recordId: string): Promise<StellarVerifyResult> {
     this.logger.log(`[verifyAccess] requesterId=${requesterId} recordId=${recordId}`);
 
-    if (this.tracingService) {
-      return this.tracingService.withSpan(
-        'stellar.verifyAccess',
-        async (span) => {
-          span.setAttribute('stellar.requester_id', requesterId);
-          span.setAttribute('stellar.record_id', recordId);
-          span.setAttribute('stellar.network', this.network);
+    this.stellarTracing.addSpanEvent('stellar.verifyAccess.started', {
+      requesterId,
+      recordId,
+      network: this.network,
+    });
 
-          this.tracingService.addEvent('stellar.verifyAccess.started', {
-            requesterId,
-            recordId,
-          });
+    try {
+      const result = await this.withRetry('verifyAccess', () => this.simulateVerifyAccess(requesterId, recordId));
 
-          try {
-            const result = await this.withRetry('verifyAccess', () => this.simulateVerifyAccess(requesterId, recordId));
+      this.stellarTracing.addSpanEvent('stellar.verifyAccess.completed', {
+        hasAccess: result.hasAccess,
+        expiresAt: result.expiresAt,
+      });
 
-            span.setAttribute('stellar.has_access', result.hasAccess);
-            if (result.expiresAt) {
-              span.setAttribute('stellar.expires_at', result.expiresAt);
-            }
-
-            this.tracingService.addEvent('stellar.verifyAccess.completed', {
-              hasAccess: result.hasAccess,
-              expiresAt: result.expiresAt,
-            });
-
-            return result;
-          } catch (error) {
-            this.tracingService.addEvent('stellar.verifyAccess.error', {
-              error: error instanceof Error ? error.message : String(error),
-            });
-            throw error;
-          }
-        },
-      );
+      return result;
+    } catch (error) {
+      this.stellarTracing.addSpanEvent('stellar.verifyAccess.error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
-
-    return this.withRetry('verifyAccess', () => this.simulateVerifyAccess(requesterId, recordId));
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
@@ -488,7 +440,11 @@ export class StellarService {
     method: string,
     args: StellarSdk.xdr.ScVal[],
   ): Promise<StellarTxResult> {
-    const account = await this.horizonServer.loadAccount(this.sourceKeypair.publicKey());
+    const account = await this.stellarTracing.traceHorizonCall(
+      'loadAccount',
+      { 'stellar.account.address': this.sourceKeypair.publicKey(), 'stellar.operation': `invokeContractInternal.${method}` },
+      () => this.horizonServer.loadAccount(this.sourceKeypair.publicKey()),
+    );
 
     const contract = new StellarSdk.Contract(this.contractId);
     const operation = contract.call(method, ...args);
@@ -501,7 +457,11 @@ export class StellarService {
       .setTimeout(30)
       .build();
 
-    const simResult = await this.server.simulateTransaction(tx);
+    const simResult = await this.stellarTracing.traceHorizonCall(
+      'simulateTransaction',
+      { 'stellar.contract.id': this.contractId, 'stellar.operation': `invokeContractInternal.${method}` },
+      () => this.server.simulateTransaction(tx),
+    );
     if (StellarSdk.SorobanRpc.Api.isSimulationError(simResult)) {
       throw new Error(`Soroban simulation failed for "${method}": ${simResult.error}`);
     }
@@ -509,7 +469,11 @@ export class StellarService {
     const preparedTx = StellarSdk.SorobanRpc.assembleTransaction(tx, simResult).build();
     preparedTx.sign(this.sourceKeypair);
 
-    const sendResult = await this.server.sendTransaction(preparedTx);
+    const sendResult = await this.stellarTracing.traceHorizonCall(
+      'sendTransaction',
+      { 'stellar.contract.id': this.contractId, 'stellar.operation': `invokeContractInternal.${method}` },
+      () => this.server.sendTransaction(preparedTx),
+    );
     if (sendResult.status === 'ERROR') {
       throw new Error(
         `Transaction submission error for "${method}": ${JSON.stringify(sendResult.errorResult)}`,
@@ -526,7 +490,11 @@ export class StellarService {
     requesterId: string,
     recordId: string,
   ): Promise<StellarVerifyResult> {
-    const account = await this.horizonServer.loadAccount(this.sourceKeypair.publicKey());
+    const account = await this.stellarTracing.traceHorizonCall(
+      'loadAccount',
+      { 'stellar.account.address': this.sourceKeypair.publicKey(), 'stellar.operation': 'simulateVerifyAccess' },
+      () => this.horizonServer.loadAccount(this.sourceKeypair.publicKey()),
+    );
 
     const contract = new StellarSdk.Contract(this.contractId);
     const operation = contract.call(
@@ -543,7 +511,11 @@ export class StellarService {
       .setTimeout(30)
       .build();
 
-    const simResult = await this.server.simulateTransaction(tx);
+    const simResult = await this.stellarTracing.traceHorizonCall(
+      'simulateTransaction',
+      { 'stellar.contract.id': this.contractId, 'stellar.operation': 'simulateVerifyAccess' },
+      () => this.server.simulateTransaction(tx),
+    );
 
     if (StellarSdk.SorobanRpc.Api.isSimulationError(simResult)) {
       this.logger.warn(
@@ -589,7 +561,11 @@ export class StellarService {
     for (let i = 0; i < maxPolls; i++) {
       await this.sleep(pollIntervalMs);
 
-      const statusResponse = await this.server.getTransaction(txHash);
+      const statusResponse = await this.stellarTracing.traceHorizonCall(
+        'getTransaction',
+        { 'stellar.tx_hash': txHash, 'stellar.operation': 'pollForConfirmation' },
+        () => this.server.getTransaction(txHash),
+      );
 
       if (statusResponse.status === StellarSdk.SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
         this.logger.log(`[poll] txHash=${txHash} confirmed`);
@@ -651,6 +627,7 @@ export class StellarService {
 
         if (attempt < this.maxRetries) {
           const delay = this.BASE_DELAY_MS * Math.pow(2, attempt - 1);
+          this.stellarTracing.addRetryEvent(operationName, attempt, this.maxRetries, lastError.message);
           this.logger.warn(
             `[${operationName}] attempt ${attempt}/${this.maxRetries} failed — retrying in ${delay}ms. Error: ${lastError.message}`,
           );

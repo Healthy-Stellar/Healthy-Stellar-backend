@@ -9,6 +9,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom, timeout, catchError } from 'rxjs';
 import { AxiosError } from 'axios';
 import { StellarCacheService } from './stellar-cache.service';
+import { StellarTracingService } from './stellar-tracing.service';
 import { FeeEstimationError } from '../exceptions/fee-estimation.exception';
 import {
   FeeEstimateResponse,
@@ -47,6 +48,7 @@ export class StellarFeeService {
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
     private readonly cacheService: StellarCacheService,
+    private readonly stellarTracing: StellarTracingService,
   ) {
     this.horizonUrl = this.configService.get<string>(
       'STELLAR_HORIZON_URL',
@@ -102,51 +104,56 @@ export class StellarFeeService {
   private async fetchFeeStatsFromHorizon(): Promise<HorizonFeeStatsResponse> {
     const url = `${this.horizonUrl}/fee_stats`;
 
-    this.logger.debug(`Fetching fee stats from: ${url}`);
+    return this.stellarTracing.traceHorizonCall(
+      'fetchFeeStats',
+      { 'stellar.horizon_url': this.horizonUrl, 'stellar.operation': 'fetchFeeStatsFromHorizon' },
+      async () => {
+        this.logger.debug(`Fetching fee stats from: ${url}`);
+        try {
+          const response = await firstValueFrom(
+            this.httpService.get<HorizonFeeStatsResponse>(url).pipe(
+              timeout(this.REQUEST_TIMEOUT_MS),
+              catchError((error: AxiosError) => {
+                if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+                  this.logger.error('Horizon API request timeout');
+                  throw new FeeEstimationError(
+                    'Stellar Horizon API is not responding. Please try again later.',
+                  );
+                }
 
-    try {
-      const response = await firstValueFrom(
-        this.httpService.get<HorizonFeeStatsResponse>(url).pipe(
-          timeout(this.REQUEST_TIMEOUT_MS),
-          catchError((error: AxiosError) => {
-            if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
-              this.logger.error('Horizon API request timeout');
-              throw new FeeEstimationError(
-                'Stellar Horizon API is not responding. Please try again later.',
-              );
-            }
+                if (error.response) {
+                  this.logger.error(
+                    `Horizon API error: ${error.response.status} - ${error.response.statusText}`,
+                  );
+                  throw new FeeEstimationError(
+                    `Stellar Horizon API returned error: ${error.response.status}`,
+                  );
+                }
 
-            if (error.response) {
-              this.logger.error(
-                `Horizon API error: ${error.response.status} - ${error.response.statusText}`,
-              );
-              throw new FeeEstimationError(
-                `Stellar Horizon API returned error: ${error.response.status}`,
-              );
-            }
+                this.logger.error(`Network error connecting to Horizon: ${error.message}`);
+                throw new FeeEstimationError(
+                  'Unable to connect to Stellar Horizon API. The service may be temporarily unavailable.',
+                );
+              }),
+            ),
+          );
 
-            this.logger.error(`Network error connecting to Horizon: ${error.message}`);
-            throw new FeeEstimationError(
-              'Unable to connect to Stellar Horizon API. The service may be temporarily unavailable.',
-            );
-          }),
-        ),
-      );
+          this.logger.debug('Successfully fetched fee stats from Horizon');
+          return response.data;
+        } catch (error) {
+          // Re-throw FeeEstimationError
+          if (error instanceof FeeEstimationError) {
+            throw error;
+          }
 
-      this.logger.debug('Successfully fetched fee stats from Horizon');
-      return response.data;
-    } catch (error) {
-      // Re-throw FeeEstimationError
-      if (error instanceof FeeEstimationError) {
-        throw error;
-      }
-
-      // Catch any other unexpected errors
-      this.logger.error(`Unexpected error fetching fee stats: ${error.message}`);
-      throw new FeeEstimationError(
-        'An unexpected error occurred while fetching fee estimates.',
-      );
-    }
+          // Catch any other unexpected errors
+          this.logger.error(`Unexpected error fetching fee stats: ${error.message}`);
+          throw new FeeEstimationError(
+            'An unexpected error occurred while fetching fee estimates.',
+          );
+        }
+      },
+    );
   }
 
   /**
