@@ -2,7 +2,9 @@ import { ThrottlerModuleOptions, ThrottlerOptionsFactory } from '@nestjs/throttl
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
-import Redis from 'ioredis';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const Redis = require('ioredis');
 
 /** Actor types that influence rate limit selection */
 export type ActorType = 'anonymous' | 'patient' | 'provider' | 'admin' | 'api_key' | 'device';
@@ -14,6 +16,19 @@ export interface RateLimitProfile {
   /** Max requests per window */
   limit: number;
 }
+
+/**
+ * Per-subscription-plan rate limit multipliers.
+ * Applied on top of the base category limits.
+ */
+export type TenantSubscriptionPlan = 'free' | 'starter' | 'professional' | 'enterprise';
+
+export const PLAN_MULTIPLIERS: Record<TenantSubscriptionPlan, number> = {
+  free:         0.5,
+  starter:      1,
+  professional: 2,
+  enterprise:   5,
+};
 
 /**
  * Route-pattern × actor-type rate limit matrix.
@@ -90,23 +105,27 @@ export class ThrottlerConfigService implements ThrottlerOptionsFactory {
   constructor(private configService: ConfigService) {}
 
   createThrottlerOptions(): ThrottlerModuleOptions {
-    const redisHost = this.configService.get<string>('REDIS_HOST', 'localhost');
-    const redisPort = this.configService.get<number>('REDIS_PORT', 6379);
+    const redisHost     = this.configService.get<string>('REDIS_HOST', 'localhost');
+    const redisPort     = this.configService.get<number>('REDIS_PORT', 6379);
     const redisPassword = this.configService.get<string>('REDIS_PASSWORD');
-    const redisDb = this.configService.get<number>('REDIS_DB', 0);
+    const redisDb       = this.configService.get<number>('REDIS_DB', 0);
 
     const redis = new Redis({
       host: redisHost,
       port: redisPort,
       password: redisPassword || undefined,
       db: redisDb,
-      retryStrategy: (times) => Math.min(times * 50, 2000),
+      retryStrategy: (times: number) => Math.min(times * 50, 2000),
     });
 
-    // A single named throttler is registered; the guard overrides ttl/limit
-    // per-request using RATE_LIMIT_PROFILES, so this acts as a safe fallback.
     return {
-      throttlers: [{ name: 'default', ttl: 60_000, limit: 30 }],
+      throttlers: [
+        { name: 'default', ttl: 60_000, limit: 100 },
+        { name: 'auth',    ttl: 60_000, limit: 5   },
+        { name: 'read',    ttl: 60_000, limit: 100 },
+        { name: 'write',   ttl: 60_000, limit: 20  },
+        { name: 'admin',   ttl: 60_000, limit: 50  },
+      ],
       storage: new ThrottlerStorageRedisService(redis),
     };
   }

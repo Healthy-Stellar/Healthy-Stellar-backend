@@ -65,19 +65,34 @@ jest.mock('ipfs-http-client', () => ({
   })),
 }));
 
-// Mock Redis for unit tests
+// Mock Redis for unit tests — shared in-memory store supports incr/decr/flushdb
 jest.mock('ioredis', () => {
+  const store: Record<string, string> = {};
+
   const RedisMock = jest.fn().mockImplementation(() => ({
-    get: jest.fn(),
-    set: jest.fn(),
-    del: jest.fn(),
-    expire: jest.fn(),
-    ttl: jest.fn(),
-    keys: jest.fn(() => []),
-    flushdb: jest.fn(),
-    quit: jest.fn(),
-    on: jest.fn(),
+    get:  jest.fn((key: string) => Promise.resolve(store[key] ?? null)),
+    set:  jest.fn((key: string, value: string) => { store[key] = String(value); return Promise.resolve('OK'); }),
+    del:  jest.fn((key: string) => { delete store[key]; return Promise.resolve(1); }),
+    incr: jest.fn((key: string) => {
+      store[key] = String((parseInt(store[key] ?? '0', 10) + 1));
+      return Promise.resolve(parseInt(store[key], 10));
+    }),
+    decr: jest.fn((key: string) => {
+      store[key] = String(Math.max(0, parseInt(store[key] ?? '0', 10) - 1));
+      return Promise.resolve(parseInt(store[key], 10));
+    }),
+    expire:  jest.fn(() => Promise.resolve(1)),
+    ttl:     jest.fn(() => Promise.resolve(-1)),
+    keys:    jest.fn(() => Promise.resolve([])),
+    flushdb: jest.fn(() => { Object.keys(store).forEach((k) => delete store[k]); return Promise.resolve('OK'); }),
+    quit:    jest.fn(() => Promise.resolve('OK')),
+    on:      jest.fn(),
+    disconnect: jest.fn(),
   }));
+
+  // Expose default and Cluster so nestjs-throttler-storage-redis instanceof checks pass
+  RedisMock.default = RedisMock;
+  RedisMock.Cluster = class ClusterMock {};
   return RedisMock;
 });
 
