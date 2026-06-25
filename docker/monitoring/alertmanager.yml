@@ -7,8 +7,32 @@ route:
   group_interval: 5m
   repeat_interval: 4h
   receiver: 'default-receiver'
+  routes:
+    # SLA-critical endpoint alerts page the on-call team via email + Slack.
+    - matchers:
+        - notify = sla-critical
+      receiver: 'sla-critical-receiver'
+      group_wait: 10s
+      repeat_interval: 1h
+      continue: false
 
 receivers:
   - name: 'default-receiver'
     # In a real environment, you would configure email, slack, or pagerduty here.
     # For now, it just logs to stdout/internal storage.
+
+  - name: 'sla-critical-receiver'
+    # Credentials are injected from the environment / secret store at deploy time.
+    email_configs:
+      - to: '${SLA_ALERT_EMAIL:-oncall@healthystellar.io}'
+        from: '${ALERT_FROM_EMAIL:-alerts@healthystellar.io}'
+        smarthost: '${SMTP_SMARTHOST:-smtp:587}'
+        auth_username: '${SMTP_USERNAME}'
+        auth_password: '${SMTP_PASSWORD}'
+        send_resolved: true
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '${SLACK_ALERT_CHANNEL:-#sla-alerts}'
+        send_resolved: true
+        title: '{{ .CommonAnnotations.summary }}'
+        text: "{{ range .Alerts }}*{{ .Labels.alertname }}* ({{ .Labels.severity }})\n{{ .Annotations.description }}\nRunbook: {{ .Annotations.runbook_url }}\n{{ end }}"
