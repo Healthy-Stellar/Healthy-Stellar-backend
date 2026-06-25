@@ -1,0 +1,62 @@
+# SLA-Critical Endpoint Alert Rules — Healthy Stellar Backend
+#
+# Covers the SLA-critical request paths (patient record reads, auth, billing/queues).
+# Each alert carries a `runbook_url` annotation linking to the operator runbook
+# (src/operator-runbook/, served at /operator/runbooks/<slug>) and is labelled
+# `notify: sla-critical` so Alertmanager routes it to the email + Slack receivers.
+#
+# Metric sources (src/metrics/custom-metrics.service.ts):
+#   http_request_duration_seconds{method,route,status}  — request latency histogram
+#   http_requests_total{method,route,status}            — request counter
+#   queue_depth{queue}                                   — BullMQ waiting jobs gauge
+
+groups:
+  - name: sla_critical_endpoints
+    interval: 30s
+    rules:
+      # p99 latency > 2s on /patients/* for 5 minutes
+      - alert: PatientsP99LatencyHigh
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket{route=~"/patients.*"}[5m])) by (le)
+          ) > 2
+        for: 5m
+        labels:
+          severity: critical
+          component: patients
+          notify: sla-critical
+        annotations:
+          summary: "p99 latency on /patients/* exceeds SLA (2s)"
+          description: "p99 latency for /patients/* is {{ $value | humanize }}s over the last 5m (threshold: 2s)."
+          runbook_url: "https://app.healthystellar.io/operator/runbooks/sla-patients-latency"
+
+      # Error rate > 1% on /auth/* for 2 minutes
+      - alert: AuthErrorRateHigh
+        expr: |
+          (
+            sum(rate(http_requests_total{route=~"/auth.*",status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{route=~"/auth.*"}[5m]))
+          ) * 100 > 1
+        for: 2m
+        labels:
+          severity: critical
+          component: auth
+          notify: sla-critical
+        annotations:
+          summary: "Error rate on /auth/* exceeds SLA (1%)"
+          description: "/auth/* 5xx error rate is {{ $value | humanizePercentage }} over the last 5m (threshold: 1%)."
+          runbook_url: "https://app.healthystellar.io/operator/runbooks/sla-auth-error-rate"
+
+      # BullMQ queue depth > 1000 for 10 minutes
+      - alert: BullMQQueueDepthHigh
+        expr: max(queue_depth) > 1000
+        for: 10m
+        labels:
+          severity: critical
+          component: queue
+          notify: sla-critical
+        annotations:
+          summary: "BullMQ queue depth exceeds SLA (1000)"
+          description: "Queue {{ $labels.queue }} has {{ $value }} waiting jobs for over 10m (threshold: 1000)."
+          runbook_url: "https://app.healthystellar.io/operator/runbooks/sla-queue-backlog"
