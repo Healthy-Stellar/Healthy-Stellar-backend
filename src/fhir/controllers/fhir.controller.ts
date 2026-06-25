@@ -24,6 +24,7 @@ import { FhirExceptionFilter } from '../filters/fhir-exception.filter';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { BulkExportQueryDto } from '../dto/bulk-export.dto';
 import { FhirOperationOutcome } from '../dto/fhir-resources.dto';
+import { ExportScope } from '../entities/bulk-export-job.entity';
 
 @ApiTags('FHIR R4')
 @ApiBearerAuth()
@@ -45,6 +46,34 @@ export class FhirController {
   }
 
   // ── Patient Resource ──────────────────────────────────────────────────────
+
+  /**
+   * Patient-level export — must be declared before Patient/:id so that
+   * the literal "$export" segment is not captured by the :id wildcard.
+   * FHIR R4: GET [base]/Patient/$export
+   */
+  @Get('Patient/$export')
+  @ApiOperation({ summary: 'Initiate patient-level bulk export' })
+  @ApiResponse({ status: 202, description: 'Export job accepted' })
+  async initiateExport(
+    @Query() query: BulkExportQueryDto,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    const jobId = await this.bulkExportService.initiateExport(
+      req.user.id,
+      req.user.role,
+      query._type,
+      query._since,
+      query._outputFormat,
+      ExportScope.PATIENT,
+    );
+
+    res
+      .status(HttpStatus.ACCEPTED)
+      .header('Content-Location', `/fhir/r4/$export-status/${jobId}`)
+      .send();
+  }
 
   @Get('Patient/:id')
   @ApiOperation({ summary: 'Get a patient resource' })
@@ -145,10 +174,14 @@ export class FhirController {
 
   // ── Bulk Export (Async Operation) ─────────────────────────────────────────
 
-  @Get('Patient/$export')
-  @ApiOperation({ summary: 'Initiate bulk export of patient data' })
+  /**
+   * System-level export — exports ALL resources (admin only).
+   * FHIR R4: GET [base]/$export
+   */
+  @Get('$export')
+  @ApiOperation({ summary: 'Initiate system-level FHIR R4 bulk export (admin only)' })
   @ApiResponse({ status: 202, description: 'Export job accepted' })
-  async initiateExport(
+  async initiateSystemExport(
     @Query() query: BulkExportQueryDto,
     @Req() req: any,
     @Res() res: Response,
@@ -157,6 +190,38 @@ export class FhirController {
       req.user.id,
       req.user.role,
       query._type,
+      query._since,
+      query._outputFormat,
+      ExportScope.SYSTEM,
+    );
+
+    res
+      .status(HttpStatus.ACCEPTED)
+      .header('Content-Location', `/fhir/r4/$export-status/${jobId}`)
+      .send();
+  }
+
+  /**
+   * Group-level export — exports resources for a specific FHIR Group.
+   * FHIR R4: GET [base]/Group/[id]/$export
+   */
+  @Get('Group/:groupId/$export')
+  @ApiOperation({ summary: 'Initiate group-level FHIR R4 bulk export' })
+  @ApiResponse({ status: 202, description: 'Export job accepted' })
+  async initiateGroupExport(
+    @Param('groupId') groupId: string,
+    @Query() query: BulkExportQueryDto,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    const jobId = await this.bulkExportService.initiateExport(
+      req.user.id,
+      req.user.role,
+      query._type,
+      query._since,
+      query._outputFormat,
+      ExportScope.GROUP,
+      groupId,
     );
 
     res

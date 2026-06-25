@@ -33,7 +33,7 @@ module.exports = {
         '^@/(.*)$': '<rootDir>/src/$1',
         '^@test/(.*)$': '<rootDir>/test/$1',
         '^uuid$': 'uuid',
-        '^@nestjs/bullmq$': '<rootDir>/node_modules/@nestjs/bullmq',
+        '^@nestjs/bullmq$': '<rootDir>/test/__mocks__/@nestjs/bullmq.js',
         '^ipfs-http-client$': '<rootDir>/test/__mocks__/ipfs-http-client.js',
         '^bull$': '<rootDir>/test/__mocks__/bull.js',
         '^@nestjs-modules/mailer$': '<rootDir>/test/__mocks__/@nestjs-modules/mailer.js',
