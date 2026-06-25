@@ -20,8 +20,12 @@ export class FeatureFlagGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     const actorId: string | undefined = request.user?.id ?? request.user?.sub;
+    const tenantId: string | undefined =
+      request.user?.tenantId ??
+      request.headers['x-tenant-id'] ??
+      undefined;
 
-    const enabled = await this.featureFlagService.isEnabled(flagKey, actorId);
+    const enabled = await this.featureFlagService.isEnabled(flagKey, { actorId, tenantId });
     if (!enabled) {
       throw new ForbiddenException(`Feature '${flagKey}' is not available`);
     }

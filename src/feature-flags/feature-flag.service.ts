@@ -3,12 +3,21 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FeatureFlag, RolloutStrategy } from './feature-flag.entity';
 
+export interface EvaluationContext {
+  /** User / actor ID for PERCENTAGE and ALLOWLIST strategies */
+  actorId?: string;
+  /** Tenant ID for TENANT_ALLOWLIST and TENANT_PERCENTAGE strategies */
+  tenantId?: string;
+}
+
 export interface UpsertFeatureFlagDto {
   key: string;
   enabled: boolean;
   strategy?: RolloutStrategy;
   rolloutPercentage?: number;
+  tenantRolloutPercentage?: number;
   allowlist?: string[];
+  tenantAllowlist?: string[];
   description?: string;
 }
 
@@ -21,24 +30,43 @@ export class FeatureFlagService {
     private readonly repo: Repository<FeatureFlag>,
   ) {}
 
-  async isEnabled(key: string, actorId?: string): Promise<boolean> {
+  /**
+   * Evaluate whether a feature flag is enabled for the given context.
+   *
+   * Accepts either a legacy string actorId (backward-compat) or a full
+   * EvaluationContext with actorId + tenantId.
+   */
+  async isEnabled(
+    key: string,
+    contextOrActorId?: string | EvaluationContext,
+  ): Promise<boolean> {
+    const ctx = this.normalizeContext(contextOrActorId);
     const flag = await this.repo.findOne({ where: { key } });
     if (!flag || !flag.enabled) return false;
 
-    switch (flag.strategy) {
-      case RolloutStrategy.PERCENTAGE: {
-        if (!actorId) return false;
-        // Deterministic hash so the same actor always gets the same result
-        const hash = this.stableHash(actorId + key);
-        return (hash % 100) < flag.rolloutPercentage;
-      }
-      case RolloutStrategy.ALLOWLIST: {
-        if (!actorId || !flag.allowlist || flag.allowlist.length === 0) return false;
-        return flag.allowlist.includes(actorId);
-      }
-      default:
-        return true;
+    return this.evaluate(flag, ctx);
+  }
+
+  /** Batch-evaluate multiple flags in a single DB round-trip. */
+  async evaluateMany(
+    keys: string[],
+    context?: EvaluationContext,
+  ): Promise<Record<string, boolean>> {
+    if (keys.length === 0) return {};
+    const ctx = context ?? {};
+    const flags = await this.repo
+      .createQueryBuilder('f')
+      .where('f.key IN (:...keys)', { keys })
+      .getMany();
+
+    const result: Record<string, boolean> = {};
+    for (const key of keys) {
+      result[key] = false;
     }
+    for (const flag of flags) {
+      result[flag.key] = flag.enabled ? this.evaluate(flag, ctx) : false;
+    }
+    return result;
   }
 
   async upsert(dto: UpsertFeatureFlagDto, actorId: string): Promise<FeatureFlag> {
@@ -53,14 +81,16 @@ export class FeatureFlagService {
       enabled: dto.enabled,
       strategy: dto.strategy ?? flag.strategy,
       rolloutPercentage: dto.rolloutPercentage ?? flag.rolloutPercentage,
+      tenantRolloutPercentage: dto.tenantRolloutPercentage ?? flag.tenantRolloutPercentage,
       allowlist: dto.allowlist ?? flag.allowlist,
+      tenantAllowlist: dto.tenantAllowlist ?? flag.tenantAllowlist,
       description: dto.description ?? flag.description,
       updatedBy: actorId,
     });
 
     const saved = await this.repo.save(flag);
     this.logger.log(
-      `Feature flag [${dto.key}] ${wasEnabled ? 'was' : 'was not'} enabled → now ${dto.enabled} by ${actorId}`,
+      `Feature flag [${dto.key}] ${wasEnabled ? 'was' : 'was not'} enabled → now ${dto.enabled} (strategy: ${saved.strategy}) by ${actorId}`,
     );
     return saved;
   }
@@ -77,6 +107,51 @@ export class FeatureFlagService {
 
   async findAll(): Promise<FeatureFlag[]> {
     return this.repo.find({ order: { key: 'ASC' } });
+  }
+
+  private evaluate(flag: FeatureFlag, ctx: EvaluationContext): boolean {
+    switch (flag.strategy) {
+      case RolloutStrategy.PERCENTAGE: {
+        if (!ctx.actorId) return false;
+        const hash = this.stableHash(ctx.actorId + flag.key);
+        return hash % 100 < flag.rolloutPercentage;
+      }
+
+      case RolloutStrategy.ALLOWLIST: {
+        if (!ctx.actorId || !flag.allowlist?.length) return false;
+        return flag.allowlist.includes(ctx.actorId);
+      }
+
+      case RolloutStrategy.TENANT_ALLOWLIST: {
+        if (!ctx.tenantId || !flag.tenantAllowlist?.length) return false;
+        return flag.tenantAllowlist.includes(ctx.tenantId);
+      }
+
+      case RolloutStrategy.TENANT_PERCENTAGE: {
+        if (!ctx.tenantId) return false;
+        // Within an allowed tenant, further gate per-actor if actorId is present
+        const tenantHash = this.stableHash(ctx.tenantId + flag.key);
+        const tenantIn = tenantHash % 100 < flag.tenantRolloutPercentage;
+        if (!tenantIn) return false;
+        // Optional: also gate by actor percentage when both are configured
+        if (ctx.actorId && flag.rolloutPercentage > 0) {
+          const actorHash = this.stableHash(ctx.actorId + flag.key);
+          return actorHash % 100 < flag.rolloutPercentage;
+        }
+        return true;
+      }
+
+      default:
+        return true;
+    }
+  }
+
+  private normalizeContext(
+    input?: string | EvaluationContext,
+  ): EvaluationContext {
+    if (!input) return {};
+    if (typeof input === 'string') return { actorId: input };
+    return input;
   }
 
   /** Stable numeric hash of a string (djb2) */

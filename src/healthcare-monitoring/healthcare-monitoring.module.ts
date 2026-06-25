@@ -16,6 +16,10 @@ import { ComplianceMonitoringService } from './services/compliance-monitoring.se
 import { IncidentTrackingService } from './services/incident-tracking.service';
 import { DashboardService } from './services/dashboard.service';
 import { NotificationService } from './services/notification.service';
+import { VitalsService } from './services/vitals.service';
+
+// Gateway
+import { VitalsGateway } from './vitals.gateway';
 
 // Entities
 import { SystemMetric } from './entities/system-metric.entity';
@@ -23,6 +27,11 @@ import { ClinicalAlert } from './entities/clinical-alert.entity';
 import { EquipmentStatus } from './entities/equipment-status.entity';
 import { ComplianceCheck } from './entities/compliance-check.entity';
 import { HealthcareIncident } from './entities/healthcare-incident.entity';
+import { PatientVital } from './entities/patient-vital.entity';
+
+// WS middleware/guard deps
+import { WsJwtMiddleware } from '../notifications/middleware/ws-jwt.middleware';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -32,8 +41,10 @@ import { HealthcareIncident } from './entities/healthcare-incident.entity';
       EquipmentStatus,
       ComplianceCheck,
       HealthcareIncident,
+      PatientVital,
     ]),
     ScheduleModule.forRoot(),
+    AuthModule,
   ],
   controllers: [
     HealthcareMonitoringController,
@@ -49,6 +60,9 @@ import { HealthcareIncident } from './entities/healthcare-incident.entity';
     IncidentTrackingService,
     DashboardService,
     NotificationService,
+    VitalsService,
+    VitalsGateway,
+    WsJwtMiddleware,
   ],
   exports: [
     SystemHealthService,
@@ -56,6 +70,8 @@ import { HealthcareIncident } from './entities/healthcare-incident.entity';
     EquipmentMonitoringService,
     ComplianceMonitoringService,
     IncidentTrackingService,
+    VitalsService,
+    VitalsGateway,
   ],
 })
 export class HealthcareMonitoringModule {}
