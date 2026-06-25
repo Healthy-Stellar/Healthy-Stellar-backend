@@ -69,6 +69,10 @@ export class Prescription {
   @Column('simple-json', { nullable: true })
   safetyChecks: any;
 
+  /** Drug-drug interaction check result captured at prescription creation. */
+  @Column('simple-json', { nullable: true })
+  interactionCheck: any;
+
   @Column('text', { nullable: true })
   notes: string;
 

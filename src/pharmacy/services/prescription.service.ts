@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { Prescription } from '../entities/prescription.entity';
@@ -8,10 +14,13 @@ import { UpdatePrescriptionDto, SearchPrescriptionsDto } from '../dto/manage-pre
 import { SafetyAlertService } from './safety-alert.service';
 import { PharmacyInventoryService } from './pharmacy-inventory.service';
 import { ControlledSubstanceService } from './controlled-substance.service';
+import { DrugInteractionService } from './drug-interaction.service';
 import { Drug } from '../entities/drug.entity';
 
 @Injectable()
 export class PrescriptionService {
+  private readonly logger = new Logger(PrescriptionService.name);
+
   constructor(
     @InjectRepository(Prescription)
     private prescriptionRepository: Repository<Prescription>,
@@ -22,13 +31,37 @@ export class PrescriptionService {
     private safetyAlertService: SafetyAlertService,
     private inventoryService: PharmacyInventoryService,
     private controlledSubstanceService: ControlledSubstanceService,
+    private drugInteractionService: DrugInteractionService,
   ) {}
 
   async create(createDto: CreatePrescriptionDto): Promise<Prescription> {
+    // Run an automated drug-drug interaction check before persisting. Critical
+    // (major/contraindicated) interactions block creation (422); moderate
+    // interactions are recorded as warnings but do not block.
+    const drugIds = [...new Set((createDto.items ?? []).map((item) => item.drugId).filter(Boolean))];
+    const interactionCheck = await this.drugInteractionService.checkInteractions(drugIds);
+
+    if (
+      interactionCheck.highestSeverity === 'major' ||
+      interactionCheck.highestSeverity === 'contraindicated'
+    ) {
+      throw new UnprocessableEntityException({
+        message: 'Prescription blocked: critical drug interaction detected',
+        interactionCheck,
+      });
+    }
+
+    if (interactionCheck.highestSeverity === 'moderate') {
+      this.logger.warn(
+        `Moderate drug interaction(s) detected for patient ${createDto.patientId}; prescription allowed with warnings`,
+      );
+    }
+
     const prescription = this.prescriptionRepository.create({
       ...createDto,
       status: 'pending',
       refillsRemaining: createDto.refillsAllowed,
+      interactionCheck,
     });
 
     const savedPrescription = await this.prescriptionRepository.save(prescription);
