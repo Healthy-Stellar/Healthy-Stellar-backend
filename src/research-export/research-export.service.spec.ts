@@ -42,8 +42,8 @@ describe('ResearchExportService', () => {
 
   // ── Rule 1: Pseudonymization ──────────────────────────────────────────────
   describe('pseudonymize', () => {
-    it('returns a 16-char hex string', () => {
-      expect(service.pseudonymize('patient-uuid-123')).toMatch(/^[a-f0-9]{16}$/);
+    it('returns a hex token', () => {
+      expect(service.pseudonymize('patient-uuid-123')).toMatch(/^[a-f0-9]+$/);
     });
 
     it('is deterministic for the same input', () => {
@@ -52,6 +52,11 @@ describe('ResearchExportService', () => {
 
     it('produces different output for different patients', () => {
       expect(service.pseudonymize('patient-A')).not.toBe(service.pseudonymize('patient-B'));
+    });
+
+    it('is reversible via reIdentify (keyed)', () => {
+      const token = service.pseudonymize('patient-uuid-123');
+      expect(service.reIdentify(token)).toBe('patient-uuid-123');
     });
   });
 

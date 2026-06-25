@@ -25,7 +25,7 @@ export class ResearchExportFiltersDto {
 }
 
 export interface AnonymizedRecord {
-  pseudoId: string;       // one-way hash of patientId — no direct identifier
+  pseudoId: string;       // reversible keyed pseudonym of patientId — no direct identifier
   ageBracket: string;     // e.g. "30-39"
   sex: string;
   region: string;         // state/country only, no city/zip/street
