@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -13,22 +13,28 @@ import { StellarTransactionQueueService } from './services/stellar-transaction-q
 import { StellarRecoveryManagerService } from './services/stellar-recovery-manager.service';
 import { StellarRetryStoreService } from './services/stellar-retry-store.service';
 import { StellarTracingService } from './services/stellar-tracing.service';
+import { MultiSigTransactionService } from './services/multi-sig-transaction.service';
+import { MultiSigTransactionEntity } from './entities/multi-sig-transaction.entity';
 import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
 import { MetricsModule } from '../metrics/metrics.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
     ConfigModule,
     CircuitBreakerModule,
     MetricsModule,
-    TypeOrmModule.forFeature([HttpIdempotencyEntity]),
+    TypeOrmModule.forFeature([HttpIdempotencyEntity, MultiSigTransactionEntity]),
     EventEmitterModule.forRoot(),
+    ScheduleModule.forRoot(),
+    NotificationsModule,
     HttpModule.register({
       timeout: 10000,
       maxRedirects: 5,
     }),
   ],
-  controllers: [StellarController],
+  controllers: [StellarController, MultiSigController],
   providers: [
     StellarFeeService,
     StellarCacheService,
@@ -40,8 +46,11 @@ import { MetricsModule } from '../metrics/metrics.module';
     StellarTransactionQueueService,
     StellarRecoveryManagerService,
     StellarPaymentVerificationService,
+    MultiSigTransactionService,
   ],
   exports: [
+    MultiSigTransactionService,
+    
     StellarFeeService,
     StellarService,
     StellarWithBreakerService,
@@ -50,6 +59,8 @@ import { MetricsModule } from '../metrics/metrics.module';
     StellarTransactionQueueService,
     StellarRecoveryManagerService,
     StellarPaymentVerificationService,
+    MultiSigTransactionService,
   ],
 })
 export class StellarModule {}
+
