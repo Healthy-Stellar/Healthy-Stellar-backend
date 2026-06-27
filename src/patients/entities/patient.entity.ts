@@ -129,6 +129,22 @@ export class Patient {
   nationalIdType?: string; // e.g., Passport, SSN, NIN
 
   /**
+   * PHI: Social Security Number -- encrypted via key-managed transformer.
+   * Encryption/decryption handled by PhiColumnEncryptionService at the service layer.
+   * Raw column value is base64-encoded AES-256-GCM ciphertext.
+   */
+  @Column({ type: 'text', nullable: true })
+  ssn?: string;
+
+  /**
+   * HMAC-SHA256 index of the plaintext SSN for exact-match lookup.
+   * Keyed with the patient DEK from KeyManagementService.
+   */
+  @Index()
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  ssnHmac?: string;
+
+  /**
    * -----------------------------
    * Stellar / Blockchain Identity
    * -----------------------------

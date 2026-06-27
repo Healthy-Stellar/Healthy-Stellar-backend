@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { EncryptionService } from './services/encryption.service';
 import { KeyManagementService } from './services/key-management.service';
+import { PhiColumnEncryptionService } from './services/phi-column-encryption.service';
 
 /**
  * Encryption Module
@@ -10,11 +11,11 @@ import { KeyManagementService } from './services/key-management.service';
  * while keeping the KeyManagementService private to enforce security boundaries.
  * 
  * Module Configuration:
- * - Providers: EncryptionService and KeyManagementService
- * - Exports: Only EncryptionService (KeyManagementService is private)
+ * - Providers: EncryptionService, KeyManagementService, PhiColumnEncryptionService
+ * - Exports: EncryptionService, PhiColumnEncryptionService
  * 
- * This configuration ensures that KeyManagementService can only be accessed through
- * EncryptionService, enforcing the security boundary specified in Requirement 8.
+ * PhiColumnEncryptionService is exported so that entity modules (Patient, MedicalRecord)
+ * can use it for field-level PHI encryption via the key-management system.
  * 
  * Requirements: 8.1, 8.2, 8.3, 8.4
  */
@@ -22,9 +23,11 @@ import { KeyManagementService } from './services/key-management.service';
   providers: [
     EncryptionService,
     KeyManagementService,
+    PhiColumnEncryptionService,
   ],
   exports: [
     EncryptionService,
+    PhiColumnEncryptionService,
     // KeyManagementService is NOT exported - it's private to this module
   ],
 })
