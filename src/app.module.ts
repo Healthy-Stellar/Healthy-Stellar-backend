@@ -77,6 +77,7 @@ import { DlqModule } from './dlq/dlq.module';
 import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
 import { IncidentModule } from './incident/incident.module';
 import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.interceptor';
+import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
 
 @Module({
   imports: [
@@ -157,6 +158,7 @@ import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.int
     DlqModule,
     OperatorRunbookModule,
     IncidentModule,
+    BedOccupancyModule,
     EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],
