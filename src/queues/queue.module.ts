@@ -6,6 +6,7 @@ import { ExpressAdapter } from '@bull-board/express';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { QUEUE_NAMES } from './queue.constants';
+import { DLQ_BACKOFF_TYPE, DLQ_MAX_ATTEMPTS } from '../dlq/dlq-retry.strategy';
 import { QueueService } from './queue.service';
 import { QueueController } from './queue.controller';
 import { EhrImportDlqController } from './controllers/ehr-import-dlq.controller';
@@ -74,8 +75,8 @@ export class QueueModule {
               },
             },
             defaultJobOptions: {
-              attempts: 5,
-              backoff: { type: 'exponential', delay: 2000 },
+              attempts: DLQ_MAX_ATTEMPTS,
+              backoff: { type: DLQ_BACKOFF_TYPE },
               removeOnComplete: { count: 1000 },
               removeOnFail: { count: 5000 },
             },

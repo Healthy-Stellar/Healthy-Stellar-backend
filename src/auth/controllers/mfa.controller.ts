@@ -5,7 +5,7 @@ import { Request } from 'express';
 import { MfaService } from '../services/mfa.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { JwtPayload } from '../services/auth-token.service';
-import { MfaSetupDto, MfaVerifyDto, MfaEnableDto, BackupCodesDto } from '../dto/mfa.dto';
+import { MfaSetupDto, MfaVerifyDto, MfaEnableDto, BackupCodesDto, VerifyBackupCodeDto } from '../dto/mfa.dto';
 import { AuditService } from '../../common/audit/audit.service';
 import { AuditAction } from '../../common/audit/audit-log.entity';
 import { VerifyRateLimit, AuthRateLimit } from '../../common/throttler/throttler.decorator';
@@ -141,6 +141,51 @@ export class MfaController {
       lastUsedAt: device.lastUsedAt,
       remainingBackupCodes: device.backupCodes ? device.backupCodes.length : 0,
     }));
+  }
+
+  /**
+   * Verify a backup code (dedicated recovery flow for users without their authenticator)
+   */
+  @Post('backup-codes/verify')
+  @UseGuards(JwtAuthGuard)
+  @VerifyRateLimit() // 5 requests per minute
+  @ApiOperation({ summary: 'Verify a backup code for 2FA authentication' })
+  @ApiResponse({ status: 200, description: 'Backup code verified' })
+  async verifyBackupCode(
+    @Body() dto: VerifyBackupCodeDto,
+    @Req() req: Request,
+  ): Promise<any> {
+    const user = req.user as JwtPayload;
+
+    const result = await this.mfaService.verifyBackupCodeOnly(user.userId, dto.code);
+
+    if (!result.success) {
+      await this.auditService.logAuthenticationEvent(AuditAction.MFA_VERIFIED, false, {
+        userId: user.userId,
+        reason: 'Invalid backup code',
+        ipAddress: this.getIpAddress(req),
+        severity: 'HIGH',
+      });
+      throw new BadRequestException(
+        I18nContext.current()?.t('errors.INVALID_MFA_CODE') || 'Invalid backup code',
+      );
+    }
+
+    await this.auditService.logAuthenticationEvent(AuditAction.MFA_VERIFIED, true, {
+      userId: user.userId,
+      description: 'Backup code used for 2FA authentication',
+      ipAddress: this.getIpAddress(req),
+    });
+
+    return {
+      success: true,
+      message: 'Backup code verified successfully',
+      remainingCodes: result.remainingCodes,
+      ...(result.remainingCodes === 0 && {
+        warning:
+          'All backup codes have been used. Regenerate backup codes to maintain account recovery access.',
+      }),
+    };
   }
 
   /**

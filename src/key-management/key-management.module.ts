@@ -7,6 +7,11 @@ import { EnvelopeKeyManagementService } from './services/envelope-key-management
 
 import { AwsKmsStrategy } from './strategies/aws-kms.strategy';
 import { KEY_MANAGEMENT_STRATEGY } from './interfaces/key-management.interface';
+import { KeyStoreFactory } from './services/key-store-factory.service';
+import { DbKeyStore } from './services/db-key-store.service';
+import { AwsKmsKeyStore } from './services/aws-kms-key-store.service';
+import { KEY_STORE } from './interfaces/key-store.interface';
+
 
 import { KeyManagementAdminController } from './controllers/key-management-admin.controller';
 
@@ -23,6 +28,15 @@ export const KEY_MANAGEMENT_SERVICE = 'KeyManagementService';
   providers: [
     EnvelopeKeyManagementService,
     AwsKmsStrategy,
+    // KeyStore adapters for Stellar secret key storage (Issue #660)
+    DbKeyStore,
+    AwsKmsKeyStore,
+    KeyStoreFactory,
+    {
+      provide: KEY_STORE,
+      inject: [KeyStoreFactory],
+      useFactory: (factory: KeyStoreFactory) => factory.getStore(),
+    },
     {
       provide: KEY_MANAGEMENT_STRATEGY,
       inject: [ConfigService, EnvelopeKeyManagementService, AwsKmsStrategy],
@@ -47,6 +61,6 @@ export const KEY_MANAGEMENT_SERVICE = 'KeyManagementService';
       useExisting: KEY_MANAGEMENT_STRATEGY,
     },
   ],
-  exports: [KEY_MANAGEMENT_SERVICE, KEY_MANAGEMENT_STRATEGY],
+  exports: [KEY_MANAGEMENT_SERVICE, KEY_MANAGEMENT_STRATEGY, KEY_STORE],
 })
 export class KeyManagementModule {}

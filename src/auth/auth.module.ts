@@ -43,6 +43,19 @@ import { SessionCleanupTask } from './tasks/session-cleanup.task';
 import { SecretRotationService } from './services/secret-rotation.service';
 import { SecretRotationController } from './controllers/secret-rotation.controller';
 import { SessionRevocationService } from './services/session-revocation.service';
+import { MAILER_SERVICE } from '../notifications/services/notifications.service';
+
+function buildMailerProvider() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { MailerService } = require('@nestjs-modules/mailer');
+    return { provide: MAILER_SERVICE, useExisting: MailerService };
+  } catch {
+    return null;
+  }
+}
+
+const mailerProvider = buildMailerProvider();
 
 @Module({
   imports: [
@@ -80,6 +93,7 @@ import { SessionRevocationService } from './services/session-revocation.service'
     MfaVerifiedGuard,
     ApiKeyGuard,
     SessionCleanupTask,
+    ...(mailerProvider ? [mailerProvider] : []),
   ],
   controllers: [AuthController, MfaController, ProvidersController, SecretRotationController],
   exports: [

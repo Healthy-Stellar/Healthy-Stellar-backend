@@ -77,6 +77,7 @@ import { DlqModule } from './dlq/dlq.module';
 import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
 import { IncidentModule } from './incident/incident.module';
 import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.interceptor';
+import { SessionRecordingModule } from './telemedicine-and-remote/src/session-recording.module';
 
 @Module({
   imports: [
