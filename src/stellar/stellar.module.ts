@@ -13,8 +13,11 @@ import { StellarTransactionQueueService } from './services/stellar-transaction-q
 import { StellarRecoveryManagerService } from './services/stellar-recovery-manager.service';
 import { StellarRetryStoreService } from './services/stellar-retry-store.service';
 import { StellarTracingService } from './services/stellar-tracing.service';
+import { StellarSequenceLockService } from './services/stellar-sequence-lock.service';
+import { StellarPaymentVerificationService } from './services/stellar-payment-verification.service';
 import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
 import { MetricsModule } from '../metrics/metrics.module';
+import { HttpIdempotencyEntity } from '../idempotency/idempotency.entity';
 
 @Module({
   imports: [
@@ -40,6 +43,7 @@ import { MetricsModule } from '../metrics/metrics.module';
     StellarTransactionQueueService,
     StellarRecoveryManagerService,
     StellarPaymentVerificationService,
+    StellarSequenceLockService,
   ],
   exports: [
     StellarFeeService,
@@ -50,6 +54,7 @@ import { MetricsModule } from '../metrics/metrics.module';
     StellarTransactionQueueService,
     StellarRecoveryManagerService,
     StellarPaymentVerificationService,
+    StellarSequenceLockService,
   ],
 })
 export class StellarModule {}
