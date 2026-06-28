@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { QUEUE_NAMES } from '../queue.constants';
 import { verifyQueuePayload } from '../queue-payload.util';
+import { DLQ_BACKOFF_TYPE, dlqBackoffStrategy } from '../../dlq/dlq-retry.strategy';
 import { RecordEventStoreService } from '../../records/services/record-event-store.service';
 import { RecordEventType } from '../../records/entities/record-event.entity';
 import { RECORD_DELETED_EVENT } from '../../records/services/record-sync.service';
@@ -62,6 +63,7 @@ export interface EventIndexingResult {
  */
 @Processor(QUEUE_NAMES.EVENT_INDEXING, {
   concurrency: 2,
+  settings: { backoffStrategies: { [DLQ_BACKOFF_TYPE]: dlqBackoffStrategy } },
 })
 export class EventIndexingProcessor extends WorkerHost {
   private readonly logger = new Logger(EventIndexingProcessor.name);

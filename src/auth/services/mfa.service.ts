@@ -1,4 +1,11 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  Logger,
+  Inject,
+  Optional,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as speakeasy from 'speakeasy';
@@ -6,6 +13,7 @@ import * as QRCode from 'qrcode';
 import * as argon2 from 'argon2';
 import { MfaEntity } from '../entities/mfa.entity';
 import { User } from '../entities/user.entity';
+import { MAILER_SERVICE } from '../../notifications/services/notifications.service';
 
 export interface MfaSetupResponse {
   secret: string;
@@ -21,11 +29,14 @@ export interface MfaVerificationResult {
 
 @Injectable()
 export class MfaService {
+  private readonly logger = new Logger(MfaService.name);
+
   constructor(
     @InjectRepository(MfaEntity)
     private mfaRepository: Repository<MfaEntity>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @Optional() @Inject(MAILER_SERVICE) private mailerService?: any,
   ) {}
 
   /**
@@ -37,18 +48,16 @@ export class MfaService {
       throw new NotFoundException('User not found');
     }
 
-    // Generate TOTP secret
     const secret = speakeasy.generateSecret({
       name: `Healthy Stellar (${user.email})`,
       issuer: 'Healthy Stellar',
       length: 32, // 256-bit entropy
     });
 
-    // Generate QR code
     const qrCode = await QRCode.toDataURL(secret.otpauth_url);
 
-    // Generate plaintext preview codes shown once during setup; actual hashed codes stored on verify
-    const { plain } = await this.generateBackupCodes(8);
+    // Preview codes shown once during setup; actual hashes stored on verify
+    const { plain } = await this.generateBackupCodes(10);
 
     return {
       secret: secret.base32,
@@ -70,15 +79,12 @@ export class MfaService {
       throw new NotFoundException('User not found');
     }
 
-    // The secret should be stored temporarily in the session
-    // For now, we'll generate a new one
     const secret = speakeasy.generateSecret({
       name: `Healthy Stellar (${user.email})`,
       issuer: 'Healthy Stellar',
       length: 32,
     });
 
-    // Verify the code
     const verified = speakeasy.totp.verify({
       secret: secret.base32,
       encoding: 'base32',
@@ -90,10 +96,9 @@ export class MfaService {
       throw new BadRequestException('Invalid verification code');
     }
 
-    // Generate backup codes — store only hashes, return plaintext once
-    const { plain: backupCodes, hashed: hashedBackupCodes } = await this.generateBackupCodes(8);
+    // Generate 10 backup codes — store only hashes, return plaintext once
+    const { plain: backupCodes, hashed: hashedBackupCodes } = await this.generateBackupCodes(10);
 
-    // Create and save MFA device
     const mfaDevice = this.mfaRepository.create({
       userId,
       secret: secret.base32,
@@ -106,7 +111,6 @@ export class MfaService {
 
     await this.mfaRepository.save(mfaDevice);
 
-    // Update user to enable MFA
     user.mfaEnabled = true;
     user.mfaSecret = secret.base32;
     await this.userRepository.save(user);
@@ -119,7 +123,7 @@ export class MfaService {
   }
 
   /**
-   * Verify MFA code during login
+   * Verify MFA code during login — tries TOTP first, falls back to backup code
    */
   async verifyMfaCode(userId: string, code: string): Promise<boolean> {
     const mfaDevice = await this.mfaRepository.findOne({
@@ -134,7 +138,6 @@ export class MfaService {
       throw new NotFoundException('MFA device not found');
     }
 
-    // Try to verify with TOTP
     const isValid = speakeasy.totp.verify({
       secret: mfaDevice.secret,
       encoding: 'base32',
@@ -143,20 +146,109 @@ export class MfaService {
     });
 
     if (isValid) {
-      // Update last used timestamp
       mfaDevice.lastUsedAt = new Date();
       await this.mfaRepository.save(mfaDevice);
       return true;
     }
 
-    // Try backup codes
-    return this.verifyBackupCode(mfaDevice, code);
+    return this.verifyBackupCode(mfaDevice, code, userId);
   }
 
   /**
-   * Verify backup code — compare against stored hashes, enforce single-use
+   * Verify a backup code exclusively — for the dedicated backup-code recovery flow.
+   * Returns success flag and remaining code count after consumption.
    */
-  private async verifyBackupCode(mfaDevice: MfaEntity, code: string): Promise<boolean> {
+  async verifyBackupCodeOnly(
+    userId: string,
+    code: string,
+  ): Promise<{ success: boolean; remainingCodes: number }> {
+    const mfaDevice = await this.mfaRepository.findOne({
+      where: { userId, isActive: true, isPrimary: true },
+    });
+
+    if (!mfaDevice) {
+      throw new NotFoundException('MFA device not found');
+    }
+
+    const success = await this.verifyBackupCode(mfaDevice, code.toUpperCase(), userId);
+    return { success, remainingCodes: mfaDevice.backupCodes?.length ?? 0 };
+  }
+
+  /**
+   * Generate new backup codes — invalidates the previous set
+   */
+  async generateNewBackupCodes(userId: string): Promise<string[]> {
+    const mfaDevice = await this.mfaRepository.findOne({
+      where: {
+        userId,
+        isPrimary: true,
+      },
+    });
+
+    if (!mfaDevice) {
+      throw new NotFoundException('MFA device not found');
+    }
+
+    const { plain: newBackupCodes, hashed: hashedNewCodes } = await this.generateBackupCodes(10);
+    mfaDevice.backupCodes = hashedNewCodes;
+    await this.mfaRepository.save(mfaDevice);
+
+    this.notifyBackupCodesRegenerated(userId).catch((err: any) =>
+      this.logger.error(`Backup codes regenerated notification failed: ${err?.message}`),
+    );
+
+    return newBackupCodes;
+  }
+
+  /**
+   * Disable MFA
+   */
+  async disableMfa(userId: string): Promise<void> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.mfaRepository.update({ userId }, { isActive: false });
+
+    user.mfaEnabled = false;
+    user.mfaSecret = null;
+    await this.userRepository.save(user);
+  }
+
+  /**
+   * Get MFA devices for user
+   */
+  async getMfaDevices(userId: string): Promise<MfaEntity[]> {
+    return this.mfaRepository.find({
+      where: { userId, isActive: true },
+    });
+  }
+
+  /**
+   * Check if user has MFA enabled
+   */
+  async isMfaEnabled(userId: string): Promise<boolean> {
+    const mfaDevice = await this.mfaRepository.findOne({
+      where: {
+        userId,
+        isActive: true,
+        isVerified: true,
+      },
+    });
+
+    return !!mfaDevice;
+  }
+
+  /**
+   * Compare code against stored hashes. On match: removes the consumed code (single-use)
+   * and fires an email security alert. Accepts userId to look up email for the alert.
+   */
+  private async verifyBackupCode(
+    mfaDevice: MfaEntity,
+    code: string,
+    userId: string,
+  ): Promise<boolean> {
     if (!mfaDevice.backupCodes || mfaDevice.backupCodes.length === 0) {
       return false;
     }
@@ -178,56 +270,11 @@ export class MfaService {
     mfaDevice.lastUsedAt = new Date();
     await this.mfaRepository.save(mfaDevice);
 
+    this.notifyBackupCodeConsumed(userId).catch((err: any) =>
+      this.logger.error(`Backup code consumed notification failed: ${err?.message}`),
+    );
+
     return true;
-  }
-
-  /**
-   * Generate new backup codes
-   */
-  async generateNewBackupCodes(userId: string): Promise<string[]> {
-    const mfaDevice = await this.mfaRepository.findOne({
-      where: {
-        userId,
-        isPrimary: true,
-      },
-    });
-
-    if (!mfaDevice) {
-      throw new NotFoundException('MFA device not found');
-    }
-
-    const { plain: newBackupCodes, hashed: hashedNewCodes } = await this.generateBackupCodes(8);
-    mfaDevice.backupCodes = hashedNewCodes;
-    await this.mfaRepository.save(mfaDevice);
-
-    return newBackupCodes;
-  }
-
-  /**
-   * Disable MFA
-   */
-  async disableMfa(userId: string): Promise<void> {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    // Deactivate all MFA devices
-    await this.mfaRepository.update({ userId }, { isActive: false });
-
-    // Update user
-    user.mfaEnabled = false;
-    user.mfaSecret = null;
-    await this.userRepository.save(user);
-  }
-
-  /**
-   * Get MFA devices for user
-   */
-  async getMfaDevices(userId: string): Promise<MfaEntity[]> {
-    return this.mfaRepository.find({
-      where: { userId, isActive: true },
-    });
   }
 
   /**
@@ -249,18 +296,39 @@ export class MfaService {
     return { plain, hashed };
   }
 
-  /**
-   * Check if user has MFA enabled
-   */
-  async isMfaEnabled(userId: string): Promise<boolean> {
-    const mfaDevice = await this.mfaRepository.findOne({
-      where: {
-        userId,
-        isActive: true,
-        isVerified: true,
-      },
-    });
+  private async notifyBackupCodeConsumed(userId: string): Promise<void> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) return;
 
-    return !!mfaDevice;
+    await this.sendEmail(
+      user.email,
+      'Security Alert: 2FA Backup Code Used',
+      `A two-factor authentication backup code was used to access your Healthy Stellar account on ${new Date().toUTCString()}. ` +
+        `If you did not initiate this action, please contact support immediately and change your password.`,
+    );
+  }
+
+  private async notifyBackupCodesRegenerated(userId: string): Promise<void> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) return;
+
+    await this.sendEmail(
+      user.email,
+      'Your 2FA Backup Codes Have Been Regenerated',
+      `Your Healthy Stellar two-factor authentication backup codes have been regenerated on ${new Date().toUTCString()}. ` +
+        `Your previous backup codes are no longer valid. If you did not request this, please contact support immediately.`,
+    );
+  }
+
+  private async sendEmail(to: string, subject: string, text: string): Promise<void> {
+    if (!this.mailerService) {
+      this.logger.log(`[Security Email] To: ${to} | Subject: ${subject}`);
+      return;
+    }
+    try {
+      await this.mailerService.sendMail({ to, subject, text });
+    } catch (err: any) {
+      this.logger.error(`Failed to send security email to ${to}: ${err?.message}`);
+    }
   }
 }

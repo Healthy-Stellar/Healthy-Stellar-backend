@@ -2,14 +2,23 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, OnModuleInit } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { GdprRequest, GdprRequestStatus } from '../entities/gdpr-request.entity';
 import { User } from '../../auth/entities/user.entity';
 import { Patient } from '../../patients/entities/patient.entity';
 import { Record } from '../../records/entities/record.entity';
 import { MedicalRecord } from '../../medical-records/entities/medical-record.entity';
+import { ClinicalNote } from '../../medical-records/entities/clinical-note.entity';
 import { AccessGrant, GrantStatus } from '../../access-control/entities/access-grant.entity';
 import { AuditLogEntity } from '../../common/audit/audit-log.entity';
+import { LabOrder } from '../../laboratory/entities/lab-order.entity';
+import { Specimen } from '../../laboratory/entities/specimen.entity';
+import { LabResult } from '../../laboratory/entities/lab-result.entity';
+import { Prescription } from '../../pharmacy/entities/prescription.entity';
+import { PatientCounselingLog } from '../../pharmacy/entities/patient-counseling-log.entity';
+import { MedicationErrorLog } from '../../pharmacy/entities/medication-error-log.entity';
+import { Appointment } from '../../appointments/entities/appointment.entity';
+import { ConsultationNote } from '../../appointments/entities/consultation-note.entity';
 import { IpfsService } from '../../records/services/ipfs.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { DeletionRegistryService } from '../services/deletion-registry.service';
@@ -41,6 +50,7 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
   onModuleInit(): void {
     this.deletionRegistry.register({
       moduleName: 'users',
+      previewForUser: async (userId, manager) => manager.count(User, { where: { id: userId } }),
       deleteForUser: async (userId, manager) => {
         const user = await manager.findOne(User, { where: { id: userId } });
         if (user) {
@@ -58,6 +68,7 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
 
     this.deletionRegistry.register({
       moduleName: 'patients',
+      previewForUser: async (userId, manager) => manager.count(Patient, { where: { id: userId } }),
       deleteForUser: async (userId, manager) => {
         const patient = await manager.findOne(Patient, { where: { id: userId } });
         if (patient) {
@@ -76,6 +87,7 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
 
     this.deletionRegistry.register({
       moduleName: 'records',
+      previewForUser: async (userId, manager) => manager.count(Record, { where: { patientId: userId } }),
       deleteForUser: async (userId, manager) => {
         await manager.delete(Record, { patientId: userId });
       },
@@ -83,13 +95,26 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
 
     this.deletionRegistry.register({
       moduleName: 'medical-records',
+      previewForUser: async (userId, manager) =>
+        manager.count(MedicalRecord, { where: { patientId: userId } }),
       deleteForUser: async (userId, manager) => {
         await manager.delete(MedicalRecord, { patientId: userId });
       },
     });
 
     this.deletionRegistry.register({
+      moduleName: 'clinical-notes',
+      previewForUser: async (userId, manager) =>
+        manager.count(ClinicalNote, { where: { patientId: userId } }),
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(ClinicalNote, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
       moduleName: 'access-grants',
+      previewForUser: async (userId, manager) =>
+        manager.count(AccessGrant, { where: { patientId: userId, status: GrantStatus.ACTIVE } }),
       deleteForUser: async (userId, manager) => {
         await manager.update(
           AccessGrant,
@@ -101,8 +126,65 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
 
     this.deletionRegistry.register({
       moduleName: 'audit-logs',
+      previewForUser: async (userId, manager) =>
+        manager.count(AuditLogEntity, { where: { userId } }),
       deleteForUser: async (userId, manager) => {
         await manager.delete(AuditLogEntity, { userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'laboratory',
+      previewForUser: async (userId, manager) => {
+        const orders = await manager.find(LabOrder, { where: { patientId: userId } });
+        const orderRefs = orders.flatMap((o) => [o.id, o.orderNumber]);
+        const [specimenCount, resultCount] = await Promise.all([
+          manager.count(Specimen, { where: { patientId: userId } }),
+          orderRefs.length
+            ? manager.count(LabResult, { where: { orderId: In(orderRefs) } })
+            : Promise.resolve(0),
+        ]);
+        return orders.length + specimenCount + resultCount;
+      },
+      deleteForUser: async (userId, manager) => {
+        const orders = await manager.find(LabOrder, { where: { patientId: userId } });
+        const orderRefs = orders.flatMap((o) => [o.id, o.orderNumber]);
+        if (orderRefs.length) {
+          await manager.delete(LabResult, { orderId: In(orderRefs) });
+        }
+        await manager.delete(Specimen, { patientId: userId });
+        await manager.delete(LabOrder, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'pharmacy',
+      previewForUser: async (userId, manager) => {
+        const [prescriptions, counseling, errors] = await Promise.all([
+          manager.count(Prescription, { where: { patientId: userId } }),
+          manager.count(PatientCounselingLog, { where: { patientId: userId } }),
+          manager.count(MedicationErrorLog, { where: { patientId: userId } }),
+        ]);
+        return prescriptions + counseling + errors;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(PatientCounselingLog, { patientId: userId });
+        await manager.delete(MedicationErrorLog, { patientId: userId });
+        await manager.delete(Prescription, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'appointments',
+      previewForUser: async (userId, manager) =>
+        manager.count(Appointment, { where: { patientId: userId } }),
+      deleteForUser: async (userId, manager) => {
+        const appointments = await manager.find(Appointment, { where: { patientId: userId } });
+        const appointmentIds = appointments.map((a) => a.id);
+        if (appointmentIds.length) {
+          await manager.delete(ConsultationNote, { appointmentId: In(appointmentIds) });
+        }
+        await manager.delete(Appointment, { patientId: userId });
       },
     });
   }
@@ -194,6 +276,11 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
     });
 
     try {
+      // Captured before the cascade anonymises/deletes the user record, so we can
+      // still notify the data subject once erasure completes.
+      const dataSubjectUser = await this.userRepository.findOne({ where: { id: data.userId } });
+      const dataSubjectEmail = dataSubjectUser?.email;
+
       // 1. Unpin IPFS records (best effort, before deletion)
       const records = await this.recordRepository.find({ where: { patientId: data.userId } });
       for (const rec of records) {
@@ -250,8 +337,8 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
       }
 
       // Notify data subject that erasure is complete (GDPR Art. 12)
-      if (dataSubjectEmail) {
-        await this.notificationsService.sendEmail(
+      if (dataSubjectEmail && (this.notificationsService as any).sendEmail) {
+        await (this.notificationsService as any).sendEmail(
           dataSubjectEmail,
           'Your data erasure request has been completed',
           'ErasureConfirmation',

@@ -107,6 +107,15 @@ export class BackupController {
     return this.monitoringService.getBackupStatistics(days ? parseInt(days as any, 10) : 30);
   }
 
+  @Post('restore/:id/dry-run')
+  @Roles('admin', 'system_admin')
+  async dryRunRestore(
+    @Param('id') id: string,
+    @Body('requestedBy') requestedBy: string,
+  ) {
+    return this.recoveryService.dryRunRestore(id, requestedBy ?? 'admin');
+  }
+
   @Post('recovery/drill/trigger')
   @Roles('admin', 'system_admin')
   async triggerRestoreDrill() {

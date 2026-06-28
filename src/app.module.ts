@@ -159,6 +159,7 @@ import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
     OperatorRunbookModule,
     IncidentModule,
     BedOccupancyModule,
+    EhrImportModule,
     EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],

@@ -5,6 +5,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DlqJobEntity, DlqJobStatus } from './dlq-job.entity';
 import { QUEUE_NAMES } from '../queues/queue.constants';
+import { DLQ_BACKOFF_TYPE, DLQ_MAX_ATTEMPTS } from './dlq-retry.strategy';
 
 export interface DlqListOptions {
   queueName?: string;
@@ -134,8 +135,8 @@ export class DlqService {
     }
 
     const newJob = await queue.add(entity.jobName, entity.data, {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 2000 },
+      attempts: DLQ_MAX_ATTEMPTS,
+      backoff: { type: DLQ_BACKOFF_TYPE },
       removeOnComplete: true,
       removeOnFail: false,
     });

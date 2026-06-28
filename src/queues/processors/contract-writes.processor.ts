@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { QUEUE_NAMES, JOB_TYPES } from '../queue.constants';
 import { StellarContractService } from '../../blockchain/stellar-contract.service';
 import { verifyQueuePayload } from '../queue-payload.util';
+import { DLQ_BACKOFF_TYPE, dlqBackoffStrategy } from '../../dlq/dlq-retry.strategy';
 
 /**
  * ContractWritesProcessor
@@ -14,7 +15,8 @@ import { verifyQueuePayload } from '../queue-payload.util';
  * These are operations that modify on-chain state (anchorRecord, grantAccess, revokeAccess)
  */
 @Processor(QUEUE_NAMES.CONTRACT_WRITES, {
-  concurrency: 3, // Lower concurrency for contract writes to handle blockchain rate limits
+  concurrency: 3,
+  settings: { backoffStrategies: { [DLQ_BACKOFF_TYPE]: dlqBackoffStrategy } },
 })
 export class ContractWritesProcessor extends WorkerHost {
   private readonly logger = new Logger(ContractWritesProcessor.name);
