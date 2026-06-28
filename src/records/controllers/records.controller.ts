@@ -47,6 +47,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../../auth/guards/admin.guard';
 import { JwtPayload } from '../../auth/services/auth-token.service';
 import { RecordResponseDto } from '../dto/record-response.dto';
+import { AttachmentResponseDto } from '../dto/attachment-response.dto';
 import { RecordAccessGuard } from '../guards/record-access.guard';
 import { DeprecatedRoute } from '../../common/decorators/deprecated.decorator';
 
@@ -339,5 +340,47 @@ export class RecordsController {
   @ApiResponse({ status: 404, description: 'Record not found in event store' })
   async getStateFromEvents(@Param('id') id: string) {
     return this.recordsService.getStateFromEvents(id);
+  }
+
+  @Get(':recordId/attachments/:attachmentId')
+  @UseGuards(JwtAuthGuard, RecordAccessGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get attachment metadata with signature verification status',
+    description: 'Returns attachment metadata including digital signature verification result.',
+  })
+  @ApiResponse({ status: 200, description: 'Attachment retrieved', type: AttachmentResponseDto })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Attachment not found' })
+  async getAttachment(
+    @Param('recordId') recordId: string,
+    @Param('attachmentId') attachmentId: string,
+    @Req() req: any,
+  ): Promise<AttachmentResponseDto> {
+    const attachment = await this.recordAttachmentUploadService.getAttachment(attachmentId);
+    
+    if (attachment.recordId !== recordId) {
+      throw new NotFoundException('Attachment does not belong to this record');
+    }
+
+    const signatureStatus = await this.recordAttachmentUploadService.verifyAttachmentSignature(
+      attachmentId,
+    );
+
+    return {
+      id: attachment.id,
+      recordId: attachment.recordId,
+      originalFilename: attachment.originalFilename,
+      mimeType: attachment.mimeType,
+      cid: attachment.cid,
+      fileSize: Number(attachment.fileSize),
+      uploadedBy: attachment.uploadedBy,
+      uploadedAt: attachment.uploadedAt,
+      signatureStatus: attachment.signatureStatus,
+      signatureAlgorithm: attachment.signatureAlgorithm,
+      signerCertificate: attachment.signerCertificate,
+      signedAt: attachment.signedAt,
+    };
   }
 }
