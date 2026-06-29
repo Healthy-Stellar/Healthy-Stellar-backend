@@ -9,15 +9,19 @@ import {
   Query,
   Req,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 import { PkceService } from './pkce.service';
 import { OAuth2AuthorizeQueryDto, OAuth2TokenDto } from './dto/oidc.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../auth/services/auth-token.service';
+import { Patient } from '../users/entities/patient.entity';
 
 /**
  * OAuth2 authorization server endpoints (Issue #649 — PKCE for public clients).
@@ -32,6 +36,8 @@ export class OAuth2Controller {
   constructor(
     private readonly pkce: PkceService,
     private readonly jwt: JwtService,
+    @InjectRepository(Patient)
+    private readonly patientRepo: Repository<Patient>,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -57,6 +63,7 @@ export class OAuth2Controller {
       query.scope ?? 'openid',
       query.code_challenge,
       query.code_challenge_method,
+      query.launch,
     );
 
     const redirect = new URL(query.redirect_uri);
@@ -71,7 +78,7 @@ export class OAuth2Controller {
   // -------------------------------------------------------------------------
   @Post('token')
   @HttpCode(HttpStatus.OK)
-  token(@Body() dto: OAuth2TokenDto) {
+  async token(@Body() dto: OAuth2TokenDto) {
     if (dto.grant_type !== 'authorization_code') {
       throw new BadRequestException('unsupported_grant_type');
     }
@@ -90,17 +97,41 @@ export class OAuth2Controller {
       dto.code_verifier,
     );
 
-    const accessToken = this.jwt.sign({
-      sub: entry.userId,
-      scope: entry.scope,
-      client_id: entry.clientId,
-    });
+    const smartScopes = entry.scope
+      .split(/\s+/)
+      .filter((s) => s.startsWith('patient/') || s.startsWith('user/') || s === 'launch/patient' || s === 'openid' || s === 'fhirUser');
 
-    return {
+    const tokenPayload: Record<string, any> = {
+      sub: entry.userId,
+      scope: smartScopes.join(' '),
+      client_id: entry.clientId,
+    };
+
+    if (smartScopes.includes('fhirUser')) {
+      tokenPayload.fhirUser = `${process.env.FHIR_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`}/fhir/r4/Patient/${entry.userId}`;
+    }
+
+    const accessToken = this.jwt.sign(tokenPayload);
+
+    const response: Record<string, any> = {
       access_token: accessToken,
       token_type: 'Bearer',
       expires_in: 900,
-      scope: entry.scope,
+      scope: smartScopes.join(' '),
     };
+
+    // SMART on FHIR: launch/patient context
+    if (smartScopes.includes('launch/patient')) {
+      const patient = await this.patientRepo.findOne({
+        where: { userId: entry.userId },
+      });
+      if (patient) {
+        response.patient = patient.id;
+      } else {
+        throw new UnauthorizedException('launch_patient_required: user has no associated patient record');
+      }
+    }
+
+    return response;
   }
 }
