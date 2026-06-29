@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { HttpModule } from '@nestjs/axios';
 import { Drug } from './entities/drug.entity';
@@ -11,7 +12,10 @@ import { DrugWaste } from './entities/drug-waste.entity';
 import { PurchaseOrder } from './entities/purchase-order.entity';
 import { PharmacyInventory } from './entities/pharmacy-inventory.entity';
 import { RecallImpactReport } from './entities/recall-impact-report.entity';
+import { PharmacyReorderAlertSuppression } from './entities/pharmacy-reorder-alert-suppression.entity';
+
 import { RemotePrescription } from '../Telemedicine and Remote/src/telemedicine/entities/remote-prescription.entity';
+
 import { PharmacyController } from './controllers/pharmacy.controller';
 import { CdsHooksController } from './controllers/cds-hooks.controller';
 import { DrugRecallController } from './controllers/drug-recall.controller';
@@ -43,6 +47,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       PurchaseOrder,
       PharmacyInventory,
       RemotePrescription,
+      PharmacyReorderAlertSuppression,
     ]),
     HttpModule,
     NotificationsModule,
@@ -68,4 +73,4 @@ import { NotificationsModule } from '../notifications/notifications.module';
   ],
   exports: [PharmacyService, DrugInteractionService],
 })
-export class PharmacyModule {}
+export class PharmacyModule { }

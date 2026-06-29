@@ -14,6 +14,8 @@ import { StellarTransactionProcessor } from './processors/stellar-transaction.pr
 import { ContractWritesProcessor } from './processors/contract-writes.processor';
 import { EventIndexingProcessor } from './processors/event-indexing.processor';
 import { PanicAlertProcessor } from '../emergency-operations/processors/panic-alert.processor';
+import { PharmacyReorderAlertProcessor } from './processors/pharmacy-reorder-alert.processor';
+
 import { BlockchainModule } from '../blockchain/blockchain.module';
 import { QueueEventsListener } from './queue-events.listener';
 import { RecordsModule } from '../records/records.module';
@@ -40,12 +42,14 @@ export class QueueModule {
     // server from competing with the dedicated worker process for jobs.
     const workerProviders = options.isWorker
       ? [
-          StellarTransactionProcessor,
-          ContractWritesProcessor,
-          EventIndexingProcessor,
-          QueueEventsListener,
-          PanicAlertProcessor,
-        ]
+        StellarTransactionProcessor,
+        ContractWritesProcessor,
+        EventIndexingProcessor,
+        QueueEventsListener,
+        PanicAlertProcessor,
+        // Pharmacy background processors
+        PharmacyReorderAlertProcessor,
+      ]
       : [QueueEventsListener];
 
     return {
@@ -97,6 +101,7 @@ export class QueueModule {
           { name: QUEUE_NAMES.REPORTS },
           { name: QUEUE_NAMES.EHR_IMPORT },
           { name: QUEUE_NAMES.USER_CSV_IMPORT },
+          { name: QUEUE_NAMES.PHARMACY_REORDER_ALERTS },
         ),
 
         // Bull Board dashboard — only useful when the HTTP server is running.
@@ -133,9 +138,10 @@ export class QueueModule {
           adapter: BullMQAdapter,
         }),
         BullBoardModule.forFeature({
-          name: QUEUE_NAMES.PANIC_ALERTS,
+          name: QUEUE_NAMES.PHARMACY_REORDER_ALERTS,
           adapter: BullMQAdapter,
         }),
+
       ],
       controllers: [QueueController, EhrImportDlqController],
       providers: [

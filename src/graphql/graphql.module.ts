@@ -9,6 +9,7 @@ import depthLimit from 'graphql-depth-limit';
 import { fieldExtensionsEstimator, getComplexity, simpleEstimator } from 'graphql-query-complexity';
 import { GraphQLError } from 'graphql';
 
+
 import { Patient } from '../patients/entities/patient.entity';
 import { Record } from '../records/entities/record.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
@@ -85,34 +86,45 @@ import { DevicesModule } from '../devices/devices.module';
           playground: !isProd,
           introspection: !isProd,
 
-          // Depth limit to prevent malicious deeply nested queries
-          validationRules: [depthLimit(7)],
+          // Depth limit + complexity enforcement (DoS protection)
+          validationRules: [depthLimit(Number(process.env.GRAPHQL_MAX_QUERY_DEPTH ?? 7))],
           plugins: [
             {
               async requestDidStart() {
                 return {
                   async didResolveOperation(requestContext: any) {
+                    const maxDepth = Number(process.env.GRAPHQL_MAX_QUERY_DEPTH ?? 7);
+                    const complexityThreshold = Number(process.env.GRAPHQL_QUERY_COMPLEXITY_THRESHOLD ?? 150);
+
+                    // Complexity estimator with default field cost=1 and list cost=10.
+                    // Default field cost can be overridden via graphql-query-complexity fieldExtensions.
+                    // List fields are weighted higher to reduce DoS via large pagination selections.
+
                     const complexity = getComplexity({
                       schema: requestContext.schema,
                       operationName: requestContext.request.operationName,
                       query: requestContext.document,
                       variables: requestContext.request.variables,
                       estimators: [
-                        fieldExtensionsEstimator(),
-                        simpleEstimator({ defaultComplexity: 1 }),
+                        fieldExtensionsEstimator({
+                          // If a field extension specifies complexity, it will be used.
+                          defaultComplexity: 1,
+                        } as any),
+                        simpleEstimator({ defaultComplexity: 1, listComplexity: 10 } as any),
+
                       ],
                     });
 
-                    const complexityThreshold = 150;
                     if (complexity > complexityThreshold) {
                       throw new GraphQLError(
                         `Query complexity ${complexity} exceeds maximum allowed complexity of ${complexityThreshold}. ` +
-                          `Reduce nested selection depth, page results, or trim requested fields.`,
+                        `Reduce nested selection depth, page results, or trim requested fields.`,
                         {
                           extensions: {
                             code: 'GRAPHQL_QUERY_COMPLEXITY_EXCEEDED',
                             complexity,
                             threshold: complexityThreshold,
+                            maxDepth,
                           },
                         },
                       );
@@ -122,6 +134,7 @@ import { DevicesModule } from '../devices/devices.module';
               },
             },
           ],
+
 
           // graphql-ws (recommended transport) for GraphQL subscriptions
           subscriptions: {
@@ -303,7 +316,7 @@ import { DevicesModule } from '../devices/devices.module';
   ],
   exports: [GqlAuthGuard, GqlRolesGuard, PUB_SUB],
 })
-export class GraphqlModule {}
+export class GraphqlModule { }
 
 function extractWsToken(connectionParams?: { [key: string]: any }): string | undefined {
   if (!connectionParams || typeof connectionParams !== 'object') {
