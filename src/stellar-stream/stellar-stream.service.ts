@@ -18,6 +18,9 @@ import { AccessGrant, GrantStatus } from '../access-control/entities/access-gran
 export type StreamStatus = 'connected' | 'reconnecting' | 'failed';
 
 const CURSOR_KEY = 'stellar:stream:cursor';
+const CURSOR_TS_KEY = 'stellar:stream:cursor:savedAt';
+const STALE_CURSOR_MS = 24 * 60 * 60 * 1000; // 24 hours
+const TX_DEDUP_TTL_S = 48 * 60 * 60; // 48-hour dedup window in seconds
 const MAX_BACKOFF_MS = 5 * 60 * 1000; // 5 minutes
 const BASE_BACKOFF_MS = 1_000;
 
@@ -121,6 +124,15 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
 
   async _handleTransaction(tx: StellarSdk.Horizon.ServerApi.TransactionRecord): Promise<void> {
     try {
+      // Idempotency guard — skip already-processed transactions (e.g. replay after restart)
+      const dedupKey = `stellar:stream:processed:${tx.hash}`;
+      const isNew = await this.redis.set(dedupKey, '1', 'EX', TX_DEDUP_TTL_S, 'NX');
+      if (isNew === null) {
+        this.logger.debug(`[StellarStream] Duplicate tx skipped: ${tx.hash}`);
+        this.eventsCounter.inc({ result: 'skipped' });
+        return;
+      }
+
       // Filter: only process txs involving our contract address
       if (this.contractAddress && !this._involvesContract(tx)) {
         this.eventsCounter.inc({ result: 'skipped' });
@@ -179,8 +191,20 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
 
   async _getCursor(): Promise<string> {
     try {
-      const val = await this.redis.get(CURSOR_KEY);
-      return val ?? 'now';
+      const [val, savedAt] = await this.redis.mget(CURSOR_KEY, CURSOR_TS_KEY);
+      if (!val) return 'now';
+
+      if (savedAt) {
+        const ageMs = Date.now() - parseInt(savedAt, 10);
+        if (ageMs > STALE_CURSOR_MS) {
+          this.logger.warn(
+            `[StellarStream] Stale cursor detected: last saved ${Math.round(ageMs / 3600_000)}h ago. ` +
+            `Replaying missed events from cursor=${val}. Alert ops if replay volume is large.`,
+          );
+        }
+      }
+
+      return val;
     } catch {
       return 'now';
     }
@@ -188,7 +212,7 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
 
   async _saveCursor(pagingToken: string): Promise<void> {
     try {
-      await this.redis.set(CURSOR_KEY, pagingToken);
+      await this.redis.mset(CURSOR_KEY, pagingToken, CURSOR_TS_KEY, Date.now().toString());
     } catch {
       // Non-fatal — cursor will reset to 'now' on next restart
     }
