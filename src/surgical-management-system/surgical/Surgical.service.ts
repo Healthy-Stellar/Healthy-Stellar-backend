@@ -14,6 +14,8 @@ import {
   OperativeNote,
   SurgicalOutcome,
   RoomBooking,
+  SurgicalChecklist,
+  SurgicalChecklistItem,
   CaseStatus,
   RoomStatus,
   EquipmentStatus,
@@ -38,7 +40,10 @@ import {
   UpdateSurgicalOutcomeDto,
   ScheduleQueryDto,
   QualityMetricsQueryDto,
+  SubmitSurgicalChecklistDto,
 } from './dto';
+import { AuditService } from '../../common/audit/audit.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class SurgicalService {
@@ -57,6 +62,9 @@ export class SurgicalService {
     private operativeNoteRepository: Repository<OperativeNote>,
     @InjectRepository(SurgicalOutcome)
     private outcomeRepository: Repository<SurgicalOutcome>,
+    @InjectRepository(SurgicalChecklist)
+    private checklistRepository: Repository<SurgicalChecklist>,
+    private auditService: AuditService,
   ) {}
 
   // ==================== SURGICAL CASE SCHEDULING ====================
@@ -137,6 +145,16 @@ export class SurgicalService {
 
     if (surgicalCase.status !== CaseStatus.SCHEDULED) {
       throw new BadRequestException(`Cannot start surgery with status ${surgicalCase.status}`);
+    }
+
+    const checklist = await this.checklistRepository.findOne({
+      where: { surgicalCaseId: id },
+    });
+
+    if (!checklist || !this.isChecklistComplete(checklist.items) || !checklist.isComplete) {
+      throw new BadRequestException(
+        'Cannot start surgery until the pre-operative checklist is 100% complete',
+      );
     }
 
     surgicalCase.status = CaseStatus.IN_PROGRESS;
@@ -247,6 +265,113 @@ export class SurgicalService {
       relations: ['operatingRoom', 'teamMembers'],
       order: { scheduledDate: 'ASC' },
     });
+  }
+
+  // ==================== PRE-OPERATIVE CHECKLIST ====================
+
+  /**
+   * A checklist is complete only when it has at least one item and every
+   * item's `completed` flag is true. An empty item list is never considered
+   * complete, so the start-surgery gate cannot be bypassed by submitting an
+   * empty checklist.
+   */
+  private isChecklistComplete(items: SurgicalChecklistItem[]): boolean {
+    return Array.isArray(items) && items.length > 0 && items.every((item) => item.completed);
+  }
+
+  /**
+   * Submit or update the pre-operative checklist for a surgical case.
+   * Creates the checklist on first submission; subsequent calls update the
+   * existing checklist's items (e.g. as individual items get checked off by
+   * different OR nurses/surgeons over time).
+   *
+   * When the update brings the checklist to 100% completion, the checklist
+   * is marked complete, completedBy/completedAt are stamped, and an audit
+   * event is emitted.
+   */
+  async submitChecklist(
+    surgicalCaseId: string,
+    dto: SubmitSurgicalChecklistDto,
+    completedByUserId: string,
+  ): Promise<SurgicalChecklist> {
+    const surgicalCase = await this.surgicalCaseRepository.findOne({
+      where: { id: surgicalCaseId },
+    });
+
+    if (!surgicalCase) {
+      throw new NotFoundException(`Surgical case with ID ${surgicalCaseId} not found`);
+    }
+
+    let checklist = await this.checklistRepository.findOne({
+      where: { surgicalCaseId },
+    });
+
+    const now = new Date();
+
+    const items: SurgicalChecklistItem[] = dto.items.map((item) => ({
+      id: item.id ?? randomUUID(),
+      label: item.label,
+      description: item.description,
+      completed: item.completed,
+      completedBy: item.completed ? completedByUserId : undefined,
+      completedAt: item.completed ? now : undefined,
+    }));
+
+    const wasComplete = checklist?.isComplete ?? false;
+    const nowComplete = this.isChecklistComplete(items);
+
+    if (!checklist) {
+      checklist = this.checklistRepository.create({
+        surgicalCaseId,
+        items,
+      });
+    } else {
+      checklist.items = items;
+    }
+
+    checklist.isComplete = nowComplete;
+
+    if (nowComplete) {
+      checklist.completedBy = completedByUserId;
+      checklist.completedAt = now;
+    } else {
+      checklist.completedBy = null;
+      checklist.completedAt = null;
+    }
+
+    const saved = await this.checklistRepository.save(checklist);
+
+    // Emit an audit event the moment the checklist transitions to 100% complete.
+    if (nowComplete && !wasComplete) {
+      await this.auditService
+        .log({
+          actorId: completedByUserId,
+          action: 'SURGICAL_CHECKLIST_COMPLETED',
+          resourceId: saved.id,
+          resourceType: 'SurgicalChecklist',
+          timestamp: now,
+        })
+        .catch((err) => {
+          // Non-blocking: don't fail the request if audit logging fails.
+          console.error('Failed to log surgical checklist completion audit event:', err.message);
+        });
+    }
+
+    return saved;
+  }
+
+  async getChecklistForCase(surgicalCaseId: string): Promise<SurgicalChecklist> {
+    const checklist = await this.checklistRepository.findOne({
+      where: { surgicalCaseId },
+    });
+
+    if (!checklist) {
+      throw new NotFoundException(
+        `No pre-operative checklist found for surgical case ${surgicalCaseId}`,
+      );
+    }
+
+    return checklist;
   }
 
   // ==================== OPERATING ROOM MANAGEMENT ====================

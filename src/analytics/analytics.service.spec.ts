@@ -46,6 +46,7 @@ async function buildModule(repos: {
       { provide: getRepositoryToken(AccessGrant), useValue: repos.grant ?? makeRepo() },
       { provide: getRepositoryToken(StellarTransaction), useValue: repos.stellar ?? makeRepo() },
       { provide: CACHE_MANAGER, useValue: mockCache },
+      { provide: getDataSourceToken(), useValue: {} },
     ],
   }).compile();
   return module.get<AnalyticsService>(AnalyticsService);

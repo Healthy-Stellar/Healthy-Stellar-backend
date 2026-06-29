@@ -8,10 +8,13 @@ import {
   Body,
   Param,
   Query,
+  Req,
+  UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
 import { SurgicalService } from './surgical.service';
+import { SurgicalInstrumentService } from './surgical-instrument.service';
 import {
   CreateSurgicalCaseDto,
   UpdateSurgicalCaseDto,
@@ -32,11 +35,24 @@ import {
   UpdateSurgicalOutcomeDto,
   ScheduleQueryDto,
   QualityMetricsQueryDto,
+  CreateInstrumentDto,
+  UpdateInstrumentDto,
+  AssignInstrumentSetDto,
+  VerifyInstrumentCountDto,
+  RecordSterilisationDto,
+  InstrumentQueryDto,
 } from './dto';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @Controller('surgical')
 export class SurgicalController {
-  constructor(private readonly surgicalService: SurgicalService) {}
+  constructor(
+    private readonly surgicalService: SurgicalService,
+    private readonly instrumentService: SurgicalInstrumentService,
+  ) {}
 
   // ==================== SURGICAL CASE ENDPOINTS ====================
 
@@ -59,6 +75,29 @@ export class SurgicalController {
   @Put('cases/:id')
   async updateSurgicalCase(@Param('id') id: string, @Body() dto: UpdateSurgicalCaseDto) {
     return this.surgicalService.updateSurgicalCase(id, dto);
+  }
+
+  // ==================== PRE-OPERATIVE CHECKLIST ENDPOINTS ====================
+  // Note: the issue describing this endpoint refers to "procedures", but this
+  // module's existing resource is named "cases" (see /surgical/cases, /surgical/cases/:id,
+  // /surgical/cases/:id/start, etc.). To stay consistent with the rest of the
+  // controller we expose the checklist under /surgical/cases/:id/checklist rather
+  // than introducing a parallel "procedures" resource name.
+
+  @Post('cases/:id/checklist')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.NURSE, UserRole.SURGEON)
+  async submitChecklist(
+    @Param('id') id: string,
+    @Body() dto: SubmitSurgicalChecklistDto,
+    @Req() req: any,
+  ) {
+    return this.surgicalService.submitChecklist(id, dto, req.user.userId);
+  }
+
+  @Get('cases/:id/checklist')
+  async getChecklist(@Param('id') id: string) {
+    return this.surgicalService.getChecklistForCase(id);
   }
 
   @Post('cases/:id/start')
@@ -241,5 +280,59 @@ export class SurgicalController {
       new Date(startDate),
       new Date(endDate),
     );
+  }
+
+  // ==================== SURGICAL INSTRUMENT ENDPOINTS (#695) ====================
+
+  @Post('instruments')
+  @HttpCode(HttpStatus.CREATED)
+  async createInstrument(@Body() dto: CreateInstrumentDto) {
+    return this.instrumentService.createInstrument(dto);
+  }
+
+  /** GET /surgical/instruments?status=available returns available sterile instruments. */
+  @Get('instruments')
+  async getInstruments(@Query() query: InstrumentQueryDto) {
+    return this.instrumentService.findInstruments(query);
+  }
+
+  @Get('instruments/:id')
+  async getInstrument(@Param('id') id: string) {
+    return this.instrumentService.findInstrument(id);
+  }
+
+  @Put('instruments/:id')
+  async updateInstrument(@Param('id') id: string, @Body() dto: UpdateInstrumentDto) {
+    return this.instrumentService.updateInstrument(id, dto);
+  }
+
+  @Delete('instruments/:id')
+  @HttpCode(HttpStatus.OK)
+  async retireInstrument(@Param('id') id: string) {
+    return this.instrumentService.retireInstrument(id);
+  }
+
+  @Post('instrument-sets')
+  @HttpCode(HttpStatus.CREATED)
+  async assignInstrumentSet(@Body() dto: AssignInstrumentSetDto) {
+    return this.instrumentService.assignInstrumentSet(dto);
+  }
+
+  @Post('instrument-sets/pre-op-count')
+  @HttpCode(HttpStatus.OK)
+  async recordPreOpCount(@Body() dto: VerifyInstrumentCountDto) {
+    return this.instrumentService.recordPreOpCount(dto);
+  }
+
+  @Post('instrument-sets/post-op-count')
+  @HttpCode(HttpStatus.OK)
+  async recordPostOpCount(@Body() dto: VerifyInstrumentCountDto) {
+    return this.instrumentService.recordPostOpCount(dto);
+  }
+
+  @Post('instruments/sterilisation')
+  @HttpCode(HttpStatus.CREATED)
+  async recordSterilisation(@Body() dto: RecordSterilisationDto) {
+    return this.instrumentService.recordSterilisation(dto);
   }
 }

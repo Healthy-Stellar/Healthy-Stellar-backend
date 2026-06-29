@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody, ApiParam } from '@nestjs/swagger';
 import { SecretRotationService } from '../services/secret-rotation.service';
 
 @ApiTags('Admin - Secret Rotation')
@@ -9,17 +9,64 @@ export class SecretRotationController {
   constructor(private readonly secretRotation: SecretRotationService) {}
 
   /**
-   * Rotate the active JWT signing secret at runtime.
-   * Tokens signed with the previous secret remain valid until they expire.
+   * Unified rotation endpoint.
+   * type=jwt  → rotates the JWT signing secret
+   * type=database → rotates database credentials
    */
+  @Post('rotate/:type')
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: 'type', enum: ['jwt', 'database'] })
+  @ApiOperation({
+    summary: 'POST /admin/secrets/rotate/:type — zero-downtime secret rotation',
+    description:
+      'For type=jwt: promotes newSecret as active signing key; old secret stays valid for 1 hour. ' +
+      'For type=database: promotes new DB credentials; previous credentials stay live for 1 hour drain window.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        newSecret: { type: 'string', minLength: 32, description: 'JWT only' },
+        newVersion: { type: 'string', example: 'v2' },
+        host: { type: 'string', description: 'DB only' },
+        port: { type: 'number', description: 'DB only' },
+        username: { type: 'string', description: 'DB only' },
+        password: { type: 'string', description: 'DB only' },
+        database: { type: 'string', description: 'DB only' },
+      },
+    },
+  })
+  rotate(@Param('type') type: string, @Body() body: Record<string, any>) {
+    if (type === 'jwt') {
+      this.secretRotation.rotateJwtSecret(body.newSecret, body.newVersion);
+      return {
+        message: 'JWT secret rotated successfully',
+        activeVersion: this.secretRotation.activeVersion,
+      };
+    }
+
+    if (type === 'database') {
+      this.secretRotation.rotateDatabaseCredentials({
+        version: body.newVersion,
+        host: body.host,
+        port: body.port,
+        username: body.username,
+        password: body.password,
+        database: body.database,
+      });
+      return {
+        message: 'Database credentials rotated successfully',
+        activeVersion: this.secretRotation.activeDbCredentials?.version,
+      };
+    }
+
+    return { message: `Unknown rotation type: ${type}` };
+  }
+
+  /** Legacy endpoint preserved for backwards compatibility. */
   @Post('jwt/rotate')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Rotate JWT signing secret at runtime (zero-downtime)',
-    description:
-      'Promotes newSecret as the active signing key. The previous secret is ' +
-      'kept in an overlap window so existing tokens remain verifiable until expiry.',
-  })
+  @ApiOperation({ summary: 'Rotate JWT signing secret at runtime (zero-downtime)' })
   @ApiBody({
     schema: {
       type: 'object',
@@ -42,8 +89,11 @@ export class SecretRotationController {
   }
 
   @Get('status')
-  @ApiOperation({ summary: 'List loaded secret versions and their activation timestamps' })
+  @ApiOperation({ summary: 'List all loaded secret versions and their activation timestamps' })
   status() {
-    return this.secretRotation.status();
+    return {
+      jwt: this.secretRotation.status(),
+      database: this.secretRotation.dbRotationStatus(),
+    };
   }
 }

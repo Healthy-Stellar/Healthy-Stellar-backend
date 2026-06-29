@@ -4,6 +4,7 @@ import {
   GoneException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NestInterceptor,
   VERSION_NEUTRAL,
 } from '@nestjs/common';
@@ -14,8 +15,14 @@ import {
   ApiVersionLifecyclePolicy,
 } from './api-version-lifecycle.policy';
 
+/** URL pointing to the migration guide for deprecated API versions. */
+const MIGRATION_GUIDE_URL =
+  'https://github.com/Healthy-Stellar/Healthy-Stellar-backend/blob/main/docs/api-versioning.md';
+
 @Injectable()
 export class ApiVersionLifecycleInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(ApiVersionLifecycleInterceptor.name);
+
   constructor(
     private readonly policies: ApiVersionLifecyclePolicy[] = API_VERSION_LIFECYCLE_POLICIES,
     private readonly nowProvider: () => Date = () => new Date(),
@@ -44,11 +51,26 @@ export class ApiVersionLifecycleInterceptor implements NestInterceptor {
     response.setHeader('API-Version-Status', policy.status);
 
     if (policy.status === 'deprecated' || this.isSunset(policy)) {
-      response.setHeader('Deprecation', 'true');
-      if (policy.sunsetDate) response.setHeader('Sunset', policy.sunsetDate);
-      if (policy.replacementVersion) {
-        response.setHeader('Link', `</v${policy.replacementVersion}>; rel="alternate"`);
+      // RFC 8594 — Deprecation header contains the sunset date as a DateTime
+      if (policy.sunsetDate) {
+        response.setHeader('Deprecation', policy.sunsetDate);
+        response.setHeader('Sunset', policy.sunsetDate);
+      } else {
+        response.setHeader('Deprecation', 'true');
       }
+      // Link header pointing to the migration guide
+      const alternateLink =
+        policy.replacementVersion
+          ? `<${MIGRATION_GUIDE_URL}>; rel=\"help\", </v${policy.replacementVersion}>; rel=\"alternate\"`
+          : `<${MIGRATION_GUIDE_URL}>; rel=\"help\"`;
+      response.setHeader('Link', alternateLink);
+
+      // Server-side deprecation warning log
+      const path = request?.originalUrl ?? request?.url ?? '';
+      this.logger.warn(
+        `Deprecated API version v${policy.version} called: ${path}. Sunset: ${policy.sunsetDate ?? 'unscheduled'}. ` +
+          `Replacement: v${policy.replacementVersion ?? 'N/A'}.`,
+      );
     }
 
     if (this.isSunset(policy)) {
