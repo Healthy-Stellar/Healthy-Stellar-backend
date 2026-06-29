@@ -16,6 +16,10 @@ import { PharmacyInventoryService } from './pharmacy-inventory.service';
 import { ControlledSubstanceService } from './controlled-substance.service';
 import { DrugInteractionService } from './drug-interaction.service';
 import { Drug } from '../entities/drug.entity';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { QUEUE_NAMES } from '../../queues/queue.constants';
+import type { PharmacyReorderAlertJobData } from '../../queues/processors/pharmacy-reorder-alert.processor';
 
 @Injectable()
 export class PrescriptionService {
@@ -32,7 +36,9 @@ export class PrescriptionService {
     private inventoryService: PharmacyInventoryService,
     private controlledSubstanceService: ControlledSubstanceService,
     private drugInteractionService: DrugInteractionService,
-  ) {}
+    @InjectQueue(QUEUE_NAMES.PHARMACY_REORDER_ALERTS)
+    private pharmacyReorderAlertQueue: Queue,
+  ) { }
 
   async create(createDto: CreatePrescriptionDto): Promise<Prescription> {
     // Run an automated drug-drug interaction check before persisting. Critical
@@ -142,22 +148,49 @@ export class PrescriptionService {
 
     prescription.status = 'filling';
 
-    // Deduct inventory for each item
-    for (const item of prescription.items) {
+    // Deduct inventory for each prescription item
+    const items = await this.prescriptionItemRepository.find({
+      where: { prescriptionId: id },
+      relations: ['drug'],
+    });
+
+    for (const item of items) {
+      // Capture stock before deduction so we can detect a threshold crossing.
+      const beforeQty = await this.inventoryService.getTotalQuantity(item.drugId);
+
       await this.inventoryService.deductInventory(item.drugId, item.quantityPrescribed);
       item.quantityDispensed = item.quantityPrescribed;
       await this.prescriptionItemRepository.save(item);
 
+      const afterQty = await this.inventoryService.getTotalQuantity(item.drugId);
+
+      // Find reorderLevel/reorderQuantity from any available inventory record for this drug.
+      const invSamples = await this.inventoryService.getInventoryByDrug(item.drugId);
+      const reorderLevel = invSamples.find((x) => x.status === 'available')?.reorderLevel ?? invSamples[0]?.reorderLevel ?? 0;
+      const reorderQuantity = invSamples.find((x) => x.status === 'available')?.reorderQuantity ?? invSamples[0]?.reorderQuantity ?? 0;
+
+      // Enqueue reorder alert only when crossing from above threshold to at/below threshold.
+      if (beforeQty > reorderLevel && afterQty <= reorderLevel) {
+        await this.enqueuePharmacyReorderAlert({
+          drugId: item.drugId,
+          reorderLevel,
+          reorderQuantity,
+          currentQuantity: afterQty,
+        });
+      }
+
       // Log controlled substances
+      // NOTE: Prescription entity in this codebase does not store patient/prescriber display fields.
+      // ControlledSubstanceService expects these fields, so we only log what is available.
       const drug = await this.drugRepository.findOne({ where: { id: item.drugId } });
       if (drug.controlledSubstanceSchedule !== 'non-controlled') {
         await this.controlledSubstanceService.logDispensing(
           drug.id,
           prescription.id,
           item.quantityDispensed,
-          prescription.patientName,
-          prescription.prescriberName,
-          prescription.prescriberDEA,
+          'Unknown',
+          'Unknown',
+          'Unknown',
           pharmacistId,
         );
       }
@@ -166,6 +199,23 @@ export class PrescriptionService {
     prescription.status = 'filled';
     return await this.prescriptionRepository.save(prescription);
   }
+
+  private async enqueuePharmacyReorderAlert(
+    payload: Omit<PharmacyReorderAlertJobData, 'timestamp'> & { currentQuantity: number },
+  ): Promise<void> {
+    const jobData: PharmacyReorderAlertJobData = {
+      ...payload,
+      currentQuantity: payload.currentQuantity,
+      timestamp: new Date().toISOString(),
+    };
+
+    await this.pharmacyReorderAlertQueue.add('pharmacyReorderAlert', jobData, {
+      attempts: 3,
+      removeOnComplete: true,
+      removeOnFail: false,
+    });
+  }
+
 
   async dispensePrescription(id: string, pharmacistId: string): Promise<Prescription> {
     const prescription = await this.findOne(id);
