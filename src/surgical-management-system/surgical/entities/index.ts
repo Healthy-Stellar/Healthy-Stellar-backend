@@ -47,6 +47,49 @@ export enum EquipmentStatus {
   OUT_OF_SERVICE = 'OUT_OF_SERVICE',
 }
 
+@Entity('operating_rooms')
+export class OperatingRoom {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ unique: true })
+  roomNumber: string;
+
+  @Column()
+  roomName: string;
+
+  @Column({
+    type: 'enum',
+    enum: RoomStatus,
+    default: RoomStatus.AVAILABLE,
+  })
+  status: RoomStatus;
+
+  @Column('simple-array', { nullable: true })
+  capabilities: string[]; // e.g., ['cardiac', 'neurosurgery', 'orthopedic']
+
+  @Column('simple-json', { nullable: true })
+  equipment: Record<string, any>;
+
+  @Column('int', { default: 0 })
+  capacity: number;
+
+  @Column({ default: true })
+  isActive: boolean;
+
+  @Column('text', { nullable: true })
+  notes: string;
+
+  @OneToMany(() => RoomBooking, (booking) => booking.operatingRoom)
+  bookings: RoomBooking[];
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+
 @Entity('surgical_cases')
 @Index(['scheduledDate', 'status'])
 @Index(['patientId'])
@@ -123,48 +166,8 @@ export class SurgicalCase {
   @OneToMany(() => SurgicalOutcome, (outcome) => outcome.surgicalCase)
   outcomes: SurgicalOutcome[];
 
-  @CreateDateColumn()
-  createdAt: Date;
-
-  @UpdateDateColumn()
-  updatedAt: Date;
-}
-
-@Entity('operating_rooms')
-export class OperatingRoom {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @Column({ unique: true })
-  roomNumber: string;
-
-  @Column()
-  roomName: string;
-
-  @Column({
-    type: 'enum',
-    enum: RoomStatus,
-    default: RoomStatus.AVAILABLE,
-  })
-  status: RoomStatus;
-
-  @Column('simple-array', { nullable: true })
-  capabilities: string[]; // e.g., ['cardiac', 'neurosurgery', 'orthopedic']
-
-  @Column('simple-json', { nullable: true })
-  equipment: Record<string, any>;
-
-  @Column('int', { default: 0 })
-  capacity: number;
-
-  @Column({ default: true })
-  isActive: boolean;
-
-  @Column('text', { nullable: true })
-  notes: string;
-
-  @OneToMany(() => RoomBooking, (booking) => booking.operatingRoom)
-  bookings: RoomBooking[];
+  @OneToMany(() => SurgicalChecklist, (checklist) => checklist.surgicalCase)
+  checklists: SurgicalChecklist[];
 
   @CreateDateColumn()
   createdAt: Date;
@@ -440,13 +443,65 @@ export class SurgicalOutcome {
   dvtProphylaxisGiven: boolean;
 
   @Column({ default: false })
-  normothermia Maintained: boolean;
+  normothermiaMaintained: boolean;
 
   @Column('text', { nullable: true })
   qualityNotes: string;
 
   @Column('simple-json', { nullable: true })
   customMetrics: Record<string, any>;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+
+/**
+ * A single line item on a pre-operative checklist (e.g. "Site marked and
+ * verified", "Patient identity confirmed", "Allergies reviewed").
+ *
+ * Item-level completedBy/completedAt is tracked (in addition to the
+ * checklist-level completedBy/completedAt below) because in practice
+ * different OR nurses/surgeons typically check off different items rather
+ * than one person completing the whole checklist at once.
+ */
+export interface SurgicalChecklistItem {
+  id: string;
+  label: string;
+  description?: string;
+  completed: boolean;
+  completedBy?: string;
+  completedAt?: Date;
+}
+
+@Entity('surgical_checklists')
+@Index(['surgicalCaseId'], { unique: true })
+export class SurgicalChecklist {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  surgicalCaseId: string;
+
+  @ManyToOne(() => SurgicalCase, (surgicalCase) => surgicalCase.checklists, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'surgicalCaseId' })
+  surgicalCase: SurgicalCase;
+
+  @Column('jsonb', { default: () => "'[]'" })
+  items: SurgicalChecklistItem[];
+
+  @Column({ default: false })
+  isComplete: boolean;
+
+  // Checklist-level completion metadata, set once every item is completed.
+  // Records the last user to complete the final outstanding item.
+  @Column({ nullable: true })
+  completedBy: string;
+
+  @Column('timestamp', { nullable: true })
+  completedAt: Date;
 
   @CreateDateColumn()
   createdAt: Date;

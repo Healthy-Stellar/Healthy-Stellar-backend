@@ -133,6 +133,30 @@ export class CompleteSurgeryDto {
   notes?: string;
 }
 
+// Pre-Operative Checklist DTOs
+export class SurgicalChecklistItemDto {
+  @IsString()
+  @IsOptional()
+  id?: string;
+
+  @IsString()
+  label: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsBoolean()
+  completed: boolean;
+}
+
+export class SubmitSurgicalChecklistDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SurgicalChecklistItemDto)
+  items: SurgicalChecklistItemDto[];
+}
+
 // Operating Room DTOs
 export class CreateOperatingRoomDto {
   @IsString()
@@ -464,7 +488,7 @@ export class CreateSurgicalOutcomeDto {
 
   @IsBoolean()
   @IsOptional()
-  normothermia Maintained?: boolean;
+  normothermiaMaintained?: boolean;
 
   @IsString()
   @IsOptional()
@@ -545,7 +569,7 @@ export class UpdateSurgicalOutcomeDto {
 
   @IsBoolean()
   @IsOptional()
-  normothermia Maintained?: boolean;
+  normothermiaMaintained?: boolean;
 
   @IsString()
   @IsOptional()

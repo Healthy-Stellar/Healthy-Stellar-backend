@@ -8,6 +8,8 @@ import {
   Body,
   Param,
   Query,
+  Req,
+  UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -32,7 +34,12 @@ import {
   UpdateSurgicalOutcomeDto,
   ScheduleQueryDto,
   QualityMetricsQueryDto,
+  SubmitSurgicalChecklistDto,
 } from './dto';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @Controller('surgical')
 export class SurgicalController {
@@ -59,6 +66,29 @@ export class SurgicalController {
   @Put('cases/:id')
   async updateSurgicalCase(@Param('id') id: string, @Body() dto: UpdateSurgicalCaseDto) {
     return this.surgicalService.updateSurgicalCase(id, dto);
+  }
+
+  // ==================== PRE-OPERATIVE CHECKLIST ENDPOINTS ====================
+  // Note: the issue describing this endpoint refers to "procedures", but this
+  // module's existing resource is named "cases" (see /surgical/cases, /surgical/cases/:id,
+  // /surgical/cases/:id/start, etc.). To stay consistent with the rest of the
+  // controller we expose the checklist under /surgical/cases/:id/checklist rather
+  // than introducing a parallel "procedures" resource name.
+
+  @Post('cases/:id/checklist')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.NURSE, UserRole.SURGEON)
+  async submitChecklist(
+    @Param('id') id: string,
+    @Body() dto: SubmitSurgicalChecklistDto,
+    @Req() req: any,
+  ) {
+    return this.surgicalService.submitChecklist(id, dto, req.user.userId);
+  }
+
+  @Get('cases/:id/checklist')
+  async getChecklist(@Param('id') id: string) {
+    return this.surgicalService.getChecklistForCase(id);
   }
 
   @Post('cases/:id/start')

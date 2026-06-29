@@ -10,7 +10,9 @@ import {
   OperativeNote,
   SurgicalOutcome,
   RoomBooking,
+  SurgicalChecklist,
 } from './entities';
+import { AuditModule } from '../../common/audit/audit.module';
 
 @Module({
   imports: [
@@ -22,7 +24,9 @@ import {
       OperativeNote,
       SurgicalOutcome,
       RoomBooking,
+      SurgicalChecklist,
     ]),
+    AuditModule,
   ],
   controllers: [SurgicalController],
   providers: [SurgicalService],
