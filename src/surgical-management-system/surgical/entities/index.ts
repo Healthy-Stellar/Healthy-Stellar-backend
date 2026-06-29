@@ -440,7 +440,7 @@ export class SurgicalOutcome {
   dvtProphylaxisGiven: boolean;
 
   @Column({ default: false })
-  normothermia Maintained: boolean;
+  normothermiaMaintained: boolean;
 
   @Column('text', { nullable: true })
   qualityNotes: string;
@@ -454,3 +454,11 @@ export class SurgicalOutcome {
   @UpdateDateColumn()
   updatedAt: Date;
 }
+
+export {
+  SurgicalInstrument,
+  InstrumentSet,
+  InstrumentSetItem,
+  SterilisationRecord,
+  InstrumentStatus,
+} from './surgical-instrument.entity';
