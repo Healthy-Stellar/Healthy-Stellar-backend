@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SurgicalController } from './surgical.controller';
 import { SurgicalService } from './surgical.service';
+import { SurgicalInstrumentService } from './surgical-instrument.service';
 import {
   SurgicalCase,
   OperatingRoom,
@@ -10,7 +11,10 @@ import {
   OperativeNote,
   SurgicalOutcome,
   RoomBooking,
-  SurgicalChecklist,
+  SurgicalInstrument,
+  InstrumentSet,
+  InstrumentSetItem,
+  SterilisationRecord,
 } from './entities';
 import { AuditModule } from '../../common/audit/audit.module';
 
@@ -24,12 +28,15 @@ import { AuditModule } from '../../common/audit/audit.module';
       OperativeNote,
       SurgicalOutcome,
       RoomBooking,
-      SurgicalChecklist,
+      SurgicalInstrument,
+      InstrumentSet,
+      InstrumentSetItem,
+      SterilisationRecord,
     ]),
     AuditModule,
   ],
   controllers: [SurgicalController],
-  providers: [SurgicalService],
-  exports: [SurgicalService],
+  providers: [SurgicalService, SurgicalInstrumentService],
+  exports: [SurgicalService, SurgicalInstrumentService],
 })
 export class SurgicalModule {}

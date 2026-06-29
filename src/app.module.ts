@@ -80,6 +80,7 @@ import { OperatorRunbookModule } from './operator-runbook/operator-runbook.modul
 import { IncidentModule } from './incident/incident.module';
 import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.interceptor';
 import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -166,6 +167,7 @@ import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
     OperatorRunbookModule,
     IncidentModule,
     BedOccupancyModule,
+    ReportsModule,
     EhrImportModule,
     EventEmitterModule.forRoot(),
   ],
