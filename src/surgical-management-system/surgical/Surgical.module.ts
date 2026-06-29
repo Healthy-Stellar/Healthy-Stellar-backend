@@ -16,6 +16,7 @@ import {
   InstrumentSetItem,
   SterilisationRecord,
 } from './entities';
+import { AuditModule } from '../../common/audit/audit.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import {
       InstrumentSetItem,
       SterilisationRecord,
     ]),
+    AuditModule,
   ],
   controllers: [SurgicalController],
   providers: [SurgicalService, SurgicalInstrumentService],

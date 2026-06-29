@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Patch, Param, UseGuards } from '@nestjs/common';
 import { InfectionControlService } from './infection-control.service';
+import { OutbreakAlertsService } from './outbreak-alerts.service';
 import { CreateInfectionCaseDto } from './dto/create-infection-case.dto';
 import { UpdateInfectionCaseDto } from './dto/update-infection-case.dto';
 import { CreateIsolationPrecautionDto } from './dto/create-isolation-precaution.dto';
@@ -10,10 +11,15 @@ import { UpdateInfectionControlPolicyDto } from './dto/update-infection-control-
 import { CreateOutbreakIncidentDto } from './dto/create-outbreak-incident.dto';
 import { UpdateOutbreakIncidentDto } from './dto/update-outbreak-incident.dto';
 import { CreateHandHygieneAuditDto } from './dto/create-hand-hygiene-audit.dto';
+import { CreateOutbreakThresholdDto } from './dto/create-outbreak-threshold.dto';
+import { UpdateOutbreakThresholdDto } from './dto/update-outbreak-threshold.dto';
 
 @Controller('infection-control')
 export class InfectionControlController {
-  constructor(private readonly infectionControlService: InfectionControlService) {}
+  constructor(
+    private readonly infectionControlService: InfectionControlService,
+    private readonly outbreakAlertsService: OutbreakAlertsService,
+  ) {}
 
   // Infection Cases
   @Post('cases')
@@ -104,5 +110,37 @@ export class InfectionControlController {
   @Get('hand-hygiene')
   findAllHandHygieneAudits() {
     return this.infectionControlService.findAllHandHygieneAudits();
+  }
+
+  // Outbreak Thresholds (configuration)
+  @Post('outbreak-thresholds')
+  createOutbreakThreshold(@Body() dto: CreateOutbreakThresholdDto) {
+    return this.outbreakAlertsService.createThreshold(dto);
+  }
+
+  @Get('outbreak-thresholds')
+  findAllOutbreakThresholds() {
+    return this.outbreakAlertsService.findAllThresholds();
+  }
+
+  @Get('outbreak-thresholds/:id')
+  findOneOutbreakThreshold(@Param('id') id: string) {
+    return this.outbreakAlertsService.findOneThreshold(id);
+  }
+
+  @Patch('outbreak-thresholds/:id')
+  updateOutbreakThreshold(@Param('id') id: string, @Body() dto: UpdateOutbreakThresholdDto) {
+    return this.outbreakAlertsService.updateThreshold(id, dto);
+  }
+
+  // Outbreak Alerts dashboard
+  @Get('outbreak-alerts')
+  findActiveOutbreakAlerts() {
+    return this.outbreakAlertsService.findActiveAlerts();
+  }
+
+  @Patch('outbreak-alerts/:id/resolve')
+  resolveOutbreakAlert(@Param('id') id: string) {
+    return this.outbreakAlertsService.resolveAlert(id);
   }
 }

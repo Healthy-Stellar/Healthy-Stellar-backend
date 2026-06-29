@@ -47,6 +47,49 @@ export enum EquipmentStatus {
   OUT_OF_SERVICE = 'OUT_OF_SERVICE',
 }
 
+@Entity('operating_rooms')
+export class OperatingRoom {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ unique: true })
+  roomNumber: string;
+
+  @Column()
+  roomName: string;
+
+  @Column({
+    type: 'enum',
+    enum: RoomStatus,
+    default: RoomStatus.AVAILABLE,
+  })
+  status: RoomStatus;
+
+  @Column('simple-array', { nullable: true })
+  capabilities: string[]; // e.g., ['cardiac', 'neurosurgery', 'orthopedic']
+
+  @Column('simple-json', { nullable: true })
+  equipment: Record<string, any>;
+
+  @Column('int', { default: 0 })
+  capacity: number;
+
+  @Column({ default: true })
+  isActive: boolean;
+
+  @Column('text', { nullable: true })
+  notes: string;
+
+  @OneToMany(() => RoomBooking, (booking) => booking.operatingRoom)
+  bookings: RoomBooking[];
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+
 @Entity('surgical_cases')
 @Index(['scheduledDate', 'status'])
 @Index(['patientId'])
@@ -123,48 +166,8 @@ export class SurgicalCase {
   @OneToMany(() => SurgicalOutcome, (outcome) => outcome.surgicalCase)
   outcomes: SurgicalOutcome[];
 
-  @CreateDateColumn()
-  createdAt: Date;
-
-  @UpdateDateColumn()
-  updatedAt: Date;
-}
-
-@Entity('operating_rooms')
-export class OperatingRoom {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @Column({ unique: true })
-  roomNumber: string;
-
-  @Column()
-  roomName: string;
-
-  @Column({
-    type: 'enum',
-    enum: RoomStatus,
-    default: RoomStatus.AVAILABLE,
-  })
-  status: RoomStatus;
-
-  @Column('simple-array', { nullable: true })
-  capabilities: string[]; // e.g., ['cardiac', 'neurosurgery', 'orthopedic']
-
-  @Column('simple-json', { nullable: true })
-  equipment: Record<string, any>;
-
-  @Column('int', { default: 0 })
-  capacity: number;
-
-  @Column({ default: true })
-  isActive: boolean;
-
-  @Column('text', { nullable: true })
-  notes: string;
-
-  @OneToMany(() => RoomBooking, (booking) => booking.operatingRoom)
-  bookings: RoomBooking[];
+  @OneToMany(() => SurgicalChecklist, (checklist) => checklist.surgicalCase)
+  checklists: SurgicalChecklist[];
 
   @CreateDateColumn()
   createdAt: Date;

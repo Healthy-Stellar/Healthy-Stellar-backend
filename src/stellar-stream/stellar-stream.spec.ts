@@ -212,6 +212,148 @@ describe('StellarStreamService', () => {
     });
   });
 
+  describe('worker restart / catchup replay', () => {
+    it('resumes from stored cursor on restart, not from "now"', async () => {
+      const { service } = await buildService(null, null);
+
+      // Simulate Redis having a stored cursor from before restart
+      const redisMock = (service as any).redis;
+      redisMock.mget = jest.fn().mockResolvedValue(['token-42', String(Date.now() - 1000)]);
+
+      const cursor = await service._getCursor();
+      expect(cursor).toBe('token-42');
+    });
+
+    it('logs a stale cursor warning when cursor is older than 24 hours', async () => {
+      const { service } = await buildService(null, null);
+      const warnSpy = jest.spyOn((service as any).logger, 'warn');
+
+      const staleTs = Date.now() - 25 * 60 * 60 * 1000; // 25 hours ago
+      const redisMock = (service as any).redis;
+      redisMock.mget = jest.fn().mockResolvedValue(['token-old', String(staleTs)]);
+
+      await service._getCursor();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Stale cursor detected'),
+      );
+    });
+
+    it('does not warn when cursor is fresh (< 24 hours)', async () => {
+      const { service } = await buildService(null, null);
+      const warnSpy = jest.spyOn((service as any).logger, 'warn');
+
+      const freshTs = Date.now() - 60 * 1000; // 1 minute ago
+      const redisMock = (service as any).redis;
+      redisMock.mget = jest.fn().mockResolvedValue(['token-fresh', String(freshTs)]);
+
+      await service._getCursor();
+
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('skips duplicate tx on replay without double-emitting events', async () => {
+      const { service, emitter, counter } = await buildService(makeRecord(), null);
+
+      // Restore real _getCursor/_saveCursor for this test; mock Redis SET NX
+      jest.spyOn(service as any, '_getCursor').mockRestore?.();
+      jest.spyOn(service as any, '_saveCursor').mockRestore?.();
+
+      const redisMock = (service as any).redis;
+      // First call returns 'OK' (new), second returns null (duplicate)
+      redisMock.set = jest.fn()
+        .mockResolvedValueOnce('OK')   // first processing
+        .mockResolvedValue(null);      // replay attempt — duplicate
+
+      const anchored: any[] = [];
+      emitter.on('record.anchored', (e) => anchored.push(e));
+
+      const tx = makeTx({ paging_token: 'tok-1' });
+
+      // First pass: should process and emit
+      await service._handleTransaction(tx as any);
+      expect(anchored).toHaveLength(1);
+
+      // Second pass (replay): should be deduped, no additional emit
+      await service._handleTransaction(tx as any);
+      expect(anchored).toHaveLength(1);
+      expect(counter.inc).toHaveBeenCalledWith({ result: 'skipped' });
+    });
+
+    it('processes all events exactly once across simulated restart', async () => {
+      // Simulate: 3 txs processed before restart, then stream restarts from
+      // cursor of tx-2 and replays tx-2 and tx-3 before receiving tx-4.
+      // Expected: tx-1, tx-2, tx-3 each processed once; tx-4 processed once.
+      const recordFindOne = jest.fn().mockResolvedValue(null);
+      const grantFindOne = jest.fn().mockResolvedValue(null);
+      const counter = { inc: jest.fn() };
+      const emitter = new EventEmitter2();
+
+      const module = await Test.createTestingModule({
+        providers: [
+          StellarStreamService,
+          { provide: getRepositoryToken(Record), useValue: { findOne: recordFindOne } },
+          { provide: getRepositoryToken(AccessGrant), useValue: { findOne: grantFindOne } },
+          {
+            provide: ConfigService,
+            useValue: {
+              get: jest.fn().mockImplementation((key: string, def?: any) => {
+                if (key === 'STELLAR_NETWORK') return 'testnet';
+                if (key === 'STELLAR_CONTRACT_ID') return CONTRACT;
+                if (key === 'REDIS_HOST') return 'localhost';
+                if (key === 'REDIS_PORT') return 6379;
+                return def;
+              }),
+            },
+          },
+          { provide: EventEmitter2, useValue: emitter },
+          { provide: 'PROM_METRIC_MEDCHAIN_STELLAR_STREAM_EVENTS_PROCESSED_TOTAL', useValue: counter },
+        ],
+      }).compile();
+
+      const service = module.get(StellarStreamService);
+
+      // In-memory dedup store (mimics Redis SET NX behaviour)
+      const seen = new Set<string>();
+      const redisMock = (service as any).redis;
+      redisMock.set = jest.fn().mockImplementation(
+        (_key: string, _val: string, _ex: string, _ttl: number, flag: string) => {
+          if (flag !== 'NX') return Promise.resolve('OK');
+          const dedupKey = _key;
+          if (seen.has(dedupKey)) return Promise.resolve(null); // duplicate
+          seen.add(dedupKey);
+          return Promise.resolve('OK');
+        },
+      );
+      redisMock.mset = jest.fn().mockResolvedValue('OK');
+      jest.spyOn(service as any, '_getCursor').mockResolvedValue('now');
+      jest.spyOn(service as any, '_saveCursor').mockResolvedValue(undefined);
+
+      const processOrder: string[] = [];
+      counter.inc.mockImplementation(({ result }: { result: string }) => {
+        if (result !== 'skipped') processOrder.push(result);
+      });
+
+      // Pre-restart: process tx-1, tx-2, tx-3
+      for (const token of ['tok-1', 'tok-2', 'tok-3']) {
+        await service._handleTransaction(makeTx({ hash: token, paging_token: token }) as any);
+      }
+
+      // Post-restart replay: tx-2 and tx-3 replayed, then new tx-4
+      for (const token of ['tok-2', 'tok-3', 'tok-4']) {
+        await service._handleTransaction(makeTx({ hash: token, paging_token: token }) as any);
+      }
+
+      // tx-1, tx-2, tx-3, tx-4 each processed exactly once (4 non-skipped increments)
+      expect(processOrder).toHaveLength(4);
+      // Replayed tok-2 and tok-3 were deduped (2 skipped increments)
+      const skippedCalls = (counter.inc as jest.Mock).mock.calls.filter(
+        ([arg]: [{ result: string }]) => arg.result === 'skipped',
+      );
+      expect(skippedCalls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   describe('health indicator', () => {
     it('reports connected when status is connected', async () => {
       const { service } = await buildService(null, null);

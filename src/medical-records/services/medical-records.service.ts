@@ -623,4 +623,18 @@ export class MedicalRecordsService {
       },
     });
   }
+
+  async shareWithHospital(recordId: string, hospitalId: string): Promise<void> {
+    const record = await this.medicalRecordRepository.findOne({
+      where: { id: recordId },
+    });
+    if (!record) {
+      throw new NotFoundException(`Medical record ${recordId} not found`);
+    }
+
+    record.organizationId = hospitalId;
+    await this.medicalRecordRepository.save(record);
+
+    this.logger.log(`Medical record ${recordId} shared with hospital ${hospitalId}`);
+  }
 }

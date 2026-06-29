@@ -34,6 +34,12 @@ export class MarController {
     return this.marService.findAll();
   }
 
+  @Get('mar')
+  @Roles(UserRole.NURSE, UserRole.PHYSICIAN, UserRole.ADMIN)
+  getMarGrid(@Query('patientId') patientId: string, @Query('date') date: string) {
+    return this.marService.getMarGrid(patientId, date);
+  }
+
   @Get('patient/:patientId')
   @Roles(UserRole.NURSE, UserRole.PHYSICIAN)
   findByPatient(@Param('patientId') patientId: string) {
@@ -96,6 +102,12 @@ export class MarController {
   @Roles(UserRole.NURSE)
   administerMedication(@Body() administerDto: AdministerMedicationDto) {
     return this.marService.administerMedication(administerDto);
+  }
+
+  @Post('doses/:id/administer')
+  @Roles(UserRole.NURSE)
+  administerDose(@Param('id') id: string, @Body() administerDto: Omit<AdministerMedicationDto, 'marId'>) {
+    return this.marService.administerDoseById(id, administerDto);
   }
 
   @Patch(':id')

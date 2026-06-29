@@ -7,6 +7,7 @@ import {
   CreateRapidResponseDto,
   CreateResourceDto,
   CreateTriageCaseDto,
+  PanicAlertDto,
   UpdateDisasterIncidentStatusDto,
   UpdateRapidResponseStatusDto,
   UpdateResourceAllocationDto,
@@ -120,5 +121,11 @@ export class EmergencyOperationsController {
   @Get('disaster/incidents/active')
   async getActiveDisasterIncidents() {
     return await this.emergencyService.getActiveDisasterIncidents();
+  }
+
+  // Panic button - multi-channel alert
+  @Post('panic')
+  async triggerPanicAlert(@Body() dto: PanicAlertDto) {
+    return await this.emergencyService.triggerPanicAlert(dto);
   }
 }
