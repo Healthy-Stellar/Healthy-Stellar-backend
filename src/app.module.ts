@@ -41,6 +41,7 @@ import { ValidationModule } from './common/validation/validation.module';
 import { MedicalEmergencyErrorFilter } from './common/errors/medical-emergency-error.filter';
 import { MedicalDataValidationPipe } from './common/validation/medical-data.validator.pipe';
 import { TenantConfigModule } from './tenant-config/tenant-config.module';
+import { TenantIpAllowlistGuard } from './tenant-config/guards/tenant-ip-allowlist.guard';
 import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
 import { QueryPerformanceInterceptor } from './common/interceptors/query-performance.interceptor';
 import { GdprModule } from './gdpr/gdpr.module';
@@ -226,6 +227,10 @@ import { ReportsModule } from './reports/reports.module';
     {
       provide: APP_GUARD,
       useClass: CustomThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TenantIpAllowlistGuard,
     },
   ],
 })
