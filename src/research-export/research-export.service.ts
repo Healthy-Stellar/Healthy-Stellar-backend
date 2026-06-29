@@ -207,6 +207,25 @@ export class ResearchExportService {
 
   // ─── Data Fetch ────────────────────────────────────────────────────────────
 
+  /**
+   * Fetch active medical records matching `filters` along with a map of
+   * their associated patients. Shared by both the S3-dispatch export
+   * pipeline and the `/research-export/anonymized` NDJSON stream so query
+   * logic for record selection lives in one place.
+   */
+  async fetchRecordsAndPatients(
+    filters: ResearchExportFiltersDto,
+  ): Promise<{ records: MedicalRecord[]; patientMap: Map<string, Patient> }> {
+    const records = await this.fetchRecords(filters);
+    const patientIds = [...new Set(records.map((r) => r.patientId))];
+
+    const patients = patientIds.length
+      ? await this.patientRepo.find({ where: { id: In(patientIds) } })
+      : [];
+
+    return { records, patientMap: new Map(patients.map((p) => [p.id, p])) };
+  }
+
   private async fetchRecords(filters: ResearchExportFiltersDto): Promise<MedicalRecord[]> {
     const qb = this.recordRepo.createQueryBuilder('r').where('r.status = :status', {
       status: 'active',
