@@ -35,6 +35,7 @@ import { ReportingController } from './controllers/reporting.controller';
 import { ClinicalNotesController } from './controllers/clinical-notes.controller';
 
 import { ReportProcessor } from './processors/report.processor';
+import { OcrProcessor } from './processors/ocr.processor';
 
 import { Patient } from '../patients/entities/patient.entity';
 
@@ -55,9 +56,10 @@ import { Patient } from '../patients/entities/patient.entity';
       ReportJob,
       Patient,
     ]),
-    BullModule.registerQueue({
-      name: QUEUE_NAMES.REPORTS,
-    }),
+    BullModule.registerQueue(
+      { name: QUEUE_NAMES.REPORTS },
+      { name: QUEUE_NAMES.OCR },
+    ),
   ],
   controllers: [
     MedicalRecordsController,
@@ -79,6 +81,7 @@ import { Patient } from '../patients/entities/patient.entity';
     EmailService,
     ClinicalNotesService,
     ReportProcessor,
+    OcrProcessor,
     MedicalRecordSearchSubscriber,
   ],
   exports: [

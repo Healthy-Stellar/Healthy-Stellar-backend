@@ -6,7 +6,7 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
-import { I18nModule, AcceptLanguageResolver } from 'nestjs-i18n';
+import { I18nModule, AcceptLanguageResolver, QueryResolver } from 'nestjs-i18n';
 import * as path from 'path';
 import { AuthModule } from './auth/auth.module';
 import { OidcModule } from './OAuth2/oidc.module';
@@ -21,6 +21,7 @@ import { LaboratoryModule } from './laboratory/laboratory.module';
 import { DiagnosisModule } from './diagnosis/diagnosis.module';
 import { TreatmentPlanningModule } from './treatment-planning/treatment-planning.module';
 import { PharmacyModule } from './pharmacy/pharmacy.module';
+import { MedicationAdministrationModule } from './medication-administration/medication-administration.module';
 import { InfectionControlModule } from './infection-control/infection-control.module';
 import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
 import { EmergencyMedicalInfoModule } from './emergency-medical-info/emergency-medical-info.module';
@@ -40,6 +41,7 @@ import { ValidationModule } from './common/validation/validation.module';
 import { MedicalEmergencyErrorFilter } from './common/errors/medical-emergency-error.filter';
 import { MedicalDataValidationPipe } from './common/validation/medical-data.validator.pipe';
 import { TenantConfigModule } from './tenant-config/tenant-config.module';
+import { TenantIpAllowlistGuard } from './tenant-config/guards/tenant-ip-allowlist.guard';
 import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
 import { QueryPerformanceInterceptor } from './common/interceptors/query-performance.interceptor';
 import { GdprModule } from './gdpr/gdpr.module';
@@ -106,7 +108,10 @@ import { EventStoreModule } from './event-store/event-store.module';
         path: path.join(__dirname, '/i18n/'),
         watch: true,
       },
-      resolvers: [AcceptLanguageResolver],
+      resolvers: [
+        { use: QueryResolver, options: ['lang'] },
+        AcceptLanguageResolver,
+      ],
     }),
     // Application modules
     TenantModule,
@@ -124,6 +129,7 @@ import { EventStoreModule } from './event-store/event-store.module';
     DiagnosisModule,
     TreatmentPlanningModule,
     PharmacyModule,
+    MedicationAdministrationModule,
     EmergencyOperationsModule,
     EmergencyMedicalInfoModule,
     HospitalRegistryModule,
@@ -162,6 +168,7 @@ import { EventStoreModule } from './event-store/event-store.module';
     OperatorRunbookModule,
     IncidentModule,
     BedOccupancyModule,
+    ReportsModule,
     EhrImportModule,
     EventEmitterModule.forRoot(),
   ],
@@ -220,6 +227,10 @@ import { EventStoreModule } from './event-store/event-store.module';
     {
       provide: APP_GUARD,
       useClass: CustomThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TenantIpAllowlistGuard,
     },
   ],
 })

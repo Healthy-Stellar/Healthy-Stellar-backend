@@ -1,11 +1,43 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { MedicationAdministrationRecord } from '../entities/medication-administration-record.entity';
 import { MissedDose } from '../entities/missed-dose.entity';
 import { AdverseDrugReaction } from '../entities/adverse-drug-reaction.entity';
+import { NotificationsService } from '../../notifications/services/notifications.service';
 
 @Injectable()
 export class AlertService {
   private readonly logger = new Logger(AlertService.name);
+
+  constructor(@Optional() private readonly notificationsService?: NotificationsService) {}
+
+  /** Always fires for a missed dose, regardless of medication criticality. */
+  async sendMissedDoseChargeNurseAlert(missedDose: MissedDose): Promise<void> {
+    this.logger.warn(
+      `MISSED DOSE: Patient ${missedDose.patientId} missed ${missedDose.medicationName}, alerting charge nurse`,
+    );
+
+    const alertData = {
+      type: 'MISSED_DOSE_CHARGE_NURSE_ALERT',
+      patientId: missedDose.patientId,
+      medicationName: missedDose.medicationName,
+      scheduledTime: missedDose.scheduledTime,
+      reason: missedDose.reason,
+      nurseId: missedDose.nurseId,
+      timestamp: new Date(),
+    };
+
+    await this.sendAlert(alertData);
+
+    const chargeNurseEmail = process.env.CHARGE_NURSE_ALERT_EMAIL;
+    if (chargeNurseEmail && this.notificationsService) {
+      await this.notificationsService.sendEmail(
+        chargeNurseEmail,
+        `Missed dose: ${missedDose.medicationName} for patient ${missedDose.patientId}`,
+        'missed-dose-charge-nurse-alert',
+        alertData,
+      );
+    }
+  }
 
   async sendHighAlertRefusalAlert(mar: MedicationAdministrationRecord): Promise<void> {
     this.logger.warn(

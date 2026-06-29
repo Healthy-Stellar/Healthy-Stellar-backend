@@ -22,6 +22,8 @@ export interface JobStatus {
   processed: number;
   succeeded: number;
   failed: number;
+  skippedDuplicate: number;
+  quarantined: number;
   errors: Array<{ rowIndex: number; errorMessage: string }>;
 }
 
@@ -47,6 +49,7 @@ export class ImportService {
     originalName: string,
     dryRun = false,
     columnMap?: CsvColumnMap,
+    quarantineMode = false,
   ): Promise<{ jobId: string; importBatchId: string }> {
     const format = this._detectFormat(originalName, fileBuffer);
     const importBatchId = crypto
@@ -60,7 +63,7 @@ export class ImportService {
     }
 
     const job = await this.jobRepo.save(
-      this.jobRepo.create({ importBatchId, format, dryRun }),
+      this.jobRepo.create({ importBatchId, format, dryRun, quarantineMode }),
     );
 
     const tempFilePath = await this.tempStorage.writeBuffer(job.id, fileBuffer, originalName);
@@ -71,6 +74,7 @@ export class ImportService {
       originalName,
       format,
       dryRun,
+      quarantineMode,
       columnMap,
     };
 
@@ -100,6 +104,8 @@ export class ImportService {
       processed: job.processed,
       succeeded: job.succeeded,
       failed: job.failed,
+      skippedDuplicate: job.skippedDuplicate,
+      quarantined: job.quarantined,
       errors: errors.map((e) => ({ rowIndex: e.rowIndex, errorMessage: e.errorMessage })),
     };
   }

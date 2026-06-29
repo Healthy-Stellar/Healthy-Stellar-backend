@@ -4,6 +4,8 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { StellarController } from './controllers/stellar.controller';
+import { HealthCreditController } from './controllers/health-credit.controller';
+import { HealthCreditContractService } from './services/health-credit-contract.service';
 import { StellarFeeService } from './services/stellar-fee.service';
 import { StellarCacheService } from './services/stellar-cache.service';
 import { StellarService } from './services/stellar.service';
@@ -34,8 +36,9 @@ import { ScheduleModule } from '@nestjs/schedule';
       maxRedirects: 5,
     }),
   ],
-  controllers: [StellarController, MultiSigController],
+  controllers: [StellarController, MultiSigController, HealthCreditController],
   providers: [
+    HealthCreditContractService,
     StellarFeeService,
     StellarCacheService,
     StellarService,
@@ -49,8 +52,8 @@ import { ScheduleModule } from '@nestjs/schedule';
     MultiSigTransactionService,
   ],
   exports: [
+    HealthCreditContractService,
     MultiSigTransactionService,
-    
     StellarFeeService,
     StellarService,
     StellarWithBreakerService,

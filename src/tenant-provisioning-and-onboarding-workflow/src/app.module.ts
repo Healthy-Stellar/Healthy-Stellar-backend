@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bull';
 import { dataSourceOptions } from '@/database/database.config';
 import { TenantsModule } from '@/tenants/tenants.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { TenantsModule } from '@/tenants/tenants.module';
       },
     }),
     TenantsModule,
+    OnboardingModule,
   ],
 })
 export class AppModule {}

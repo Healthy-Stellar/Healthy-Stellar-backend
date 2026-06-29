@@ -22,6 +22,10 @@ export class EhrImportJobDto {
   @IsBoolean()
   dryRun: boolean;
 
+  @IsBoolean()
+  @IsOptional()
+  quarantineMode?: boolean;
+
   @IsOptional()
   columnMap?: CsvColumnMap;
 }

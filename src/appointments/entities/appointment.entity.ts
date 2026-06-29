@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   OneToMany,
   Index,
+  Unique,
 } from 'typeorm';
 import { ConsultationNote } from './consultation-note.entity';
 
@@ -36,6 +37,7 @@ export enum MedicalPriority {
 }
 
 @Entity('appointments')
+@Unique('UQ_appointments_doctor_time', ['doctorId', 'startTime', 'endTime'])
 export class Appointment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -50,8 +52,14 @@ export class Appointment {
   @Column({ name: 'doctor_id' })
   doctorId: string;
 
-  @Column({ name: 'appointment_date' })
+  @Column({ name: 'appointment_date', type: 'timestamp' })
   appointmentDate: Date;
+
+  @Column({ name: 'start_time', type: 'timestamp', nullable: true })
+  startTime: Date;
+
+  @Column({ name: 'end_time', type: 'timestamp', nullable: true })
+  endTime: Date;
 
   @Column()
   duration: number; // in minutes
