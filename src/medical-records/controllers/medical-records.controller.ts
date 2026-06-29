@@ -23,6 +23,7 @@ import { CurrentTenant } from '@/tenant';
 import { CurrentUser } from '../../common/decorators/audit-context.decorator';
 import { TenantGuard } from '@/tenant';
 
+
 @ApiTags('Medical Records')
 @ApiBearerAuth()
 @UseGuards(TenantGuard)
