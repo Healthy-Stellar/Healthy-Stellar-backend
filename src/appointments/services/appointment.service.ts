@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, Not, FindOptionsWhere } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -61,55 +67,92 @@ export class AppointmentService {
     }
 
     const appointmentDate = new Date(createAppointmentDto.appointmentDate);
+    const duration = createAppointmentDto.duration;
+    const startTime = new Date(appointmentDate);
+    const endTime = new Date(startTime.getTime() + duration * 60000);
 
-    // Check doctor availability
-    const isAvailable = await this.checkDoctorAvailability(
-      createAppointmentDto.doctorId,
-      appointmentDate,
-      createAppointmentDto.duration,
+    // Use pessimistic locking to prevent concurrent double-booking
+    // Lock the provider's schedule row during the booking transaction
+    await this.appointmentRepository.manager.transaction(
+      async (transactionalEntityManager) => {
+        // SELECT ... FOR UPDATE — lock any overlapping appointments for this doctor
+        const overlapping = await transactionalEntityManager
+          .createQueryBuilder(Appointment, 'appt')
+          .useLock('pessimistic_write')
+          .where('appt.doctor_id = :doctorId', {
+            doctorId: createAppointmentDto.doctorId,
+          })
+          .andWhere('appt.start_time < :endTime AND appt.end_time > :startTime', {
+            startTime,
+            endTime,
+          })
+          .andWhere('appt.status NOT IN (:...cancelledStatuses)', {
+            cancelledStatuses: [AppointmentStatus.CANCELLED, AppointmentStatus.RESCHEDULED],
+          })
+          .getMany();
+
+        if (overlapping.length > 0) {
+          throw new ConflictException(
+            `Time slot is already booked for doctor ${createAppointmentDto.doctorId} ` +
+              `between ${startTime.toISOString()} and ${endTime.toISOString()}.`,
+          );
+        }
+
+        // Check doctor availability (within availability schedule)
+        const isAvailable = await this.checkDoctorAvailability(
+          createAppointmentDto.doctorId,
+          appointmentDate,
+          duration,
+        );
+
+        if (!isAvailable) {
+          throw new BadRequestException('Doctor is not available at the requested time');
+        }
+
+        // Check specialty match if specified
+        if (createAppointmentDto.specialty) {
+          const hasSpecialty = await this.checkDoctorSpecialty(
+            createAppointmentDto.doctorId,
+            createAppointmentDto.specialty,
+          );
+          if (!hasSpecialty) {
+            throw new BadRequestException('Doctor does not have the required specialty');
+          }
+        }
+
+        const roomId = createAppointmentDto.isTelemedicine ? randomUUID() : null;
+
+        const appointment = transactionalEntityManager.create(Appointment, {
+          ...createAppointmentDto,
+          tenantId,
+          appointmentDate,
+          startTime,
+          endTime,
+          telemedicineRoomId: roomId,
+          telemedicineLink: roomId
+            ? `${this.configService.get<string>('TELEMEDICINE_BASE_URL', 'https://telemedicine.app')}/room/${roomId}`
+            : null,
+        });
+
+        const saved = await transactionalEntityManager.save(Appointment, appointment);
+
+        // Audit log: APPOINTMENT_CREATED (non-blocking)
+        await this.auditService
+          .log({
+            actorId: createAppointmentDto.patientId,
+            action: 'APPOINTMENT_CREATED',
+            resourceId: saved.id,
+            resourceType: 'Appointment',
+            tenantId,
+            timestamp: new Date(),
+          })
+          .catch((err) => {
+            console.error('Failed to log appointment creation audit event:', err.message);
+          });
+
+        return saved;
+      },
     );
-
-    if (!isAvailable) {
-      throw new BadRequestException('Doctor is not available at the requested time');
-    }
-
-    // Check specialty match if specified
-    if (createAppointmentDto.specialty) {
-      const hasSpecialty = await this.checkDoctorSpecialty(
-        createAppointmentDto.doctorId,
-        createAppointmentDto.specialty,
-      );
-      if (!hasSpecialty) {
-        throw new BadRequestException('Doctor does not have the required specialty');
-      }
-    }
-
-    const roomId = createAppointmentDto.isTelemedicine ? randomUUID() : null;
-
-    const appointment = this.appointmentRepository.create({
-      ...createAppointmentDto,
-      tenantId,
-      appointmentDate,
-      telemedicineRoomId: roomId,
-      telemedicineLink: roomId ? `${this.configService.get<string>('TELEMEDICINE_BASE_URL', 'https://telemedicine.app')}/room/${roomId}` : null,
-    });
-
-    const saved = await this.appointmentRepository.save(appointment);
-
-    // Audit log: APPOINTMENT_CREATED
-    await this.auditService.log({
-      actorId: createAppointmentDto.patientId,
-      action: 'APPOINTMENT_CREATED',
-      resourceId: saved.id,
-      resourceType: 'Appointment',
-      tenantId,
-      timestamp: new Date(),
-    }).catch((err) => {
-      // Non-blocking: log failure but don't throw
-      console.error('Failed to log appointment creation audit event:', err.message);
-    });
-
-    return saved;
   }
 
   async findAll(): Promise<Appointment[]> {
@@ -213,6 +256,34 @@ export class AppointmentService {
     });
 
     return this.calculateAvailableSlots(availability, existingAppointments, date);
+  }
+
+  async getProviderAvailability(providerId: string, date: Date): Promise<{
+    available: boolean;
+    slots: string[];
+    conflicts: number;
+    date: string;
+  }> {
+    const slots = await this.getAvailableSlots(providerId, date);
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const existingCount = await this.appointmentRepository.count({
+      where: this.getScopedWhere({
+        doctorId: providerId,
+        appointmentDate: Between(startOfDay, endOfDay),
+        status: Not(AppointmentStatus.CANCELLED),
+      }),
+    });
+
+    return {
+      available: slots.length > 0,
+      slots,
+      conflicts: existingCount,
+      date: date.toISOString(),
+    };
   }
 
   private async checkDoctorAvailability(
