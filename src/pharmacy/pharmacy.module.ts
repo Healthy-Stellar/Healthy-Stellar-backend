@@ -2,8 +2,11 @@ import { Module } from '@nestjs/common';
 
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { HttpModule } from '@nestjs/axios';
+import { BullModule } from '@nestjs/bullmq';
 import { Drug } from './entities/drug.entity';
 import { Prescription } from './entities/prescription.entity';
+import { PrescriptionItem } from './entities/prescription-item.entity';
+import { PrescriptionDispenseRecord } from './entities/prescription-dispense-record.entity';
 import { DrugInteraction } from './entities/drug-interaction.entity';
 import { DrugRecall } from './entities/drug-recall.entity';
 import { DrugSupplier } from './entities/drug-supplier.entity';
@@ -13,6 +16,8 @@ import { PurchaseOrder } from './entities/purchase-order.entity';
 import { PharmacyInventory } from './entities/pharmacy-inventory.entity';
 import { RecallImpactReport } from './entities/recall-impact-report.entity';
 import { PharmacyReorderAlertSuppression } from './entities/pharmacy-reorder-alert-suppression.entity';
+import { SafetyAlert } from './entities/safety-alert.entity';
+import { ControlledSubstanceLog } from './entities/controlled-substance-log.entity';
 
 import { RemotePrescription } from '../Telemedicine and Remote/src/telemedicine/entities/remote-prescription.entity';
 
@@ -31,13 +36,20 @@ import { DrugFormularyService } from './services/drug-formulary.service';
 import { DrugWasteService } from './services/drug-waste.service';
 import { PurchaseOrderService } from './services/purchase-order.service';
 import { PharmacyInventoryService } from './services/pharmacy-inventory.service';
+import { PrescriptionService } from './services/prescription.service';
+import { SafetyAlertService } from './services/safety-alert.service';
+import { ControlledSubstanceService } from './services/controlled-substance.service';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { MedicalStaffModule } from '../medical-staff/medical-staff.module';
+import { QUEUE_NAMES } from '../queues/queue.constants';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       Drug,
       Prescription,
+      PrescriptionItem,
+      PrescriptionDispenseRecord,
       DrugInteraction,
       DrugRecall,
       RecallImpactReport,
@@ -48,9 +60,13 @@ import { NotificationsModule } from '../notifications/notifications.module';
       PharmacyInventory,
       RemotePrescription,
       PharmacyReorderAlertSuppression,
+      SafetyAlert,
+      ControlledSubstanceLog,
     ]),
     HttpModule,
     NotificationsModule,
+    MedicalStaffModule,
+    BullModule.registerQueue({ name: QUEUE_NAMES.PHARMACY_REORDER_ALERTS }),
   ],
   controllers: [
     PharmacyController,
@@ -70,7 +86,10 @@ import { NotificationsModule } from '../notifications/notifications.module';
     DrugWasteService,
     PurchaseOrderService,
     PharmacyInventoryService,
+    PrescriptionService,
+    SafetyAlertService,
+    ControlledSubstanceService,
   ],
-  exports: [PharmacyService, DrugInteractionService],
+  exports: [PharmacyService, DrugInteractionService, PrescriptionService],
 })
 export class PharmacyModule { }

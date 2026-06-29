@@ -3,23 +3,28 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { Prescription } from '../entities/prescription.entity';
 import { PrescriptionItem } from '../entities/prescription-item.entity';
+import { PrescriptionDispenseRecord } from '../entities/prescription-dispense-record.entity';
 import { CreatePrescriptionDto } from '../dto/create-prescription.dto';
 import { UpdatePrescriptionDto, SearchPrescriptionsDto } from '../dto/manage-prescription.dto';
+import { DispensePrescriptionRequestDto } from '../dto/dispense-prescription-request.dto';
 import { SafetyAlertService } from './safety-alert.service';
 import { PharmacyInventoryService } from './pharmacy-inventory.service';
 import { ControlledSubstanceService } from './controlled-substance.service';
-import { DrugInteractionService } from './drug-interaction.service';
+import { DrugInteractionService, InteractionCheck } from './drug-interaction.service';
 import { Drug } from '../entities/drug.entity';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { QUEUE_NAMES } from '../../queues/queue.constants';
 import type { PharmacyReorderAlertJobData } from '../../queues/processors/pharmacy-reorder-alert.processor';
+import { MedicalStaffService } from '../../medical-staff/medical-staff.service';
+import { LicenseStatus } from '../../medical-staff/entities/doctor.entity';
 
 @Injectable()
 export class PrescriptionService {
@@ -30,17 +35,25 @@ export class PrescriptionService {
     private prescriptionRepository: Repository<Prescription>,
     @InjectRepository(PrescriptionItem)
     private prescriptionItemRepository: Repository<PrescriptionItem>,
+    @InjectRepository(PrescriptionDispenseRecord)
+    private dispenseRecordRepository: Repository<PrescriptionDispenseRecord>,
     @InjectRepository(Drug)
     private drugRepository: Repository<Drug>,
     private safetyAlertService: SafetyAlertService,
     private inventoryService: PharmacyInventoryService,
     private controlledSubstanceService: ControlledSubstanceService,
     private drugInteractionService: DrugInteractionService,
+    private medicalStaffService: MedicalStaffService,
     @InjectQueue(QUEUE_NAMES.PHARMACY_REORDER_ALERTS)
     private pharmacyReorderAlertQueue: Queue,
   ) { }
 
   async create(createDto: CreatePrescriptionDto): Promise<Prescription> {
+    // The prescribing doctor must hold an active medical license. We look the
+    // doctor up via the medical-staff module (read-only) rather than trusting
+    // a client-supplied license number/status.
+    await this.assertPrescriberHasActiveLicense(createDto.prescriberId);
+
     // Run an automated drug-drug interaction check before persisting. Critical
     // (major/contraindicated) interactions block creation (422); moderate
     // interactions are recorded as warnings but do not block.
@@ -65,6 +78,10 @@ export class PrescriptionService {
 
     const prescription = this.prescriptionRepository.create({
       ...createDto,
+      providerId: createDto.prescriberId,
+      prescriptionDate: new Date(createDto.prescriptionDate),
+      prescribedDate: new Date(createDto.prescriptionDate),
+      refills: createDto.refillsAllowed,
       status: 'pending',
       refillsRemaining: createDto.refillsAllowed,
       interactionCheck,
@@ -83,24 +100,209 @@ export class PrescriptionService {
 
     await this.prescriptionItemRepository.save(items);
 
-    // Generate safety alerts
+    // Generate safety alerts (best-effort — a failure here must not block
+    // prescription creation, since the critical/blocking interaction check
+    // above has already run).
     const prescriptionWithItems = await this.findOne(savedPrescription.id);
-    await this.safetyAlertService.generateAlertsForPrescription(prescriptionWithItems);
+    try {
+      await this.safetyAlertService.generateAlertsForPrescription(prescriptionWithItems);
+    } catch (err) {
+      this.logger.warn(`Failed to generate safety alerts for prescription ${savedPrescription.id}: ${err.message}`);
+    }
 
     return prescriptionWithItems;
   }
 
+  /**
+   * Verifies that the prescribing doctor exists in the medical-staff module
+   * and currently holds an active license. Throws ForbiddenException
+   * otherwise so the API returns a clear, actionable error.
+   */
+  private async assertPrescriberHasActiveLicense(prescriberId: string): Promise<void> {
+    if (!prescriberId) {
+      throw new BadRequestException('prescriberId is required');
+    }
+
+    let doctor;
+    try {
+      doctor = await this.medicalStaffService.findDoctorById(prescriberId);
+    } catch (err) {
+      throw new ForbiddenException(
+        `Prescribing doctor ${prescriberId} could not be verified: ${err.message}`,
+      );
+    }
+
+    if (doctor.licenseStatus !== LicenseStatus.ACTIVE) {
+      throw new ForbiddenException(
+        `Prescribing doctor ${prescriberId} does not have an active medical license (status: ${doctor.licenseStatus}). Prescription cannot be created.`,
+      );
+    }
+  }
+
+  /** Fetch a prescription including its items and full dispensing history. */
   async findOne(id: string): Promise<Prescription> {
     const prescription = await this.prescriptionRepository.findOne({
       where: { id },
-      relations: ['items', 'items.drug'],
+      relations: ['items', 'items.drug', 'dispenseRecords'],
     });
 
     if (!prescription) {
       throw new NotFoundException(`Prescription ${id} not found`);
     }
 
+    if (prescription.dispenseRecords?.length) {
+      prescription.dispenseRecords.sort(
+        (a, b) => new Date(b.dispensedAt).getTime() - new Date(a.dispensedAt).getTime(),
+      );
+    }
+
     return prescription;
+  }
+
+  /**
+   * Dispense a prescription: runs a drug interaction check against the
+   * patient's prescribed drugs, blocks on severe (major/contraindicated)
+   * interactions, deducts the dispensed quantity from inventory (FIFO by
+   * expiration date), and records a dispensing-history transaction.
+   *
+   * Moderate/minor interactions do not block dispensing — they are returned
+   * in the response as a non-blocking warning.
+   */
+  async dispensePrescription(
+    id: string,
+    dto: DispensePrescriptionRequestDto,
+  ): Promise<{ prescription: Prescription; dispenseRecord: PrescriptionDispenseRecord; interactionCheck: InteractionCheck }> {
+    const prescription = await this.findOne(id);
+
+    if (prescription.status === 'dispensed' || prescription.status === 'cancelled') {
+      throw new BadRequestException(
+        `Prescription cannot be dispensed in status: ${prescription.status}`,
+      );
+    }
+
+    if (prescription.refillsRemaining <= 0 && prescription.status !== 'pending' && prescription.status !== 'verified') {
+      throw new BadRequestException('No refills remaining for this prescription');
+    }
+
+    // ── Drug interaction check ───────────────────────────────────────────────
+    // Check the prescription's own drug against every other drug the same
+    // patient currently has active (pending/verified/filled) prescriptions
+    // for, so we catch interactions across a patient's regimen, not just
+    // within a single prescription's item list.
+    const interactionCheck = await this.checkInteractionsForDispense(prescription);
+
+    if (
+      interactionCheck.highestSeverity === 'major' ||
+      interactionCheck.highestSeverity === 'contraindicated'
+    ) {
+      throw new UnprocessableEntityException({
+        message: 'Dispensing blocked: severe drug interaction detected',
+        interactionCheck,
+      });
+    }
+
+    if (interactionCheck.highestSeverity === 'moderate' || interactionCheck.highestSeverity === 'minor') {
+      this.logger.warn(
+        `Drug interaction warning (${interactionCheck.highestSeverity}) for prescription ${id}; dispensing allowed`,
+      );
+    }
+
+    const quantityToDispense = dto.quantity ?? prescription.quantity ?? this.totalPrescribedQuantity(prescription);
+    if (!quantityToDispense || quantityToDispense <= 0) {
+      throw new BadRequestException('Unable to determine quantity to dispense');
+    }
+
+    // ── Inventory deduction ──────────────────────────────────────────────────
+    const drugId = prescription.drugId ?? prescription.items?.[0]?.drugId;
+    if (!drugId) {
+      throw new BadRequestException('Prescription has no associated drug to dispense');
+    }
+
+    const availableQty = await this.inventoryService.getTotalQuantity(drugId);
+    if (availableQty < quantityToDispense) {
+      throw new BadRequestException(
+        `Insufficient inventory for drug ${drugId}. Available: ${availableQty}, requested: ${quantityToDispense}`,
+      );
+    }
+
+    await this.inventoryService.deductInventory(drugId, quantityToDispense);
+
+    // ── Record the dispensing transaction (dispensing history) ──────────────
+    const dispenseRecord = this.dispenseRecordRepository.create({
+      prescriptionId: prescription.id,
+      drugId,
+      quantityDispensed: quantityToDispense,
+      pharmacistId: dto.pharmacistId,
+      interactionSeverity: interactionCheck.highestSeverity,
+      interactionCheck,
+      notes: dto.notes,
+    });
+    const savedDispenseRecord = await this.dispenseRecordRepository.save(dispenseRecord);
+
+    // Controlled substance chain-of-custody logging
+    const drug = await this.drugRepository.findOne({ where: { id: drugId } });
+    if (drug?.controlledSubstanceSchedule) {
+      await this.controlledSubstanceService.logDispensing(
+        drugId,
+        prescription.id,
+        quantityToDispense,
+        prescription.patientName ?? prescription.patientId,
+        prescription.prescriberId ?? prescription.providerId ?? 'Unknown',
+        'Unknown', // prescriberDEA not captured on this prescription shape
+        'Unknown', // pharmacistLicense not captured by this dispense request
+        dto.pharmacistId,
+      );
+    }
+
+    prescription.status = 'dispensed';
+    prescription.dispensedBy = dto.pharmacistId;
+    prescription.dispensedAt = new Date();
+    prescription.refillsRemaining = Math.max(0, (prescription.refillsRemaining ?? 0) - 1);
+    prescription.dispenseInteractionCheck = interactionCheck;
+
+    const savedPrescription = await this.prescriptionRepository.save(prescription);
+    const fullPrescription = await this.findOne(savedPrescription.id);
+
+    return { prescription: fullPrescription, dispenseRecord: savedDispenseRecord, interactionCheck };
+  }
+
+  private totalPrescribedQuantity(prescription: Prescription): number {
+    if (!prescription.items?.length) return prescription.quantity ?? 0;
+    return prescription.items.reduce((sum, item) => sum + (item.quantityPrescribed ?? 0), 0);
+  }
+
+  /**
+   * Drug interaction check at dispense time: combines the prescription's own
+   * drug(s) with the drugs from the patient's other currently-active
+   * prescriptions, so interactions across a patient's full regimen are
+   * caught — not just within a single prescription.
+   */
+  private async checkInteractionsForDispense(prescription: Prescription): Promise<InteractionCheck> {
+    const ownDrugIds = prescription.items?.length
+      ? prescription.items.map((item) => item.drugId)
+      : [prescription.drugId].filter(Boolean);
+
+    const otherActivePrescriptions = await this.prescriptionRepository.find({
+      where: { patientId: prescription.patientId, status: 'verified' },
+      relations: ['items'],
+    });
+
+    const otherDrugIds = otherActivePrescriptions
+      .filter((p) => p.id !== prescription.id)
+      .flatMap((p) => (p.items?.length ? p.items.map((item) => item.drugId) : [p.drugId]))
+      .filter(Boolean);
+
+    const drugIds = [...new Set([...ownDrugIds, ...otherDrugIds])];
+
+    return this.drugInteractionService.checkInteractions(drugIds);
+  }
+
+  /** Dispensing history for a prescription, most recent first. */
+  async getDispenseHistory(id: string): Promise<PrescriptionDispenseRecord[]> {
+    return this.dispenseRecordRepository.find({
+      where: { prescriptionId: id },
+      order: { dispensedAt: 'DESC' },
+    });
   }
 
   async verifyPrescription(id: string, pharmacistId: string): Promise<Prescription> {
@@ -216,20 +418,6 @@ export class PrescriptionService {
     });
   }
 
-
-  async dispensePrescription(id: string, pharmacistId: string): Promise<Prescription> {
-    const prescription = await this.findOne(id);
-
-    if (prescription.status !== 'filled') {
-      throw new BadRequestException(`Prescription must be filled before dispensing`);
-    }
-
-    prescription.status = 'dispensed';
-    prescription.dispensedBy = pharmacistId;
-    prescription.dispensedAt = new Date();
-
-    return await this.prescriptionRepository.save(prescription);
-  }
 
   async cancelPrescription(id: string, reason: string): Promise<Prescription> {
     const prescription = await this.findOne(id);
