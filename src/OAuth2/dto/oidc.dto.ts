@@ -74,6 +74,11 @@ export class OAuth2AuthorizeQueryDto {
   @IsOptional()
   @IsIn(['S256'])
   code_challenge_method?: 'S256';
+
+  /** SMART on FHIR: launch context token from EHR */
+  @IsOptional()
+  @IsString()
+  launch?: string;
 }
 
 /** Body for POST /oauth2/token */
