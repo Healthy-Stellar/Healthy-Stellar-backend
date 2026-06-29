@@ -2,6 +2,7 @@ import {
   Injectable,
   ForbiddenException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
@@ -13,6 +14,11 @@ import { MedicalRecord } from '../medical-records/entities/medical-record.entity
 import { Patient } from '../patients/entities/patient.entity';
 import { AccessGrant, GrantStatus } from '../access-control/entities/access-grant.entity';
 import { AuditService } from '../common/audit/audit.service';
+import { TenantConfigService } from '../tenant-config/services/tenant-config.service';
+import { TenantService } from '../tenant/services/tenant.service';
+import { TenantContext } from '../tenant/context/tenant.context';
+import { TenantDatabaseRoutingService } from '../database/tenant-database-routing.service';
+import { Tenant } from '../tenant/entities/tenant.entity';
 import {
   ResearchExportFiltersDto,
   AnonymizedRecord,
