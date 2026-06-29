@@ -4,6 +4,7 @@ import { Repository, In } from 'typeorm';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bullmq';
 import { GdprRequest, GdprRequestType, GdprRequestStatus } from '../entities/gdpr-request.entity';
+import { DeletionPreviewEntry, DeletionRegistryService } from './deletion-registry.service';
 
 @Injectable()
 export class GdprService {
@@ -13,7 +14,13 @@ export class GdprService {
     @InjectRepository(GdprRequest)
     private readonly gdprRequestRepository: Repository<GdprRequest>,
     @InjectQueue('gdpr') private gdprQueue: Queue,
+    private readonly deletionRegistry: DeletionRegistryService,
   ) {}
+
+  /** Dry-run: reports what an erasure request would delete/anonymise per module, without changing anything. */
+  async previewErasure(userId: string): Promise<DeletionPreviewEntry[]> {
+    return this.deletionRegistry.previewForUser(userId);
+  }
 
   async createExportRequest(userId: string): Promise<GdprRequest> {
     const existingRequest = await this.gdprRequestRepository.findOne({

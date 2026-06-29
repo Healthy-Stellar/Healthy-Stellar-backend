@@ -10,6 +10,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WebhookDelivery, WebhookDeliveryStatus } from './entities/webhook-delivery.entity';
+import { ClaimService } from '../billing/services/claim.service';
+import { AdjudicationWebhookDto } from '../billing/dto/claim.dto';
 
 @ApiTags('webhooks')
 @Controller('webhooks')
@@ -23,7 +25,17 @@ export class WebhooksController {
     private readonly webhookService: WebhookDeliveryService,
     @InjectRepository(WebhookDelivery)
     private readonly deliveryRepository: Repository<WebhookDelivery>,
+    private readonly claimService: ClaimService,
   ) {}
+
+  @Post('insurance-claims')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Receive payer adjudication callback and update claim status' })
+  async handleInsuranceClaimAdjudication(@Body() payload: AdjudicationWebhookDto) {
+    this.logger.log(`Received insurance claim adjudication webhook for claim ${payload.claimNumber}`);
+    const claim = await this.claimService.handleAdjudicationWebhook(payload);
+    return { received: true, claimNumber: claim.claimNumber, status: claim.status };
+  }
 
   @Post('ipfs')
   @HttpCode(200)

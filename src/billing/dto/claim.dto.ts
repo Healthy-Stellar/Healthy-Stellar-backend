@@ -356,3 +356,43 @@ export class ProcessERADto {
   @IsString()
   eraNumber?: string;
 }
+
+export class AdjudicationWebhookDto {
+  @ApiProperty({ description: 'Claim number as submitted to the payer' })
+  @IsString()
+  claimNumber: string;
+
+  @ApiProperty({ enum: ['approved', 'rejected'], description: 'Payer adjudication decision' })
+  @IsEnum(['approved', 'rejected'])
+  decision: 'approved' | 'rejected';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  payerClaimNumber?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  paidAmount?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  allowedAmount?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  adjustmentAmount?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  patientResponsibility?: number;
+
+  @ApiPropertyOptional({ type: [Object] })
+  @IsOptional()
+  @IsArray()
+  remarkCodes?: Array<{ code: string; description: string }>;
+}

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   Param,
@@ -24,7 +25,6 @@ import { UpdateNotificationPreferencesDto } from './dto/update-notification-pref
 import { PatientPrivacyGuard } from './guards/patient-privacy.guard';
 import { AdminGuard } from './guards/admin-guard';
 import { PatientOwnerGuard } from './guards/patient-owner.guard';
-import { SetGeoRestrictionsDto } from './dto/set-geo-restrictions.dto';
 import { GeoRestrictionGuard } from './guards/geo-restriction.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../auth/services/auth-token.service';
@@ -104,6 +104,16 @@ export class PatientsController {
       user.role,
       dto,
     );
+  }
+
+  @Post('merge/:sourceId/:targetId')
+  @UseGuards(AdminGuard)
+  @ApiOperation({ summary: 'Merge duplicate patient records (admin only)' })
+  @ApiResponse({ status: 200, description: 'Patients merged successfully' })
+  @ApiResponse({ status: 404, description: 'Patient not found' })
+  @ApiResponse({ status: 409, description: 'Duplicate merge conflict' })
+  async mergePatients(@Param('sourceId') sourceId: string, @Param('targetId') targetId: string) {
+    return this.patientsService.mergePatients(sourceId, targetId, 'admin', undefined);
   }
 
   @Post(':id/admit')

@@ -11,6 +11,9 @@ import { Patient } from './entities/patient.entity';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { AdminMergePatientsDto } from './dto/admin-merge-patients.dto';
 import { generateMRN } from './utils/mrn.generator';
+import { PaginationDto } from '../common/dto/pagination.dto';
+import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
+import { PaginationUtil } from '../common/utils/pagination.util';
 import {
   NotificationChannel,
   UpdateNotificationPreferencesDto,
@@ -20,6 +23,17 @@ import { UserRole } from '../auth/entities/user.entity';
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { RedisLockService } from '../common/utils/redis-lock.service';
 import { StellarService } from '../stellar/services/stellar.service';
+
+interface DuplicateCandidateSummary {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  sex?: string;
+  mrn?: string;
+  score: number;
+  reason: 'exact' | 'fuzzy';
+}
 
 @Injectable()
 export class PatientsService {
@@ -43,9 +57,12 @@ export class PatientsService {
       }
     }
 
-    const duplicate = await this.detectDuplicate(dto);
-    if (duplicate) {
-      throw new ConflictException('Possible duplicate patient detected');
+    const duplicateCandidates = await this.detectDuplicate(dto);
+    if (duplicateCandidates.length > 0) {
+      throw new ConflictException({
+        message: 'Possible duplicate patient detected',
+        candidates: duplicateCandidates,
+      });
     }
 
     const patient = this.patientRepo.create({
@@ -118,8 +135,8 @@ export class PatientsService {
     return this.patientRepo.save(patient);
   }
 
-  private async detectDuplicate(dto: CreatePatientDto): Promise<boolean> {
-    const match = await this.patientRepo.findOne({
+  private async detectDuplicate(dto: CreatePatientDto): Promise<DuplicateCandidateSummary[]> {
+    const exactMatch = await this.patientRepo.findOne({
       where: [
         { nationalId: dto.nationalId },
         { email: dto.email },
@@ -128,7 +145,71 @@ export class PatientsService {
       ],
     });
 
-    return !!match;
+    if (exactMatch) {
+      return [
+        {
+          id: exactMatch.id,
+          firstName: exactMatch.firstName,
+          lastName: exactMatch.lastName,
+          dateOfBirth: exactMatch.dateOfBirth,
+          sex: exactMatch.sex,
+          mrn: exactMatch.mrn,
+          score: 1,
+          reason: 'exact',
+        },
+      ];
+    }
+
+    if (!dto.firstName || !dto.lastName || !dto.dateOfBirth) {
+      return [];
+    }
+
+    const fullName = `${dto.firstName} ${dto.lastName}`.trim();
+    const normalizedGender = (dto.sex ?? dto.genderIdentity ?? 'unknown').toString().toLowerCase();
+
+    const fuzzyMatches = await this.patientRepo.query(
+      `
+        SELECT
+          id,
+          "firstName",
+          "lastName",
+          "dateOfBirth",
+          "sex",
+          mrn,
+          GREATEST(
+            similarity(lower(coalesce("firstName", '') || ' ' || coalesce("lastName", ''))), $1),
+            similarity(lower(coalesce("firstName", '')), $2),
+            similarity(lower(coalesce("lastName", '')), $3)
+          )::float AS score
+        FROM patients
+        WHERE "isActive" = true
+          AND "dateOfBirth" = $4
+          AND lower(coalesce("sex", 'unknown')) = $5
+          AND (
+            similarity(lower(coalesce("firstName", '') || ' ' || coalesce("lastName", ''))), $1) > 0.85
+            OR similarity(lower(coalesce("firstName", '')), $2) > 0.85
+            OR similarity(lower(coalesce("lastName", '')), $3) > 0.85
+          )
+        ORDER BY score DESC
+        LIMIT 10
+      `,
+      [fullName.toLowerCase(), dto.firstName.toLowerCase(), dto.lastName.toLowerCase(), dto.dateOfBirth, normalizedGender],
+    );
+
+    const normalizedCandidates = Array.isArray(fuzzyMatches) ? fuzzyMatches : [];
+
+    return normalizedCandidates
+      .filter((candidate: any) => Number(candidate.score ?? 0) > 0.85)
+      .map((candidate: any) => ({
+        id: candidate.id,
+        firstName: candidate.firstName,
+        lastName: candidate.lastName,
+        dateOfBirth: candidate.dateOfBirth,
+        sex: candidate.sex,
+        mrn: candidate.mrn,
+        score: Number(candidate.score ?? 0),
+        reason: 'fuzzy',
+      }));
   }
 
   async update(id: string, updateData: Partial<Patient>): Promise<Patient> {
@@ -215,23 +296,8 @@ export class PatientsService {
     };
   }
 
-  private async detectDuplicate(dto: CreatePatientDto): Promise<boolean> {
-    const match = await this.patientRepo.findOne({
-      where: [
-        { nationalId: dto.nationalId },
-        { email: dto.email },
-        { phone: dto.phone },
-        { firstName: dto.firstName, lastName: dto.lastName, dateOfBirth: dto.dateOfBirth },
-      ],
-    });
-    return !!match;
-  }
-
-  async adminMergePatients(dto: AdminMergePatientsDto, adminId: string): Promise<Patient> {
-    const { primaryAddress, secondaryAddress, reason } = dto;
-
-    // Acquire distributed locks for both patients (sorted to avoid deadlock)
-    const lockKeys = [primaryAddress, secondaryAddress].sort().map((id) => `merge:${id}`);
+  async mergePatients(sourceId: string, targetId: string, adminId: string, reason?: string): Promise<Patient> {
+    const lockKeys = [sourceId, targetId].sort().map((id) => `merge:${id}`);
     const LOCK_TTL_MS = 30_000;
 
     const acquired = await Promise.all(lockKeys.map((k) => this.redisLock.acquireLock(k, LOCK_TTL_MS)));
@@ -245,56 +311,63 @@ export class PatientsService {
     await qr.startTransaction('SERIALIZABLE');
 
     try {
-      const [primary, secondary] = await Promise.all([
-        qr.manager.findOne(Patient, { where: { id: primaryAddress }, lock: { mode: 'optimistic', version: undefined } }),
-        qr.manager.findOne(Patient, { where: { id: secondaryAddress }, lock: { mode: 'optimistic', version: undefined } }),
+      const [target, source] = await Promise.all([
+        qr.manager.findOne(Patient, { where: { id: targetId }, lock: { mode: 'optimistic', version: undefined } }),
+        qr.manager.findOne(Patient, { where: { id: sourceId }, lock: { mode: 'optimistic', version: undefined } }),
       ]);
 
-      if (!primary) throw new NotFoundException(`Primary patient ${primaryAddress} not found`);
-      if (!secondary) throw new NotFoundException(`Secondary patient ${secondaryAddress} not found`);
-      if (primary.id === secondary.id) throw new BadRequestException('Cannot merge a patient with itself');
+      if (!target) throw new NotFoundException(`Target patient ${targetId} not found`);
+      if (!source) throw new NotFoundException(`Source patient ${sourceId} not found`);
+      if (source.id === target.id) throw new BadRequestException('Cannot merge a patient with itself');
 
-      // Audit: merge started
-      await qr.manager.save(AuditLogEntity, qr.manager.create(AuditLogEntity, {
-        userId: adminId,
-        action: 'PATIENT_MERGING',
-        entity: 'Patient',
-        entityId: secondary.id,
-        severity: 'HIGH',
-        description: reason ?? 'Admin-initiated patient merge',
-        details: { primaryId: primary.id, secondaryId: secondary.id },
-      }));
+      await qr.manager.save(
+        AuditLogEntity,
+        qr.manager.create(AuditLogEntity, {
+          userId: adminId,
+          action: 'PATIENT_MERGING',
+          entity: 'Patient',
+          entityId: target.id,
+          severity: 'HIGH',
+          description: reason ?? 'Admin-initiated patient merge',
+          details: { primaryId: target.id, secondaryId: source.id },
+        }),
+      );
 
-      // Reassign all related records
-      await qr.manager.update('records', { patientId: secondary.id }, { patientId: primary.id });
-      await qr.manager.update('access_grants', { patientId: secondary.id }, { patientId: primary.id });
-      await qr.manager.update('billing', { patientId: secondary.id }, { patientId: primary.id });
-      await qr.manager.update('prescriptions', { patientId: secondary.id }, { patientId: primary.id });
+      for (const table of ['records', 'medical_records', 'access_grants', 'billing', 'prescriptions']) {
+        await qr.manager.update(table, { patientId: source.id }, { patientId: target.id });
+      }
 
-      // Deactivate source patient
-      secondary.isActive = false;
-      await qr.manager.save(Patient, secondary);
+      source.isActive = false;
+      await qr.manager.save(Patient, source);
 
-      // Emit PatientMerged domain event to event store (audit log as event store)
-      const mergeEvent = qr.manager.create(AuditLogEntity, {
-        userId: adminId,
-        action: 'PATIENT_MERGED',
-        entity: 'Patient',
-        entityId: primary.id,
-        severity: 'HIGH',
-        description: reason ?? 'Patient merge completed',
-        details: { primaryId: primary.id, secondaryId: secondary.id, reason },
-      });
-      await qr.manager.save(AuditLogEntity, mergeEvent);
+      let stellarTxHash: string | null = null;
+      try {
+        const txResult = await this.stellarService.invokeContract(
+          target.stellarAddress ?? target.id,
+          'merge_patient',
+          [],
+        );
+        stellarTxHash = txResult?.txHash ?? null;
+      } catch (error) {
+        // Merge should still succeed even if the blockchain audit write fails.
+      }
+
+      await qr.manager.save(
+        AuditLogEntity,
+        qr.manager.create(AuditLogEntity, {
+          userId: adminId,
+          action: 'PATIENT_MERGED',
+          entity: 'Patient',
+          entityId: target.id,
+          severity: 'HIGH',
+          description: reason ?? 'Patient merge completed',
+          details: { primaryId: target.id, secondaryId: source.id, reason },
+          stellarTxHash: stellarTxHash ?? undefined,
+        }),
+      );
 
       await qr.commitTransaction();
-
-      // Emit Stellar transaction (outside DB tx — fire-and-forget with best-effort)
-      this.stellarService
-        .invokeContract(primary.stellarAddress ?? primary.id, 'merge_patient', [])
-        .catch(() => { /* Stellar failure does not roll back the DB merge */ });
-
-      return primary;
+      return target;
     } catch (err) {
       await qr.rollbackTransaction();
       throw err;
@@ -302,5 +375,9 @@ export class PatientsService {
       await qr.release();
       await Promise.all(lockKeys.map((k) => this.redisLock.releaseLock(k)));
     }
+  }
+
+  async adminMergePatients(dto: AdminMergePatientsDto, adminId: string): Promise<Patient> {
+    return this.mergePatients(dto.secondaryAddress, dto.primaryAddress, adminId, dto.reason);
   }
 }

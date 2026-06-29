@@ -12,6 +12,7 @@ import { WebhookDeliveryService } from './services/webhook-delivery.service';
 import { WebhookDeliveryProcessor } from './processors/webhook-delivery.processor';
 import { QUEUE_NAMES } from '../queues/queue.constants';
 import { AuditModule } from '../common/audit/audit.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { AuditModule } from '../common/audit/audit.module';
       name: QUEUE_NAMES.WEBHOOK_DELIVERY,
     }),
     AuditModule,
+    BillingModule,
   ],
   controllers: [WebhooksController],
   providers: [IpfsService, QueueService, WebhookDeliveryService, WebhookDeliveryProcessor],

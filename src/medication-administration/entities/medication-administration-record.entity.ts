@@ -9,6 +9,7 @@ import {
   Index,
 } from 'typeorm';
 import { BaseAuditEntity } from '../../common/entities/base-audit.entity';
+import { MedicationOrder } from './medication-order.entity';
 
 export enum AdministrationStatus {
   SCHEDULED = 'scheduled',
@@ -42,6 +43,14 @@ export class MedicationAdministrationRecord extends BaseAuditEntity {
   @Column({ name: 'patient_id', type: 'uuid' })
   @Index()
   patientId: string;
+
+  @Column({ name: 'medication_order_id', type: 'uuid', nullable: true })
+  @Index()
+  medicationOrderId: string;
+
+  @ManyToOne(() => MedicationOrder, { nullable: true })
+  @JoinColumn({ name: 'medication_order_id' })
+  medicationOrder: MedicationOrder;
 
   @Column({ name: 'prescription_id', type: 'uuid' })
   prescriptionId: string;

@@ -313,6 +313,77 @@ export class DisasterRecoveryService {
     }
   }
 
+  /**
+   * Validates a backup's checksum and tests restore to a temporary database without
+   * applying any changes to the production database.
+   * Aborts with an error if the checksum does not match the stored value.
+   */
+  async dryRunRestore(backupId: string, requestedBy: string): Promise<RecoveryTest> {
+    const backup = await this.backupLogRepository.findOne({ where: { id: backupId } });
+
+    if (!backup) {
+      throw new Error(`Backup ${backupId} not found`);
+    }
+
+    if (backup.status === BackupStatus.FAILED) {
+      throw new Error(`Cannot dry-run a failed backup`);
+    }
+
+    const recoveryTest = this.recoveryTestRepository.create({
+      backupId,
+      status: RecoveryTestStatus.IN_PROGRESS,
+      testType: 'dry_run',
+      testResults: {},
+      testedBy: requestedBy,
+    });
+    await this.recoveryTestRepository.save(recoveryTest);
+
+    try {
+      // Step 1: Verify checksum — abort with error on mismatch
+      const integrityValid = await this.verifyBackupIntegrity(backup);
+      if (!integrityValid) {
+        throw new Error(
+          `Checksum mismatch for backup ${backupId}. ` +
+            `Expected ${backup.checksum}. Restore aborted.`,
+        );
+      }
+
+      // Step 2: Decrypt and decompress
+      const decryptedPath = await this.decryptBackup(backup.backupPath);
+      const decompressedPath = await this.decompressBackup(decryptedPath);
+
+      // Step 3: Test restore to temporary database only (validates without applying)
+      await this.testRestore(decompressedPath);
+
+      recoveryTest.status = RecoveryTestStatus.PASSED;
+      recoveryTest.completedAt = new Date();
+      recoveryTest.durationSeconds = Math.floor(
+        (recoveryTest.completedAt.getTime() - recoveryTest.startedAt.getTime()) / 1000,
+      );
+      recoveryTest.testResults = {
+        checksumVerified: true,
+        decryption: 'passed',
+        decompression: 'passed',
+        testRestore: 'passed',
+        appliedToProduction: false,
+      };
+
+      await this.recoveryTestRepository.save(recoveryTest);
+      await this.cleanupTempFiles([decryptedPath, decompressedPath]);
+
+      this.logger.log(`Dry-run restore for backup ${backupId} completed successfully`);
+      return recoveryTest;
+    } catch (error) {
+      recoveryTest.status = RecoveryTestStatus.FAILED;
+      recoveryTest.errorMessage = error.message;
+      recoveryTest.completedAt = new Date();
+      await this.recoveryTestRepository.save(recoveryTest);
+
+      this.logger.error(`Dry-run restore for backup ${backupId} failed: ${error.message}`);
+      throw error;
+    }
+  }
+
   async getRecoveryTests(limit: number = 50): Promise<RecoveryTest[]> {
     return this.recoveryTestRepository.find({
       relations: ['backup'],

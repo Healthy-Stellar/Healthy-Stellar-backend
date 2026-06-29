@@ -16,6 +16,7 @@ export class AppointmentController {
   @Post()
   @ApiOperation({ summary: 'Schedule a new appointment with medical priority' })
   @ApiResponse({ status: 201, description: 'Appointment scheduled successfully' })
+  @ApiResponse({ status: 409, description: 'Time slot is already booked (conflict)' })
   create(@Body() createAppointmentDto: CreateAppointmentDto) {
     return this.appointmentService.create(createAppointmentDto);
   }
@@ -49,6 +50,14 @@ export class AppointmentController {
   @ApiQuery({ name: 'date', required: true, type: String })
   getAvailableSlots(@Param('doctorId') doctorId: string, @Query('date') date: string) {
     return this.appointmentService.getAvailableSlots(doctorId, new Date(date));
+  }
+
+  @Get('providers/:id/availability')
+  @ApiOperation({ summary: 'Get provider availability with conflict detection' })
+  @ApiResponse({ status: 200, description: 'Provider availability status' })
+  @ApiQuery({ name: 'date', required: true, type: String })
+  getProviderAvailability(@Param('id') providerId: string, @Query('date') date: string) {
+    return this.appointmentService.getProviderAvailability(providerId, new Date(date));
   }
 
   @Patch(':id/status')

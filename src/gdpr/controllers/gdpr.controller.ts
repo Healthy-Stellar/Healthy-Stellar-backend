@@ -44,4 +44,16 @@ export class GdprController {
     const userId = req.user.id;
     return this.gdprService.getRequestsByUser(userId);
   }
+
+  @Get('erasure-request/preview')
+  @ApiOperation({
+    summary: 'Dry-run a right-to-erasure request',
+    description:
+      'Lists, per module, what an erasure request would delete or anonymise — without deleting anything.',
+  })
+  @ApiResponse({ status: 200, description: 'Per-module deletion preview' })
+  async previewErasure(@Req() req) {
+    const userId = req.user.id;
+    return this.gdprService.previewErasure(userId);
+  }
 }

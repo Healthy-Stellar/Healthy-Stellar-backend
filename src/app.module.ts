@@ -21,6 +21,7 @@ import { LaboratoryModule } from './laboratory/laboratory.module';
 import { DiagnosisModule } from './diagnosis/diagnosis.module';
 import { TreatmentPlanningModule } from './treatment-planning/treatment-planning.module';
 import { PharmacyModule } from './pharmacy/pharmacy.module';
+import { MedicationAdministrationModule } from './medication-administration/medication-administration.module';
 import { InfectionControlModule } from './infection-control/infection-control.module';
 import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
 import { EmergencyMedicalInfoModule } from './emergency-medical-info/emergency-medical-info.module';
@@ -71,13 +72,14 @@ import { EventStoreModule } from './event-store/event-store.module';
 import { BullBoardAuthMiddleware } from './queues/middleware/bull-board-auth.middleware';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { GovernanceAnalyticsModule } from './governance-analytics/governance-analytics.module';
 import { IdempotencyModule } from './idempotency/idempotency.module';
 import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor';
 import { DlqModule } from './dlq/dlq.module';
 import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
 import { IncidentModule } from './incident/incident.module';
 import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.interceptor';
-import { SessionRecordingModule } from './telemedicine-and-remote/src/session-recording.module';
+import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
 
 @Module({
   imports: [
@@ -122,6 +124,7 @@ import { SessionRecordingModule } from './telemedicine-and-remote/src/session-re
     DiagnosisModule,
     TreatmentPlanningModule,
     PharmacyModule,
+    MedicationAdministrationModule,
     EmergencyOperationsModule,
     EmergencyMedicalInfoModule,
     HospitalRegistryModule,
@@ -154,10 +157,12 @@ import { SessionRecordingModule } from './telemedicine-and-remote/src/session-re
     ProviderPatientModule,
     ConsistencyCheckerModule,
     WebhooksModule,
+    GovernanceAnalyticsModule,
     IdempotencyModule,
     DlqModule,
     OperatorRunbookModule,
     IncidentModule,
+    BedOccupancyModule,
     EhrImportModule,
     EventEmitterModule.forRoot(),
   ],

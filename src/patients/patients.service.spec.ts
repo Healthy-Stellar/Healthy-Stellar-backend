@@ -34,6 +34,7 @@ const mockRepo = {
   findOne: jest.fn(),
   findOneBy: jest.fn(),
   update: jest.fn(),
+  query: jest.fn(),
 };
 
 // ─── QueryRunner / DataSource mock ───────────────────────────────────────────
@@ -87,7 +88,24 @@ describe('PatientsService', () => {
     }).compile();
 
     service = module.get<PatientsService>(PatientsService);
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    mockRepo.create.mockImplementation((entity: any) => entity);
+    mockRepo.save.mockImplementation(async (entity: any) => entity);
+    mockRepo.find.mockResolvedValue([]);
+    mockRepo.findOne.mockResolvedValue(null);
+    mockRepo.findOneBy.mockResolvedValue(null);
+    mockRepo.update.mockResolvedValue({ affected: 1 });
+    mockRepo.query.mockResolvedValue([]);
+    mockDataSource.createQueryRunner.mockReturnValue(mockQR);
+    mockQR.connect.mockResolvedValue(undefined);
+    mockQR.startTransaction.mockResolvedValue(undefined);
+    mockQR.commitTransaction.mockResolvedValue(undefined);
+    mockQR.rollbackTransaction.mockResolvedValue(undefined);
+    mockQR.release.mockResolvedValue(undefined);
+    mockQR.manager.findOne.mockResolvedValue(null);
+    mockQR.manager.update.mockResolvedValue(undefined);
+    mockQR.manager.save.mockImplementation(async (_entity: any, data: any) => data);
+    mockQR.manager.create.mockImplementation((entity: any, data: any) => data);
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -118,6 +136,28 @@ describe('PatientsService', () => {
       mockRepo.findOne.mockResolvedValue(aPatient().build());
 
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
+      expect(mockRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('flags similar names as likely duplicates when the fuzzy score is above threshold', async () => {
+      const dto = makeValidDto({ firstName: 'John', lastName: 'Smith', dateOfBirth: '1985-03-12', sex: 'male' as const });
+
+      mockRepo.findOneBy.mockResolvedValue(null);
+      mockRepo.findOne.mockResolvedValue(null);
+      mockRepo.query.mockResolvedValue([
+        {
+          id: 'candidate-id',
+          firstName: 'Jon',
+          lastName: 'Smyth',
+          dateOfBirth: '1985-03-12',
+          sex: 'male',
+          mrn: 'MRN-999',
+          score: 0.92,
+        },
+      ]);
+
+      await expect(service.create(dto)).rejects.toThrow(ConflictException);
+      expect(mockRepo.query).toHaveBeenCalled();
       expect(mockRepo.save).not.toHaveBeenCalled();
     });
 

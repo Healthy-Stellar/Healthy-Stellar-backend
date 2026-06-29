@@ -433,5 +433,25 @@ export class AccessControlService {
     });
 
     return !!validGrant;
+  async revokeAccessByPatient(patientId: string, granteeId: string): Promise<void> {
+    const grants = await this.grantRepository.find({
+      where: {
+        patientId,
+        granteeId,
+        status: GrantStatus.ACTIVE,
+      },
+    });
+
+    for (const grant of grants) {
+      grant.status = GrantStatus.REVOKED;
+      grant.revokedAt = new Date();
+      await this.grantRepository.save(grant);
+      this.notificationsService.emitAccessRevoked(patientId, grant.id, {
+        granteeId: grant.granteeId,
+        revokedAt: grant.revokedAt.toISOString(),
+      });
+    }
+
+    this.logger.log(`Revoked ${grants.length} grants for patient ${patientId}, grantee ${granteeId}`);
   }
 }

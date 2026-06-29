@@ -24,6 +24,8 @@ import { RecordVersionService } from './versions/record-version.service';
 import { RecordDiffService } from './services/record-diff.service';
 import { RecordDownloadService } from './services/record-download.service';
 import { RecordAttachmentUploadService } from './services/record-attachment-upload.service';
+import { DigitalSignatureService } from './services/digital-signature.service';
+import { SignatureAlertService } from './services/signature-alert.service';
 import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
 import { AccessControlModule } from '../access-control/access-control.module';
 import { MedicalRbacModule } from '../roles/medical-rbac.module';
@@ -65,6 +67,8 @@ import { RecordAccessGuard } from './guards/record-access.guard';
     RecordEventStoreService,
     RecordDownloadService,
     RecordAttachmentUploadService,
+    DigitalSignatureService,
+    SignatureAlertService,
     RecordSyncService,
     RecordVersionService,
     RecordDiffService,

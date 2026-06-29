@@ -13,6 +13,7 @@ import { EhrImportDlqController } from './controllers/ehr-import-dlq.controller'
 import { StellarTransactionProcessor } from './processors/stellar-transaction.processor';
 import { ContractWritesProcessor } from './processors/contract-writes.processor';
 import { EventIndexingProcessor } from './processors/event-indexing.processor';
+import { PanicAlertProcessor } from '../emergency-operations/processors/panic-alert.processor';
 import { BlockchainModule } from '../blockchain/blockchain.module';
 import { QueueEventsListener } from './queue-events.listener';
 import { RecordsModule } from '../records/records.module';
@@ -43,6 +44,7 @@ export class QueueModule {
           ContractWritesProcessor,
           EventIndexingProcessor,
           QueueEventsListener,
+          PanicAlertProcessor,
         ]
       : [QueueEventsListener];
 
@@ -94,6 +96,7 @@ export class QueueModule {
           { name: QUEUE_NAMES.EMAIL_NOTIFICATIONS },
           { name: QUEUE_NAMES.REPORTS },
           { name: QUEUE_NAMES.EHR_IMPORT },
+          { name: QUEUE_NAMES.PANIC_ALERTS },
         ),
 
         // Bull Board dashboard — only useful when the HTTP server is running.
@@ -127,6 +130,10 @@ export class QueueModule {
         }),
         BullBoardModule.forFeature({
           name: QUEUE_NAMES.EHR_IMPORT,
+          adapter: BullMQAdapter,
+        }),
+        BullBoardModule.forFeature({
+          name: QUEUE_NAMES.PANIC_ALERTS,
           adapter: BullMQAdapter,
         }),
       ],

@@ -7,6 +7,8 @@ import { Record } from '../entities/record.entity';
 import { EncryptionService } from '../../encryption/services/encryption.service';
 import { IpfsService } from './ipfs.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { DigitalSignatureService } from './digital-signature.service';
+import { SignatureAlertService } from './signature-alert.service';
 
 describe('RecordAttachmentUploadService - Magic Bytes Validation', () => {
   let service: RecordAttachmentUploadService;
@@ -15,6 +17,8 @@ describe('RecordAttachmentUploadService - Magic Bytes Validation', () => {
   let encryptionService: any;
   let ipfsService: any;
   let auditLogService: any;
+  let digitalSignatureService: any;
+  let signatureAlertService: any;
 
   beforeEach(async () => {
     recordRepository = {
@@ -22,8 +26,12 @@ describe('RecordAttachmentUploadService - Magic Bytes Validation', () => {
     };
 
     attachmentRepository = {
-      create: jest.fn(),
-      save: jest.fn(),
+      create: jest.fn((data?: any) => ({
+        ...data,
+        id: 'attachment-1',
+        uploadedAt: new Date(),
+      })),
+      save: jest.fn().mockImplementation((entity: any) => Promise.resolve(entity)),
       findOne: jest.fn(),
       find: jest.fn(),
     };
@@ -38,6 +46,16 @@ describe('RecordAttachmentUploadService - Magic Bytes Validation', () => {
 
     auditLogService = {
       log: jest.fn(),
+    };
+
+    digitalSignatureService = {
+      hasPdfSignature: jest.fn().mockReturnValue(false),
+      verifyPdfSignature: jest.fn(),
+    };
+
+    signatureAlertService = {
+      alertInvalidSignature: jest.fn(),
+      logValidSignature: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -62,6 +80,14 @@ describe('RecordAttachmentUploadService - Magic Bytes Validation', () => {
         {
           provide: AuditLogService,
           useValue: auditLogService,
+        },
+        {
+          provide: DigitalSignatureService,
+          useValue: digitalSignatureService,
+        },
+        {
+          provide: SignatureAlertService,
+          useValue: signatureAlertService,
         },
       ],
     }).compile();
@@ -133,17 +159,9 @@ describe('RecordAttachmentUploadService - Magic Bytes Validation', () => {
         ciphertext: Buffer.alloc(100),
       };
 
-      const attachment = {
-        id: 'attachment-1',
-        cid: 'QmTest123',
-        fileSize: pdfContent.length,
-      };
-
       recordRepository.findOne.mockResolvedValue(record);
       encryptionService.encryptRecord.mockResolvedValue(encryptedResult);
       ipfsService.upload.mockResolvedValue('QmTest123');
-      attachmentRepository.create.mockReturnValue(attachment);
-      attachmentRepository.save.mockResolvedValue(attachment);
 
       const result = await service.uploadAttachment(recordId, file, uploadedBy);
 
@@ -185,17 +203,9 @@ describe('RecordAttachmentUploadService - Magic Bytes Validation', () => {
         ciphertext: Buffer.alloc(100),
       };
 
-      const attachment = {
-        id: 'attachment-1',
-        cid: 'QmTest123',
-        fileSize: jpegContent.length,
-      };
-
       recordRepository.findOne.mockResolvedValue(record);
       encryptionService.encryptRecord.mockResolvedValue(encryptedResult);
       ipfsService.upload.mockResolvedValue('QmTest123');
-      attachmentRepository.create.mockReturnValue(attachment);
-      attachmentRepository.save.mockResolvedValue(attachment);
 
       const result = await service.uploadAttachment(recordId, file, uploadedBy);
 
