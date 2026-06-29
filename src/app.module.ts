@@ -21,6 +21,7 @@ import { LaboratoryModule } from './laboratory/laboratory.module';
 import { DiagnosisModule } from './diagnosis/diagnosis.module';
 import { TreatmentPlanningModule } from './treatment-planning/treatment-planning.module';
 import { PharmacyModule } from './pharmacy/pharmacy.module';
+import { MedicationAdministrationModule } from './medication-administration/medication-administration.module';
 import { InfectionControlModule } from './infection-control/infection-control.module';
 import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
 import { EmergencyMedicalInfoModule } from './emergency-medical-info/emergency-medical-info.module';
@@ -123,6 +124,7 @@ import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
     DiagnosisModule,
     TreatmentPlanningModule,
     PharmacyModule,
+    MedicationAdministrationModule,
     EmergencyOperationsModule,
     EmergencyMedicalInfoModule,
     HospitalRegistryModule,

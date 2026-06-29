@@ -43,6 +43,28 @@ export class MarService {
     });
   }
 
+  /** MAR grid for a patient/date: each scheduled dose annotated with whether its 30-minute grace period has expired. */
+  async getMarGrid(
+    patientId: string,
+    date: string,
+  ): Promise<Array<MedicationAdministrationRecord & { graceExpired: boolean }>> {
+    const records = await this.findByPatientAndDate(patientId, date);
+    const graceCutoff = new Date(Date.now() - 30 * 60 * 1000);
+
+    return records.map((record) => ({
+      ...record,
+      graceExpired: record.status === AdministrationStatus.SCHEDULED && record.scheduledTime < graceCutoff,
+    }));
+  }
+
+  /** Administer a dose identified by its scheduled-dose (MAR) id, as used by the doses/:id/administer route. */
+  async administerDoseById(
+    marId: string,
+    dto: Omit<AdministerMedicationDto, 'marId'>,
+  ): Promise<MedicationAdministrationRecord> {
+    return this.administerMedication({ ...dto, marId });
+  }
+
   async findByPatientAndDate(
     patientId: string,
     date: string,
