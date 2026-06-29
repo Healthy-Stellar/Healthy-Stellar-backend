@@ -103,6 +103,51 @@ export class WebhooksController {
     }
   }
 
+  // ── Admin: Deliveries Management ──────────────────────────────────────────
+
+  @Get('deliveries')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List webhook deliveries, optionally filtered by status' })
+  @ApiQuery({ name: 'status', required: false, enum: WebhookDeliveryStatus })
+  @ApiQuery({ name: 'subscriptionId', required: false })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  async listDeliveries(
+    @Query('status') status?: WebhookDeliveryStatus,
+    @Query('subscriptionId') subscriptionId?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const where: any = {};
+    if (status) where.status = status;
+    if (subscriptionId) where.subscriptionId = subscriptionId;
+
+    const [items, total] = await this.deliveryRepository.findAndCount({
+      where,
+      relations: ['subscription'],
+      skip: offset ? parseInt(offset, 10) : 0,
+      take: limit ? Math.min(parseInt(limit, 10), 100) : 50,
+      order: { createdAt: 'DESC' },
+    });
+
+    return { items, total };
+  }
+
+  @Post('deliveries/:id/replay')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Manually replay a failed webhook delivery (signature re-computed)' })
+  @ApiParam({ name: 'id', type: String })
+  @HttpCode(200)
+  async replayDelivery(@Param('id') id: string, @Req() req: any) {
+    const userId = req.user?.id || 'unknown';
+    await this.webhookService.replayDelivery(id, userId);
+    return { success: true, message: 'Webhook delivery queued for replay' };
+  }
+
   // ── Dead-Letter Queue Management ──────────────────────────────────────────
 
   @Get('dead-letter')

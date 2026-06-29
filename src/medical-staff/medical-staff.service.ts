@@ -8,6 +8,17 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, MoreThan, Between } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { Shift, ShiftRole, ROLE_REQUIRED_QUALIFICATIONS } from './entities/shift.entity';
+import { CreateShiftDto } from './dto/shift.dto';
+import { Doctor, SpecializationType, StaffStatus, LicenseStatus } from './entities/doctor.entity';
+import { Department } from './entities/department.entity';
+import { Specialty } from './entities/specialty.entity';
+import { Schedule, DayOfWeek } from './entities/schedule.entity';
+import { PerformanceMetric } from './entities/performance-metric.entity';
+import { ContinuingEducation } from './entities/continuing-education.entity';
+import { CreateDoctorDto } from './dto/create-doctor.dto';
+import { CreateScheduleDto } from './dto/create-schedule.dto';
+import { CreatePerformanceMetricDto, CreateContinuingEducationDto } from './dto/create-performance-metric.dto';
 
 @Injectable()
 export class MedicalStaffService {
@@ -25,7 +36,111 @@ export class MedicalStaffService {
     private performanceRepo: Repository<PerformanceMetric>,
     @InjectRepository(ContinuingEducation)
     private educationRepo: Repository<ContinuingEducation>,
+    @InjectRepository(Shift)
+    private shiftRepo: Repository<Shift>,
   ) {}
+
+  // ============ SHIFT MANAGEMENT ============
+
+  /**
+   * Create a shift for a staff member in a ward.
+   * Rejects if:
+   *  - the same staff member has an overlapping shift
+   *  - the staff member lacks the required qualification for the ward role
+   */
+  async createShift(dto: CreateShiftDto): Promise<Shift> {
+    const doctor = await this.findDoctorById(dto.staffId);
+
+    const start = new Date(dto.startTime);
+    const end = new Date(dto.endTime);
+
+    if (end <= start) {
+      throw new BadRequestException('Shift endTime must be after startTime');
+    }
+
+    // Qualification check
+    const required = ROLE_REQUIRED_QUALIFICATIONS[dto.role];
+    if (required.length > 0) {
+      const hasQualification = doctor.specializations.some((spec) => required.includes(spec));
+      if (!hasQualification) {
+        throw new BadRequestException(
+          `Staff member lacks the required qualification for role "${dto.role}". ` +
+            `Required: one of [${required.join(', ')}]. ` +
+            `Staff has: [${doctor.specializations.join(', ')}].`,
+        );
+      }
+    }
+
+    // Overlap check — atomic at DB level via FOR UPDATE would be ideal, but
+    // for application-layer we check existing overlapping shifts.
+    const overlapping = await this.shiftRepo
+      .createQueryBuilder('shift')
+      .where('shift.staffId = :staffId', { staffId: dto.staffId })
+      .andWhere('shift.isActive = true')
+      .andWhere('shift.startTime < :end', { end })
+      .andWhere('shift.endTime > :start', { start })
+      .getOne();
+
+    if (overlapping) {
+      throw new ConflictException(
+        `Staff member already has a shift from ${overlapping.startTime.toISOString()} ` +
+          `to ${overlapping.endTime.toISOString()} that overlaps with the requested slot.`,
+      );
+    }
+
+    const shift = this.shiftRepo.create({
+      staffId: dto.staffId,
+      wardId: dto.wardId,
+      role: dto.role,
+      startTime: start,
+      endTime: end,
+    });
+
+    return this.shiftRepo.save(shift);
+  }
+
+  /** Return all shifts for a staff member in the week containing the given date (default: current week). */
+  async getStaffWeeklySchedule(staffId: string, weekStart?: string): Promise<Shift[]> {
+    const { start, end } = this.resolveWeekBounds(weekStart);
+
+    return this.shiftRepo
+      .createQueryBuilder('shift')
+      .where('shift.staffId = :staffId', { staffId })
+      .andWhere('shift.isActive = true')
+      .andWhere('shift.startTime >= :start', { start })
+      .andWhere('shift.startTime < :end', { end })
+      .orderBy('shift.startTime', 'ASC')
+      .getMany();
+  }
+
+  /** Return all shifts for a ward in the week containing the given date (default: current week). */
+  async getWardShifts(wardId: string, weekStart?: string): Promise<Shift[]> {
+    const { start, end } = this.resolveWeekBounds(weekStart);
+
+    return this.shiftRepo
+      .createQueryBuilder('shift')
+      .leftJoinAndSelect('shift.staff', 'staff')
+      .where('shift.wardId = :wardId', { wardId })
+      .andWhere('shift.isActive = true')
+      .andWhere('shift.startTime >= :start', { start })
+      .andWhere('shift.startTime < :end', { end })
+      .orderBy('shift.startTime', 'ASC')
+      .getMany();
+  }
+
+  private resolveWeekBounds(weekStart?: string): { start: Date; end: Date } {
+    const start = weekStart ? new Date(weekStart) : (() => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      // Roll back to Monday
+      const day = d.getDay();
+      d.setDate(d.getDate() - ((day + 6) % 7));
+      return d;
+    })();
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return { start, end };
+  }
 
   // ============ DOCTOR MANAGEMENT ============
 
