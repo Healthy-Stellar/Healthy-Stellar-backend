@@ -42,8 +42,17 @@ export class ImportJob {
   @Column({ type: 'int', default: 0 })
   failed: number;
 
+  @Column({ type: 'int', default: 0 })
+  skippedDuplicate: number;
+
+  @Column({ type: 'int', default: 0 })
+  quarantined: number;
+
   @Column({ type: 'boolean', default: false })
   dryRun: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  quarantineMode: boolean;
 
   @Column({ type: 'text', nullable: true })
   errorMessage: string | null;

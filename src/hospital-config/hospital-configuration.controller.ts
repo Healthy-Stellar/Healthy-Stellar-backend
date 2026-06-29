@@ -198,4 +198,16 @@ export class HospitalConfigurationController {
   getEmergencyProtocolByCode(@Param('code') code: string) {
     return this.configService.getEmergencyProtocolByCode(code);
   }
+
+  // Timezone Management
+  @Get('timezone')
+  getTimezone(): { timezone: string } {
+    return { timezone: this.configService.getTimezone() };
+  }
+
+  @Put('timezone')
+  setTimezone(@Body() body: { timezone: string }): { timezone: string } {
+    this.configService.setTimezone(body.timezone);
+    return { timezone: body.timezone };
+  }
 }
