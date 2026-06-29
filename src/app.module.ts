@@ -6,7 +6,7 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
-import { I18nModule, AcceptLanguageResolver } from 'nestjs-i18n';
+import { I18nModule, AcceptLanguageResolver, QueryResolver } from 'nestjs-i18n';
 import * as path from 'path';
 import { AuthModule } from './auth/auth.module';
 import { OidcModule } from './OAuth2/oidc.module';
@@ -106,7 +106,10 @@ import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
         path: path.join(__dirname, '/i18n/'),
         watch: true,
       },
-      resolvers: [AcceptLanguageResolver],
+      resolvers: [
+        { use: QueryResolver, options: ['lang'] },
+        AcceptLanguageResolver,
+      ],
     }),
     // Application modules
     TenantModule,
