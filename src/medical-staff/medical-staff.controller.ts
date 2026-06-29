@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { CreateShiftDto, WeeklyScheduleQueryDto } from './dto/shift.dto';
 
 @Controller('medical-staff')
 export class MedicalStaffController {
@@ -31,6 +32,22 @@ export class MedicalStaffController {
   @Get('licenses/expiring')
   getExpiringLicenses(@Query('days') days?: number) {
     return this.staffService.getExpiringLicenses(days ? Number(days) : 90);
+  }
+
+  // ── Shift scheduling ──────────────────────────────────────────────────────
+
+  @Post('shifts')
+  createShift(@Body() dto: CreateShiftDto) {
+    return this.staffService.createShift(dto);
+  }
+
+  /** GET /medical-staff/:id/schedule?week=YYYY-MM-DD */
+  @Get(':id/schedule')
+  getStaffSchedule(
+    @Param('id') id: string,
+    @Query('week') week?: string,
+  ) {
+    return this.staffService.getStaffWeeklySchedule(id, week);
   }
 
   @Post('schedules')
