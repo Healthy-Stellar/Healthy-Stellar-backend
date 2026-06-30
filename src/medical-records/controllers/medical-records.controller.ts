@@ -19,6 +19,7 @@ import { UpdateMedicalRecordDto } from '../dto/update-medical-record.dto';
 import { SearchMedicalRecordsDto } from '../dto/search-medical-records.dto';
 import { FullTextSearchDto } from '../dto/full-text-search.dto';
 import { AuditInterceptor } from '../../common/audit/audit.interceptor';
+import { PhiAuditInterceptor } from '../../common/interceptors/phi-audit.interceptor';
 import { CurrentTenant } from '@/tenant';
 import { CurrentUser } from '../../common/decorators/audit-context.decorator';
 import { TenantGuard } from '@/tenant';
@@ -27,7 +28,7 @@ import { TenantGuard } from '@/tenant';
 @ApiTags('Medical Records')
 @ApiBearerAuth()
 @UseGuards(TenantGuard)
-@UseInterceptors(AuditInterceptor)
+@UseInterceptors(AuditInterceptor, PhiAuditInterceptor)
 @Controller('medical-records')
 export class MedicalRecordsController {
   constructor(private readonly medicalRecordsService: MedicalRecordsService) {}

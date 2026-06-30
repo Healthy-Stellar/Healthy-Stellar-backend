@@ -29,8 +29,10 @@ import { GeoRestrictionGuard } from './guards/geo-restriction.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../auth/services/auth-token.service';
 import { CurrentUser } from '../common/decorators/audit-context.decorator';
+import { PhiAuditInterceptor } from '../common/interceptors/phi-audit.interceptor';
 
 @ApiTags('patients')
+@UseInterceptors(PhiAuditInterceptor)
 @Controller('patients')
 export class PatientsController {
   constructor(

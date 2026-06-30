@@ -91,6 +91,7 @@ export class AccessControlService {
       targetAddress: dto.granteeId,
       resourceType: 'AccessGrant',
       resourceId: updated.id,
+      patientId,
       metadata: { recordIds: updated.recordIds, accessLevel: updated.accessLevel },
     }).catch(() => {});
 
@@ -144,6 +145,7 @@ export class AccessControlService {
       targetAddress: finalGrant.granteeId,
       resourceType: 'AccessGrant',
       resourceId: finalGrant.id,
+      patientId,
       metadata: { reason: finalGrant.revocationReason },
     }).catch(() => {});
 
@@ -433,6 +435,8 @@ export class AccessControlService {
     });
 
     return !!validGrant;
+  }
+
   async revokeAccessByPatient(patientId: string, granteeId: string): Promise<void> {
     const grants = await this.grantRepository.find({
       where: {
