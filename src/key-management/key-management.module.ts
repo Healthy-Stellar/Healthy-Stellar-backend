@@ -14,6 +14,8 @@ import { KEY_STORE } from './interfaces/key-store.interface';
 
 
 import { KeyManagementAdminController } from './controllers/key-management-admin.controller';
+import { KekRotationController } from './controllers/kek-rotation.controller';
+import { KekRotationService } from './services/kek-rotation.service';
 
 
 export const KEY_MANAGEMENT_SERVICE = 'KeyManagementService';
@@ -23,9 +25,10 @@ export const KEY_MANAGEMENT_SERVICE = 'KeyManagementService';
     ConfigModule,
     TypeOrmModule.forFeature([PatientDekEntity, KeyRotationLog]),
   ],
-  controllers: [KeyManagementAdminController],
+  controllers: [KeyManagementAdminController, KekRotationController],
 
   providers: [
+    KekRotationService,
     EnvelopeKeyManagementService,
     AwsKmsStrategy,
     // KeyStore adapters for Stellar secret key storage (Issue #660)
