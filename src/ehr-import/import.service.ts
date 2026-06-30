@@ -12,6 +12,7 @@ import { Record as RecordEntity } from '../records/entities/record.entity';
 import { CsvColumnMap } from './parsers/csv.parser';
 import { TempStorageService } from './services/temp-storage.service';
 import { ConfigService } from '@nestjs/config';
+import { PaginatedErrorsDto } from './dto/paginated-errors.dto';
 
 const EHR_IMPORT_MAX_RETRIES = 3;
 
@@ -118,6 +119,60 @@ export class ImportService {
         `${e.rowIndex},"${e.errorMessage.replace(/"/g, '""')}","${e.sourceRow.replace(/"/g, '""')}"`,
     );
     return [header, ...rows].join('\n');
+  }
+
+  async getErrors(jobId: string, page = 1, limit = 20): Promise<PaginatedErrorsDto> {
+    await this.jobRepo.findOneOrFail({ where: { id: jobId } });
+    const [errors, total] = await this.errorRepo.findAndCount({
+      where: { jobId },
+      order: { rowIndex: 'ASC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    return {
+      data: errors.map((e) => ({
+        rowIndex: e.rowIndex,
+        errorMessage: e.errorMessage,
+        sourceRow: e.sourceRow,
+      })),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  async reprocess(jobId: string): Promise<{ newJobId: string; reprocessedCount: number }> {
+    const job = await this.jobRepo.findOneOrFail({ where: { id: jobId } });
+    const failedErrors = await this.errorRepo.find({ where: { jobId } });
+    if (failedErrors.length === 0) {
+      return { newJobId: jobId, reprocessedCount: 0 };
+    }
+    const newJob = await this.jobRepo.save(
+      this.jobRepo.create({
+        importBatchId: `reprocess-${jobId}-${Date.now()}`,
+        format: job.format,
+        dryRun: job.dryRun,
+        quarantineMode: job.quarantineMode,
+      }),
+    );
+    const jobDto = {
+      jobId: newJob.id,
+      tempFilePath: null,
+      originalName: `reprocess-${jobId}`,
+      format: job.format,
+      dryRun: job.dryRun,
+      reprocessFromJobId: jobId,
+      failedRowIndices: failedErrors.map((e) => e.rowIndex),
+    };
+    const maxRetries = this.configService.get<number>('EHR_IMPORT_MAX_RETRIES', EHR_IMPORT_MAX_RETRIES);
+    await this.importQueue.add('reprocess', jobDto, {
+      jobId: newJob.id,
+      attempts: maxRetries,
+      backoff: { type: 'exponential', delay: 1000 },
+      removeOnComplete: false,
+      removeOnFail: false,
+    });
+    return { newJobId: newJob.id, reprocessedCount: failedErrors.length };
   }
 
   private _detectFormat(filename: string, buffer: Buffer): ImportFormat {
