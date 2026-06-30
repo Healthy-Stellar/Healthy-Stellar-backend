@@ -1,16 +1,17 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { InjectQueue } from '@nestjs/bullmq';
+import { Inject } from '@nestjs/common';
 import { Queue, Job } from 'bullmq';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConfigService } from '@nestjs/config';
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import { createHmac } from 'crypto';
 import { WebhookDelivery, WebhookDeliveryStatus } from '../entities/webhook-delivery.entity';
 import { WebhookSubscription } from '../entities/webhook-subscription.entity';
 import { QUEUE_NAMES, JOB_TYPES } from '../../queues/queue.constants';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { DlqService } from '../../dlq/dlq.service';
 
 interface WebhookDeliveryJobData {
   deliveryId: string;
@@ -32,12 +33,27 @@ export class WebhookDeliveryService {
     private readonly deliveryRepository: Repository<WebhookDelivery>,
     @InjectRepository(WebhookSubscription)
     private readonly subscriptionRepository: Repository<WebhookSubscription>,
-    @InjectQueue(QUEUE_NAMES.WEBHOOK_DELIVERY)
+    @Inject('QUEUE_WEBHOOK_DELIVERY')
     private readonly webhookQueue: Queue,
     private readonly eventEmitter: EventEmitter2,
     private readonly auditService: AuditLogService,
     private readonly configService: ConfigService,
+    private readonly dlqService: DlqService,
   ) {}
+
+  private getRetryDelayMs(attemptNumber: number): number {
+    const delaysSeconds = [1, 2, 4, 8, 16];
+    return (delaysSeconds[Math.min(attemptNumber - 1, delaysSeconds.length - 1)] ?? 16) * 1000;
+  }
+
+  private getResponseBodySnippet(body: unknown): string | null {
+    if (body === null || body === undefined) {
+      return null;
+    }
+
+    const text = typeof body === 'string' ? body : JSON.stringify(body);
+    return text.length > 200 ? text.slice(0, 200) : text;
+  }
 
   /**
    * Queue a webhook delivery for a healthcare event.
@@ -92,10 +108,10 @@ export class WebhookDeliveryService {
           } as WebhookDeliveryJobData,
           {
             jobId: savedDelivery.id,
-            attempts: subscription.maxRetries,
+            attempts: Math.max(subscription.maxRetries, 1),
             backoff: {
               type: 'exponential',
-              delay: subscription.retryDelaySeconds * 1000,
+              delay: 1000,
             },
             removeOnComplete: false, // Keep for audit trail
             removeOnFail: false,
@@ -167,12 +183,14 @@ export class WebhookDeliveryService {
         delivery.status = WebhookDeliveryStatus.DELIVERED;
         delivery.lastHttpStatus = response.status;
         delivery.lastError = null;
+        delivery.lastResponseBody = this.getResponseBodySnippet(response.data);
         delivery.deliveredAt = new Date();
         delivery.attempts.push({
           attemptNumber,
           timestamp: new Date().toISOString(),
           httpStatus: response.status,
           error: null,
+          responseBodySnippet: this.getResponseBodySnippet(response.data),
           durationMs,
         });
 
@@ -222,16 +240,22 @@ export class WebhookDeliveryService {
         });
 
         if (delivery) {
-          const errorMsg = error instanceof AxiosError ? error.message : String(error);
-          const httpStatus = error instanceof AxiosError ? error.response?.status : null;
+          const isAxiosError = axios.isAxiosError(error) || (error as { isAxiosError?: boolean })?.isAxiosError === true;
+          const errorMsg = isAxiosError ? error.message : String(error);
+          const httpStatus = isAxiosError ? error.response?.status : null;
+          const responseBodySnippet = this.getResponseBodySnippet(
+            isAxiosError ? error.response?.data : undefined,
+          );
 
           delivery.lastError = errorMsg;
           delivery.lastHttpStatus = httpStatus;
+          delivery.lastResponseBody = responseBodySnippet;
           delivery.attempts.push({
             attemptNumber,
             timestamp: new Date().toISOString(),
             httpStatus,
             error: errorMsg,
+            responseBodySnippet,
             durationMs,
           });
 
@@ -256,6 +280,29 @@ export class WebhookDeliveryService {
             }
 
             await this.deliveryRepository.save(delivery);
+
+            await this.dlqService.capture({
+              jobId: delivery.id,
+              queueName: QUEUE_NAMES.WEBHOOK_DELIVERY,
+              jobName: JOB_TYPES.WEBHOOK_DELIVER,
+              data: {
+                deliveryId: delivery.id,
+                subscriptionId: data.subscriptionId,
+                subscriptionUrl: data.subscriptionUrl,
+                eventType: data.eventType,
+                eventPayload: data.eventPayload,
+                subscriptionSecret: data.subscriptionSecret,
+                customHeaders: data.customHeaders,
+                tenantId: data.tenantId,
+              },
+              opts: {
+                attempts: delivery.maxAttempts,
+                backoff: { type: 'exponential', delay: 1000 },
+              },
+              failedReason: errorMsg,
+              stackTrace: error instanceof Error ? error.stack : undefined,
+              attemptsMade: attemptNumber,
+            });
 
             // Emit webhook.delivery.failed audit event
             await this.auditService.log({
@@ -293,7 +340,7 @@ export class WebhookDeliveryService {
           }
 
           // Update for retry attempt
-          delivery.nextRetryAt = new Date(Date.now() + data.subscription.retryDelaySeconds * 1000);
+          delivery.nextRetryAt = new Date(Date.now() + this.getRetryDelayMs(attemptNumber));
           await this.deliveryRepository.save(delivery);
 
           this.logger.warn(
@@ -367,10 +414,10 @@ export class WebhookDeliveryService {
       } as WebhookDeliveryJobData,
       {
         jobId: delivery.id,
-        attempts: delivery.subscription.maxRetries,
+        attempts: Math.max(delivery.subscription.maxRetries, 1),
         backoff: {
           type: 'exponential',
-          delay: delivery.subscription.retryDelaySeconds * 1000,
+          delay: 1000,
         },
         removeOnComplete: false,
         removeOnFail: false,

@@ -13,6 +13,7 @@ import { WebhookDeliveryProcessor } from './processors/webhook-delivery.processo
 import { QUEUE_NAMES } from '../queues/queue.constants';
 import { AuditModule } from '../common/audit/audit.module';
 import { BillingModule } from '../billing/billing.module';
+import { DlqModule } from '../dlq/dlq.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { BillingModule } from '../billing/billing.module';
     }),
     AuditModule,
     BillingModule,
+    DlqModule,
   ],
   controllers: [WebhooksController],
   providers: [IpfsService, QueueService, WebhookDeliveryService, WebhookDeliveryProcessor],

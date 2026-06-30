@@ -2,13 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { getQueueToken } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { WebhookDeliveryService } from './webhook-delivery.service';
 import { WebhookDelivery, WebhookDeliveryStatus } from '../entities/webhook-delivery.entity';
 import { WebhookSubscription } from '../entities/webhook-subscription.entity';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { QUEUE_NAMES, JOB_TYPES } from '../../queues/queue.constants';
+import { DlqService } from '../../dlq/dlq.service';
 import axios from 'axios';
 
 jest.mock('axios');
@@ -56,6 +56,7 @@ describe('WebhookDeliveryService', () => {
   let webhookQueue: { add: jest.Mock };
   let auditService: { log: jest.Mock };
   let eventEmitter: { emit: jest.Mock };
+  let dlqService: { capture: jest.Mock };
 
   beforeEach(async () => {
     deliveryRepo = { findOne: jest.fn(), save: jest.fn(), create: jest.fn(), find: jest.fn() };
@@ -63,16 +64,18 @@ describe('WebhookDeliveryService', () => {
     webhookQueue = { add: jest.fn().mockResolvedValue({ id: 'job-1' }) };
     auditService = { log: jest.fn().mockResolvedValue(undefined) };
     eventEmitter = { emit: jest.fn() };
+    dlqService = { capture: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WebhookDeliveryService,
         { provide: getRepositoryToken(WebhookDelivery), useValue: deliveryRepo },
         { provide: getRepositoryToken(WebhookSubscription), useValue: subscriptionRepo },
-        { provide: getQueueToken(QUEUE_NAMES.WEBHOOK_DELIVERY), useValue: webhookQueue },
+        { provide: 'QUEUE_WEBHOOK_DELIVERY', useValue: webhookQueue },
         { provide: AuditLogService, useValue: auditService },
         { provide: EventEmitter2, useValue: eventEmitter },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(5) } },
+        { provide: DlqService, useValue: dlqService },
       ],
     }).compile();
 
@@ -120,6 +123,41 @@ describe('WebhookDeliveryService', () => {
       expect(dlqSave).toBeUndefined();
     });
 
+    it('schedules an exponential backoff and stores a response snippet for failed attempts', async () => {
+      const delivery = makeDelivery({ maxAttempts: 5, attemptCount: 0 });
+      deliveryRepo.findOne.mockResolvedValue(delivery);
+      deliveryRepo.save.mockImplementation((d) => Promise.resolve(d));
+      subscriptionRepo.save.mockResolvedValue(delivery.subscription);
+
+      const axiosError = Object.assign(new Error('HTTP 503'), {
+        isAxiosError: true,
+        response: { status: 503, statusText: 'Service Unavailable', data: { detail: 'down' } },
+      });
+      mockedAxios.post.mockRejectedValue(axiosError);
+
+      await expect(service.deliverWebhook(makeJob(
+        {
+          deliveryId: 'delivery-1',
+          subscriptionId: 'sub-1',
+          subscriptionUrl: 'https://example.com/hook',
+          eventType: 'record.created',
+          eventPayload: { id: 'rec-1' },
+          subscriptionSecret: 'secret-key',
+          tenantId: 'tenant-1',
+        },
+        0,
+      ))).rejects.toThrow();
+
+      const savedDelivery = deliveryRepo.save.mock.calls.at(-1)?.[0];
+      expect(savedDelivery.nextRetryAt).toBeInstanceOf(Date);
+      expect(savedDelivery.nextRetryAt.getTime()).toBeGreaterThan(Date.now());
+      expect(savedDelivery.attempts[0]).toEqual(expect.objectContaining({
+        attemptNumber: 1,
+        httpStatus: 503,
+        responseBodySnippet: '{"detail":"down"}',
+      }));
+    });
+
     it('moves delivery to DEADLETTER after maxAttempts exhausted', async () => {
       const delivery = makeDelivery({ maxAttempts: 5, attemptCount: 4 });
       deliveryRepo.findOne.mockResolvedValue(delivery);
@@ -151,6 +189,9 @@ describe('WebhookDeliveryService', () => {
       expect(dlqSave).toBeDefined();
       expect(auditService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'FAILED' }),
+      );
+      expect(dlqService.capture).toHaveBeenCalledWith(
+        expect.objectContaining({ queueName: QUEUE_NAMES.WEBHOOK_DELIVERY }),
       );
     });
   });
