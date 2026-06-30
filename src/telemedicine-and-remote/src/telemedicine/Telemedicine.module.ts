@@ -21,6 +21,9 @@ import { TelehealthBilling } from './entities/telehealth-billing.entity';
 import { RemotePrescription } from './entities/remote-prescription.entity';
 import { QualityOutcome } from './entities/quality-outcome.entity';
 import { VideoConferenceSession } from './entities/video-conference-session.entity';
+import { SessionRecording } from '../entity/session-recording.entity';
+import { RecordingService } from '../services/recording.service';
+import { RecordingController } from '../controllers/recording.controller';
 
 @Module({
   imports: [
@@ -32,6 +35,7 @@ import { VideoConferenceSession } from './entities/video-conference-session.enti
       RemotePrescription,
       QualityOutcome,
       VideoConferenceSession,
+      SessionRecording,
     ]),
   ],
   controllers: [
@@ -41,6 +45,7 @@ import { VideoConferenceSession } from './entities/video-conference-session.enti
     TelehealthBillingController,
     RemotePrescriptionController,
     QualityOutcomeController,
+    RecordingController,
   ],
   providers: [
     VirtualVisitService,
@@ -51,6 +56,7 @@ import { VideoConferenceSession } from './entities/video-conference-session.enti
     RemotePrescriptionService,
     QualityOutcomeService,
     HipaaComplianceService,
+    RecordingService,
   ],
   exports: [VirtualVisitService, RemoteMonitoringService, QualityOutcomeService],
 })
