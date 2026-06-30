@@ -6,7 +6,6 @@ import {
   UpdateDateColumn,
   OneToMany,
   Index,
-  Unique,
 } from 'typeorm';
 import { ConsultationNote } from './consultation-note.entity';
 
@@ -36,8 +35,30 @@ export enum MedicalPriority {
   EMERGENCY = 5,
 }
 
+/**
+ * Booking conflict prevention on the `appointments` table is enforced at
+ * the service layer by `AppointmentService.create()`. It uses
+ * transaction-scoped Postgres advisory locks (`pg_advisory_xact_lock`) and
+ * buffered range-overlap SELECTs (`SELECT ... FOR UPDATE`) instead of a
+ * hard unique constraint, because:
+ *
+ *   - Conflicts depend on a configurable *buffer time* between
+ *     appointments (env `APPOINTMENT_BUFFER_MINUTES`, default 15), not
+ *     on exact `(doctor_id, start_time, end_time)` equality.
+ *   - A single doctor OR a single physical room booking can conflict,
+ *     and either side of that OR works against an exact-time unique
+ *     constraint differently than against an overlap query.
+ *   - SELECT FOR UPDATE requires us to be able to insert "no-conflict"
+ *     appointments whose window is, after buffering, disjoint from any
+ *     existing row — which the historical `@Unique` blocked.
+ *
+ * The historical constraint `UQ_appointments_doctor_time` was dropped in
+ * migration `1782900000000-AppointmentBookingConflictPrevention`.
+ * Indexes supporting the buffered overlap lookup were added by that
+ * same migration (`IDX_appointments_tenant_doctor_room_start_end`,
+ * `IDX_appointments_room_id`).
+ */
 @Entity('appointments')
-@Unique('UQ_appointments_doctor_time', ['doctorId', 'startTime', 'endTime'])
 export class Appointment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -60,6 +81,21 @@ export class Appointment {
 
   @Column({ name: 'end_time', type: 'timestamp', nullable: true })
   endTime: Date;
+
+  /**
+   * Optional physical room assignment. Conflicts on this column are
+   * detected identically to conflicts on `doctorId` by
+   * AppointmentService.create(): any other appointment with the same
+   * `roomId` whose `[startTime, endTime]` (with the configured buffer
+   * expanded on both sides) overlaps the new one will produce a 409.
+   *
+   * `telemedicine_room_id` is a separate concept — a per-session virtual
+   * UUID minted by the service — and is intentionally NOT consulted for
+   * booking conflicts, since two telemedicine appointments cannot
+   * physically share a real room.
+   */
+  @Column({ name: 'room_id', type: 'uuid', nullable: true })
+  roomId: string | null;
 
   @Column()
   duration: number; // in minutes
