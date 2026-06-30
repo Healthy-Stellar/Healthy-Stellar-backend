@@ -82,6 +82,7 @@ import { IncidentModule } from './incident/incident.module';
 import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.interceptor';
 import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
 import { MedicalStaffModule } from './medical-staff/medical-staff.module';
+import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-monitoring.module';
 
 @Module({
   imports: [
@@ -170,6 +171,7 @@ import { MedicalStaffModule } from './medical-staff/medical-staff.module';
     BedOccupancyModule,
     MedicalStaffModule,
     EhrImportModule,
+    HealthcareMonitoringModule,
     EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],
