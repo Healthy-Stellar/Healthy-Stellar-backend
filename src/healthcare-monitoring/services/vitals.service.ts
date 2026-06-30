@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { PatientVital } from '../entities/patient-vital.entity';
 import { SubmitVitalsDto } from '../dto/submit-vitals.dto';
 import { ClinicalAlertService } from './clinical-alert.service';
+import { AlertRuleService } from './alert-rule.service';
 import { AlertPriority } from '../entities/clinical-alert.entity';
 
 export interface VitalsThresholdBreach {
@@ -57,6 +58,7 @@ export class VitalsService {
     @InjectRepository(PatientVital)
     private readonly vitalsRepo: Repository<PatientVital>,
     private readonly alertService: ClinicalAlertService,
+    private readonly alertRuleService: AlertRuleService,
   ) {}
 
   async submit(dto: SubmitVitalsDto, recordedBy: string, tenantId?: string): Promise<VitalsSubmissionResult> {
@@ -80,6 +82,9 @@ export class VitalsService {
     if (breaches.length > 0) {
       await this.raiseAlerts(dto.patientId, saved, breaches);
     }
+
+    // Evaluate against clinician-configured custom rules (runs in parallel with hardcoded threshold evaluation)
+    await this.alertRuleService.evaluateVitals(saved, tenantId);
 
     return { vital: saved, breaches };
   }
