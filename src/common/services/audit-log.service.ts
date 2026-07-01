@@ -141,6 +141,8 @@ export class AuditLogService {
 
   /**
    * Paginated query for GET /audit-logs (admin only).
+   * Supports filtering by actorAddress, actorId, action, actionType, patientId,
+   * startDate, and endDate.
    */
   async findAllSensitive(query: QueryAuditLogsDto): Promise<PaginatedAuditLogs> {
     const page = query.page ?? 1;
@@ -151,8 +153,19 @@ export class AuditLogService {
     if (query.actorAddress) {
       qb.andWhere('al.actorAddress = :actorAddress', { actorAddress: query.actorAddress });
     }
-    if (query.action) {
+    // actorId is an alternative filter for userId-based lookups stored in actorAddress
+    if (query.actorId) {
+      qb.andWhere('al.actorAddress = :actorId', { actorId: query.actorId });
+    }
+    // Prefer actionType enum over freeform action string when both are provided
+    if (query.actionType) {
+      qb.andWhere('al.action = :actionType', { actionType: query.actionType });
+    } else if (query.action) {
       qb.andWhere('al.action = :action', { action: query.action });
+    }
+    // patientId filters on resourceId (patient records are stored with their patient UUID)
+    if (query.patientId) {
+      qb.andWhere('al.resourceId = :patientId', { patientId: query.patientId });
     }
     if (query.startDate) {
       qb.andWhere('al.timestamp >= :startDate', { startDate: new Date(query.startDate) });

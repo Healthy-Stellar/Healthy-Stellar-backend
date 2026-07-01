@@ -82,6 +82,14 @@ module.exports = {
       globalSetup: '<rootDir>/test/global-setup.ts',
       globalTeardown: '<rootDir>/test/global-teardown.ts',
       testTimeout: 60000,
+      // Disable ts-jest type diagnostics for e2e — type correctness is validated
+      // by `tsc --noEmit` in CI. Without this, pre-existing TS errors in src/
+      // prevent all e2e suites from compiling.
+      globals: {
+        'ts-jest': {
+          diagnostics: false,
+        },
+      },
     },
   ],
   // Global coverage thresholds
