@@ -21,6 +21,7 @@ import { FullTextSearchDto } from '../dto/full-text-search.dto';
 import { AuditInterceptor } from '../../common/audit/audit.interceptor';
 import { PhiAuditInterceptor } from '../../common/audit/phi-audit.interceptor';
 import { AuditLog } from '../../common/audit/audit-log.decorator';
+import { PhiAuditInterceptor } from '../../common/interceptors/phi-audit.interceptor';
 import { CurrentTenant } from '@/tenant';
 import { CurrentUser } from '../../common/decorators/audit-context.decorator';
 import { TenantGuard } from '@/tenant';

@@ -1,4 +1,4 @@
-import { Controller, Post, Body, HttpCode, Inject, Logger, Get, Param, UseGuards, Req, Query, Delete } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, Inject, Logger, Get, Param, UseGuards, Req, Query, Delete, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { IpfsService } from '../stellar/services/ipfs.service';
 import { QueueService } from '../queues/queue.service';
@@ -133,6 +133,25 @@ export class WebhooksController {
     });
 
     return { items, total };
+  }
+
+  @Get(':id/deliveries')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get the delivery attempt history for a webhook delivery' })
+  @ApiParam({ name: 'id', type: String })
+  async getDeliveryHistory(@Param('id') id: string) {
+    const delivery = await this.deliveryRepository.findOne({
+      where: { id },
+      relations: ['subscription'],
+    });
+
+    if (!delivery) {
+      throw new NotFoundException(`Webhook delivery ${id} not found`);
+    }
+
+    return delivery;
   }
 
   @Post('deliveries/:id/replay')

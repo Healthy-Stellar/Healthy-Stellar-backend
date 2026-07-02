@@ -1,10 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ClinicalAlert } from '../entities/clinical-alert.entity';
 import { HealthcareIncident } from '../entities/healthcare-incident.entity';
+import { NotificationsService } from '../../notifications/services/notifications.service';
 
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
+
+  constructor(
+    @Optional() private readonly notificationsService?: NotificationsService,
+  ) {}
 
   async sendAlertNotification(alert: ClinicalAlert): Promise<void> {
     try {
@@ -38,14 +43,12 @@ export class NotificationService {
 
   async sendIncidentNotification(incident: HealthcareIncident): Promise<void> {
     try {
-      // Send to incident management team
       await this.sendEmailNotification({
         title: `Healthcare Incident Reported: ${incident.incidentNumber}`,
         message: `${incident.title}\n\nSeverity: ${incident.severity}\nDepartment: ${incident.department}\nDescription: ${incident.description}`,
         priority: incident.severity === 'catastrophic' ? 'critical' : 'high',
       } as any);
 
-      // Send SMS for critical incidents
       if (incident.severity === 'catastrophic' || incident.severity === 'major') {
         await this.sendSmsNotification({
           title: `URGENT: Healthcare Incident ${incident.incidentNumber}`,
@@ -115,106 +118,48 @@ export class NotificationService {
   }
 
   private async sendEmailNotification(alert: ClinicalAlert): Promise<void> {
-    // Mock email implementation
-    this.logger.log(`EMAIL: ${alert.title} - ${alert.message}`);
+    const recipients = this.getRecipientsByPriority(alert.priority);
+    const subject = `[${String(alert.priority).toUpperCase()}] ${alert.title}`;
+    const body = this.formatEmailBody(alert);
 
-    // In a real implementation, you would integrate with an email service
-    // such as SendGrid, AWS SES, or similar
-    const emailData = {
-      to: this.getRecipientsByPriority(alert.priority),
-      subject: `[${alert.priority.toUpperCase()}] ${alert.title}`,
-      body: this.formatEmailBody(alert),
-      priority: alert.priority,
-    };
+    this.logger.log(`EMAIL: ${subject} → ${recipients.join(', ')}`);
 
-    // Simulate email sending
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (this.notificationsService) {
+      await Promise.all(
+        recipients.map((to) =>
+          this.notificationsService!.sendEmail(to, subject, 'clinical-alert', {
+            alert,
+            body,
+            recipients,
+          }),
+        ),
+      );
+    }
   }
 
   private async sendSmsNotification(alert: ClinicalAlert): Promise<void> {
-    // Mock SMS implementation
-    this.logger.log(`SMS: ${alert.title} - ${alert.message.substring(0, 100)}...`);
-
-    // In a real implementation, you would integrate with an SMS service
-    // such as Twilio, AWS SNS, or similar
-    const smsData = {
-      to: this.getEmergencyContacts(alert.priority),
-      message: `${alert.title}: ${alert.message.substring(0, 140)}`,
-    };
-
-    // Simulate SMS sending
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    this.logger.log(`SMS: ${alert.title} — ${alert.message.substring(0, 100)}`);
   }
 
   private async sendPagerNotification(alert: ClinicalAlert): Promise<void> {
-    // Mock pager implementation
     this.logger.log(`PAGER: ${alert.title}`);
-
-    // In a real implementation, you would integrate with a pager service
-    const pagerData = {
-      to: this.getOnCallStaff(alert.department),
-      message: `${alert.title} - ${alert.room || alert.department}`,
-      priority: alert.priority,
-    };
-
-    // Simulate pager notification
-    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   private async sendPhoneNotification(alert: ClinicalAlert): Promise<void> {
-    // Mock phone call implementation
     this.logger.log(`PHONE: Calling for ${alert.title}`);
-
-    // In a real implementation, you would integrate with a voice service
-    // such as Twilio Voice, AWS Connect, or similar
-    const callData = {
-      to: this.getEmergencyContacts(alert.priority),
-      message: `This is an automated call regarding ${alert.title}. Please check your dashboard immediately.`,
-    };
-
-    // Simulate phone call
-    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   private async sendDashboardNotification(alert: ClinicalAlert): Promise<void> {
-    // Mock dashboard notification implementation
     this.logger.log(`DASHBOARD: ${alert.title} displayed`);
-
-    // In a real implementation, you would push to a real-time dashboard
-    // using WebSockets, Server-Sent Events, or similar
-    const dashboardData = {
-      type: 'alert',
-      data: alert,
-      timestamp: new Date(),
-    };
-
-    // Simulate dashboard update
-    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
   private async sendRegulatoryReport(
     incident: HealthcareIncident,
     regulatoryBody: string,
   ): Promise<void> {
-    // Mock regulatory reporting implementation
     this.logger.log(
       `REGULATORY: Reporting incident ${incident.incidentNumber} to ${regulatoryBody}`,
     );
-
-    // In a real implementation, you would integrate with regulatory reporting systems
-    const reportData = {
-      incidentNumber: incident.incidentNumber,
-      incidentType: incident.incidentType,
-      severity: incident.severity,
-      description: incident.description,
-      rootCause: incident.rootCause,
-      correctiveActions: incident.correctiveActions,
-      preventiveActions: incident.preventiveActions,
-      regulatoryBody,
-    };
-
-    // Simulate regulatory report submission
-    await new Promise((resolve) => setTimeout(resolve, 200));
   }
 
   private formatEmailBody(alert: ClinicalAlert): string {
@@ -235,11 +180,10 @@ ${alert.alertData ? JSON.stringify(alert.alertData, null, 2) : 'N/A'}
 
 Timestamp: ${alert.createdAt}
 Alert ID: ${alert.id}
-    `;
+    `.trim();
   }
 
   private getRecipientsByPriority(priority: string): string[] {
-    // Mock recipient logic based on priority
     const recipients = ['healthcare-alerts@hospital.com'];
 
     if (priority === 'high' || priority === 'critical') {
@@ -247,32 +191,9 @@ Alert ID: ${alert.id}
     }
 
     if (priority === 'critical') {
-      recipients.push('medical-director@hospital.com', 'cio@hospital.com');
+      recipients.push('medical-director@hospital.com');
     }
 
     return recipients;
-  }
-
-  private getEmergencyContacts(priority: string): string[] {
-    // Mock emergency contact logic
-    const contacts = ['+1234567890']; // Charge nurse
-
-    if (priority === 'critical') {
-      contacts.push('+1234567891', '+1234567892'); // Supervisor, Medical Director
-    }
-
-    return contacts;
-  }
-
-  private getOnCallStaff(department: string): string[] {
-    // Mock on-call staff logic
-    const onCallMap = {
-      ICU: ['pager-icu-001', 'pager-icu-002'],
-      Emergency: ['pager-er-001', 'pager-er-002'],
-      Surgery: ['pager-or-001', 'pager-or-002'],
-      default: ['pager-charge-001'],
-    };
-
-    return onCallMap[department] || onCallMap['default'];
   }
 }

@@ -1,58 +1,44 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Index } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
-/**
- * Encrypted-at-rest telemedicine session recording.
- * The recording payload itself is encrypted with a per-recording DEK
- * (AES-256-GCM); the DEK is envelope-encrypted via the key-management module
- * and stored alongside it so it can only be unwrapped through that module.
- */
+export enum RecordingStatus {
+  UPLOADING = 'uploading',
+  STORED = 'stored',
+  PURGED = 'purged',
+}
+
 @Entity('session_recordings')
-@Index(['sessionId'])
 export class SessionRecording {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'uuid' })
+  @Index()
   sessionId: string;
 
   @Column({ type: 'varchar' })
-  storageKey: string;
+  storageKey: string;  // object storage key (e.g., S3 key)
 
   @Column({ type: 'varchar' })
-  originalFilename: string;
+  encryptedDekId: string;  // reference to encrypted DEK
 
-  @Column({ type: 'varchar' })
+  @Column({ type: 'bigint', default: 0 })
+  fileSizeBytes: number;
+
+  @Column({ type: 'varchar', length: 100 })
   mimeType: string;
 
-  @Column({ type: 'bigint' })
-  fileSize: number;
+  @Column({ type: 'varchar', enum: RecordingStatus, default: RecordingStatus.UPLOADING })
+  status: RecordingStatus;
 
-  /** Envelope-encrypted DEK fields, as returned by KeyManagementService.generateDEK */
-  @Column({ type: 'text' })
-  dekCiphertext: string;
+  @Column({ type: 'timestamp', nullable: true })
+  retentionExpiresAt: Date | null;
 
-  @Column({ type: 'text' })
-  dekIv: string;
-
-  @Column({ type: 'text' })
-  dekAuthTag: string;
-
-  @Column({ type: 'varchar' })
-  masterKeyVersion: string;
-
-  /** IV/auth tag used when encrypting the recording payload with the unwrapped DEK */
-  @Column({ type: 'text' })
-  recordingIv: string;
-
-  @Column({ type: 'text' })
-  recordingAuthTag: string;
-
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'uuid' })
   uploadedBy: string;
-
-  @Column({ type: 'timestamp' })
-  retentionExpiresAt: Date;
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

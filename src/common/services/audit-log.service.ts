@@ -32,6 +32,9 @@ export interface SensitiveAuditEntry {
   resourceType?: string;
   resourceId?: string;
   ipAddress?: string;
+  patientId?: string;
+  tenantId?: string;
+  actorRole?: string;
   metadata?: Record<string, any>;
 }
 
@@ -134,6 +137,9 @@ export class AuditLogService {
       resourceType: entry.resourceType ?? null,
       resourceId: entry.resourceId ?? null,
       ipAddress: entry.ipAddress ?? null,
+      patientId: entry.patientId ?? null,
+      tenantId: entry.tenantId ?? null,
+      actorRole: entry.actorRole ?? null,
       metadata: entry.metadata ?? {},
     });
     return this.sensitiveRepo.save(record);
@@ -150,6 +156,9 @@ export class AuditLogService {
 
     const qb = this.sensitiveRepo.createQueryBuilder('al').orderBy('al.timestamp', 'DESC');
 
+    if (query.patientId) {
+      qb.andWhere('al.patientId = :patientId', { patientId: query.patientId });
+    }
     if (query.actorAddress) {
       qb.andWhere('al.actorAddress = :actorAddress', { actorAddress: query.actorAddress });
     }

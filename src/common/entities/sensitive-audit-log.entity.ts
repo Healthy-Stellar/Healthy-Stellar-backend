@@ -20,6 +20,9 @@ export enum SensitiveAuditAction {
   MFA_CHANGE = 'MFA_CHANGE',
   USER_CREATED = 'USER_CREATED',
   ACCOUNT_LOCKED = 'ACCOUNT_LOCKED',
+  PHI_READ = 'PHI_READ',
+  PHI_WRITE = 'PHI_WRITE',
+  PHI_DELETE = 'PHI_DELETE',
 }
 
 /**
@@ -59,4 +62,15 @@ export class SensitiveAuditLog {
 
   @Column({ type: 'jsonb', nullable: true, default: {} })
   metadata: Record<string, any>;
+
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'patient_id' })
+  @Index('idx_audit_log_patient_id')
+  patientId: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'tenant_id' })
+  @Index('idx_audit_log_tenant_id')
+  tenantId: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'actor_role' })
+  actorRole: string | null;
 }

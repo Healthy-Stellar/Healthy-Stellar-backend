@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { WebhooksController } from './webhooks.controller';
@@ -6,6 +7,26 @@ import { QueueService } from '../queues/queue.service';
 import { ConfigService } from '@nestjs/config';
 import { WebhookDeliveryService } from './services/webhook-delivery.service';
 import { WebhookDelivery, WebhookDeliveryStatus } from './entities/webhook-delivery.entity';
+import { ClaimService } from '../billing/services/claim.service';
+jest.mock('../billing/dto/claim.dto', () => ({
+  AdjudicationWebhookDto: class AdjudicationWebhookDto {},
+}));
+
+jest.mock('../auth/guards/jwt-auth.guard', () => ({
+  JwtAuthGuard: class JwtAuthGuard {
+    canActivate() {
+      return true;
+    }
+  },
+}));
+
+jest.mock('../auth/guards/roles.guard', () => ({
+  RolesGuard: class RolesGuard {
+    canActivate() {
+      return true;
+    }
+  },
+}));
 
 const mockIpfsService = () => ({});
 const mockQueueService = () => ({
@@ -15,6 +36,9 @@ const mockQueueService = () => ({
 const mockConfigService = () => ({ get: jest.fn() });
 const mockWebhookDeliveryService = () => ({
   replayDelivery: jest.fn(),
+});
+const mockClaimService = () => ({
+  handleAdjudicationWebhook: jest.fn(),
 });
 const mockDeliveryRepository = () => ({
   findAndCount: jest.fn(),
@@ -37,6 +61,7 @@ describe('WebhooksController', () => {
         { provide: ConfigService, useFactory: mockConfigService },
         { provide: WebhookDeliveryService, useFactory: mockWebhookDeliveryService },
         { provide: getRepositoryToken(WebhookDelivery), useFactory: mockDeliveryRepository },
+        { provide: ClaimService, useFactory: mockClaimService },
       ],
     }).compile();
 
@@ -141,6 +166,22 @@ describe('WebhooksController', () => {
       const result = await controller.handleStellarWebhook({ transaction_hash: 'txFail' });
 
       expect(result).toMatchObject({ received: false, error: 'Bull down' });
+    });
+  });
+
+  // ── GET /webhooks/:id/deliveries ────────────────────────────────────────
+
+  describe('getDeliveryHistory', () => {
+    it('returns the delivery attempt history for a given delivery id', async () => {
+      const delivery = { id: 'delivery-1', attempts: [{ attemptNumber: 1, timestamp: '2024-01-01T00:00:00.000Z', httpStatus: 503, error: 'down', responseBodySnippet: '{"detail":"down"}' }] };
+      deliveryRepository.findOne.mockResolvedValue(delivery);
+
+      const result = await controller.getDeliveryHistory('delivery-1');
+
+      expect(deliveryRepository.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'delivery-1' } }),
+      );
+      expect(result).toEqual(delivery);
     });
   });
 
