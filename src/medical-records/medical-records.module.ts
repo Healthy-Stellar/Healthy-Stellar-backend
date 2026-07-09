@@ -14,6 +14,7 @@ import { AccessControlModule } from '../access-control/access-control.module';
 import { ProviderPatientModule } from '../provider-patient/provider-patient.module';
 import { QUEUE_NAMES } from '../queues/queue.constants';
 import { MailModule } from '../email-notification-service-for-critical-access-events/mail.module';
+import { AuditModule } from '../common/audit/audit.module';
 
 import { MedicalRecordsService } from './services/medical-records.service';
 import { ClinicalTemplatesService } from './services/clinical-templates.service';
@@ -45,6 +46,7 @@ import { Patient } from '../patients/entities/patient.entity';
     AccessControlModule,
     ProviderPatientModule,
     MailModule,
+    AuditModule,
     TypeOrmModule.forFeature([
       MedicalRecord,
       MedicalRecordVersion,

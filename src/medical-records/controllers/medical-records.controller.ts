@@ -19,6 +19,8 @@ import { UpdateMedicalRecordDto } from '../dto/update-medical-record.dto';
 import { SearchMedicalRecordsDto } from '../dto/search-medical-records.dto';
 import { FullTextSearchDto } from '../dto/full-text-search.dto';
 import { AuditInterceptor } from '../../common/audit/audit.interceptor';
+import { PhiAuditInterceptor } from '../../common/audit/phi-audit.interceptor';
+import { AuditLog } from '../../common/audit/audit-log.decorator';
 import { PhiAuditInterceptor } from '../../common/interceptors/phi-audit.interceptor';
 import { CurrentTenant } from '@/tenant';
 import { CurrentUser } from '../../common/decorators/audit-context.decorator';
@@ -34,6 +36,7 @@ export class MedicalRecordsController {
   constructor(private readonly medicalRecordsService: MedicalRecordsService) {}
 
   @Post()
+  @AuditLog('WRITE', 'MedicalRecord')
   @ApiOperation({ summary: 'Create a new medical record' })
   @ApiResponse({ status: 201, description: 'Medical record created successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
@@ -91,6 +94,7 @@ export class MedicalRecordsController {
   }
 
   @Get(':id')
+  @AuditLog('READ', 'MedicalRecord')
   @ApiOperation({ summary: 'Get a medical record by ID' })
   @ApiResponse({ status: 200, description: 'Medical record retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Medical record not found' })
@@ -121,6 +125,7 @@ export class MedicalRecordsController {
   }
 
   @Put(':id')
+  @AuditLog('WRITE', 'MedicalRecord')
   @ApiOperation({ summary: 'Update a medical record' })
   @ApiResponse({ status: 200, description: 'Medical record updated successfully' })
   @ApiResponse({ status: 404, description: 'Medical record not found' })
@@ -138,6 +143,7 @@ export class MedicalRecordsController {
   }
 
   @Put(':id/archive')
+  @AuditLog('WRITE', 'MedicalRecord')
   @ApiOperation({ summary: 'Archive a medical record' })
   @ApiResponse({ status: 200, description: 'Medical record archived successfully' })
   async archive(
@@ -150,6 +156,7 @@ export class MedicalRecordsController {
   }
 
   @Put(':id/restore')
+  @AuditLog('WRITE', 'MedicalRecord')
   @ApiOperation({ summary: 'Restore an archived medical record' })
   @ApiResponse({ status: 200, description: 'Medical record restored successfully' })
   async restore(
@@ -162,6 +169,7 @@ export class MedicalRecordsController {
   }
 
   @Delete(':id')
+  @AuditLog('DELETE', 'MedicalRecord')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a medical record (soft delete)' })
   @ApiResponse({ status: 204, description: 'Medical record deleted successfully' })
