@@ -1,10 +1,13 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody, ApiParam } from '@nestjs/swagger';
 import { SecretRotationService } from '../services/secret-rotation.service';
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { AdminGuard } from '../guards/admin.guard';
 
 @ApiTags('Admin - Secret Rotation')
 @ApiBearerAuth()
 @Controller('admin/secret-rotation')
+@UseGuards(JwtAuthGuard, AdminGuard)
 export class SecretRotationController {
   constructor(private readonly secretRotation: SecretRotationService) {}
 
