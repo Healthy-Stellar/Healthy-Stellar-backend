@@ -37,6 +37,7 @@ import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
+import { ClinicalMfaGuard } from './auth/guards/clinical-mfa.guard';
 import { ValidationModule } from './common/validation/validation.module';
 import { MedicalEmergencyErrorFilter } from './common/errors/medical-emergency-error.filter';
 import { MedicalDataValidationPipe } from './common/validation/medical-data.validator.pipe';
@@ -83,6 +84,7 @@ import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.int
 import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
 import { MedicalStaffModule } from './medical-staff/medical-staff.module';
 import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-monitoring.module';
+import { User } from './auth/entities/user.entity';
 
 @Module({
   imports: [
@@ -97,6 +99,7 @@ import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-m
     TypeOrmModule.forRootAsync({
       useClass: DatabaseConfig,
     }),
+    TypeOrmModule.forFeature([User]),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
@@ -233,6 +236,10 @@ import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-m
     {
       provide: APP_GUARD,
       useClass: TenantIpAllowlistGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ClinicalMfaGuard,
     },
   ],
 })
