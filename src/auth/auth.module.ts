@@ -35,6 +35,7 @@ import { ProvidersController } from './controllers/providers.controller';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { MfaVerifiedGuard } from './guards/mfa-verified.guard';
+import { ClinicalMfaGuard } from './guards/clinical-mfa.guard';
 import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
 import { ApiKeyGuard } from './guards/api-key.guard';
 import { ProviderDirectoryService } from './services/provider-directory.service';

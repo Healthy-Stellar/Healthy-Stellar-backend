@@ -14,6 +14,7 @@ import * as argon2 from 'argon2';
 import { MfaEntity } from '../entities/mfa.entity';
 import { User } from '../entities/user.entity';
 import { MAILER_SERVICE } from '../../notifications/services/notifications.service';
+import { DataEncryptionService } from '../../common/services/data-encryption.service';
 
 export interface MfaSetupResponse {
   secret: string;
@@ -36,6 +37,7 @@ export class MfaService {
     private mfaRepository: Repository<MfaEntity>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    private readonly dataEncryptionService: DataEncryptionService,
     @Optional() @Inject(MAILER_SERVICE) private mailerService?: any,
   ) {}
 
@@ -58,6 +60,8 @@ export class MfaService {
 
     // Preview codes shown once during setup; actual hashes stored on verify
     const { plain } = await this.generateBackupCodes(10);
+    user.mfaSecret = this.dataEncryptionService.encrypt(secret.base32);
+    await this.userRepository.save(user);
 
     return {
       secret: secret.base32,
@@ -79,14 +83,23 @@ export class MfaService {
       throw new NotFoundException('User not found');
     }
 
-    const secret = speakeasy.generateSecret({
-      name: `Healthy Stellar (${user.email})`,
-      issuer: 'Healthy Stellar',
-      length: 32,
-    });
+    let secret = '';
+    try {
+      secret = this.dataEncryptionService.decrypt(user.mfaSecret || '');
+    } catch {
+      secret = user.mfaSecret || '';
+    }
+
+    if (!secret) {
+      secret = speakeasy.generateSecret({
+        name: `Healthy Stellar (${user.email})`,
+        issuer: 'Healthy Stellar',
+        length: 32,
+      }).base32;
+    }
 
     const verified = speakeasy.totp.verify({
-      secret: secret.base32,
+      secret,
       encoding: 'base32',
       token: verificationCode,
       window: 2, // Allow 30 seconds before/after
@@ -99,9 +112,11 @@ export class MfaService {
     // Generate 10 backup codes — store only hashes, return plaintext once
     const { plain: backupCodes, hashed: hashedBackupCodes } = await this.generateBackupCodes(10);
 
+    const encryptedSecret = this.dataEncryptionService.encrypt(secret);
+
     const mfaDevice = this.mfaRepository.create({
       userId,
-      secret: secret.base32,
+      secret: encryptedSecret,
       backupCodes: hashedBackupCodes,
       isVerified: true,
       verifiedAt: new Date(),
@@ -112,7 +127,7 @@ export class MfaService {
     await this.mfaRepository.save(mfaDevice);
 
     user.mfaEnabled = true;
-    user.mfaSecret = secret.base32;
+    user.mfaSecret = encryptedSecret;
     await this.userRepository.save(user);
 
     return {
@@ -138,8 +153,15 @@ export class MfaService {
       throw new NotFoundException('MFA device not found');
     }
 
+    let decryptedSecret = '';
+    try {
+      decryptedSecret = this.dataEncryptionService.decrypt(mfaDevice.secret);
+    } catch {
+      decryptedSecret = mfaDevice.secret;
+    }
+
     const isValid = speakeasy.totp.verify({
-      secret: mfaDevice.secret,
+      secret: decryptedSecret,
       encoding: 'base32',
       token: code,
       window: 2,

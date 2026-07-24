@@ -1,4 +1,4 @@
-import { Controller, Post, Get, UseGuards, Body, Req, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Get, Delete, UseGuards, Body, Req, BadRequestException } from '@nestjs/common';
 import { I18nContext } from 'nestjs-i18n';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Request } from 'express';
@@ -229,7 +229,7 @@ export class MfaController {
   /**
    * Disable MFA
    */
-  @Post('disable')
+  @Delete()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Disable MFA' })
   @ApiResponse({ status: 200, description: 'MFA disabled' })
