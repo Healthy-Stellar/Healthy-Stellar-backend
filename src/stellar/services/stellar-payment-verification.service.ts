@@ -70,70 +70,134 @@ export class StellarPaymentVerificationService {
     txHash: string,
     tenantId?: string,
   ): Promise<PaymentVerificationResult> {
-    // ── 1. Idempotency check ──────────────────────────────────────────────────
+    // ── 1. Idempotency check + atomic claim ─────────────────────────────────
+    // A plain SELECT-then-later-write leaves a window where two concurrent
+    // calls for the same txHash (e.g. a webhook retry racing the original
+    // delivery) both observe "no existing record", both hit Horizon, and
+    // both emit PAYMENT_CONFIRMED_EVENT. `key` carries a unique index, so an
+    // INSERT reserving the row is an atomic claim: only one concurrent
+    // caller can win it, and everyone else is told to back off instead of
+    // proceeding to call Horizon and emit the event a second time.
     const idempotencyKey = `${IDEMPOTENCY_KEY_PREFIX}${txHash}`;
-    const existing = await this.idempotencyRepo.findOne({ where: { key: idempotencyKey } });
+    const claimed = await this.claimIdempotencyKey(idempotencyKey, txHash);
 
-    if (existing) {
-      this.logger.log(`[verifyPayment] Returning cached result for txHash=${txHash}`);
-      return {
-        ...(existing.body as PaymentVerificationResult),
-        status: PaymentVerificationStatus.DUPLICATE,
-      };
+    if (!claimed) {
+      const existing = await this.idempotencyRepo.findOne({ where: { key: idempotencyKey } });
+      if (
+        existing &&
+        (existing.body as PaymentVerificationResult)?.status !== PaymentVerificationStatus.PENDING
+      ) {
+        this.logger.log(`[verifyPayment] Returning cached result for txHash=${txHash}`);
+        return {
+          ...(existing.body as PaymentVerificationResult),
+          status: PaymentVerificationStatus.DUPLICATE,
+        };
+      }
+
+      // Another call currently owns verification of this txHash (or left it
+      // PENDING). Do not race it into a second Horizon lookup / event emit.
+      this.logger.log(`[verifyPayment] Verification already in progress for txHash=${txHash}`);
+      return { txHash, status: PaymentVerificationStatus.PENDING };
     }
 
-    // ── 2. Query Horizon API ──────────────────────────────────────────────────
-    let horizonData: any;
     try {
-      const url = `${this.horizonUrl}/transactions/${txHash}`;
-      const response = await firstValueFrom(this.httpService.get(url));
-      horizonData = response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 404) {
-        this.logger.warn(`[verifyPayment] txHash=${txHash} not found on Horizon — treating as PENDING`);
-        return { txHash, status: PaymentVerificationStatus.PENDING };
+      // ── 2. Query Horizon API ────────────────────────────────────────────
+      let horizonData: any;
+      try {
+        const url = `${this.horizonUrl}/transactions/${txHash}`;
+        const response = await firstValueFrom(this.httpService.get(url));
+        horizonData = response.data;
+      } catch (err: any) {
+        if (err?.response?.status === 404) {
+          this.logger.warn(`[verifyPayment] txHash=${txHash} not found on Horizon — treating as PENDING`);
+          await this.releaseIdempotencyClaim(idempotencyKey);
+          return { txHash, status: PaymentVerificationStatus.PENDING };
+        }
+        this.logger.error(`[verifyPayment] Horizon API error for txHash=${txHash}: ${err.message}`);
+        await this.releaseIdempotencyClaim(idempotencyKey);
+        throw err;
       }
-      this.logger.error(`[verifyPayment] Horizon API error for txHash=${txHash}: ${err.message}`);
+
+      // ── 3. Classify transaction state ─────────────────────────────────────
+      const result = this.classifyTransaction(txHash, horizonData);
+
+      // ── 4. Persist idempotency record for confirmed/failed transactions ───
+      if (
+        result.status === PaymentVerificationStatus.CONFIRMED ||
+        result.status === PaymentVerificationStatus.FAILED ||
+        result.status === PaymentVerificationStatus.EXPIRED
+      ) {
+        await this.idempotencyRepo.update(
+          { key: idempotencyKey },
+          {
+            statusCode: 200,
+            body:       result as unknown as Record<string, any>,
+          },
+        );
+      } else {
+        // Still PENDING on-chain — release the claim so a legitimate later
+        // retry (poll) can re-check Horizon instead of being stuck behind
+        // a stale reservation forever.
+        await this.releaseIdempotencyClaim(idempotencyKey);
+      }
+
+      // ── 5. Emit domain event for confirmed payments ────────────────────────
+      if (result.status === PaymentVerificationStatus.CONFIRMED) {
+        const event: PaymentConfirmedEvent = {
+          txHash,
+          ledger:     result.ledger!,
+          confirmedAt: result.confirmedAt!,
+          tenantId,
+        };
+        this.eventEmitter.emit(PAYMENT_CONFIRMED_EVENT, event);
+        this.logger.log(`[verifyPayment] Emitted ${PAYMENT_CONFIRMED_EVENT} for txHash=${txHash}`);
+      }
+
+      return result;
+    } catch (err) {
+      // Don't leave a dangling claim behind on unexpected failures — a
+      // permanently-stuck PENDING placeholder would block all future
+      // verification attempts for this txHash.
+      await this.releaseIdempotencyClaim(idempotencyKey).catch(() => {});
       throw err;
     }
-
-    // ── 3. Classify transaction state ─────────────────────────────────────────
-    const result = this.classifyTransaction(txHash, horizonData);
-
-    // ── 4. Persist idempotency record for confirmed/failed transactions ───────
-    if (
-      result.status === PaymentVerificationStatus.CONFIRMED ||
-      result.status === PaymentVerificationStatus.FAILED ||
-      result.status === PaymentVerificationStatus.EXPIRED
-    ) {
-      await this.idempotencyRepo.upsert(
-        {
-          key:                idempotencyKey,
-          statusCode:         200,
-          body:               result as unknown as Record<string, any>,
-          headers:            {},
-          requestFingerprint: `POST:/webhooks/stellar:${txHash}`,
-        },
-        ['key'],
-      );
-    }
-
-    // ── 5. Emit domain event for confirmed payments ───────────────────────────
-    if (result.status === PaymentVerificationStatus.CONFIRMED) {
-      const event: PaymentConfirmedEvent = {
-        txHash,
-        ledger:     result.ledger!,
-        confirmedAt: result.confirmedAt!,
-        tenantId,
-      };
-      this.eventEmitter.emit(PAYMENT_CONFIRMED_EVENT, event);
-      this.logger.log(`[verifyPayment] Emitted ${PAYMENT_CONFIRMED_EVENT} for txHash=${txHash}`);
-    }
-
-    return result;
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────────
+
+  /**
+   * Attempts to atomically reserve the idempotency row for this txHash.
+   * Returns `true` if this call won the claim, `false` if another call
+   * already holds (or previously completed) it.
+   */
+  private async claimIdempotencyKey(key: string, txHash: string): Promise<boolean> {
+    try {
+      await this.idempotencyRepo.insert({
+        key,
+        statusCode:         202,
+        body:               { txHash, status: PaymentVerificationStatus.PENDING },
+        headers:            {},
+        requestFingerprint: `POST:/webhooks/stellar:${txHash}`,
+      });
+      return true;
+    } catch (err: any) {
+      if (this.isDuplicateKeyError(err)) {
+        return false;
+      }
+      throw err;
+    }
+  }
+
+  private async releaseIdempotencyClaim(key: string): Promise<void> {
+    await this.idempotencyRepo.delete({ key });
+  }
+
+  private isDuplicateKeyError(error: unknown): boolean {
+    const code =
+      (error as { code?: string; driverError?: { code?: string } } | undefined)?.code ??
+      (error as { driverError?: { code?: string } } | undefined)?.driverError?.code;
+    return code === '23505';
+  }
 
   private classifyTransaction(
     txHash: string,
