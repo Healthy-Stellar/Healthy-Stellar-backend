@@ -68,13 +68,17 @@ docker compose -f docker-compose.local.yml down -v     # wipe volumes
 
 **Prerequisites:** Node.js v18+, PostgreSQL v12+
 
-```bash
-npm install
-cp .env.example .env
-# fill in .env
-npm run migration:run
-npm run start:dev
-```
+1. Install dependencies:
+   `npm install`
+2. Set up environment variables:
+   `cp .env.example .env`
+3. Run database migrations:
+   `npm run migration:run`
+4. **Seed the database with test data:**
+   `npm run seed`
+   *(Why added: This generates fake users, medical records, and access grants via `src/database/seeder.ts` so you can log in and test the application).*
+5. Start the development server:
+   `npm run start:dev`
 
 ## Configuration
 
