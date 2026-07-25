@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, Between } from 'typeorm';
+import { DataSource, Repository, FindOptionsWhere, Between } from 'typeorm';
 import { Payment } from '../entities/payment.entity';
 import { Billing } from '../entities/billing.entity';
 import { BillingLineItem } from '../entities/billing-line-item.entity';
@@ -22,6 +22,7 @@ export class PaymentService {
     private readonly billingRepository: Repository<Billing>,
     @InjectRepository(BillingLineItem)
     private readonly lineItemRepository: Repository<BillingLineItem>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(createDto: CreatePaymentDto): Promise<Payment> {
@@ -78,13 +79,20 @@ export class PaymentService {
       throw new BadRequestException(`Payment is already in ${payment.status} status`);
     }
 
+    // Mark as PROCESSING outside the transaction so callers can distinguish
+    // "picked up but not yet committed" from PENDING/COMPLETED/FAILED.
     payment.status = PaymentStatus.PROCESSING;
     await this.paymentRepository.save(payment);
 
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
     try {
+      // 1. Apply payment allocations to line items.
       if (payment.paymentAllocation && payment.paymentAllocation.length > 0) {
         for (const allocation of payment.paymentAllocation) {
-          const lineItem = await this.lineItemRepository.findOne({
+          const lineItem = await queryRunner.manager.findOne(BillingLineItem, {
             where: { id: allocation.lineItemId },
           });
 
@@ -94,12 +102,13 @@ export class PaymentService {
               lineItem.adjustmentAmount =
                 Number(lineItem.adjustmentAmount) + allocation.adjustmentAmount;
             }
-            await this.lineItemRepository.save(lineItem);
+            await queryRunner.manager.save(BillingLineItem, lineItem);
           }
         }
       }
 
-      const billing = await this.billingRepository.findOne({
+      // 2. Update billing balance.
+      const billing = await queryRunner.manager.findOne(Billing, {
         where: { id: payment.billingId },
         relations: ['lineItems', 'payments'],
       });
@@ -116,26 +125,28 @@ export class PaymentService {
             Number(billing.patientResponsibility || 0) - Number(payment.amount);
         }
 
-        if (billing.balance <= 0) {
-          billing.status = 'paid';
-          billing.balance = 0;
-        } else {
-          billing.status = 'partial';
-        }
+        billing.status = billing.balance <= 0 ? 'paid' : 'partial';
+        if (billing.balance < 0) billing.balance = 0;
 
-        await this.billingRepository.save(billing);
+        await queryRunner.manager.save(Billing, billing);
       }
 
+      // 3. Mark payment COMPLETED — all three writes commit atomically.
       payment.status = PaymentStatus.COMPLETED;
       payment.postedDate = new Date();
-      await this.paymentRepository.save(payment);
+      await queryRunner.manager.save(Payment, payment);
 
+      await queryRunner.commitTransaction();
       return payment;
     } catch (error) {
+      await queryRunner.rollbackTransaction();
+
       payment.status = PaymentStatus.FAILED;
       payment.notes = `${payment.notes || ''}\nProcessing failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
       await this.paymentRepository.save(payment);
       throw error;
+    } finally {
+      await queryRunner.release();
     }
   }
 
