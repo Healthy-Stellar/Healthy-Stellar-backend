@@ -2,8 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { GdprService } from '../services/gdpr.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { GdprRequest, GdprRequestType, GdprRequestStatus } from '../entities/gdpr-request.entity';
+import { GdprComplianceLog } from '../entities/gdpr-compliance-log.entity';
 import { getQueueToken } from '@nestjs/bull';
 import { ConflictException } from '@nestjs/common';
+import { DeletionRegistryService } from '../services/deletion-registry.service';
+import { CreateErasureRequestDto } from '../dto/create-erasure-request.dto';
 
 describe('GdprService', () => {
   let service: GdprService;
@@ -19,7 +22,20 @@ describe('GdprService', () => {
     add: jest.fn().mockResolvedValue(true),
   };
 
+  const mockComplianceLogRepo = {
+    create: jest.fn().mockImplementation((dto) => ({ id: 'log-1', ...dto })),
+    save: jest.fn().mockResolvedValue(true),
+  };
+
+  const mockDeletionRegistry = {
+    previewForUser: jest.fn().mockResolvedValue([]),
+    deleteAllForUser: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
+    jest.clearAllMocks();
+    mockGdprRequestRepo.findOne.mockResolvedValue(null);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         GdprService,
@@ -30,6 +46,14 @@ describe('GdprService', () => {
         {
           provide: getQueueToken('gdpr'),
           useValue: mockGdprQueue,
+        },
+        {
+          provide: getRepositoryToken(GdprComplianceLog),
+          useValue: mockComplianceLogRepo,
+        },
+        {
+          provide: DeletionRegistryService,
+          useValue: mockDeletionRegistry,
         },
       ],
     }).compile();
@@ -79,14 +103,24 @@ describe('GdprService', () => {
 
   describe('createErasureRequest', () => {
     it('should create an erasure request and add to queue', async () => {
-      const req = await service.createErasureRequest('user1');
+      const payload: CreateErasureRequestDto = {
+        patientId: 'patient-1',
+        requestorIdentity: 'operator-1',
+        tenantId: 'tenant-1',
+      };
+
+      const req = await service.createErasureRequest('user1', payload);
       expect(req).toBeDefined();
       expect(req.type).toBe(GdprRequestType.ERASURE);
       expect(req.status).toBe(GdprRequestStatus.PENDING);
       expect(mockGdprRequestRepo.save).toHaveBeenCalled();
+      expect(mockComplianceLogRepo.save).toHaveBeenCalled();
       expect(mockGdprQueue.add).toHaveBeenCalledWith('erase-data', {
         requestId: req.id,
         userId: 'user1',
+        patientId: 'patient-1',
+        requestorIdentity: 'operator-1',
+        tenantId: 'tenant-1',
       });
     });
 
