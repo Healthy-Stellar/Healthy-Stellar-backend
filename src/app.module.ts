@@ -84,6 +84,9 @@ import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.int
 import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
 import { MedicalStaffModule } from './medical-staff/medical-staff.module';
 import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-monitoring.module';
+import { AppointmentsModule } from './appointments/appointments.module';
+import { SurgicalModule } from './surgical-management-system/surgical/Surgical.module';
+import { TelemedicineModule } from './telemedicine-and-remote/src/telemedicine/Telemedicine.module';
 import { User } from './auth/entities/user.entity';
 
 @Module({
@@ -175,6 +178,9 @@ import { User } from './auth/entities/user.entity';
     MedicalStaffModule,
     EhrImportModule,
     HealthcareMonitoringModule,
+    AppointmentsModule,
+    SurgicalModule,
+    TelemedicineModule,
     EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],
