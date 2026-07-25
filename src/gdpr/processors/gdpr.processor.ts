@@ -3,7 +3,9 @@ import { Logger, OnModuleInit } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { createHash } from 'crypto';
 import { GdprRequest, GdprRequestStatus } from '../entities/gdpr-request.entity';
+import { GdprComplianceLog } from '../entities/gdpr-compliance-log.entity';
 import { User } from '../../auth/entities/user.entity';
 import { Patient } from '../../patients/entities/patient.entity';
 import { Record } from '../../records/entities/record.entity';
@@ -22,6 +24,7 @@ import { ConsultationNote } from '../../appointments/entities/consultation-note.
 import { IpfsService } from '../../records/services/ipfs.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { DeletionRegistryService } from '../services/deletion-registry.service';
+import { DataRetentionService } from '../../data-retention/data-retention.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -40,9 +43,12 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
     @InjectRepository(AccessGrant) private readonly accessGrantRepository: Repository<AccessGrant>,
     @InjectRepository(AuditLogEntity)
     private readonly auditLogRepository: Repository<AuditLogEntity>,
+    @InjectRepository(GdprComplianceLog)
+    private readonly complianceLogRepository: Repository<GdprComplianceLog>,
     private readonly ipfsService: IpfsService,
     private readonly notificationsService: NotificationsService,
     private readonly deletionRegistry: DeletionRegistryService,
+    private readonly dataRetentionService: DataRetentionService,
   ) {
     super();
   }
@@ -54,13 +60,13 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
       deleteForUser: async (userId, manager) => {
         const user = await manager.findOne(User, { where: { id: userId } });
         if (user) {
-          user.firstName = '[DELETED]';
-          user.lastName = '[DELETED]';
-          user.displayName = '[DELETED]';
-          user.email = `deleted-${userId}@anonymized.local`;
-          user.phone = '[DELETED]';
-          user.npi = '[DELETED]';
-          user.licenseNumber = '[DELETED]';
+          user.firstName = this.hashPlaceholder(user.firstName ?? 'first', userId);
+          user.lastName = this.hashPlaceholder(user.lastName ?? 'last', userId);
+          user.displayName = this.hashPlaceholder(user.displayName ?? 'display', userId);
+          user.email = this.hashEmail(userId, user.email);
+          user.phone = this.hashPlaceholder(user.phone ?? 'phone', userId);
+          user.npi = this.hashPlaceholder(user.npi ?? 'npi', userId);
+          user.licenseNumber = this.hashPlaceholder(user.licenseNumber ?? 'license', userId);
           await manager.save(User, user);
         }
       },
@@ -72,14 +78,14 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
       deleteForUser: async (userId, manager) => {
         const patient = await manager.findOne(Patient, { where: { id: userId } });
         if (patient) {
-          patient.firstName = '[DELETED]';
-          patient.lastName = '[DELETED]';
-          patient.middleName = '[DELETED]';
-          patient.email = '[DELETED]';
-          patient.phone = '[DELETED]';
-          patient.address = '[DELETED]';
+          patient.firstName = this.hashPlaceholder(patient.firstName ?? 'first', userId);
+          patient.lastName = this.hashPlaceholder(patient.lastName ?? 'last', userId);
+          patient.middleName = this.hashPlaceholder(patient.middleName ?? 'middle', userId);
+          patient.email = this.hashEmail(userId, patient.email);
+          patient.phone = this.hashPlaceholder(patient.phone ?? 'phone', userId);
+          patient.address = this.hashPlaceholder(JSON.stringify(patient.address ?? {}), userId);
           patient.dateOfBirth = '1900-01-01';
-          patient.nationalId = null;
+          patient.nationalId = this.hashPlaceholder(patient.nationalId ?? 'national-id', userId);
           await manager.save(Patient, patient);
         }
       },
@@ -189,6 +195,15 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
     });
   }
 
+  private hashPlaceholder(value: string, seed: string): string {
+    return `hash:${createHash('sha256').update(`${seed}:${value}`).digest('hex').slice(0, 16)}`;
+  }
+
+  private hashEmail(userId: string, email?: string): string {
+    const normalized = email ?? `user-${userId}`;
+    return `deleted+${createHash('sha256').update(`${userId}:${normalized}`).digest('hex').slice(0, 16)}@anonymized.local`;
+  }
+
   async process(job: Job<any, any, string>): Promise<any> {
     this.logger.log(`Processing GDPR job ${job.id} of type ${job.name}`);
 
@@ -269,13 +284,37 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
     }
   }
 
-  private async handleErasure(data: { requestId: string; userId: string }) {
+  private async handleErasure(data: {
+    requestId: string;
+    userId: string;
+    patientId?: string;
+    requestorIdentity?: string;
+    tenantId?: string;
+  }) {
     this.logger.log(`Erasing data for user ${data.userId}`);
     await this.gdprRequestRepository.update(data.requestId, {
       status: GdprRequestStatus.IN_PROGRESS,
     });
 
+    const policy = this.dataRetentionService?.getEffectivePolicy(data.tenantId ?? null, 'medical_records');
+    const action = policy?.action ?? 'anonymize';
+
     try {
+      await this.complianceLogRepository.save(
+        this.complianceLogRepository.create({
+          requestId: data.requestId,
+          patientId: data.patientId,
+          tenantId: data.tenantId,
+          operator: data.requestorIdentity,
+          scope: `gdpr-erasure:${action}`,
+          details: {
+            action: 'ERASURE_STARTED',
+            tenantId: data.tenantId,
+            requestorIdentity: data.requestorIdentity,
+            retentionAction: action,
+          },
+        }),
+      );
       // Captured before the cascade anonymises/deletes the user record, so we can
       // still notify the data subject once erasure completes.
       const dataSubjectUser = await this.userRepository.findOne({ where: { id: data.userId } });
@@ -315,6 +354,22 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
 
       // 3. Run all registered deletion handlers in a single transaction
       await this.deletionRegistry.deleteAllForUser(data.userId);
+
+      await this.complianceLogRepository.save(
+        this.complianceLogRepository.create({
+          requestId: data.requestId,
+          patientId: data.patientId,
+          tenantId: data.tenantId,
+          operator: data.requestorIdentity,
+          scope: `gdpr-erasure:${action}`,
+          details: {
+            action: 'ERASURE_COMPLETED',
+            tenantId: data.tenantId,
+            requestorIdentity: data.requestorIdentity,
+            retentionAction: action,
+          },
+        }),
+      );
 
       // 4. Notify Data Protection Officer
       try {
