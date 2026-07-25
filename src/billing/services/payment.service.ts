@@ -44,6 +44,22 @@ export class PaymentService {
       );
     }
 
+    // Idempotency: a client-supplied transactionId identifies a single
+    // logical payment attempt (e.g. a gateway charge). If a payment already
+    // exists for it, return that payment instead of creating a second
+    // Payment row and a second deduction from billing.balance.
+    if (createDto.transactionId) {
+      const existingPayment = await this.paymentRepository.findOne({
+        where: { transactionId: createDto.transactionId },
+      });
+      if (existingPayment) {
+        this.logger.warn(
+          `Duplicate payment request for transactionId=${createDto.transactionId}; returning existing payment ${existingPayment.id}`,
+        );
+        return existingPayment;
+      }
+    }
+
     const paymentNumber = `PAY-${Date.now()}-${uuidv4().substring(0, 4).toUpperCase()}`;
 
     const payment = this.paymentRepository.create({
@@ -68,11 +84,33 @@ export class PaymentService {
       notes: createDto.notes,
     });
 
-    await this.paymentRepository.save(payment);
+    try {
+      await this.paymentRepository.save(payment);
+    } catch (error) {
+      // A concurrent request carrying the same client-supplied transactionId
+      // may have won the race to insert first. The unique constraint on
+      // transactionId (see migration AddUniqueConstraintToPaymentTransactionId)
+      // turns that race into "return the existing payment" instead of a
+      // duplicate deduction against billing.balance.
+      if (createDto.transactionId && this.isDuplicateKeyError(error)) {
+        const existingPayment = await this.paymentRepository.findOne({
+          where: { transactionId: createDto.transactionId },
+        });
+        if (existingPayment) {
+          return existingPayment;
+        }
+      }
+      throw error;
+    }
 
     const processedPayment = await this.processPayment(payment.id);
 
     return processedPayment;
+  }
+
+  private isDuplicateKeyError(error: unknown): boolean {
+    const code = (error as { code?: string } | undefined)?.code;
+    return code === '23505';
   }
 
   async processPayment(paymentId: string): Promise<Payment> {
@@ -103,32 +141,48 @@ export class PaymentService {
         }
       }
 
-      const billing = await this.billingRepository.findOne({
-        where: { id: payment.billingId },
-        relations: ['lineItems', 'payments'],
-      });
+      // Lock the billing row for the duration of the balance mutation so
+      // concurrent payments against the same billing record serialize
+      // instead of both reading a stale balance and both applying their
+      // deduction. The balance is re-validated under the lock — rather than
+      // clamping a negative result to zero — so a payment that no longer
+      // fits (because a concurrent payment already consumed the balance) is
+      // rejected instead of silently driving the balance negative.
+      await this.billingRepository.manager.transaction(async (manager) => {
+        const billing = await manager
+          .createQueryBuilder(Billing, 'billing')
+          .setLock('pessimistic_write')
+          .where('billing.id = :id', { id: payment.billingId })
+          .getOne();
 
-      if (billing) {
-        billing.totalPayments = Number(billing.totalPayments) + Number(payment.amount);
-        billing.balance = Number(billing.balance) - Number(payment.amount);
+        if (!billing) {
+          return;
+        }
+
+        const paymentAmount = Number(payment.amount);
+        const currentBalance = Number(billing.balance);
+
+        if (paymentAmount > currentBalance) {
+          throw new BadRequestException(
+            `Payment amount ($${paymentAmount}) exceeds outstanding balance ($${currentBalance})`,
+          );
+        }
+
+        billing.totalPayments = Number(billing.totalPayments) + paymentAmount;
+        billing.balance = currentBalance - paymentAmount;
 
         if (payment.isInsurancePayment) {
           billing.insuranceResponsibility =
-            Number(billing.insuranceResponsibility || 0) - Number(payment.amount);
+            Number(billing.insuranceResponsibility || 0) - paymentAmount;
         } else {
           billing.patientResponsibility =
-            Number(billing.patientResponsibility || 0) - Number(payment.amount);
+            Number(billing.patientResponsibility || 0) - paymentAmount;
         }
 
-        if (billing.balance <= 0) {
-          billing.status = 'paid';
-          billing.balance = 0;
-        } else {
-          billing.status = 'partial';
-        }
+        billing.status = billing.balance <= 0 ? 'paid' : 'partial';
 
-        await this.billingRepository.save(billing);
-      }
+        await manager.save(Billing, billing);
+      });
 
       payment.status = PaymentStatus.COMPLETED;
       payment.postedDate = new Date();

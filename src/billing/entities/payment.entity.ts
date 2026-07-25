@@ -70,7 +70,7 @@ export class Payment {
   @Column({ type: 'varchar', length: 50, nullable: true })
   checkNumber: string;
 
-  @Column({ type: 'varchar', length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true, unique: true })
   transactionId: string;
 
   @Column({ type: 'varchar', length: 50, nullable: true })

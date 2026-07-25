@@ -62,6 +62,10 @@ export class StellarTransactionQueueService implements OnModuleInit {
   private readonly transactionTTLMs: number;
   private retryTimer?: NodeJS.Timeout;
 
+  private readonly sorobanServer: StellarSdk.SorobanRpc.Server;
+  private readonly horizonServer: StellarSdk.Horizon.Server;
+  private readonly sourceKeypair?: StellarSdk.Keypair;
+
   constructor(
     private readonly configService: ConfigService,
     private readonly retryService: StellarTransactionRetryService,
@@ -79,6 +83,26 @@ export class StellarTransactionQueueService implements OnModuleInit {
       this.configService.get<string>('STELLAR_TRANSACTION_TTL_MS', '3600000'), // 1 hour
       10,
     );
+
+    const isMainnet = this.configService.get<string>('STELLAR_NETWORK', 'testnet') === 'mainnet';
+    const sorobanRpcUrl = isMainnet
+      ? 'https://soroban-rpc.mainnet.stellar.gateway.fm'
+      : 'https://soroban-testnet.stellar.org';
+    const horizonUrl = isMainnet
+      ? 'https://horizon.stellar.org'
+      : 'https://horizon-testnet.stellar.org';
+
+    this.sorobanServer = new StellarSdk.SorobanRpc.Server(sorobanRpcUrl, { allowHttp: false });
+    this.horizonServer = new StellarSdk.Horizon.Server(horizonUrl, { allowHttp: false });
+
+    const secretKey = this.configService.get<string>('STELLAR_SECRET_KEY');
+    if (secretKey) {
+      this.sourceKeypair = StellarSdk.Keypair.fromSecret(secretKey);
+    } else {
+      this.logger.warn(
+        'STELLAR_SECRET_KEY is not configured — queued transactions cannot be automatically resubmitted for retry',
+      );
+    }
 
     this.logger.log(
       `StellarTransactionQueueService initialized (maxSize: ${this.maxQueueSize}, retryInterval: ${this.retryIntervalMs}ms)`,
@@ -301,25 +325,40 @@ export class StellarTransactionQueueService implements OnModuleInit {
     );
 
     try {
-      // Note: This is a simplified retry - in production, you'd need to inject
-      // the actual Stellar servers and keypair
-      // For now, we just update the status and schedule next retry
+      if (!this.sourceKeypair) {
+        throw new Error(
+          'STELLAR_SECRET_KEY is not configured; cannot sign queued transaction for retry',
+        );
+      }
 
-      // Simulate retry logic
-      const nextRetryDelay = this.calculateNextRetryDelay(queuedTx.attempts);
-      queuedTx.nextRetryAt = new Date(Date.now() + nextRetryDelay);
+      const result = await this.retryService.submitWithRetry(
+        this.sorobanServer,
+        this.horizonServer,
+        transaction,
+        this.sourceKeypair,
+        context,
+      );
 
-      // In a real implementation, you would call the retry service here
-      // const result = await this.retryService.submitWithRetry(...);
-
-      // For now, mark as pending for next retry
-      if (queuedTx.attempts >= queuedTx.maxAttempts) {
+      if (result.success) {
+        queuedTx.status = TransactionStatus.COMPLETED;
+        queuedTx.lastError = undefined;
+        this.logger.log(
+          `[${context.operation}] Transaction ${id} resubmitted successfully: ${result.txHash} (attempt ${queuedTx.attempts})`,
+        );
+      } else if (queuedTx.attempts >= queuedTx.maxAttempts) {
         queuedTx.status = TransactionStatus.FAILED;
+        queuedTx.lastError = result.error;
         this.logger.error(
-          `[${context.operation}] Transaction ${id} failed after ${queuedTx.attempts} attempts`,
+          `[${context.operation}] Transaction ${id} failed after ${queuedTx.attempts} attempts: ${result.error}`,
         );
       } else {
         queuedTx.status = TransactionStatus.PENDING;
+        queuedTx.lastError = result.error;
+        const nextRetryDelay = this.calculateNextRetryDelay(queuedTx.attempts);
+        queuedTx.nextRetryAt = new Date(Date.now() + nextRetryDelay);
+        this.logger.warn(
+          `[${context.operation}] Transaction ${id} retry failed: ${result.error}. Next retry at ${queuedTx.nextRetryAt.toISOString()}`,
+        );
       }
     } catch (err: any) {
       queuedTx.lastError = err.message;
