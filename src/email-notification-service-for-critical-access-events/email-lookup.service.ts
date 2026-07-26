@@ -6,6 +6,7 @@ import { User } from '../auth/entities/user.entity';
 import { MedicalRecord as MedicalRecordEntity } from '../medical-records/entities/medical-record.entity';
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { Patient, Provider, MedicalRecord, SuspiciousAccessEvent } from './mail.service';
+import { EmailDeliveryMode } from '../patients/dto/update-notification-preferences.dto';
 
 @Injectable()
 export class EmailLookupService {
@@ -62,6 +63,16 @@ export class EmailLookupService {
     };
   }
 
+  /** Whether the patient has opted into digest delivery for non-critical access-event emails. */
+  async prefersDigestDelivery(patientId: string): Promise<boolean> {
+    const patient = await this.patientRepository.findOne({
+      where: { id: patientId },
+      select: ['id', 'notificationPreferences'],
+    });
+
+    return patient?.notificationPreferences?.emailDeliveryMode === EmailDeliveryMode.DIGEST;
+  }
+
   /**
    * Fetch suspicious-access event details from the audit log.
    * The accessEventId is the AuditLogEntity primary key.
@@ -73,10 +84,9 @@ export class EmailLookupService {
     });
     if (!log) throw new NotFoundException(`AccessEvent ${id} not found`);
 
-    const accessorName =
-      log.user
-        ? `${log.user.firstName ?? ''} ${log.user.lastName ?? ''}`.trim() || log.user.email
-        : (log.details?.accessorName as string | undefined) ?? 'Unknown';
+    const accessorName = log.user
+      ? `${log.user.firstName ?? ''} ${log.user.lastName ?? ''}`.trim() || log.user.email
+      : ((log.details?.accessorName as string | undefined) ?? 'Unknown');
 
     return {
       accessedAt: log.timestamp ?? log.createdAt,
