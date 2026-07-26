@@ -6,6 +6,7 @@ NestJS backend for a decentralized healthcare system built on Stellar Soroban sm
 
 - [Project Structure](#project-structure)
 - [Local Development with Docker](#local-development-with-docker)
+- [Background Worker Process](#background-worker-process)
 - [Installation & Setup](#installation--setup)
 - [Configuration](#configuration)
 - [Security Headers](#security-headers)
@@ -40,6 +41,7 @@ src/
 | Service  | Container   | Port(s)                | Purpose                    |
 |----------|-------------|------------------------|----------------------------|
 | api      | hs-api      | 3000                   | NestJS app with hot reload |
+| worker   | hs-worker   | -                      | BullMQ queue processors    |
 | postgres | hs-postgres | 5432                   | PostgreSQL 15              |
 | redis    | hs-redis    | 6379                   | Redis 7                    |
 | mailhog  | hs-mailhog  | 1025 (SMTP), 8025 (UI) | Local email capture        |
@@ -57,12 +59,44 @@ docker compose -f docker-compose.local.yml exec api npm run migration:run
 The `src/` directory is bind-mounted; NestJS runs with `--watch` so changes reload automatically.
 
 ```bash
-docker compose -f docker-compose.local.yml logs -f api
-docker compose -f docker-compose.local.yml down        # keep volumes
-docker compose -f docker-compose.local.yml down -v     # wipe volumes
+docker compose -f docker-compose.local.yml logs -f api      # Follow API logs
+docker compose -f docker-compose.local.yml logs -f worker   # Follow Worker logs
+docker compose -f docker-compose.local.yml down             # keep volumes
+docker compose -f docker-compose.local.yml down -v          # wipe volumes
 ```
 
 > `.env.docker` contains placeholder secrets for local use only. Never use outside local dev.
+
+## Background Worker Process
+
+The backend application uses [BullMQ](https://bullmq.io/) for managing and executing background queues. This is essential for offloading heavy operations or interacting with the Stellar blockchain without blocking the main HTTP event loop of the API service.
+
+The worker process is defined in `src/worker.ts` and `src/worker.module.ts`.
+
+### Key Responsibilities
+The worker processes tasks from several queues:
+- **`contract-writes`**: Schedules and signs write transactions to Stellar Soroban smart contracts.
+- **`stellar-transactions`**: Manages blockchain transaction submission and retry logic.
+- **`event-indexing`**: Scrapes and indexes events emitted by the smart contracts.
+- **`ipfs-uploads`**: Uploads records/PHI hashes to IPFS.
+- **`email-notifications`**: Sends transactional and notification emails.
+- **`reports`**: Processes PDF/CSV healthcare compliance report generation.
+- **`fhir-bulk-export` / `ehr-import`**: Processes FHIR/EHR batch data imports and exports.
+
+### Running the Worker
+
+#### With Docker Compose (Local Dev)
+The worker is included in `docker-compose.local.yml` and runs automatically when you spin up the project:
+```bash
+docker compose -f docker-compose.local.yml up --build
+```
+
+#### Bare Metal (Without Docker)
+If you run the NestJS API locally using `npm run start:dev`, you **MUST** also start the worker process in a separate terminal:
+```bash
+npm run start:worker:dev
+```
+Otherwise, any operations requiring blockchain interactions, event indexing, or email delivery will remain in the Redis queue and will not execute.
 
 ## Installation & Setup
 
@@ -79,6 +113,8 @@ docker compose -f docker-compose.local.yml down -v     # wipe volumes
    *(Why added: This generates fake users, medical records, and access grants via `src/database/seeder.ts` so you can log in and test the application).*
 5. Start the development server:
    `npm run start:dev`
+6. Start the background job worker process:
+   `npm run start:worker:dev`
 
 ## Configuration
 
