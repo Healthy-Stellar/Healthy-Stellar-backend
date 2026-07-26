@@ -18,6 +18,23 @@ const TTL_MS = 24 * 60 * 60 * 1000;
 const LOCK_POLL_INTERVAL_MS = 100;
 const LOCK_TIMEOUT_MS = 10_000;
 
+/**
+ * Convert the composite key string into a 64-bit bigint suitable for
+ * pg_advisory_lock.  We use a deterministic hash so that every concurrent
+ * request for the *same* idempotency key maps to the same lock id.
+ */
+function keyToLockId(compositeKey: string): number {
+  // FNV-1a 64-bit hash (works in JS via 32-bit math + folding)
+  let hash = 0x811c9dc5; // FNV offset basis (32-bit)
+  for (let i = 0; i < compositeKey.length; i++) {
+    hash = (hash ^ compositeKey.charCodeAt(i)) >>> 0;
+    hash = (Math.imul(hash, 0x01000193)) >>> 0; // FNV prime
+  }
+  // Fold to a positive 32-bit integer (PostgreSQL advisory lock accepts int64,
+  // but a single 32-bit int is sufficient and simpler for our use-case)
+  return hash;
+}
+
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
   private readonly logger = new Logger(IdempotencyInterceptor.name);
@@ -45,6 +62,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const compositeKey = `${tenantId}:${userId}:${clientKey}`;
     const fingerprint = `${req.method}:${req.path}`;
     const cutoff = new Date(Date.now() - TTL_MS);
+    const lockId = keyToLockId(compositeKey);
 
     // ── Step 1: delete any expired record for this key ────────────
     await this.dataSource.query(
@@ -108,29 +126,67 @@ export class IdempotencyInterceptor implements NestInterceptor {
     }
 
     // ── Step 4 (winner path): execute handler then persist result ──
-    return next.handle().pipe(
-      tap(async (body) => {
-        const statusCode: number = res.statusCode ?? 200;
+    // Acquire a PostgreSQL advisory lock around the lookup + write so that
+    // even if the INSERT sentinel somehow races (e.g. row was deleted
+    // between the DELETE and INSERT), the lookup and persistence remain
+    // atomic and no two requests can both execute the business operation.
+    await this.dataSource.query('SELECT pg_advisory_lock($1)', [lockId]);
 
-        const headers: Record<string, string> = {};
-        for (const name of ['content-type', 'location', 'x-resource-id']) {
-          const val = res.getHeader(name);
-          if (val) headers[name] = String(val);
+    try {
+      // Double-check: another request may have completed between our
+      // INSERT and acquiring the lock.
+      const recheck = await this.dataSource.query(
+        `SELECT * FROM http_idempotency_keys WHERE key = $1 LIMIT 1`,
+        [compositeKey],
+      );
+
+      if (recheck[0] && recheck[0].statusCode > 0) {
+        // Another request already persisted a result — replay it
+        const existing = recheck[0];
+
+        if (existing.requestFingerprint !== fingerprint) {
+          throw new UnprocessableEntityException(
+            `Idempotency-Key '${clientKey}' was already used for ${existing.requestFingerprint}`,
+          );
         }
 
-        try {
-          await this.dataSource.query(
-            `UPDATE http_idempotency_keys
-             SET "statusCode" = $1, body = $2, headers = $3
-             WHERE key = $4`,
-            [statusCode, JSON.stringify(body ?? {}), JSON.stringify(headers), compositeKey],
-          );
-        } catch (err) {
-          this.logger.error(
-            `[Idempotency] Failed to persist key=${clientKey}: ${(err as Error).message}`,
-          );
+        this.logger.debug(`[Idempotency] Replaying cached response for key=${clientKey}`);
+
+        for (const [name, value] of Object.entries(existing.headers as Record<string, string>)) {
+          res.setHeader(name, value);
         }
-      }),
-    );
+        res.setHeader('Idempotent-Replayed', 'true');
+        res.status(existing.statusCode);
+
+        return of(existing.body);
+      }
+
+      return next.handle().pipe(
+        tap(async (body) => {
+          const statusCode: number = res.statusCode ?? 200;
+
+          const headers: Record<string, string> = {};
+          for (const name of ['content-type', 'location', 'x-resource-id']) {
+            const val = res.getHeader(name);
+            if (val) headers[name] = String(val);
+          }
+
+          try {
+            await this.dataSource.query(
+              `UPDATE http_idempotency_keys
+               SET "statusCode" = $1, body = $2, headers = $3
+               WHERE key = $4`,
+              [statusCode, JSON.stringify(body ?? {}), JSON.stringify(headers), compositeKey],
+            );
+          } catch (err) {
+            this.logger.error(
+              `[Idempotency] Failed to persist key=${clientKey}: ${(err as Error).message}`,
+            );
+          }
+        }),
+      );
+    } finally {
+      await this.dataSource.query('SELECT pg_advisory_unlock($1)', [lockId]);
+    }
   }
 }
