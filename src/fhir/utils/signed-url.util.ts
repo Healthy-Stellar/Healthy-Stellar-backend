@@ -28,20 +28,33 @@ export function generateSignedUrl(
 }
 
 /**
+ * Generate a time-limited, HMAC-SHA256-signed download URL for a GDPR DSAR
+ * export bundle. Reuses the same signing scheme (path:expiresAt HMAC) as the
+ * FHIR bulk-export signed URLs.
+ */
+export function generateGdprExportSignedUrl(requestId: string): string {
+  const expiresAt = Math.floor(Date.now() / 1000) + SIGNED_URL_TTL_S;
+  const path = `/gdpr/export-files/${requestId}/dsar-bundle.json`;
+  const payload = `${path}:${expiresAt}`;
+  const sig = crypto.createHmac('sha256', SIGNING_SECRET).update(payload).digest('hex');
+  return `${path}?expires=${expiresAt}&sig=${sig}`;
+}
+
+/**
  * Verify a signed export URL.
  * Returns true when the signature is valid and the URL has not expired.
  */
 export function verifySignedUrl(url: string): boolean {
   try {
     const parsed = new URL(url, 'http://localhost');
-    const sig     = parsed.searchParams.get('sig');
+    const sig = parsed.searchParams.get('sig');
     const expires = parsed.searchParams.get('expires');
     if (!sig || !expires) return false;
 
     const expiresAt = parseInt(expires, 10);
     if (Date.now() / 1000 > expiresAt) return false;
 
-    const path    = parsed.pathname;
+    const path = parsed.pathname;
     const payload = `${path}:${expiresAt}`;
     const expected = crypto.createHmac('sha256', SIGNING_SECRET).update(payload).digest('hex');
 

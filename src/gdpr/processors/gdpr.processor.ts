@@ -25,6 +25,9 @@ import { IpfsService } from '../../records/services/ipfs.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { DeletionRegistryService } from '../services/deletion-registry.service';
 import { DataRetentionService } from '../../data-retention/data-retention.service';
+import { Billing } from '../../billing/entities/billing.entity';
+import { generateGdprExportSignedUrl } from '../../fhir/utils/signed-url.util';
+import { FhirMapper } from '../../fhir/mappers/fhir.mapper';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -45,6 +48,10 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
     private readonly auditLogRepository: Repository<AuditLogEntity>,
     @InjectRepository(GdprComplianceLog)
     private readonly complianceLogRepository: Repository<GdprComplianceLog>,
+    @InjectRepository(Billing) private readonly billingRepository: Repository<Billing>,
+    @InjectRepository(LabOrder) private readonly labOrderRepository: Repository<LabOrder>,
+    @InjectRepository(Specimen) private readonly specimenRepository: Repository<Specimen>,
+    @InjectRepository(LabResult) private readonly labResultRepository: Repository<LabResult>,
     private readonly ipfsService: IpfsService,
     private readonly notificationsService: NotificationsService,
     private readonly deletionRegistry: DeletionRegistryService,
@@ -93,7 +100,8 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
 
     this.deletionRegistry.register({
       moduleName: 'records',
-      previewForUser: async (userId, manager) => manager.count(Record, { where: { patientId: userId } }),
+      previewForUser: async (userId, manager) =>
+        manager.count(Record, { where: { patientId: userId } }),
       deleteForUser: async (userId, manager) => {
         await manager.delete(Record, { patientId: userId });
       },
@@ -125,7 +133,11 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
         await manager.update(
           AccessGrant,
           { patientId: userId, status: GrantStatus.ACTIVE },
-          { status: GrantStatus.REVOKED, revokedAt: new Date(), revocationReason: 'GDPR Right to Erasure' },
+          {
+            status: GrantStatus.REVOKED,
+            revokedAt: new Date(),
+            revocationReason: 'GDPR Right to Erasure',
+          },
         );
       },
     });
@@ -235,21 +247,56 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
         where: { patientId: data.userId },
       });
       const auditLogEntity = await this.auditLogRepository.find({ where: { userId: data.userId } });
+      const billingRecords = await this.billingRepository.find({
+        where: { patientId: data.userId },
+      });
+      const labOrders = await this.labOrderRepository.find({ where: { patientId: data.userId } });
+      const specimens = await this.specimenRepository.find({ where: { patientId: data.userId } });
+      const orderRefs = labOrders.flatMap((o) => [o.id, (o as any).orderNumber].filter(Boolean));
+      const labResults = orderRefs.length
+        ? await this.labResultRepository.find({ where: { orderId: In(orderRefs) } })
+        : [];
 
-      const exportData = {
-        profile: user,
-        patient,
-        records,
-        medicalRecords,
-        accessGrants,
-        auditLogEntity, // Audit logs might contain Stellar transaction hashes
+      const toBasicResource = (moduleName: string, id: string, source: unknown) => ({
+        resource: {
+          resourceType: 'Basic',
+          id,
+          code: { text: moduleName },
+          extension: [
+            {
+              url: 'https://healthystellar.com/fhir/StructureDefinition/dsar-source-data',
+              valueString: JSON.stringify(source),
+            },
+          ],
+        },
+      });
+
+      const entry = [
+        ...(patient ? [{ resource: FhirMapper.toPatient(patient) }] : []),
+        ...medicalRecords.map((r) => ({ resource: FhirMapper.toDocumentReference(r) })),
+        ...records.map((r) => toBasicResource('records', r.id, r)),
+        ...accessGrants.map((g) => toBasicResource('access-grants', g.id, g)),
+        ...auditLogEntity.map((a) => toBasicResource('audit-logs', a.id, a)), // Audit logs might contain Stellar transaction hashes
+        ...billingRecords.map((b) => toBasicResource('billing', b.id, b)),
+        ...labOrders.map((o) => toBasicResource('laboratory-orders', o.id, o)),
+        ...specimens.map((s) => toBasicResource('laboratory-specimens', s.id, s)),
+        ...labResults.map((r) => toBasicResource('laboratory-results', r.id, r)),
+      ];
+
+      const bundle = {
+        resourceType: 'Bundle',
+        type: 'collection',
+        timestamp: new Date().toISOString(),
+        entry,
       };
 
       const tmpDir = os.tmpdir();
       const fileName = `gdpr-export-${data.userId}-${Date.now()}.json`;
       const filePath = path.join(tmpDir, fileName);
 
-      fs.writeFileSync(filePath, JSON.stringify(exportData, null, 2));
+      fs.writeFileSync(filePath, JSON.stringify(bundle, null, 2));
+
+      const signedUrl = generateGdprExportSignedUrl(data.requestId);
 
       // Simulate sending email via NotificationsService
       if (user?.email) {
@@ -259,20 +306,20 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
             user.email,
             'Your GDPR Data Export',
             'ExportReady',
-            { link: `https://api.healthystellar.com/downloads/${fileName}` },
+            { link: signedUrl },
           );
         } else if ((this.notificationsService as any).sendPatientEmailNotification) {
           await (this.notificationsService as any).sendPatientEmailNotification(
             data.userId,
             'Your GDPR Data Export',
-            `Your export is ready at: https://api.healthystellar.com/downloads/${fileName}`,
+            `Your export is ready at: ${signedUrl}`,
           );
         }
       }
 
       await this.gdprRequestRepository.update(data.requestId, {
         status: GdprRequestStatus.COMPLETED,
-        fileUrl: filePath,
+        fileUrl: signedUrl,
         completedAt: new Date(),
       });
     } catch (e) {
@@ -296,7 +343,10 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
       status: GdprRequestStatus.IN_PROGRESS,
     });
 
-    const policy = this.dataRetentionService?.getEffectivePolicy(data.tenantId ?? null, 'medical_records');
+    const policy = this.dataRetentionService?.getEffectivePolicy(
+      data.tenantId ?? null,
+      'medical_records',
+    );
     const action = policy?.action ?? 'anonymize';
 
     try {
