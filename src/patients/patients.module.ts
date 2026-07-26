@@ -13,6 +13,7 @@ import { PatientProvidersController } from './controllers/patient-providers.cont
 import { PatientProvidersService } from './services/patient-providers.service';
 import { CommonModule } from '../common/common.module';
 import { StellarModule } from '../stellar/stellar.module';
+import { MedicalValidationModule } from '../data-validation-integrity/medical-validation.module';
 
 @Module({
   imports: [
@@ -20,9 +21,16 @@ import { StellarModule } from '../stellar/stellar.module';
     AuthModule,
     CommonModule,
     StellarModule,
+    MedicalValidationModule,
   ],
   controllers: [PatientsController, PatientProvidersController],
-  providers: [PatientsService, PatientTimelineService, PatientPrivacyGuard, GeoRestrictionGuard, PatientProvidersService],
+  providers: [
+    PatientsService,
+    PatientTimelineService,
+    PatientPrivacyGuard,
+    GeoRestrictionGuard,
+    PatientProvidersService,
+  ],
   exports: [PatientsService, PatientTimelineService, GeoRestrictionGuard],
 })
 export class PatientModule {}

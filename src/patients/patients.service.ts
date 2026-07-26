@@ -23,6 +23,8 @@ import { UserRole } from '../auth/entities/user.entity';
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { RedisLockService } from '../common/utils/redis-lock.service';
 import { StellarService } from '../stellar/services/stellar.service';
+import { TenantFieldValidationService } from '../data-validation-integrity/services/tenant-field-validation.service';
+import { TenantContext } from '../tenant/context/tenant.context';
 
 interface DuplicateCandidateSummary {
   id: string;
@@ -43,11 +45,17 @@ export class PatientsService {
     private readonly dataSource: DataSource,
     private readonly redisLock: RedisLockService,
     private readonly stellarService: StellarService,
+    private readonly tenantFieldValidationService: TenantFieldValidationService,
   ) {}
 
   async create(dto: CreatePatientDto): Promise<Patient> {
     if (dto?.dateOfBirth && Number.isNaN(new Date(dto.dateOfBirth as any).getTime())) {
       throw new BadRequestException('Invalid date of birth');
+    }
+
+    const tenantId = TenantContext.getTenantId();
+    if (tenantId) {
+      await this.tenantFieldValidationService.validateFields(tenantId, dto.customFields ?? {});
     }
 
     if ((dto as any)?.mrn) {
@@ -193,7 +201,13 @@ export class PatientsService {
         ORDER BY score DESC
         LIMIT 10
       `,
-      [fullName.toLowerCase(), dto.firstName.toLowerCase(), dto.lastName.toLowerCase(), dto.dateOfBirth, normalizedGender],
+      [
+        fullName.toLowerCase(),
+        dto.firstName.toLowerCase(),
+        dto.lastName.toLowerCase(),
+        dto.dateOfBirth,
+        normalizedGender,
+      ],
     );
 
     const normalizedCandidates = Array.isArray(fuzzyMatches) ? fuzzyMatches : [];
@@ -296,14 +310,23 @@ export class PatientsService {
     };
   }
 
-  async mergePatients(sourceId: string, targetId: string, adminId: string, reason?: string): Promise<Patient> {
+  async mergePatients(
+    sourceId: string,
+    targetId: string,
+    adminId: string,
+    reason?: string,
+  ): Promise<Patient> {
     const lockKeys = [sourceId, targetId].sort().map((id) => `merge:${id}`);
     const LOCK_TTL_MS = 30_000;
 
-    const acquired = await Promise.all(lockKeys.map((k) => this.redisLock.acquireLock(k, LOCK_TTL_MS)));
+    const acquired = await Promise.all(
+      lockKeys.map((k) => this.redisLock.acquireLock(k, LOCK_TTL_MS)),
+    );
     if (acquired.some((ok) => !ok)) {
       await Promise.all(lockKeys.map((k) => this.redisLock.releaseLock(k)));
-      throw new ConflictException('A concurrent merge is already in progress for one of these patients');
+      throw new ConflictException(
+        'A concurrent merge is already in progress for one of these patients',
+      );
     }
 
     const qr = this.dataSource.createQueryRunner();
@@ -312,13 +335,20 @@ export class PatientsService {
 
     try {
       const [target, source] = await Promise.all([
-        qr.manager.findOne(Patient, { where: { id: targetId }, lock: { mode: 'optimistic', version: undefined } }),
-        qr.manager.findOne(Patient, { where: { id: sourceId }, lock: { mode: 'optimistic', version: undefined } }),
+        qr.manager.findOne(Patient, {
+          where: { id: targetId },
+          lock: { mode: 'optimistic', version: undefined },
+        }),
+        qr.manager.findOne(Patient, {
+          where: { id: sourceId },
+          lock: { mode: 'optimistic', version: undefined },
+        }),
       ]);
 
       if (!target) throw new NotFoundException(`Target patient ${targetId} not found`);
       if (!source) throw new NotFoundException(`Source patient ${sourceId} not found`);
-      if (source.id === target.id) throw new BadRequestException('Cannot merge a patient with itself');
+      if (source.id === target.id)
+        throw new BadRequestException('Cannot merge a patient with itself');
 
       await qr.manager.save(
         AuditLogEntity,
@@ -333,7 +363,13 @@ export class PatientsService {
         }),
       );
 
-      for (const table of ['records', 'medical_records', 'access_grants', 'billing', 'prescriptions']) {
+      for (const table of [
+        'records',
+        'medical_records',
+        'access_grants',
+        'billing',
+        'prescriptions',
+      ]) {
         await qr.manager.update(table, { patientId: source.id }, { patientId: target.id });
       }
 
