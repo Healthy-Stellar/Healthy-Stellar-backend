@@ -1,3 +1,35 @@
+ feat/idempotency-ttl-cleanup
+import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+import { Observable, of } from 'rxjs';
+import { tap } from 'rxjs/operators';
+import { IdempotencyService } from './idempotency.service';
+
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+@Injectable()
+export class IdempotencyInterceptor implements NestInterceptor {
+  constructor(private readonly idempotencyService: IdempotencyService) {}
+
+  async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
+    const req = context.switchToHttp().getRequest<{ method: string; headers: Record<string, string> }>();
+
+    if (!MUTATING_METHODS.has(req.method)) return next.handle();
+
+    const key = req.headers['idempotency-key'];
+    if (!key) return next.handle();
+
+    const cached = await this.idempotencyService.find(key);
+    if (cached) {
+      const res = context.switchToHttp().getResponse<{ status: (code: number) => { json: (body: unknown) => void } }>();
+      res.status(cached.statusCode).json(JSON.parse(cached.responseBody));
+      return of(null);
+    }
+
+    return next.handle().pipe(
+      tap(async (body) => {
+        const res = context.switchToHttp().getResponse<{ statusCode: number }>();
+        await this.idempotencyService.store(key, res.statusCode, JSON.stringify(body ?? null));
+
 import {
   Injectable,
   NestInterceptor,
@@ -100,35 +132,25 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
       const statusCode: number = res.statusCode ?? 200;
 
-      const headers: Record<string, string> = {};
-      for (const name of ['content-type', 'location', 'x-resource-id']) {
-        const val = res.getHeader(name);
-        if (val) headers[name] = String(val);
-      }
-
-      try {
-        await this.repo.upsert(
-          {
-            key: compositeKey,
-            statusCode,
-            body: body ?? {},
-            headers,
-            requestFingerprint: fingerprint,
-          },
-          ['key'],
-        );
-      } catch (err) {
-        this.logger.error(
-          `[Idempotency] Failed to persist key=${clientKey}: ${(err as Error).message}`,
-        );
-      }
-
-      return of(body);
-    } finally {
-      await this.dataSource.query(
-        'SELECT pg_advisory_unlock(hashtext($1))',
-        [compositeKey],
-      );
-    }
+        try {
+          await this.repo.upsert(
+            {
+              key: compositeKey,
+              statusCode,
+              body: body ?? {},
+              headers,
+              requestFingerprint: fingerprint,
+            },
+            ['key'],
+          );
+        } catch (err) {
+          // Non-fatal — log and continue; the response has already been sent
+          this.logger.error(
+            `[Idempotency] Failed to persist key=${clientKey}: ${(err as Error).message}`,
+          );
+        }
+main
+      }),
+    );
   }
 }

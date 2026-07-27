@@ -52,8 +52,12 @@ import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
 import { TenantGuard } from './tenant/guards/tenant.guard';
 import { DataResidencyInterceptor } from './common/interceptors/data-residency.interceptor';
 import { JobsModule } from './jobs/jobs.module';
+ feat/idempotency-ttl-cleanup
+import { IdempotencyModule } from './idempotency/idempotency.module';
+
 import { DataRetentionModule } from './data-retention/data-retention.module';
 import { DataResidencyModule } from './data-residency/data-residency.module';
+main
 import { GraphqlModule } from './graphql/graphql.module';
 import { VersioningModule } from './versioning/versioning.module';
 import { LedgerReconciliationModule } from './ledger-reconciliation/ledger-reconciliation.module';
@@ -150,7 +154,11 @@ import { User } from './auth/entities/user.entity';
     FhirModule,
     AccessControlModule,
     JobsModule,
+ feat/idempotency-ttl-cleanup
+    IdempotencyModule,
+
     DataRetentionModule,
+ main
     StellarModule,
     AuditModule,
     TenantConfigModule,

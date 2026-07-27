@@ -7,6 +7,15 @@ import { CarePlanHandoff } from '../provider-patient/entities/care-plan-handoff.
 import { Incident } from '../incident/entities/incident.entity';
 import { CommonModule } from '../common/common.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+ feat/idempotency-ttl-cleanup
+import { IdempotencyModule } from '../idempotency/idempotency.module';
+import { AccessGrantCleanupTask } from './access-grant-cleanup.task';
+import { IdempotencyCleanupTask } from './idempotency-cleanup.task';
+
+@Module({
+  imports: [TypeOrmModule.forFeature([AccessGrant]), NotificationsModule, CommonModule, IdempotencyModule],
+  providers: [AccessGrantCleanupTask, IdempotencyCleanupTask],
+
 import { IncidentModule } from '../incident/incident.module';
 import { ProviderPatientModule } from '../provider-patient/provider-patient.module';
 import { AccessGrantCleanupTask } from './access-grant-cleanup.task';
@@ -29,5 +38,6 @@ import { HandoffEscalationTask } from './handoff-escalation.task';
     IncidentSlaEscalationTask,
     HandoffEscalationTask,
   ],
+ main
 })
 export class JobsModule {}
