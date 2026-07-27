@@ -99,27 +99,40 @@ export class TransferService {
     transfer.acceptedAt = new Date();
     transfer.acceptedBy = dto.acceptedBy;
 
-    if (transfer.sharedRecordIds.length > 0) {
-      for (const recordId of transfer.sharedRecordIds) {
-        try {
-          await this.medicalRecordsService.shareWithHospital(recordId, transfer.toHospitalId);
-        } catch (err) {
-          this.logger.warn('Failed to share record ' + recordId + ': ' + (err instanceof Error ? err.message : String(err)));
-        }
-      }
-    }
-
+    let saved: PatientTransfer;
     try {
-      await this.accessControlService.revokeAccessByPatient(transfer.patientId, transfer.fromHospitalId);
+      saved = await this.transferRepo.manager.transaction(async (manager) => {
+        if (transfer.sharedRecordIds.length > 0) {
+          for (const recordId of transfer.sharedRecordIds) {
+            await this.medicalRecordsService.shareWithHospital(
+              recordId,
+              transfer.toHospitalId,
+              manager,
+            );
+          }
+        }
+
+        await this.accessControlService.revokeAccessByPatient(
+          transfer.patientId,
+          transfer.fromHospitalId,
+          manager,
+        );
+
+        transfer.status = TransferStatus.COMPLETED;
+        transfer.completedAt = new Date();
+        transfer.stellarTxHash = await this.writeStellarTransferReceipt(transfer);
+
+        return manager.save(PatientTransfer, transfer);
+      });
     } catch (err) {
-      this.logger.warn('Failed to revoke access: ' + (err instanceof Error ? err.message : String(err)));
+      this.logger.error(
+        'Transfer ' +
+          transferId +
+          ' failed during acceptance, rolled back: ' +
+          (err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
     }
-
-    transfer.status = TransferStatus.COMPLETED;
-    transfer.completedAt = new Date();
-    transfer.stellarTxHash = await this.writeStellarTransferReceipt(transfer);
-
-    const saved = await this.transferRepo.save(transfer);
 
     await this.sendTransferNotifications(saved);
 

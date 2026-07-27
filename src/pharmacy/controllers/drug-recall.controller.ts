@@ -3,7 +3,9 @@ import { DrugRecallService } from '../services/drug-recall.service';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { CreateDrugRecallDto } from './create-drug-recall.dto';
 import { UpdateDrugRecallDto } from './update-drug-recall.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pharmacy/recalls')
 @Controller('pharmacy/recalls')
 export class DrugRecallController {
   constructor(private recallService: DrugRecallService) {}

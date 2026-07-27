@@ -20,7 +20,9 @@ import { InsuranceProviderDto } from './src/hospital-configuration/dto/insurance
 import { BillingConfigDto } from './src/hospital-configuration/dto/insurance-billing.dto';
 import { EmergencyProtocolDto } from './src/hospital-configuration/dto/emergency-protocol.dto';
 import { HospitalConfigurationService } from './hospital-configuration.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('hospital-configuration')
 @Controller('hospital-configuration')
 export class HospitalConfigurationController {
   constructor(private readonly configService: HospitalConfigurationService) {}

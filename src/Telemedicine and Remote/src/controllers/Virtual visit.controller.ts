@@ -14,7 +14,9 @@ import {
 } from '@nestjs/common';
 import { VirtualVisitService } from '../services/virtual-visit.service';
 import { VisitStatus, VisitType } from '../entities/virtual-visit.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('telemedicine/virtual-visits')
 @Controller('telemedicine/virtual-visits')
 export class VirtualVisitController {
   constructor(private readonly virtualVisitService: VirtualVisitService) {}

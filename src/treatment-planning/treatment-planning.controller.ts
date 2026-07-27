@@ -1,6 +1,8 @@
 import { Controller, Get, Post, Body, Param, ParseIntPipe, Request } from '@nestjs/common';
 import { TreatmentPlanningService } from './treatment-planning.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('treatment-plans')
 @Controller('treatment-plans')
 export class TreatmentPlanningController {
   constructor(private readonly planningService: TreatmentPlanningService) {}

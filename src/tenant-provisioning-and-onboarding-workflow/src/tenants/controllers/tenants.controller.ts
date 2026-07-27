@@ -19,7 +19,9 @@ import { CreateTenantDto, ProvisioningStatusDto, TenantResponseDto } from '../dt
 import { Tenant } from '../entities/tenant.entity';
 import { ProvisioningService } from '../services/provisioning.service';
 import { ProvisioningJobData } from '../processors/provisioning.processor';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('admin/tenants')
 @Controller('admin/tenants')
 export class TenantsController {
   private readonly logger = new Logger(TenantsController.name);
