@@ -1,23 +1,58 @@
-import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  Logger,
+  NotFoundException,
+  PayloadTooLargeException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { MedicalAttachment, AttachmentType } from '../entities/medical-attachment.entity';
 import { MedicalRecordsService } from './medical-records.service';
-import { existsSync, mkdirSync, writeFileSync, unlinkSync, createReadStream, ReadStream } from 'fs';
+import { QUEUE_NAMES } from '../../queues/queue.constants';
+import {
+  existsSync,
+  mkdirSync,
+  unlinkSync,
+  createReadStream,
+  createWriteStream,
+  ReadStream,
+} from 'fs';
+import { pipeline } from 'stream/promises';
+import { createHash } from 'crypto';
+import { Readable, Transform } from 'stream';
 import { join, extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
+
+const OCR_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/tiff',
+  'image/bmp',
+  'image/gif',
+  'application/pdf',
+]);
 
 @Injectable()
 export class FileUploadService {
   private readonly logger = new Logger(FileUploadService.name);
-  private readonly uploadPath = process.env.UPLOAD_PATH || './storage/uploads';
+  private readonly uploadPath: string;
+  private readonly maxFileSize: number;
 
   constructor(
     @InjectRepository(MedicalAttachment)
     private attachmentRepository: Repository<MedicalAttachment>,
     private medicalRecordsService: MedicalRecordsService,
+    private configService: ConfigService,
+    @InjectQueue(QUEUE_NAMES.OCR) private readonly ocrQueue: Queue,
   ) {
-    // Ensure upload directory exists
+    this.uploadPath = this.configService.get<string>('UPLOAD_PATH', './storage/uploads');
+    // Default 100 MB; override via UPLOAD_MAX_FILE_SIZE_BYTES in env
+    this.maxFileSize = this.configService.get<number>('UPLOAD_MAX_FILE_SIZE_BYTES', 100 * 1024 * 1024);
+
     if (!existsSync(this.uploadPath)) {
       mkdirSync(this.uploadPath, { recursive: true });
     }
@@ -29,22 +64,22 @@ export class FileUploadService {
     attachmentType: AttachmentType,
     description?: string,
     uploadedBy: string = 'system',
+    uploadedByIp?: string,
   ): Promise<MedicalAttachment> {
-    // Verify medical record exists
     await this.medicalRecordsService.findOne(recordId);
 
-    // Validate file
-    this.validateFile(file);
+    if (file.size > this.maxFileSize) {
+      throw new PayloadTooLargeException(
+        `File exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`,
+      );
+    }
 
-    // Generate unique filename
-    const fileExtension = extname(file.originalname);
-    const uniqueFileName = `${uuidv4()}${fileExtension}`;
+    const uniqueFileName = `${uuidv4()}${extname(file.originalname)}`;
     const filePath = join(this.uploadPath, uniqueFileName);
 
-    // Save file
-    writeFileSync(filePath, file.buffer);
+    // Stream buffer → disk while computing SHA-256 in a single pass
+    const checksum = await this.streamToDisk(file.buffer, filePath);
 
-    // Create attachment record
     const attachment = this.attachmentRepository.create({
       medicalRecordId: recordId,
       fileName: uniqueFileName,
@@ -56,10 +91,26 @@ export class FileUploadService {
       attachmentType,
       description,
       uploadedBy,
+      uploadedByIp,
+      checksum,
     });
 
+    if (OCR_MIME_TYPES.has(file.mimetype)) {
+      attachment.ocrStatus = 'pending';
+    }
+
     const saved = await this.attachmentRepository.save(attachment);
-    this.logger.log(`File uploaded: ${saved.id} for record ${recordId}`);
+    this.logger.log(`File uploaded: ${saved.id} (${checksum}) for record ${recordId}`);
+
+    if (OCR_MIME_TYPES.has(file.mimetype)) {
+      await this.ocrQueue.add(
+        'extract-text',
+        { attachmentId: saved.id, filePath, mimeType: file.mimetype },
+        { attempts: 3, backoff: { type: 'exponential', delay: 5000 } },
+      );
+      this.logger.log(`[ocr] Enqueued OCR job for attachment ${saved.id}`);
+    }
+
     return saved;
   }
 
@@ -68,11 +119,7 @@ export class FileUploadService {
       where: { id },
       relations: ['medicalRecord'],
     });
-
-    if (!attachment) {
-      throw new NotFoundException(`Attachment with ID ${id} not found`);
-    }
-
+    if (!attachment) throw new NotFoundException(`Attachment with ID ${id} not found`);
     return attachment;
   }
 
@@ -85,48 +132,47 @@ export class FileUploadService {
 
   async delete(id: string): Promise<void> {
     const attachment = await this.findOne(id);
-
-    // Delete physical file
-    if (existsSync(attachment.filePath)) {
-      unlinkSync(attachment.filePath);
-    }
-
-    // Soft delete
+    if (existsSync(attachment.filePath)) unlinkSync(attachment.filePath);
     attachment.isActive = false;
     await this.attachmentRepository.save(attachment);
-
     this.logger.log(`Attachment deleted: ${id}`);
   }
 
   async getFileStream(id: string): Promise<{ stream: ReadStream; attachment: MedicalAttachment }> {
     const attachment = await this.findOne(id);
-
-    if (!existsSync(attachment.filePath)) {
-      throw new NotFoundException('File not found on disk');
-    }
-
-    const stream = createReadStream(attachment.filePath);
-    return { stream, attachment };
+    if (!existsSync(attachment.filePath)) throw new NotFoundException('File not found on disk');
+    return { stream: createReadStream(attachment.filePath), attachment };
   }
 
-  private validateFile(file: Express.Multer.File): void {
-    const maxSize = 10 * 1024 * 1024; // 10MB
-    const allowedMimeTypes = [
-      'image/jpeg',
-      'image/png',
-      'image/gif',
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain',
-    ];
+  // ── Private helpers ────────────────────────────────────────────────────────
 
-    if (file.size > maxSize) {
-      throw new BadRequestException('File size exceeds maximum allowed size (10MB)');
+  /**
+   * Streams a Buffer to disk via a pipeline and simultaneously computes its
+   * SHA-256 digest. Returns the hex checksum.
+   * Using stream/promises pipeline ensures the write stream is properly closed
+   * and any error tears down all streams — no partial files left on disk.
+   */
+  private async streamToDisk(buffer: Buffer, destPath: string): Promise<string> {
+    const hash = createHash('sha256');
+
+    const hashTransform = new Transform({
+      transform(chunk, _enc, cb) {
+        hash.update(chunk);
+        cb(null, chunk);
+      },
+    });
+
+    const source = Readable.from(buffer);
+    const dest = createWriteStream(destPath);
+
+    try {
+      await pipeline(source, hashTransform, dest);
+    } catch (err) {
+      // Clean up partial file on failure
+      if (existsSync(destPath)) unlinkSync(destPath);
+      throw new BadRequestException(`Failed to write upload to disk: ${err.message}`);
     }
 
-    if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(`File type ${file.mimetype} is not allowed`);
-    }
+    return hash.digest('hex');
   }
 }

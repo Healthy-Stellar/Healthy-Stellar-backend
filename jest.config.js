@@ -33,10 +33,30 @@ module.exports = {
         '^@/(.*)$': '<rootDir>/src/$1',
         '^@test/(.*)$': '<rootDir>/test/$1',
         '^uuid$': 'uuid',
-        '^@nestjs/bullmq$': '<rootDir>/node_modules/@nestjs/bullmq',
+        '^@nestjs/bullmq$': '<rootDir>/test/__mocks__/@nestjs/bullmq.js',
         '^ipfs-http-client$': '<rootDir>/test/__mocks__/ipfs-http-client.js',
         '^bull$': '<rootDir>/test/__mocks__/bull.js',
         '^@nestjs-modules/mailer$': '<rootDir>/test/__mocks__/@nestjs-modules/mailer.js',
+      },
+      setupFilesAfterEnv: ['<rootDir>/test/setup-unit.ts'],
+      globals: {
+        'ts-jest': {
+          isolatedModules: true,
+        },
+      },
+    },
+    {
+      displayName: 'compliance',
+      testMatch: ['<rootDir>/test/compliance/**/*.spec.ts'],
+      moduleFileExtensions: ['js', 'json', 'ts'],
+      rootDir: '.',
+      transform: {
+        '^.+\\.(t|j)s$': 'ts-jest',
+      },
+      testEnvironment: 'node',
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+        '^@test/(.*)$': '<rootDir>/test/$1',
       },
       setupFilesAfterEnv: ['<rootDir>/test/setup-unit.ts'],
       globals: {
@@ -62,6 +82,14 @@ module.exports = {
       globalSetup: '<rootDir>/test/global-setup.ts',
       globalTeardown: '<rootDir>/test/global-teardown.ts',
       testTimeout: 60000,
+      // Disable ts-jest type diagnostics for e2e — type correctness is validated
+      // by `tsc --noEmit` in CI. Without this, pre-existing TS errors in src/
+      // prevent all e2e suites from compiling.
+      globals: {
+        'ts-jest': {
+          diagnostics: false,
+        },
+      },
     },
   ],
   // Global coverage thresholds

@@ -9,6 +9,8 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { VirtualVisitService } from '../services/virtual-visit.service';
 import { VisitStatus, VisitType } from '../entities/virtual-visit.entity';
@@ -55,7 +57,10 @@ export class VirtualVisitController {
   }
 
   @Get('patient/:patientId')
-  async getPatientVisits(@Param('patientId') patientId: string, @Query('limit') limit?: number) {
+  async getPatientVisits(
+    @Param('patientId') patientId: string,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
+  ) {
     return this.virtualVisitService.findByPatient(patientId, limit);
   }
 

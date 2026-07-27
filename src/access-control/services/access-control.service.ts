@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   NotFoundException,
   Logger,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThanOrEqual, Repository } from 'typeorm';
@@ -13,12 +14,15 @@ import { CreateAccessGrantDto } from '../dto/create-access-grant.dto';
 import { CreateEmergencyAccessDto } from '../dto/create-emergency-access.dto';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { SorobanQueueService } from './soroban-queue.service';
-import { User } from '../../auth/entities/user.entity';
+import { User, UserRole } from '../../auth/entities/user.entity';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { RedisLockService } from '../../common/utils/redis-lock.service';
 
 @Injectable()
 export class AccessControlService {
   private readonly logger = new Logger(AccessControlService.name);
+
+  private readonly LOCK_TTL_MS = 10_000;
 
   constructor(
     @InjectRepository(AccessGrant)
@@ -28,9 +32,16 @@ export class AccessControlService {
     private readonly notificationsService: NotificationsService,
     private readonly sorobanQueueService: SorobanQueueService,
     private readonly auditLogService: AuditLogService,
+    private readonly redisLockService: RedisLockService,
   ) {}
 
   async grantAccess(patientId: string, dto: CreateAccessGrantDto): Promise<AccessGrant> {
+    const lockKey = `grant:lock:${patientId}:${dto.granteeId}`;
+    const acquired = await this.redisLockService.acquireLock(lockKey, this.LOCK_TTL_MS);
+    if (!acquired) {
+      throw new ServiceUnavailableException('Grant operation already in progress, please retry');
+    }
+    try {
     const grantInputs = await this.findRelevantActiveGrants(patientId, dto.granteeId);
 
     for (const grant of grantInputs) {
@@ -80,13 +91,23 @@ export class AccessControlService {
       targetAddress: dto.granteeId,
       resourceType: 'AccessGrant',
       resourceId: updated.id,
+      patientId,
       metadata: { recordIds: updated.recordIds, accessLevel: updated.accessLevel },
     }).catch(() => {});
 
     return updated;
+    } finally {
+      await this.redisLockService.releaseLock(lockKey);
+    }
   }
 
   async revokeAccess(grantId: string, patientId: string, reason?: string): Promise<AccessGrant> {
+    const lockKey = `grant:lock:${grantId}`;
+    const acquired = await this.redisLockService.acquireLock(lockKey, this.LOCK_TTL_MS);
+    if (!acquired) {
+      throw new ServiceUnavailableException('Revoke operation already in progress, please retry');
+    }
+    try {
     const grant = await this.grantRepository.findOne({
       where: { id: grantId, patientId },
     });
@@ -124,10 +145,14 @@ export class AccessControlService {
       targetAddress: finalGrant.granteeId,
       resourceType: 'AccessGrant',
       resourceId: finalGrant.id,
+      patientId,
       metadata: { reason: finalGrant.revocationReason },
     }).catch(() => {});
 
     return finalGrant;
+    } finally {
+      await this.redisLockService.releaseLock(lockKey);
+    }
   }
 
   async createEmergencyAccess(
@@ -282,23 +307,31 @@ export class AccessControlService {
     return grant;
   }
 
-  async expireEmergencyGrants(): Promise<number> {
-    const result = await this.grantRepository.update(
-      {
+  async expireEmergencyGrants(): Promise<AccessGrant[]> {
+    const grants = await this.grantRepository.find({
+      where: {
         isEmergency: true,
         status: GrantStatus.ACTIVE,
         expiresAt: LessThanOrEqual(new Date()),
       },
-      {
-        status: GrantStatus.EXPIRED,
-      },
+    });
+
+    if (grants.length === 0) return [];
+
+    await this.grantRepository.update(
+      grants.map((g) => g.id),
+      { status: GrantStatus.EXPIRING },
     );
 
-    const expired = result.affected || 0;
-    if (expired > 0) {
-      this.logger.log(`Expired ${expired} emergency access grants`);
-    }
-    return expired;
+    this.logger.log(`Marked ${grants.length} emergency grants as EXPIRING`);
+    return grants.map((g) => ({ ...g, status: GrantStatus.EXPIRING }));
+  }
+
+  async finalizeExpiredGrant(grantId: string, sorobanTxHash: string): Promise<void> {
+    await this.grantRepository.update(grantId, {
+      status: GrantStatus.EXPIRED,
+      sorobanTxHash,
+    });
   }
 
   async getPatientGrants(patientId: string): Promise<AccessGrant[]> {
@@ -337,6 +370,39 @@ export class AccessControlService {
     return activeGrants;
   }
 
+  async canAccessRecord(
+    patientId: string,
+    requesterId: string,
+    requesterRole: UserRole,
+    recordId: string,
+  ): Promise<boolean> {
+    if (patientId === requesterId) {
+      return true;
+    }
+
+    if (requesterRole === UserRole.PATIENT) {
+      return false;
+    }
+
+    const grants = await this.findRelevantActiveGrants(patientId, requesterId);
+    const now = new Date();
+
+    for (const grant of grants) {
+      if (grant.expiresAt && grant.expiresAt <= now) {
+        if (grant.status !== GrantStatus.EXPIRED) {
+          await this.grantRepository.update(grant.id, { status: GrantStatus.EXPIRED });
+        }
+        continue;
+      }
+
+      if (grant.recordIds.includes('*') || grant.recordIds.includes(recordId)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private async findRelevantActiveGrants(
     patientId: string,
     granteeId: string,
@@ -351,23 +417,45 @@ export class AccessControlService {
     });
   }
 
-    async verifyAccess(requesterId: string, recordId: string): Promise<boolean> {
-      this.logger.log(`Verifying access for requester ${requesterId} on record ${recordId}`);
+  async verifyAccess(requesterId: string, recordId: string): Promise<boolean> {
+    this.logger.log(`Verifying access for requester ${requesterId} on record ${recordId}`);
 
-      const grants = await this.grantRepository.find({
-        where: {
-          granteeId: requesterId,
-          status: GrantStatus.ACTIVE,
-        },
+    const grants = await this.grantRepository.find({
+      where: {
+        granteeId: requesterId,
+        status: GrantStatus.ACTIVE,
+      },
+    });
+
+    const now = new Date();
+    const validGrant = grants.find((grant) => {
+      const hasRecord = grant.recordIds.includes(recordId);
+      const notExpired = !grant.expiresAt || grant.expiresAt > now;
+      return hasRecord && notExpired;
+    });
+
+    return !!validGrant;
+  }
+
+  async revokeAccessByPatient(patientId: string, granteeId: string): Promise<void> {
+    const grants = await this.grantRepository.find({
+      where: {
+        patientId,
+        granteeId,
+        status: GrantStatus.ACTIVE,
+      },
+    });
+
+    for (const grant of grants) {
+      grant.status = GrantStatus.REVOKED;
+      grant.revokedAt = new Date();
+      await this.grantRepository.save(grant);
+      this.notificationsService.emitAccessRevoked(patientId, grant.id, {
+        granteeId: grant.granteeId,
+        revokedAt: grant.revokedAt.toISOString(),
       });
-
-      const now = new Date();
-      const validGrant = grants.find((grant) => {
-        const hasRecord = grant.recordIds.includes(recordId);
-        const notExpired = !grant.expiresAt || grant.expiresAt > now;
-        return hasRecord && notExpired;
-      });
-
-      return !!validGrant;
     }
+
+    this.logger.log(`Revoked ${grants.length} grants for patient ${patientId}, grantee ${granteeId}`);
+  }
 }

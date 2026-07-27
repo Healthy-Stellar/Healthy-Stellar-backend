@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, Patch, Query } from '@nestjs/common';
 import { DrugWasteService } from '../services/drug-waste.service';
 import { WasteReason } from '../entities/drug-waste.entity';
+import { PaginationDto } from '../../common/dto/pagination.dto';
 
 @Controller('pharmacy/waste')
 export class DrugWasteController {
@@ -12,26 +13,27 @@ export class DrugWasteController {
   }
 
   @Get()
-  async findAll() {
-    return await this.wasteService.findAll();
+  async findAll(@Query() pagination: PaginationDto) {
+    return await this.wasteService.findAll(pagination);
   }
 
   @Get('controlled-substances')
-  async getControlledSubstanceWaste() {
-    return await this.wasteService.getControlledSubstanceWaste();
+  async getControlledSubstanceWaste(@Query() pagination: PaginationDto) {
+    return await this.wasteService.getControlledSubstanceWaste(pagination);
   }
 
   @Get('reason/:reason')
-  async getWasteByReason(@Param('reason') reason: WasteReason) {
-    return await this.wasteService.getWasteByReason(reason);
+  async getWasteByReason(@Param('reason') reason: WasteReason, @Query() pagination: PaginationDto) {
+    return await this.wasteService.getWasteByReason(reason, pagination);
   }
 
   @Get('date-range')
   async getWasteByDateRange(
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Query() pagination: PaginationDto,
   ) {
-    return await this.wasteService.getWasteByDateRange(new Date(startDate), new Date(endDate));
+    return await this.wasteService.getWasteByDateRange(new Date(startDate), new Date(endDate), pagination);
   }
 
   @Get('total-cost')
@@ -53,13 +55,17 @@ export class DrugWasteController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('drugId') drugId?: string,
+    @Query() pagination: PaginationDto,
   ) {
-    return await this.wasteService.getWasteReport({
-      reason,
-      startDate: startDate ? new Date(startDate) : undefined,
-      endDate: endDate ? new Date(endDate) : undefined,
-      drugId,
-    });
+    return await this.wasteService.getWasteReport(
+      {
+        reason,
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+        drugId,
+      },
+      pagination,
+    );
   }
 
   @Get(':id')

@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Param, Patch, Delete, Query } from '@nestjs/common';
 import { DrugSupplierService } from '../services/drug-supplier.service';
+import { PaginationDto } from '../../common/dto/pagination.dto';
 
 @Controller('pharmacy/suppliers')
 export class DrugSupplierController {
@@ -11,13 +12,13 @@ export class DrugSupplierController {
   }
 
   @Get()
-  async findAll() {
-    return await this.supplierService.findAll();
+  async findAll(@Query() pagination: PaginationDto) {
+    return await this.supplierService.findAll(pagination);
   }
 
   @Get('preferred')
-  async getPreferredSuppliers() {
-    return await this.supplierService.getPreferredSuppliers();
+  async getPreferredSuppliers(@Query() pagination: PaginationDto) {
+    return await this.supplierService.getPreferredSuppliers(pagination);
   }
 
   @Get(':id')

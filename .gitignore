@@ -6,6 +6,8 @@ node_modules/
 # Build
 /dist
 /build
+src/**/*.js
+src/**/*.js.map
 .todo
 test.txt
 
@@ -39,7 +41,8 @@ yarn-error.log*
 *.iml
 
 # GitHub
-.github/
+.github/*.zip
+.github/*.tar.gz
 
 # OS
 .DS_Store
@@ -57,8 +60,11 @@ Thumbs.db
 *.db
 *.db-journal
 
+# Prevent accidental OS-level copy directories (macOS creates "name copy")
+migrations copy/
+
 # Secrets and Keys
-/secrets
+secrets/
 *.pem
 *.key
 *.cert
@@ -107,3 +113,5 @@ backup_*.sql
 skills-lock.json
 
 issue.md
+vrickish.md
+somzilla.md

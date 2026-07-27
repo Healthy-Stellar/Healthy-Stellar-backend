@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Between, Repository } from 'typeorm';
 import { ApiKey, ApiKeyScope } from '../entities/api-key.entity';
 import { User } from '../entities/user.entity';
 import { AuditService } from '../../common/audit/audit.service';
@@ -16,6 +16,12 @@ export interface CreateApiKeyDto {
   name: string;
   description: string;
   scopes: ApiKeyScope[];
+  expiresAt?: Date;
+}
+
+export interface ExpiringSoonApiKeyResponse extends ApiKeyResponse {
+  expiresAt: Date;
+  daysUntilExpiry: number;
 }
 
 export interface ApiKeyResponse {
@@ -107,6 +113,7 @@ export class ApiKeyService {
       scopes: createDto.scopes,
       createdBy: creator,
       createdById,
+      expiresAt: createDto.expiresAt ?? null,
     });
 
     const savedKey = await this.apiKeyRepository.save(apiKey);
@@ -234,9 +241,58 @@ export class ApiKeyService {
   }
 
   /**
+   * Record the last used IP address for an API key
+   */
+  async recordLastUsedIp(id: string, ip: string): Promise<void> {
+    await this.apiKeyRepository.update(id, {
+      lastUsedByIp: ip,
+      lastUsedAt: new Date(),
+    });
+  }
+
+  /**
    * Check if an API key has any of the required scopes
    */
   hasAnyScope(apiKey: ApiKey, requiredScopes: ApiKeyScope[]): boolean {
     return requiredScopes.some(scope => apiKey.scopes.includes(scope));
+  }
+
+  /**
+   * Return active keys expiring within the given number of days
+   */
+  async getExpiringSoon(withinDays: number): Promise<ExpiringSoonApiKeyResponse[]> {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() + withinDays * 24 * 60 * 60 * 1000);
+
+    const keys = await this.apiKeyRepository.find({
+      where: { isActive: true, expiresAt: Between(now, cutoff) },
+      relations: ['createdBy'],
+      order: { expiresAt: 'ASC' },
+    });
+
+    return keys.map(key => ({
+      id: key.id,
+      name: key.name,
+      description: key.description,
+      scopes: key.scopes,
+      isActive: key.isActive,
+      createdAt: key.createdAt,
+      lastUsedAt: key.lastUsedAt,
+      lastUsedByIp: key.lastUsedByIp,
+      expiresAt: key.expiresAt,
+      daysUntilExpiry: Math.ceil((key.expiresAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)),
+      createdBy: {
+        id: key.createdBy.id,
+        email: key.createdBy.email,
+        firstName: key.createdBy.firstName,
+        lastName: key.createdBy.lastName,
+      },
+    }));
+  }
+
+  async markExpiryNotified(id: string, days: 30 | 14 | 7): Promise<void> {
+    const field =
+      days === 30 ? 'expiryNotified30d' : days === 14 ? 'expiryNotified14d' : 'expiryNotified7d';
+    await this.apiKeyRepository.update(id, { [field]: true });
   }
 }

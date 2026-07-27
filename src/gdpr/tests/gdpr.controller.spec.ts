@@ -3,7 +3,9 @@ import { GdprController } from '../controllers/gdpr.controller';
 import { GdprService } from '../services/gdpr.service';
 import { ExecutionContext } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ThrottlerBehindProxyGuard } from '../../common/throttler/throttler-behind-proxy.guard';
 import { GdprRequestType, GdprRequestStatus } from '../entities/gdpr-request.entity';
+import { CreateErasureRequestDto } from '../dto/create-erasure-request.dto';
 
 describe('GdprController', () => {
   let controller: GdprController;
@@ -37,6 +39,10 @@ describe('GdprController', () => {
       .useValue({
         canActivate: (context: ExecutionContext) => true,
       })
+      .overrideGuard(ThrottlerBehindProxyGuard)
+      .useValue({
+        canActivate: (context: ExecutionContext) => true,
+      })
       .compile();
 
     controller = module.get<GdprController>(GdprController);
@@ -59,8 +65,12 @@ describe('GdprController', () => {
   describe('requestErasure', () => {
     it('should call gdprService.createErasureRequest', async () => {
       const req = { user: { id: 'user1' } };
-      const res = await controller.requestErasure(req);
-      expect(mockGdprService.createErasureRequest).toHaveBeenCalledWith('user1');
+      const payload: CreateErasureRequestDto = {
+        patientId: 'patient-1',
+        requestorIdentity: 'operator-1',
+      };
+      const res = await controller.requestErasure(req, payload);
+      expect(mockGdprService.createErasureRequest).toHaveBeenCalledWith('user1', payload);
       expect(res.id).toEqual('2');
     });
   });

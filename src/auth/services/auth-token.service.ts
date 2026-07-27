@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { User, UserRole } from '../entities/user.entity';
+import { SecretRotationService } from './secret-rotation.service';
 
 export interface JwtPayload {
   userId: string;
@@ -9,6 +10,7 @@ export interface JwtPayload {
   role: UserRole;
   mfaEnabled: boolean;
   sessionId: string;
+  organizationId: string;
 }
 
 export interface TokenPair {
@@ -23,6 +25,7 @@ export class AuthTokenService {
   constructor(
     private jwtService: JwtService,
     private configService: ConfigService,
+    private secretRotation: SecretRotationService,
   ) {}
 
   /**
@@ -35,13 +38,16 @@ export class AuthTokenService {
       role: user.role,
       mfaEnabled: user.mfaEnabled && mfaVerified,
       sessionId,
+      organizationId: user.organizationId ?? null,
     };
 
-    return this.jwtService.sign(payload);
+    return this.secretRotation.sign(payload, { algorithm: 'HS512' });
   }
 
   /**
-   * Generate refresh token for session renewal
+   * Generate refresh token for session renewal.
+   * Signed with REFRESH_TOKEN_SECRET so access and refresh tokens
+   * cannot be substituted for each other.
    */
   generateRefreshToken(user: User, sessionId: string): string {
     const payload = {
@@ -50,7 +56,11 @@ export class AuthTokenService {
       type: 'refresh',
     };
 
-    return this.jwtService.sign(payload);
+    return this.jwtService.sign(payload, {
+      secret: this.configService.get<string>('REFRESH_TOKEN_SECRET'),
+      expiresIn: '7d',
+      algorithm: 'HS512',
+    }); // refresh tokens use a separate static secret — not subject to JWT_SECRET rotation
   }
 
   /**
@@ -72,14 +82,7 @@ export class AuthTokenService {
    * Verify access token
    */
   verifyAccessToken(token: string): JwtPayload | null {
-    try {
-      return this.jwtService.verify(token, {
-        secret: this.configService.get<string>('JWT_SECRET'),
-        algorithms: ['HS512'],
-      });
-    } catch (error) {
-      return null;
-    }
+    return this.secretRotation.verify<JwtPayload>(token, { algorithms: ['HS512'] });
   }
 
   /**

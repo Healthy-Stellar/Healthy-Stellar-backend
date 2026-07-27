@@ -1,0 +1,131 @@
+# SLO Recording Rules — Healthy Stellar Backend
+#
+# Three Service Level Objectives:
+#   SLO-1  API Availability      — 99.9 % of requests succeed (non-5xx)   over 30-day window
+#   SLO-2  API Latency p99       — 99 % of requests complete in < 1 s      over 30-day window
+#   SLO-3  Stellar Tx Success    — 99.5 % of blockchain txs succeed         over 30-day window
+#
+# Error budget = 1 - SLO target
+#   SLO-1 budget: 0.001  (43.8 min/month)
+#   SLO-2 budget: 0.01   (7.3 h/month)
+#   SLO-3 budget: 0.005  (3.65 h/month)
+
+groups:
+  - name: slo_recording_rules
+    interval: 30s
+    rules:
+
+      # ── SLO-1: API Availability ──────────────────────────────────────────────
+
+      # Short windows (used by fast-burn alert)
+      - record: slo:api_availability:error_ratio:5m
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total[5m]))
+
+      - record: slo:api_availability:error_ratio:1h
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[1h]))
+          /
+          sum(rate(http_requests_total[1h]))
+
+      # Long windows (used by slow-burn alert)
+      - record: slo:api_availability:error_ratio:30m
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[30m]))
+          /
+          sum(rate(http_requests_total[30m]))
+
+      - record: slo:api_availability:error_ratio:6h
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[6h]))
+          /
+          sum(rate(http_requests_total[6h]))
+
+      # 30-day error budget consumption (0–1 scale; 1 = budget exhausted)
+      - record: slo:api_availability:error_budget_consumed:30d
+        expr: |
+          (
+            sum(increase(http_requests_total{status=~"5.."}[30d]))
+            /
+            sum(increase(http_requests_total[30d]))
+          ) / 0.001
+
+      # ── SLO-2: API Latency p99 < 1 s ────────────────────────────────────────
+
+      - record: slo:api_latency:bad_ratio:5m
+        expr: |
+          1 - (
+            sum(rate(http_request_duration_seconds_bucket{le="1"}[5m]))
+            /
+            sum(rate(http_request_duration_seconds_count[5m]))
+          )
+
+      - record: slo:api_latency:bad_ratio:1h
+        expr: |
+          1 - (
+            sum(rate(http_request_duration_seconds_bucket{le="1"}[1h]))
+            /
+            sum(rate(http_request_duration_seconds_count[1h]))
+          )
+
+      - record: slo:api_latency:bad_ratio:30m
+        expr: |
+          1 - (
+            sum(rate(http_request_duration_seconds_bucket{le="1"}[30m]))
+            /
+            sum(rate(http_request_duration_seconds_count[30m]))
+          )
+
+      - record: slo:api_latency:bad_ratio:6h
+        expr: |
+          1 - (
+            sum(rate(http_request_duration_seconds_bucket{le="1"}[6h]))
+            /
+            sum(rate(http_request_duration_seconds_count[6h]))
+          )
+
+      - record: slo:api_latency:error_budget_consumed:30d
+        expr: |
+          (
+            1 - (
+              sum(increase(http_request_duration_seconds_bucket{le="1"}[30d]))
+              /
+              sum(increase(http_request_duration_seconds_count[30d]))
+            )
+          ) / 0.01
+
+      # ── SLO-3: Stellar Tx Success Rate ──────────────────────────────────────
+
+      - record: slo:stellar_tx:error_ratio:5m
+        expr: |
+          sum(rate(blockchain_tx_total{status="failure"}[5m]))
+          /
+          sum(rate(blockchain_tx_total[5m]))
+
+      - record: slo:stellar_tx:error_ratio:1h
+        expr: |
+          sum(rate(blockchain_tx_total{status="failure"}[1h]))
+          /
+          sum(rate(blockchain_tx_total[1h]))
+
+      - record: slo:stellar_tx:error_ratio:30m
+        expr: |
+          sum(rate(blockchain_tx_total{status="failure"}[30m]))
+          /
+          sum(rate(blockchain_tx_total[30m]))
+
+      - record: slo:stellar_tx:error_ratio:6h
+        expr: |
+          sum(rate(blockchain_tx_total{status="failure"}[6h]))
+          /
+          sum(rate(blockchain_tx_total[6h]))
+
+      - record: slo:stellar_tx:error_budget_consumed:30d
+        expr: |
+          (
+            sum(increase(blockchain_tx_total{status="failure"}[30d]))
+            /
+            sum(increase(blockchain_tx_total[30d]))
+          ) / 0.005

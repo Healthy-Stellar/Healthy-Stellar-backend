@@ -1,32 +1,37 @@
-import { ObjectType, Field, ID, GraphQLISODateTime } from '@nestjs/graphql';
-import GraphQLJSON from 'graphql-type-json';
+import { Field, ID, ObjectType } from '@nestjs/graphql';
+import { AuditAction } from '../enums';
+import { User } from './user.type';
+import { ConnectionType } from './pagination.type';
 
 @ObjectType()
-export class AuditLogType {
+export class AuditLog {
   @Field(() => ID)
   id: string;
 
-  @Field(() => GraphQLISODateTime)
-  timestamp: Date;
+  @Field(() => String)
+  resourceId: string;
 
-  @Field()
-  operation: string;
+  @Field(() => AuditAction)
+  action: AuditAction;
 
-  @Field()
-  entityType: string;
+  @Field(() => User, { nullable: true })
+  actor?: User;
 
-  @Field({ nullable: true })
-  entityId?: string;
+  @Field(() => String, { nullable: true })
+  actorId?: string;
 
-  @Field()
-  userId: string;
-
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   ipAddress?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   userAgent?: string;
 
-  @Field({ nullable: true })
-  status?: string;
+  @Field(() => String, { nullable: true })
+  metadata?: string;
+
+  @Field()
+  createdAt: Date;
 }
+
+@ObjectType()
+export class AuditLogConnection extends ConnectionType(AuditLog) {}

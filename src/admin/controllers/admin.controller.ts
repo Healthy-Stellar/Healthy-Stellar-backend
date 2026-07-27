@@ -3,6 +3,7 @@ import {
   Post,
   Delete,
   Get,
+  Query,
   Body,
   Param,
   UseGuards,
@@ -13,24 +14,22 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AdminModule } from '../admin.module';
-import { ApiKeyService, CreateApiKeyDto, CreateApiKeyResponse, ApiKeyResponse } from '../../auth/services/api-key.service';
+import {
+  ApiKeyService,
+  CreateApiKeyDto,
+  CreateApiKeyResponse,
+  ApiKeyResponse,
+  ExpiringSoonApiKeyResponse,
+} from '../../auth/services/api-key.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../../auth/guards/roles.guard';
-import { Roles } from '../../auth/decorators/roles.decorator';
-import { UserRole } from '../../auth/entities/user.entity';
-import { ApiKeyThrottlerGuard } from '../../common/throttler/api-key-throttler.guard';
+import { PolicyGuard } from '../../rbac/guards/policy.guard';
+import { RequireAdmin } from '../../rbac/decorators/policy.decorator';
+import { IpAllowlistGuard } from '../../common/guards/ip-allowlist.guard';
 
 @ApiTags('Admin - API Keys')
 @Controller('admin/api-keys')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
-@ApiBearerAuth()
-export class AdminController {
-
-@ApiTags('Admin - API Keys')
-@Controller('admin/api-keys')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
+@UseGuards(IpAllowlistGuard, JwtAuthGuard, PolicyGuard)
+@RequireAdmin()
 @ApiBearerAuth()
 export class AdminController {
   constructor(private apiKeyService: ApiKeyService) {}
@@ -68,15 +67,22 @@ export class AdminController {
     return this.apiKeyService.listApiKeys();
   }
 
+  @Get('expiring-soon')
+  @ApiOperation({ summary: 'List API keys expiring within the next N days (default 30)' })
+  @ApiResponse({ status: 200, description: 'List of expiring API keys' })
+  async getExpiringSoon(
+    @Query('days') days = '30',
+  ): Promise<ExpiringSoonApiKeyResponse[]> {
+    const withinDays = Math.min(Math.max(parseInt(days, 10) || 30, 1), 365);
+    return this.apiKeyService.getExpiringSoon(withinDays);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Revoke an API key' })
   @ApiResponse({ status: 204, description: 'API key revoked successfully' })
   @ApiResponse({ status: 404, description: 'API key not found' })
-  async revokeApiKey(
-    @Param('id') apiKeyId: string,
-    @Req() req: Request,
-  ): Promise<void> {
+  async revokeApiKey(@Param('id') apiKeyId: string, @Req() req: Request): Promise<void> {
     const user = req.user as any; // From JWT guard
     await this.apiKeyService.revokeApiKey(
       apiKeyId,

@@ -1,12 +1,13 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between } from 'typeorm';
+import { Repository, Like, Between, DataSource, EntityManager } from 'typeorm';
 import { MedicalRecord, MedicalRecordStatus } from '../entities/medical-record.entity';
 import { MedicalRecordVersion } from '../entities/medical-record-version.entity';
 import { MedicalHistory, HistoryEventType } from '../entities/medical-history.entity';
 import { CreateMedicalRecordDto } from '../dto/create-medical-record.dto';
 import { UpdateMedicalRecordDto } from '../dto/update-medical-record.dto';
 import { SearchMedicalRecordsDto } from '../dto/search-medical-records.dto';
+import { FullTextSearchDto } from '../dto/full-text-search.dto';
 import { AccessControlService } from '../../access-control/services/access-control.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { ProviderPatientRelationshipService } from '../../provider-patient/services/provider-patient-relationship.service';
@@ -22,6 +23,7 @@ export class MedicalRecordsService {
     private versionRepository: Repository<MedicalRecordVersion>,
     @InjectRepository(MedicalHistory)
     private historyRepository: Repository<MedicalHistory>,
+    private readonly dataSource: DataSource,
     private readonly accessControlService: AccessControlService,
     private readonly auditLogService: AuditLogService,
     private readonly providerPatientService: ProviderPatientRelationshipService,
@@ -33,38 +35,43 @@ export class MedicalRecordsService {
     userName?: string,
     organizationId?: string,
   ): Promise<MedicalRecord> {
-    const record = this.medicalRecordRepository.create({
-      ...createDto,
-      createdBy: userId,
-      organizationId,
-      recordDate: createDto.recordDate ? new Date(createDto.recordDate) : new Date(),
-    });
+    return this.dataSource.transaction(async (manager) => {
+      const record = manager.create(MedicalRecord, {
+        ...createDto,
+        createdBy: userId,
+        organizationId,
+        recordDate: createDto.recordDate ? new Date(createDto.recordDate) : new Date(),
+      });
 
-    const savedRecord = await this.medicalRecordRepository.save(record);
+      const savedRecord = await manager.save(record);
 
-    // Track provider-patient relationship atomically
-    if (savedRecord.providerId) {
-      await this.providerPatientService.upsertRelationship(
-        savedRecord.providerId,
-        savedRecord.patientId,
-      );
-    }
+      // Track provider-patient relationship atomically
+      if (savedRecord.providerId) {
+        await manager.query(
+          `INSERT INTO provider_patient_relationships
+             ("providerId", "patientId", "firstInteractionAt", "recordCount")
+           VALUES ($1, $2, NOW(), 1)
+           ON CONFLICT ("providerId", "patientId")
+           DO UPDATE SET
+             "recordCount" = provider_patient_relationships."recordCount" + 1`,
+          [savedRecord.providerId, savedRecord.patientId],
+        );
+      }
 
-    // Reload to get the proper version number
-    const recordWithVersion = await this.medicalRecordRepository.findOne({
-      where: { id: savedRecord.id },
-    });
+      // Reload to get the proper version number
+      const recordWithVersion = await manager.findOne(MedicalRecord, {
+        where: { id: savedRecord.id },
+      });
 
-    // Create initial version
-    const currentContent = JSON.stringify({
-      title: recordWithVersion.title,
-      description: recordWithVersion.description,
-      recordType: recordWithVersion.recordType,
-      status: recordWithVersion.status,
-      metadata: recordWithVersion.metadata,
-    });
+      // Create initial version
+      const currentContent = JSON.stringify({
+        title: recordWithVersion.title,
+        description: recordWithVersion.description,
+        recordType: recordWithVersion.recordType,
+        status: recordWithVersion.status,
+        metadata: recordWithVersion.metadata,
+      });
 
-    try {
       await this.createVersion(
         recordWithVersion,
         null,
@@ -72,41 +79,44 @@ export class MedicalRecordsService {
         userId,
         userName,
         'Initial record creation',
+        manager,
       );
-    } catch (error) {
-      this.logger.error(`Failed to create initial version: ${error.message}`, error.stack);
-      // Continue even if version creation fails
-    }
 
-    // Create history entry
-    await this.createHistoryEntry(
-      savedRecord.id,
-      savedRecord.patientId,
-      HistoryEventType.CREATED,
-      'Medical record created',
-      userId,
-      userName,
-    );
+      // Create history entry
+      await this.createHistoryEntry(
+        savedRecord.id,
+        savedRecord.patientId,
+        HistoryEventType.CREATED,
+        'Medical record created',
+        userId,
+        userName,
+        undefined,
+        undefined,
+        undefined,
+        manager,
+      );
 
-    this.logger.log(`Medical record created: ${savedRecord.id} by user ${userId}`);
-    return savedRecord;
+      this.logger.log(`Medical record created: ${savedRecord.id} by user ${userId}`);
+      return savedRecord;
+    });
   }
 
   async findOne(id: string, patientId?: string, organizationId?: string): Promise<MedicalRecord> {
+    if (!organizationId) {
+      throw new BadRequestException('organizationId is required');
+    }
+
     const queryBuilder = this.medicalRecordRepository
       .createQueryBuilder('record')
       .leftJoinAndSelect('record.versions', 'version')
       .leftJoinAndSelect('record.attachments', 'attachment')
       .leftJoinAndSelect('record.consents', 'consent')
       .where('record.id = :id', { id })
+      .andWhere('record.organizationId = :organizationId', { organizationId })
       .orderBy('version.createdAt', 'DESC');
 
     if (patientId) {
       queryBuilder.andWhere('record.patientId = :patientId', { patientId });
-    }
-
-    if (organizationId) {
-      queryBuilder.andWhere('record.organizationId = :organizationId', { organizationId });
     }
 
     const record = await queryBuilder.getOne();
@@ -124,8 +134,10 @@ export class MedicalRecordsService {
     userId: string,
     userName?: string,
     changeReason?: string,
+    organizationId?: string,
   ): Promise<MedicalRecord> {
-    const record = await this.findOne(id);
+    if (!organizationId) throw new BadRequestException('organizationId is required');
+    const record = await this.findOne(id, undefined, organizationId);
 
     if (record.status === MedicalRecordStatus.DELETED) {
       throw new BadRequestException('Cannot update a deleted record');
@@ -137,55 +149,57 @@ export class MedicalRecordsService {
       );
     }
 
-    // Store previous content for versioning
-    const previousContent = JSON.stringify({
-      title: record.title,
-      description: record.description,
-      recordType: record.recordType,
-      status: record.status,
-      metadata: record.metadata,
+    return this.dataSource.transaction(async (manager) => {
+      const previousContent = JSON.stringify({
+        title: record.title,
+        description: record.description,
+        recordType: record.recordType,
+        status: record.status,
+        metadata: record.metadata,
+      });
+
+      Object.assign(record, {
+        ...updateDto,
+        updatedBy: userId,
+        recordDate: updateDto.recordDate ? new Date(updateDto.recordDate) : record.recordDate,
+      });
+
+      const updatedRecord = await manager.save(MedicalRecord, record);
+
+      const currentContent = JSON.stringify({
+        title: updatedRecord.title,
+        description: updatedRecord.description,
+        recordType: updatedRecord.recordType,
+        status: updatedRecord.status,
+        metadata: updatedRecord.metadata,
+      });
+
+      await this.createVersion(
+        updatedRecord,
+        previousContent,
+        currentContent,
+        userId,
+        userName,
+        changeReason || 'Record updated',
+        manager,
+      );
+
+      await this.createHistoryEntry(
+        updatedRecord.id,
+        updatedRecord.patientId,
+        HistoryEventType.UPDATED,
+        'Medical record updated',
+        userId,
+        userName,
+        { changes: updateDto },
+        undefined,
+        undefined,
+        manager,
+      );
+
+      this.logger.log(`Medical record updated: ${id} by user ${userId}`);
+      return updatedRecord;
     });
-
-    // Update record
-    Object.assign(record, {
-      ...updateDto,
-      updatedBy: userId,
-      recordDate: updateDto.recordDate ? new Date(updateDto.recordDate) : record.recordDate,
-    });
-
-    const updatedRecord = await this.medicalRecordRepository.save(record);
-
-    // Create version
-    const currentContent = JSON.stringify({
-      title: updatedRecord.title,
-      description: updatedRecord.description,
-      recordType: updatedRecord.recordType,
-      status: updatedRecord.status,
-      metadata: updatedRecord.metadata,
-    });
-
-    await this.createVersion(
-      updatedRecord,
-      previousContent,
-      currentContent,
-      userId,
-      userName,
-      changeReason || 'Record updated',
-    );
-
-    // Create history entry
-    await this.createHistoryEntry(
-      updatedRecord.id,
-      updatedRecord.patientId,
-      HistoryEventType.UPDATED,
-      'Medical record updated',
-      userId,
-      userName,
-      { changes: updateDto },
-    );
-
-    this.logger.log(`Medical record updated: ${id} by user ${userId}`);
-    return updatedRecord;
   }
 
   async search(searchDto: SearchMedicalRecordsDto, organizationId?: string): Promise<{
@@ -194,6 +208,8 @@ export class MedicalRecordsService {
     page: number;
     limit: number;
   }> {
+    if (!organizationId) throw new BadRequestException('organizationId is required');
+
     const {
       patientId,
       recordType,
@@ -202,16 +218,17 @@ export class MedicalRecordsService {
       startDate,
       endDate,
       page = 1,
-      limit = 10,
+      pageSize,
+      limit,
       sortBy = 'createdAt',
       sortOrder = 'DESC',
     } = searchDto;
 
+    const pageSizeValue = pageSize ?? limit ?? 20;
+
     const queryBuilder = this.medicalRecordRepository.createQueryBuilder('record');
 
-    if (organizationId) {
-      queryBuilder.andWhere('record.organizationId = :organizationId', { organizationId });
-    }
+    queryBuilder.andWhere('record.organizationId = :organizationId', { organizationId });
 
     if (patientId) {
       queryBuilder.andWhere('record.patientId = :patientId', { patientId });
@@ -246,8 +263,8 @@ export class MedicalRecordsService {
 
     queryBuilder
       .orderBy(`record.${sortBy}`, sortOrder)
-      .skip((page - 1) * limit)
-      .take(limit);
+      .skip((page - 1) * pageSizeValue)
+      .take(pageSizeValue);
 
     const [data, total] = await queryBuilder.getManyAndCount();
 
@@ -255,83 +272,236 @@ export class MedicalRecordsService {
       data,
       total,
       page,
-      limit,
+      limit: pageSizeValue,
     };
   }
 
-  async getTimeline(patientId: string, limit: number = 50): Promise<MedicalHistory[]> {
+  /**
+   * Full-text search across medical records with relevance ranking.
+   *
+   * Uses PostgreSQL's built-in `ts_rank` on the `search_vector` column
+   * which is maintained via a DB trigger (see migration
+   * `AddMedicalRecordFullTextSearch1746500000000`).
+   *
+   * Search query syntax (via `websearch_to_tsquery`):
+   *  - Plain words:  `hypertension` → matches documents containing "hypertension"
+   *  - Multiple terms: `hypertension diabetes` → matches documents containing both
+   *  - Phrase search: `"chronic kidney disease"` → exact phrase match
+   *  - Proximity: `diabetes <-> hypertension` → terms adjacent (PG native syntax)
+   *  - AND/OR: `hypertension OR diabetes` → logical operators
+   *
+   * Results are ordered by `ts_rank` descending (most relevant first).
+   * Additional filters (patientId, recordType, status, dateRange) narrow
+   * the result set while preserving relevance ranking.
+   */
+  async searchFulltext(
+    searchDto: FullTextSearchDto,
+    organizationId?: string,
+  ): Promise<{
+    data: MedicalRecord[];
+    total: number;
+    page: number;
+    limit: number;
+    relevance: Record<string, number>;
+  }> {
+    if (!organizationId) throw new BadRequestException('organizationId is required');
+    if (!searchDto.q || searchDto.q.trim().length === 0) {
+      throw new BadRequestException('Search query "q" is required');
+    }
+
+    const {
+      q,
+      patientId,
+      recordType,
+      status,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 20,
+    } = searchDto;
+
+    // Build the tsquery from the user's search string using websearch_to_tsquery
+    // which supports: plain terms, AND/OR, phrase (double-quoted), and proximity
+    const tsQuery = `websearch_to_tsquery('english', :q)`;
+
+    // Base query: select records with full-text relevance
+    const queryBuilder = this.medicalRecordRepository
+      .createQueryBuilder('record')
+      .addSelect(
+        `ts_rank(record.search_vector, ${tsQuery})`,
+        'relevance',
+      )
+      .where(`${tsQuery} @@ record.search_vector`)
+      .andWhere('record.organizationId = :organizationId', { organizationId })
+      .setParameter('q', q);
+
+    // Optional filters
+    if (patientId) {
+      queryBuilder.andWhere('record.patientId = :patientId', { patientId });
+    }
+
+    if (recordType) {
+      queryBuilder.andWhere('record.recordType = :recordType', { recordType });
+    }
+
+    if (status) {
+      queryBuilder.andWhere('record.status = :status', { status });
+    }
+
+    if (startDate || endDate) {
+      if (startDate && endDate) {
+        queryBuilder.andWhere('record.recordDate BETWEEN :startDate AND :endDate', {
+          startDate,
+          endDate,
+        });
+      } else if (startDate) {
+        queryBuilder.andWhere('record.recordDate >= :startDate', { startDate });
+      } else if (endDate) {
+        queryBuilder.andWhere('record.recordDate <= :endDate', { endDate });
+      }
+    }
+
+    // Count total results (without pagination)
+    const total = await queryBuilder.getCount();
+
+    // Order by relevance (highest first), then by recency as tiebreaker
+    queryBuilder
+      .orderBy('relevance', 'DESC')
+      .addOrderBy('record.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    // Use getRawAndEntities to retrieve both the entity data and the computed
+    // 'relevance' column (ts_rank score) in a single query
+    const rawAndEntities = await queryBuilder.getRawAndEntities();
+    const data = rawAndEntities.entities;
+    const relevance: Record<string, number> = {};
+    for (const raw of rawAndEntities.raw) {
+      // The raw result alias depends on the query builder — TypeORM prefixes
+      // with the alias ('record_') for the id column
+      const idKey = Object.keys(raw).find(
+        (k) => k.endsWith('_id') && raw[k] !== null,
+      );
+      const recordId = idKey ? raw[idKey] : raw.id;
+      if (recordId && raw.relevance !== undefined) {
+        relevance[recordId] = parseFloat(raw.relevance) || 0;
+      }
+    }
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      relevance,
+    };
+  }
+
+  async getTimeline(patientId: string, limit: number = 50, organizationId?: string): Promise<MedicalHistory[]> {
+    if (!organizationId) throw new BadRequestException('organizationId is required');
+
     return this.historyRepository.find({
-      where: { patientId },
+      where: { patientId, organizationId } as any,
       order: { eventDate: 'DESC' },
       take: limit,
     });
   }
 
-  async getVersions(recordId: string): Promise<MedicalRecordVersion[]> {
+  async getVersions(recordId: string, organizationId?: string): Promise<MedicalRecordVersion[]> {
+    if (!organizationId) throw new BadRequestException('organizationId is required');
+
+    const record = await this.medicalRecordRepository.findOne({
+      where: { id: recordId, organizationId },
+    });
+
+    if (!record) {
+      throw new NotFoundException(`Medical record with ID ${recordId} not found or does not belong to your organization`);
+    }
+
     return this.versionRepository.find({
       where: { medicalRecordId: recordId },
       order: { versionNumber: 'DESC' },
     });
   }
 
-  async archive(id: string, userId: string, userName?: string): Promise<MedicalRecord> {
-    const record = await this.findOne(id);
-    record.status = MedicalRecordStatus.ARCHIVED;
-    record.updatedBy = userId;
+  async archive(id: string, userId: string, userName?: string, organizationId?: string): Promise<MedicalRecord> {
+    const record = await this.findOne(id, undefined, organizationId);
 
-    const archived = await this.medicalRecordRepository.save(record);
+    return this.dataSource.transaction(async (manager) => {
+      record.status = MedicalRecordStatus.ARCHIVED;
+      record.updatedBy = userId;
 
-    await this.createHistoryEntry(
-      archived.id,
-      archived.patientId,
-      HistoryEventType.ARCHIVED,
-      'Medical record archived',
-      userId,
-      userName,
-    );
+      const archived = await manager.save(MedicalRecord, record);
 
-    return archived;
+      await this.createHistoryEntry(
+        archived.id,
+        archived.patientId,
+        HistoryEventType.ARCHIVED,
+        'Medical record archived',
+        userId,
+        userName,
+        undefined,
+        undefined,
+        undefined,
+        manager,
+      );
+
+      return archived;
+    });
   }
 
-  async restore(id: string, userId: string, userName?: string): Promise<MedicalRecord> {
-    const record = await this.findOne(id);
+  async restore(id: string, userId: string, userName?: string, organizationId?: string): Promise<MedicalRecord> {
+    const record = await this.findOne(id, undefined, organizationId);
 
     if (record.status !== MedicalRecordStatus.ARCHIVED) {
       throw new BadRequestException('Only archived records can be restored');
     }
 
-    record.status = MedicalRecordStatus.ACTIVE;
-    record.updatedBy = userId;
+    return this.dataSource.transaction(async (manager) => {
+      record.status = MedicalRecordStatus.ACTIVE;
+      record.updatedBy = userId;
 
-    const restored = await this.medicalRecordRepository.save(record);
+      const restored = await manager.save(MedicalRecord, record);
 
-    await this.createHistoryEntry(
-      restored.id,
-      restored.patientId,
-      HistoryEventType.RESTORED,
-      'Medical record restored',
-      userId,
-      userName,
-    );
+      await this.createHistoryEntry(
+        restored.id,
+        restored.patientId,
+        HistoryEventType.RESTORED,
+        'Medical record restored',
+        userId,
+        userName,
+        undefined,
+        undefined,
+        undefined,
+        manager,
+      );
 
-    return restored;
+      return restored;
+    });
   }
 
-  async delete(id: string, userId: string, userName?: string): Promise<void> {
-    const record = await this.findOne(id);
-    record.status = MedicalRecordStatus.DELETED;
-    record.updatedBy = userId;
+  async delete(id: string, userId: string, userName?: string, organizationId?: string): Promise<void> {
+    const record = await this.findOne(id, undefined, organizationId);
 
-    await this.medicalRecordRepository.save(record);
+    await this.dataSource.transaction(async (manager) => {
+      record.status = MedicalRecordStatus.DELETED;
+      record.updatedBy = userId;
 
-    await this.createHistoryEntry(
-      record.id,
-      record.patientId,
-      HistoryEventType.DELETED,
-      'Medical record deleted',
-      userId,
-      userName,
-    );
+      await manager.save(MedicalRecord, record);
+
+      await this.createHistoryEntry(
+        record.id,
+        record.patientId,
+        HistoryEventType.DELETED,
+        'Medical record deleted',
+        userId,
+        userName,
+        undefined,
+        undefined,
+        undefined,
+        manager,
+      );
+    });
 
     this.logger.log(`Medical record deleted: ${id} by user ${userId}`);
   }
@@ -343,13 +513,14 @@ export class MedicalRecordsService {
     userId: string,
     userName?: string,
     changeReason?: string,
+    manager?: EntityManager,
   ): Promise<MedicalRecordVersion> {
-    // Get the current version number (default to 1 if not set)
+    const repo = manager ? manager.getRepository(MedicalRecordVersion) : this.versionRepository;
     const versionNumber = record.version || 1;
 
-    const version = this.versionRepository.create({
+    const version = repo.create({
       medicalRecordId: record.id,
-      versionNumber: versionNumber,
+      versionNumber,
       previousContent,
       currentContent,
       changedBy: userId,
@@ -358,7 +529,7 @@ export class MedicalRecordsService {
       changes: previousContent ? this.calculateChanges(previousContent, currentContent) : null,
     });
 
-    return this.versionRepository.save(version);
+    return repo.save(version);
   }
 
   private async createHistoryEntry(
@@ -371,8 +542,11 @@ export class MedicalRecordsService {
     eventData?: Record<string, any>,
     ipAddress?: string,
     userAgent?: string,
+    manager?: EntityManager,
   ): Promise<MedicalHistory> {
-    const history = this.historyRepository.create({
+    const repo = manager ? manager.getRepository(MedicalHistory) : this.historyRepository;
+
+    const history = repo.create({
       medicalRecordId: recordId,
       patientId,
       eventType,
@@ -384,7 +558,7 @@ export class MedicalRecordsService {
       userAgent,
     });
 
-    return this.historyRepository.save(history);
+    return repo.save(history);
   }
 
   private calculateChanges(previousContent: string, currentContent: string): Record<string, any> {
@@ -448,5 +622,19 @@ export class MedicalRecordsService {
         emergencyGrantId: emergencyGrant?.id,
       },
     });
+  }
+
+  async shareWithHospital(recordId: string, hospitalId: string): Promise<void> {
+    const record = await this.medicalRecordRepository.findOne({
+      where: { id: recordId },
+    });
+    if (!record) {
+      throw new NotFoundException(`Medical record ${recordId} not found`);
+    }
+
+    record.organizationId = hospitalId;
+    await this.medicalRecordRepository.save(record);
+
+    this.logger.log(`Medical record ${recordId} shared with hospital ${hospitalId}`);
   }
 }

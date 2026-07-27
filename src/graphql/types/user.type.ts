@@ -1,41 +1,37 @@
-import { ObjectType, Field, ID, registerEnumType } from '@nestjs/graphql';
-
-export enum GqlUserRole {
-  ADMIN = 'admin',
-  PHYSICIAN = 'physician',
-  NURSE = 'nurse',
-  PATIENT = 'patient',
-  BILLING_STAFF = 'billing_staff',
-  MEDICAL_RECORDS = 'medical_records',
-}
-
-registerEnumType(GqlUserRole, { name: 'UserRole' });
+import { Field, ID, ObjectType } from '@nestjs/graphql';
+import { UserRole } from '../enums';
 
 @ObjectType()
-export class UserType {
+export class User {
   @Field(() => ID)
   id: string;
 
   @Field()
   email: string;
 
-  @Field({ nullable: true })
-  firstName?: string;
-
-  @Field({ nullable: true })
-  lastName?: string;
-
-  @Field(() => GqlUserRole)
-  role: GqlUserRole;
+  @Field()
+  firstName: string;
 
   @Field()
-  isActive: boolean;
+  lastName: string;
 
-  @Field()
-  mfaEnabled: boolean;
+  @Field(() => String, { nullable: true })
+  displayName?: string;
 
-  @Field({ nullable: true })
-  lastLoginAt?: Date;
+  @Field(() => UserRole)
+  role: UserRole;
+
+  @Field(() => String, { nullable: true })
+  specialty?: string;
+
+  @Field(() => String, { nullable: true })
+  licenseNumber?: string;
+
+  @Field(() => String, { nullable: true })
+  avatarUrl?: string;
+
+  @Field(() => String, { nullable: true })
+  phoneNumber?: string;
 
   @Field()
   createdAt: Date;

@@ -11,8 +11,9 @@ import {
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { RecordType, MedicalRecordStatus } from '../entities/medical-record.entity';
+import { PaginationDto } from '../../common/dto/pagination.dto';
 
-export class SearchMedicalRecordsDto {
+export class SearchMedicalRecordsDto extends PaginationDto {
   @ApiPropertyOptional({ description: 'Patient ID to filter by' })
   @IsUUID()
   @IsOptional()
@@ -43,20 +44,13 @@ export class SearchMedicalRecordsDto {
   @IsOptional()
   endDate?: string;
 
-  @ApiPropertyOptional({ description: 'Page number', default: 1 })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @IsOptional()
-  page?: number = 1;
-
-  @ApiPropertyOptional({ description: 'Items per page', default: 10 })
+  @ApiPropertyOptional({ description: 'Items per page', default: 20 })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)
   @IsOptional()
-  limit?: number = 10;
+  limit?: number = 20;
 
   @ApiPropertyOptional({ description: 'Sort field', default: 'createdAt' })
   @IsString()

@@ -14,6 +14,7 @@ export enum AccessLevel {
 
 export enum GrantStatus {
   ACTIVE = 'ACTIVE',
+  EXPIRING = 'EXPIRING',
   REVOKED = 'REVOKED',
   EXPIRED = 'EXPIRED',
 }
