@@ -9,7 +9,7 @@ export class PatientPrivacyGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    const user = request.user || { role: 'admin' }; // assuming JwtAuthGuard populated this
+    const user = request.user;
     const patientId = request?.params?.id || request?.body?.id;
 
     if (!user) {

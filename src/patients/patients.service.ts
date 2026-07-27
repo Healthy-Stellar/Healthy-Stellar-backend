@@ -177,7 +177,7 @@ export class PatientsService {
           "sex",
           mrn,
           GREATEST(
-            similarity(lower(coalesce("firstName", '') || ' ' || coalesce("lastName", ''))), $1),
+            similarity(lower(coalesce("firstName", '') || ' ' || coalesce("lastName", '')), $1),
             similarity(lower(coalesce("firstName", '')), $2),
             similarity(lower(coalesce("lastName", '')), $3)
           )::float AS score
@@ -186,7 +186,7 @@ export class PatientsService {
           AND "dateOfBirth" = $4
           AND lower(coalesce("sex", 'unknown')) = $5
           AND (
-            similarity(lower(coalesce("firstName", '') || ' ' || coalesce("lastName", ''))), $1) > 0.85
+            similarity(lower(coalesce("firstName", '') || ' ' || coalesce("lastName", '')), $1) > 0.85
             OR similarity(lower(coalesce("firstName", '')), $2) > 0.85
             OR similarity(lower(coalesce("lastName", '')), $3) > 0.85
           )

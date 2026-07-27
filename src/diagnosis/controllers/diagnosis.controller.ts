@@ -9,8 +9,10 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { DiagnosisService } from '../services/diagnosis.service';
 import { Icd11Service, Icd11SearchResultDto } from '../services/icd11.service';
 import {
@@ -22,6 +24,7 @@ import {
 
 @ApiTags('Diagnosis')
 @ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('diagnosis')
 export class DiagnosisController {
   constructor(
