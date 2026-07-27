@@ -24,8 +24,10 @@ export class AccessGrantProjector implements IEventHandler<
   ) {}
 
   async handle(event: AccessGrantedEvent | AccessRevokedEvent): Promise<void> {
-    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME);
+    const aggregateId = event.grantId;
 
+    // Idempotency guard — scoped per aggregate, since event versions reset per aggregate
+    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME, aggregateId);
     if (event.version <= lastVersion) {
       return;
     }
@@ -37,7 +39,7 @@ export class AccessGrantProjector implements IEventHandler<
         await this.projectRevoked(event);
       }
 
-      await this.checkpoints.advance(PROJECTOR_NAME, event.version);
+      await this.checkpoints.advance(PROJECTOR_NAME, aggregateId, event.version);
     } catch (err) {
       this.logger.error(`${PROJECTOR_NAME}: failed on version ${event.version} — ${err.message}`);
       await this.dlq.add(

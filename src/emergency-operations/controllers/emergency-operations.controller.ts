@@ -15,7 +15,9 @@ import {
 } from '../dto/emergency-operations.dto';
 import { EmergencyResourceStatus } from '../entities/emergency-resource.entity';
 import { TriageQueueStatus } from '../entities/emergency-triage.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('emergency')
 @Controller('emergency')
 export class EmergencyOperationsController {
   constructor(private emergencyService: EmergencyOperationsService) {}

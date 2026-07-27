@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
 import { ComplianceMonitoringService } from '../services/compliance-monitoring.service';
 import { ComplianceType } from '../entities/compliance-check.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('compliance')
 @Controller('compliance')
 export class ComplianceController {
   constructor(private complianceService: ComplianceMonitoringService) {}

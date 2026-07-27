@@ -6,7 +6,9 @@ import { BackupService } from '../services/backup.service';
 import { DisasterRecoveryService, RecoveryOptions } from '../services/disaster-recovery.service';
 import { BackupVerificationService } from '../services/backup-verification.service';
 import { BackupMonitoringService } from '../services/backup-monitoring.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('backup')
 @Controller('backup')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class BackupController {

@@ -5,7 +5,9 @@ import {
   UpdateMolecularTestResultDto,
 } from '../dto/create-molecular-test.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pathology/molecular')
 @Controller('pathology/molecular')
 @UseGuards(JwtAuthGuard)
 export class MolecularDiagnosticsController {

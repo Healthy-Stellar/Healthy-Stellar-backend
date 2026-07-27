@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Body, Param, Patch, Query } from '@nestjs/common';
 import { PurchaseOrderService } from '../services/purchase-order.service';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pharmacy/purchase-orders')
 @Controller('pharmacy/purchase-orders')
 export class PurchaseOrderController {
   constructor(private purchaseOrderService: PurchaseOrderService) {}

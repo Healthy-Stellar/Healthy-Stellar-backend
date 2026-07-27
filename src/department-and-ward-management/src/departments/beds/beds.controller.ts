@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Patch, Param, Body, Query } from '@nestjs/common';
 import { BedsService } from './beds.service';
 import { AssignBedDto } from './dto/assign-bed.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('beds')
 @Controller('beds')
 export class BedsController {
   constructor(private readonly bedsService: BedsService) {}

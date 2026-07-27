@@ -5,7 +5,9 @@ import {
   CreateEmergencyMedicalInfoDto,
   UpdateEmergencyMedicalInfoDto,
 } from '../dto/emergency-medical-info.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('emergency-medical-info')
 @UseGuards(JwtAuthGuard)
 @Controller('emergency-medical-info')
 export class EmergencyMedicalInfoController {

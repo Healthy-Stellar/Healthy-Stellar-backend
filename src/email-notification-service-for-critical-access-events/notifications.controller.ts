@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { IsString, IsNotEmpty } from 'class-validator';
+import { ApiTags } from '@nestjs/swagger';
 
 export class UnsubscribeDto {
   @IsString()
@@ -21,6 +22,7 @@ export class UnsubscribeDto {
   patientId: string;
 }
 
+@ApiTags('notifications')
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}

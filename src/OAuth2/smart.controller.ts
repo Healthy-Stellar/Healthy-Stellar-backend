@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiExcludeEndpoint } from '@nestjs/swagger';
 
+@ApiTags('smart-config')
 @Controller()
 export class SmartConfigController {
   @Get('.well-known/smart-configuration')

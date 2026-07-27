@@ -1,6 +1,8 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { CreateShiftDto, WeeklyScheduleQueryDto } from './dto/shift.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('medical-staff')
 @Controller('medical-staff')
 export class MedicalStaffController {
   constructor(private readonly staffService: MedicalStaffService) {}

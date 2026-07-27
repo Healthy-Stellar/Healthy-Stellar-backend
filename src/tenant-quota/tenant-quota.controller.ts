@@ -2,7 +2,9 @@ import { Controller, Patch, Param, Body, UseGuards, HttpCode, HttpStatus } from 
 import { TenantQuotaService } from './tenant-quota.service';
 import { RolesGuard } from '../common/guards/roles.guard'; // Example Admin Role guard
 import { Roles } from '../common/decorators/roles.decorator';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('admin/tenant-quota')
 @Controller('admin/tenant-quota')
 @UseGuards(RolesGuard)
 @Roles('ADMIN') // Restrict access to administrative accounts
