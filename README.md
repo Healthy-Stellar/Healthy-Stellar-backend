@@ -48,6 +48,7 @@ src/
 cp .env.docker .env.docker.local
 docker compose -f docker-compose.local.yml up --build
 docker compose -f docker-compose.local.yml exec api npm run migration:run
+docker compose -f docker-compose.local.yml exec api npm run seed
 ```
 
 - API: http://localhost:3000
