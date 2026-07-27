@@ -10,8 +10,10 @@ import {
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { EmergencyQrService } from '../services/emergency-qr.service';
+import { ApiTags } from '@nestjs/swagger';
 
 /** Authenticated endpoints for opt-in / PNG download */
+@ApiTags('emergency-medical-info/qr')
 @UseGuards(JwtAuthGuard)
 @Controller('emergency-medical-info/qr')
 export class EmergencyQrController {

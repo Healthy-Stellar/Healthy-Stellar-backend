@@ -3,7 +3,9 @@ import { PolicyService, CreatePolicyDto, UpdatePolicyDto } from '../services/pol
 import { PolicyGuard } from '../guards/policy.guard';
 import { RequireAdmin } from '../decorators/policy.decorator';
 import { Policy } from '../entities/access-policy.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('policies')
 @Controller('policies')
 @UseGuards(PolicyGuard)
 export class PolicyController {

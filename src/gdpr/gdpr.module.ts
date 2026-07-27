@@ -21,6 +21,10 @@ import { MedicalRecord } from '../medical-records/entities/medical-record.entity
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { GdprComplianceLog } from './entities/gdpr-compliance-log.entity';
+import { Billing } from '../billing/entities/billing.entity';
+import { LabOrder } from '../laboratory/entities/lab-order.entity';
+import { Specimen } from '../laboratory/entities/specimen.entity';
+import { LabResult } from '../laboratory/entities/lab-result.entity';
 
 @Module({
   imports: [
@@ -33,6 +37,10 @@ import { GdprComplianceLog } from './entities/gdpr-compliance-log.entity';
       AccessGrant,
       AuditLogEntity,
       GdprComplianceLog,
+      Billing,
+      LabOrder,
+      Specimen,
+      LabResult,
     ]),
     BullModule.registerQueue({
       name: 'gdpr',

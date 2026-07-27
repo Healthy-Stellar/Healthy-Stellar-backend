@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThanOrEqual, Repository } from 'typeorm';
+import { EntityManager, LessThanOrEqual, Repository } from 'typeorm';
 import { AccessGrant, AccessLevel, GrantStatus } from '../entities/access-grant.entity';
 import { CreateAccessGrantDto } from '../dto/create-access-grant.dto';
 import { CreateEmergencyAccessDto } from '../dto/create-emergency-access.dto';
@@ -437,8 +437,13 @@ export class AccessControlService {
     return !!validGrant;
   }
 
-  async revokeAccessByPatient(patientId: string, granteeId: string): Promise<void> {
-    const grants = await this.grantRepository.find({
+  async revokeAccessByPatient(
+    patientId: string,
+    granteeId: string,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repo = manager ? manager.getRepository(AccessGrant) : this.grantRepository;
+    const grants = await repo.find({
       where: {
         patientId,
         granteeId,
@@ -449,7 +454,7 @@ export class AccessControlService {
     for (const grant of grants) {
       grant.status = GrantStatus.REVOKED;
       grant.revokedAt = new Date();
-      await this.grantRepository.save(grant);
+      await repo.save(grant);
       this.notificationsService.emitAccessRevoked(patientId, grant.id, {
         granteeId: grant.granteeId,
         revokedAt: grant.revokedAt.toISOString(),

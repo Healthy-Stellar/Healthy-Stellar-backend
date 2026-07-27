@@ -22,6 +22,7 @@ import { OAuth2AuthorizeQueryDto, OAuth2TokenDto } from './dto/oidc.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../auth/services/auth-token.service';
 import { Patient } from '../users/entities/patient.entity';
+import { ApiTags } from '@nestjs/swagger';
 
 /**
  * OAuth2 authorization server endpoints (Issue #649 — PKCE for public clients).
@@ -31,6 +32,7 @@ import { Patient } from '../users/entities/patient.entity';
  * POST /oauth2/token      — exchange authorization code for an access token;
  *                           PKCE verifier is enforced when a challenge was stored.
  */
+@ApiTags('oauth2')
 @Controller('oauth2')
 export class OAuth2Controller {
   constructor(

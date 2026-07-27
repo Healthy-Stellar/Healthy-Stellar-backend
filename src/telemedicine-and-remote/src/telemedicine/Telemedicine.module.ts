@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { VirtualVisitController } from './controllers/virtual-visit.controller';
-import { RemoteMonitoringController } from './controllers/remote-monitoring.controller';
-import { TelemedicineDocumentationController } from './controllers/telemedicine-documentation.controller';
-import { TelehealthBillingController } from './controllers/telehealth-billing.controller';
-import { RemotePrescriptionController } from './controllers/remote-prescription.controller';
-import { QualityOutcomeController } from './controllers/quality-outcome.controller';
+import { VirtualVisitController } from '../controllers/Virtual visit.controller';
+import { RemoteMonitoringController } from '../controllers/remote-monitoring.controller';
+import { TelemedicineDocumentationController } from '../controllers/telemedicine-documentation.controller';
+import { TelehealthBillingController } from '../controllers/telehealth-billing.controller';
+import { RemotePrescriptionController } from '../controllers/remote-prescription.controller';
+import { QualityOutcomeController } from '../controllers/quality-outcome.controller';
 import { VirtualVisitService } from './services/virtual-visit.service';
 import { VideoConferenceService } from './services/video-conference.service';
 import { RemoteMonitoringService } from './services/remote-monitoring.service';

@@ -624,8 +624,13 @@ export class MedicalRecordsService {
     });
   }
 
-  async shareWithHospital(recordId: string, hospitalId: string): Promise<void> {
-    const record = await this.medicalRecordRepository.findOne({
+  async shareWithHospital(
+    recordId: string,
+    hospitalId: string,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repo = manager ? manager.getRepository(MedicalRecord) : this.medicalRecordRepository;
+    const record = await repo.findOne({
       where: { id: recordId },
     });
     if (!record) {
@@ -633,7 +638,7 @@ export class MedicalRecordsService {
     }
 
     record.organizationId = hospitalId;
-    await this.medicalRecordRepository.save(record);
+    await repo.save(record);
 
     this.logger.log(`Medical record ${recordId} shared with hospital ${hospitalId}`);
   }

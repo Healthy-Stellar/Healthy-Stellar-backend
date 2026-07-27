@@ -2,9 +2,10 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
 import { Bed } from './entities/bed.entity';
 import { Room } from './entities/room.entity';
 import { Ward } from './entities/ward.entity';
@@ -17,6 +18,9 @@ import {
   CreateWardDto,
   UpdateBedStatusDto,
 } from './dto/bed-occupancy.dto';
+
+/** Lock-namespace prefix for transactional advisory locks. */
+const ADVISORY_LOCK_NAMESPACE = 'bed_occupancy';
 
 @Injectable()
 export class BedOccupancyService {
@@ -68,15 +72,60 @@ export class BedOccupancyService {
     return bed;
   }
 
-  async assignBed(dto: AssignBedDto): Promise<Bed> {
-    const bed = await this.getBedById(dto.bedId);
-    if (bed.status !== BedStatus.AVAILABLE) {
-      throw new BadRequestException(`Bed ${dto.bedId} is not available`);
+  private async acquireBedLock(
+    transactionalEntityManager: EntityManager,
+    bedId: string,
+  ): Promise<void> {
+    const dbType = (transactionalEntityManager.connection.options as { type?: string }).type;
+    if (dbType !== 'postgres') {
+      // Other engines rely on database-level write locks
+      return;
     }
-    bed.patientId = dto.patientId;
-    bed.status = BedStatus.OCCUPIED;
-    bed.assignedAt = new Date();
-    return this.bedRepo.save(bed);
+
+    const lockKey = `${ADVISORY_LOCK_NAMESPACE}:bed:${bedId}`;
+    const lockResult = await transactionalEntityManager.query(
+      `SELECT pg_try_advisory_xact_lock(hashtext($1)) AS acquired`,
+      [lockKey],
+    );
+
+    const acquired = Array.isArray(lockResult) && lockResult[0]?.acquired === true;
+    if (!acquired) {
+      throw new ConflictException({
+        message: 'Another assignment is currently being processed for this bed. Please retry in a moment.',
+        code: 'BED_ASSIGNMENT_LOCK_BUSY',
+      });
+    }
+  }
+
+  async assignBed(dto: AssignBedDto): Promise<Bed> {
+    // Wrap in transaction with advisory locking to prevent concurrent double-booking
+    return this.bedRepo.manager.transaction(
+      async (transactionalEntityManager) => {
+        // Acquire advisory lock to serialize concurrent assignments for this bed
+        await this.acquireBedLock(transactionalEntityManager, dto.bedId);
+
+        // Load bed within transaction with pessimistic lock
+        const bed = await transactionalEntityManager
+          .createQueryBuilder(Bed, 'bed')
+          .useLock('pessimistic_write')
+          .where('bed.id = :id', { id: dto.bedId })
+          .getOne();
+
+        if (!bed) {
+          throw new NotFoundException(`Bed ${dto.bedId} not found`);
+        }
+
+        if (bed.status !== BedStatus.AVAILABLE) {
+          throw new BadRequestException(`Bed ${dto.bedId} is not available`);
+        }
+
+        bed.patientId = dto.patientId;
+        bed.status = BedStatus.OCCUPIED;
+        bed.assignedAt = new Date();
+
+        return transactionalEntityManager.save(Bed, bed);
+      },
+    );
   }
 
   async releaseBed(bedId: string): Promise<Bed> {

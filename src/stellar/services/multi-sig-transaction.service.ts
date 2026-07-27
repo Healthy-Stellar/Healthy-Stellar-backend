@@ -42,7 +42,9 @@ export class MultiSigTransactionService {
   }
 
   async approveTransaction(transactionId: string, dto: ApproveRejectDto): Promise<MultiSigTransactionResponse> {
-    const entity = await this.findPendingOrThrow(transactionId);
+    const entity = await this.repo.findOne({ where: { id: transactionId }, lock: { mode: 'pessimistic_write' } });
+    if (!entity) throw new NotFoundException('Not found');
+    if (entity.status !== MultiSigTransactionStatus.PENDING_SIGNATURES) throw new BadRequestException('Already ' + entity.status);
     if (new Date() > entity.expiresAt) { entity.status = MultiSigTransactionStatus.EXPIRED; await this.repo.save(entity); throw new BadRequestException('Transaction expired'); }
     const se = entity.signatures?.find(s => s.signerId === dto.signerId);
     if (!se) throw new BadRequestException('Not authorised');

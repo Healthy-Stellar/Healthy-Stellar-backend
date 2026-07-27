@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, In, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { Repository, Between, In, LessThanOrEqual, MoreThanOrEqual, EntityManager } from 'typeorm';
 import {
   SurgicalCase,
   OperatingRoom,
@@ -44,6 +44,9 @@ import {
 } from './dto';
 import { AuditService } from '../../common/audit/audit.service';
 import { randomUUID } from 'crypto';
+
+/** Lock-namespace prefix for transactional advisory locks. */
+const ADVISORY_LOCK_NAMESPACE = 'surgical';
 
 @Injectable()
 export class SurgicalService {
@@ -412,6 +415,31 @@ export class SurgicalService {
     });
   }
 
+  private async acquireBookingLock(
+    transactionalEntityManager: EntityManager,
+    roomId: string,
+  ): Promise<void> {
+    const dbType = (transactionalEntityManager.connection.options as { type?: string }).type;
+    if (dbType !== 'postgres') {
+      // Other engines rely on database-level write locks
+      return;
+    }
+
+    const lockKey = `${ADVISORY_LOCK_NAMESPACE}:room:${roomId}`;
+    const lockResult = await transactionalEntityManager.query(
+      `SELECT pg_try_advisory_xact_lock(hashtext($1)) AS acquired`,
+      [lockKey],
+    );
+
+    const acquired = Array.isArray(lockResult) && lockResult[0]?.acquired === true;
+    if (!acquired) {
+      throw new ConflictException({
+        message: 'Another booking is currently being processed for this operating room. Please retry in a moment.',
+        code: 'ROOM_BOOKING_LOCK_BUSY',
+      });
+    }
+  }
+
   async checkRoomAvailability(
     roomId: string,
     startTime: Date,
@@ -500,27 +528,44 @@ export class SurgicalService {
   // ==================== ROOM BOOKING ====================
 
   async createRoomBooking(dto: CreateRoomBookingDto): Promise<RoomBooking> {
-    const room = await this.operatingRoomRepository.findOne({
-      where: { id: dto.operatingRoomId },
-    });
+    // Wrap in transaction with advisory locking to prevent concurrent double-booking
+    return this.roomBookingRepository.manager.transaction(
+      async (transactionalEntityManager) => {
+        // Acquire advisory lock to serialize concurrent bookings for this room
+        await this.acquireBookingLock(
+          transactionalEntityManager,
+          dto.operatingRoomId,
+        );
 
-    if (!room) {
-      throw new NotFoundException(`Operating room with ID ${dto.operatingRoomId} not found`);
-    }
+        const room = await transactionalEntityManager.findOne(OperatingRoom, {
+          where: { id: dto.operatingRoomId },
+        });
 
-    const duration = Math.floor((dto.endTime.getTime() - dto.startTime.getTime()) / 60000);
-    const isAvailable = await this.checkRoomAvailability(
-      dto.operatingRoomId,
-      dto.startTime,
-      duration,
+        if (!room) {
+          throw new NotFoundException(`Operating room with ID ${dto.operatingRoomId} not found`);
+        }
+
+        const duration = Math.floor((dto.endTime.getTime() - dto.startTime.getTime()) / 60000);
+
+        // Check availability within the transaction (pessimistic read to ensure consistency)
+        const conflictingBookings = await transactionalEntityManager
+          .createQueryBuilder(RoomBooking, 'booking')
+          .useLock('pessimistic_write')
+          .where('booking.operatingRoomId = :roomId', { roomId: dto.operatingRoomId })
+          .andWhere('(booking.startTime < :endTime AND booking.endTime > :startTime)', {
+            startTime: dto.startTime,
+            endTime: dto.endTime,
+          })
+          .getCount();
+
+        if (conflictingBookings > 0) {
+          throw new ConflictException('Operating room is not available at the specified time');
+        }
+
+        const booking = transactionalEntityManager.create(RoomBooking, dto);
+        return transactionalEntityManager.save(RoomBooking, booking);
+      },
     );
-
-    if (!isAvailable) {
-      throw new ConflictException('Operating room is not available at the specified time');
-    }
-
-    const booking = this.roomBookingRepository.create(dto);
-    return this.roomBookingRepository.save(booking);
   }
 
   private async updateRoomBookingForCase(

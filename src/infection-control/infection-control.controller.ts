@@ -13,7 +13,9 @@ import { UpdateOutbreakIncidentDto } from './dto/update-outbreak-incident.dto';
 import { CreateHandHygieneAuditDto } from './dto/create-hand-hygiene-audit.dto';
 import { CreateOutbreakThresholdDto } from './dto/create-outbreak-threshold.dto';
 import { UpdateOutbreakThresholdDto } from './dto/update-outbreak-threshold.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('infection-control')
 @Controller('infection-control')
 export class InfectionControlController {
   constructor(

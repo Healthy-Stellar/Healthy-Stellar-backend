@@ -27,7 +27,9 @@ import { MedicalUser } from '../interfaces/medical-rbac.interface';
 import { EmergencyOverrideService } from '../services/emergency-override.service';
 import { MedicalAuditService } from '../services/medical-audit.service';
 import { MedicalPermissionsService } from '../services/medical-permissions.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('medical-rbac')
 @Controller('medical-rbac')
 @UseGuards(MedicalRbacGuard)
 export class MedicalRbacController {

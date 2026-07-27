@@ -1,10 +1,12 @@
 import { Controller, Post, Get, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ProjectionRebuildService } from './rebuild/projection-rebuild.service';
 import { ProjectionStatusDto } from './dto/projection-status.dto';
+import { ApiTags } from '@nestjs/swagger';
 
 // Replace with your project's admin guard
 // import { AdminGuard } from '../auth/guards/admin.guard';
 
+@ApiTags('projections-admin')
 @Controller('admin/projections')
 // @UseGuards(AdminGuard)
 export class ProjectionsAdminController {
