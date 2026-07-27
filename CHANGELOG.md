@@ -1,38 +1,49 @@
 # Changelog
 
-All notable changes to this project are documented in this file. This
-project uses [Semantic Versioning](https://semver.org/) for
-`packages/sdk` releases (tagged `v*`, see
-`.github/workflows/publish-sdk.yml`), and follows the
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+All notable changes to this project (both the NestJS backend core and `@medchain/sdk`) will be documented in this file.
 
-Entries are grouped as `Added`, `Changed`, `Fixed`, `Deprecated`, `Removed`,
-and `Security`. Every PR with a user-visible or API-visible change —
-especially anything affecting `packages/sdk` consumers — should add an entry
-under `[Unreleased]` (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
 
 ## [Unreleased]
 
-### Fixed
+### Added
+- Created `CONTRIBUTING.md` contributor onboarding guide and repository `CHANGELOG.md` ([#789](https://github.com/Healthy-Stellar/Healthy-Stellar-backend/issues/789)).
 
-- Hospital transfer acceptance (`TransferService.acceptTransfer`) now runs
-  record-sharing, access-revocation, and the transfer's completion write in
-  a single database transaction. A failure in any step now rolls back and
-  propagates the error instead of being logged and swallowed while the
-  transfer is still marked `COMPLETED`. (#833)
-- Event projection checkpoints (`record`, `access-grant`, `audit`,
-  `analytics` projectors) are now tracked per `(projector, aggregate)` pair
-  instead of as a single global counter per projector. Event-store versions
-  are scoped per-aggregate, so a global checkpoint could cause events from
-  one aggregate to be silently skipped once another aggregate's version had
-  advanced past them, resulting in missed access grants, missed audit
-  entries, and undercounted analytics. (#834)
+---
+
+## [1.0.0] - 2026-07-27
 
 ### Added
+- **GDPR Erasure Request Pipeline**: Full automated data erasure workflow complying with GDPR right-to-be-forgotten requests ([#845](https://github.com/Healthy-Stellar/Healthy-Stellar-backend/pull/845)).
+- **MFA Enforcement for Clinical Roles**: Mandatory Multi-Factor Authentication requirement enforced for clinical and administrative user roles ([#843](https://github.com/Healthy-Stellar/Healthy-Stellar-backend/pull/843)).
+- **Database Seeding Workflow**: Automated database seeding scripts and documentation for rapid local environment setup ([#840](https://github.com/Healthy-Stellar/Healthy-Stellar-backend/pull/840)).
+- **PHI Audit Logging**: Dedicated HIPAA-compliant Protected Health Information (PHI) access and mutation audit pipeline ([#779](https://github.com/Healthy-Stellar/Healthy-Stellar-backend/pull/779)).
+- **Appointment Booking Conflict Prevention**: Race-free booking service using Postgres advisory locks (`pg_try_advisory_xact_lock`), configurable buffer windows (`APPOINTMENT_BUFFER_MINUTES`), and structured 409 responses ([#680](https://github.com/Healthy-Stellar/Healthy-Stellar-backend/issues/680)).
+- **SMART on FHIR Authorization Server**: OAuth2 EHR launch sequence support, `/.well-known/smart-configuration` endpoint, PKCE (S256), and `launch/patient` context resolution ([#680](https://github.com/Healthy-Stellar/Healthy-Stellar-backend/pull/680)).
+- **Per-Tenant IP Allowlist**: Tenant configuration guard (`TenantIpAllowlistGuard`) supporting CIDR subnet rules and proxy headers ([#681](https://github.com/Healthy-Stellar/Healthy-Stellar-backend/issues/681)).
+- **GraphQL Automatic Persisted Queries (APQ)**: Redis-backed query hashing plugin enforcing approved GraphQL operations in production ([#676](https://github.com/Healthy-Stellar/Healthy-Stellar-backend/issues/676)).
+- **Digital Signature Verification**: Cryptographic PKCS#7 / CAdES signature extraction and validation for medical PDF attachments stored on IPFS ([#677](https://github.com/Healthy-Stellar/Healthy-Stellar-backend/issues/677)).
+- **TypeScript Client SDK (`@medchain/sdk` v1.0.0)**: Auto-generated client package for TypeScript/JavaScript consumers, with automated publication pipelines (`publish-sdk.yml`).
 
-- `CONTRIBUTING.md` with setup, branching, commit, and testing conventions.
-- `CHANGELOG.md` (this file).
-- Swagger/OpenAPI decorators (`@ApiTags` and related) on controllers that
-  previously had none, so they render correctly in the Swagger UI at `/api`. (#788)
+### Fixed
+- **Stellar Payment Concurrency**: Closed payment processing race conditions and implemented dead-letter queue retry mechanism ([#844](https://github.com/Healthy-Stellar/Healthy-Stellar-backend/pull/844)).
+- **OpenAPI Export Path**: Fixed broken import path in `docs:generate` script preventing OpenAPI specification export ([#841](https://github.com/Healthy-Stellar/Healthy-Stellar-backend/pull/841)).
 
-[Unreleased]: https://github.com/Healthy-Stellar/Healthy-Stellar-backend/compare/main...HEAD
+---
+
+## Guidelines for Updating this File
+
+When submitting a Pull Request:
+
+1. Add your changes under the **`[Unreleased]`** header.
+2. Group changes under the standard subheadings:
+   - `Added` for new features.
+   - `Changed` for changes in existing functionality.
+   - `Deprecated` for soon-to-be removed features.
+   - `Removed` for now removed features.
+   - `Fixed` for any bug fixes.
+   - `Security` in case of vulnerabilities.
+3. Link the PR or Issue number at the end of each entry (e.g. `([#123](https://github.com/...))`).
