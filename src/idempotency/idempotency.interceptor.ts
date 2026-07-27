@@ -6,10 +6,11 @@ import {
   UnprocessableEntityException,
   Logger,
 } from '@nestjs/common';
-import { Observable, of } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { Observable, of, firstValueFrom } from 'rxjs';
+import { InjectRepository } from '@nestjs/typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
+import { HttpIdempotencyEntity } from './idempotency.entity';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const IDEMPOTENCY_HEADER = 'idempotency-key';
@@ -40,6 +41,8 @@ export class IdempotencyInterceptor implements NestInterceptor {
   private readonly logger = new Logger(IdempotencyInterceptor.name);
 
   constructor(
+    @InjectRepository(HttpIdempotencyEntity)
+    private readonly repo: Repository<HttpIdempotencyEntity>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {}
@@ -62,131 +65,70 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const compositeKey = `${tenantId}:${userId}:${clientKey}`;
     const fingerprint = `${req.method}:${req.path}`;
     const cutoff = new Date(Date.now() - TTL_MS);
-    const lockId = keyToLockId(compositeKey);
 
-    // ── Step 1: delete any expired record for this key ────────────
     await this.dataSource.query(
-      `DELETE FROM http_idempotency_keys WHERE key = $1 AND "createdAt" < $2`,
-      [compositeKey, cutoff],
+      'SELECT pg_advisory_lock(hashtext($1))',
+      [compositeKey],
     );
-
-    // ── Step 2: atomically insert a "processing" sentinel row ─────
-    // Uses INSERT … ON CONFLICT DO NOTHING so only one concurrent
-    // request wins. The winner gets rowCount=1; all others get 0.
-    const insertResult = await this.dataSource.query(
-      `INSERT INTO http_idempotency_keys
-         (id, key, "statusCode", body, headers, "requestFingerprint", "createdAt")
-       VALUES (gen_random_uuid(), $1, 0, '{}', '{}', $2, NOW())
-       ON CONFLICT (key) DO NOTHING`,
-      [compositeKey, fingerprint],
-    );
-
-    const won = (insertResult as any)?.rowCount === 1;
-
-    if (!won) {
-      // ── Step 3 (loser path): poll until the winner writes a real response ──
-      const deadline = Date.now() + LOCK_TIMEOUT_MS;
-      let existing: any = null;
-
-      while (Date.now() < deadline) {
-        const rows = await this.dataSource.query(
-          `SELECT * FROM http_idempotency_keys WHERE key = $1 LIMIT 1`,
-          [compositeKey],
-        );
-        existing = rows[0] ?? null;
-
-        // statusCode > 0 means the winner has finished writing
-        if (existing && existing.statusCode > 0) break;
-
-        await new Promise((r) => setTimeout(r, LOCK_POLL_INTERVAL_MS));
-      }
-
-      if (!existing || existing.statusCode === 0) {
-        // Winner never finished — fall through and let this request execute
-        this.logger.warn(`[Idempotency] Lock timeout for key=${clientKey}, executing request`);
-        return next.handle();
-      }
-
-      // Validate fingerprint
-      if (existing.requestFingerprint !== fingerprint) {
-        throw new UnprocessableEntityException(
-          `Idempotency-Key '${clientKey}' was already used for ${existing.requestFingerprint}`,
-        );
-      }
-
-      this.logger.debug(`[Idempotency] Replaying cached response for key=${clientKey}`);
-
-      for (const [name, value] of Object.entries(existing.headers as Record<string, string>)) {
-        res.setHeader(name, value);
-      }
-      res.setHeader('Idempotent-Replayed', 'true');
-      res.status(existing.statusCode);
-
-      return of(existing.body);
-    }
-
-    // ── Step 4 (winner path): execute handler then persist result ──
-    // Acquire a PostgreSQL advisory lock around the lookup + write so that
-    // even if the INSERT sentinel somehow races (e.g. row was deleted
-    // between the DELETE and INSERT), the lookup and persistence remain
-    // atomic and no two requests can both execute the business operation.
-    await this.dataSource.query('SELECT pg_advisory_lock($1)', [lockId]);
 
     try {
-      // Double-check: another request may have completed between our
-      // INSERT and acquiring the lock.
-      const recheck = await this.dataSource.query(
-        `SELECT * FROM http_idempotency_keys WHERE key = $1 LIMIT 1`,
-        [compositeKey],
-      );
+      const existing = await this.repo.findOne({
+        where: { key: compositeKey },
+      });
 
-      if (recheck[0] && recheck[0].statusCode > 0) {
-        // Another request already persisted a result — replay it
-        const existing = recheck[0];
-
-        if (existing.requestFingerprint !== fingerprint) {
+      if (existing) {
+        if (existing.createdAt < cutoff) {
+          await this.repo.delete({ key: compositeKey });
+        } else if (existing.requestFingerprint !== fingerprint) {
           throw new UnprocessableEntityException(
             `Idempotency-Key '${clientKey}' was already used for ${existing.requestFingerprint}`,
           );
+        } else {
+          this.logger.debug(`[Idempotency] Replaying cached response for key=${clientKey}`);
+
+          for (const [name, value] of Object.entries(existing.headers)) {
+            res.setHeader(name, value);
+          }
+          res.setHeader('Idempotent-Replayed', 'true');
+          res.status(existing.statusCode);
+
+          return of(existing.body);
         }
-
-        this.logger.debug(`[Idempotency] Replaying cached response for key=${clientKey}`);
-
-        for (const [name, value] of Object.entries(existing.headers as Record<string, string>)) {
-          res.setHeader(name, value);
-        }
-        res.setHeader('Idempotent-Replayed', 'true');
-        res.status(existing.statusCode);
-
-        return of(existing.body);
       }
 
-      return next.handle().pipe(
-        tap(async (body) => {
-          const statusCode: number = res.statusCode ?? 200;
+      const body = await firstValueFrom(next.handle());
 
-          const headers: Record<string, string> = {};
-          for (const name of ['content-type', 'location', 'x-resource-id']) {
-            const val = res.getHeader(name);
-            if (val) headers[name] = String(val);
-          }
+      const statusCode: number = res.statusCode ?? 200;
 
-          try {
-            await this.dataSource.query(
-              `UPDATE http_idempotency_keys
-               SET "statusCode" = $1, body = $2, headers = $3
-               WHERE key = $4`,
-              [statusCode, JSON.stringify(body ?? {}), JSON.stringify(headers), compositeKey],
-            );
-          } catch (err) {
-            this.logger.error(
-              `[Idempotency] Failed to persist key=${clientKey}: ${(err as Error).message}`,
-            );
-          }
-        }),
-      );
+      const headers: Record<string, string> = {};
+      for (const name of ['content-type', 'location', 'x-resource-id']) {
+        const val = res.getHeader(name);
+        if (val) headers[name] = String(val);
+      }
+
+      try {
+        await this.repo.upsert(
+          {
+            key: compositeKey,
+            statusCode,
+            body: body ?? {},
+            headers,
+            requestFingerprint: fingerprint,
+          },
+          ['key'],
+        );
+      } catch (err) {
+        this.logger.error(
+          `[Idempotency] Failed to persist key=${clientKey}: ${(err as Error).message}`,
+        );
+      }
+
+      return of(body);
     } finally {
-      await this.dataSource.query('SELECT pg_advisory_unlock($1)', [lockId]);
+      await this.dataSource.query(
+        'SELECT pg_advisory_unlock(hashtext($1))',
+        [compositeKey],
+      );
     }
   }
 }
