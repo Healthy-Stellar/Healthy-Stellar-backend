@@ -21,30 +21,10 @@ import { MedicalRecord } from '../medical-records/entities/medical-record.entity
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { GdprComplianceLog } from './entities/gdpr-compliance-log.entity';
-import { BillingEntity } from '../billing/entities/billing.entity';
-import { InsuranceClaim } from '../billing/entities/insurance-claim.entity';
-import { Insurance } from '../billing/entities/insurance.entity';
-import { Payment } from '../billing/entities/payment.entity';
-import { MedicationAdministrationRecord } from '../medication-administration/entities/medication-administration-record.entity';
-import { MedicationOrder } from '../medication-administration/entities/medication-order.entity';
-import { AdverseDrugReaction } from '../medication-administration/entities/adverse-drug-reaction.entity';
-import { MedicationReconciliation } from '../medication-administration/entities/medication-reconciliation.entity';
-import { MissedDose } from '../medication-administration/entities/missed-dose.entity';
-import { PatientVital } from '../healthcare-monitoring/entities/patient-vital.entity';
-import { ClinicalAlert } from '../healthcare-monitoring/entities/clinical-alert.entity';
-import { HealthcareIncident } from '../healthcare-monitoring/entities/healthcare-incident.entity';
-import { Diagnosis } from '../diagnosis/entities/diagnosis.entity';
-import { TreatmentPlan } from '../treatment-planning/entities/treatment-plan.entity';
-import { MedicalProcedure } from '../treatment-planning/entities/medical-procedure.entity';
-import { TreatmentOutcome } from '../treatment-planning/entities/treatment-outcome.entity';
-import { CriticalCareMonitoring } from '../emergency-operations/entities/critical-care-monitoring.entity';
-import { InfectionCase } from '../infection-control/entities/infection-case.entity';
-import { IsolationPrecaution } from '../infection-control/entities/isolation-precaution.entity';
-import { AntibioticResistance } from '../infection-control/entities/antibiotic-resistance.entity';
-import { PathologyCase } from '../pathology/entities/pathology-case.entity';
-import { ProviderPatientRelationship } from '../provider-patient/entities/provider-patient-relationship.entity';
-import { CareplanHandoff } from '../provider-patient/entities/care-plan-handoff.entity';
-import { PatientTransfer } from '../hospital-registry/entities/patient-transfer.entity';
+import { Billing } from '../billing/entities/billing.entity';
+import { LabOrder } from '../laboratory/entities/lab-order.entity';
+import { Specimen } from '../laboratory/entities/specimen.entity';
+import { LabResult } from '../laboratory/entities/lab-result.entity';
 
 @Module({
   imports: [
@@ -57,30 +37,10 @@ import { PatientTransfer } from '../hospital-registry/entities/patient-transfer.
       AccessGrant,
       AuditLogEntity,
       GdprComplianceLog,
-      BillingEntity,
-      InsuranceClaim,
-      Insurance,
-      Payment,
-      MedicationAdministrationRecord,
-      MedicationOrder,
-      AdverseDrugReaction,
-      MedicationReconciliation,
-      MissedDose,
-      PatientVital,
-      ClinicalAlert,
-      HealthcareIncident,
-      Diagnosis,
-      TreatmentPlan,
-      MedicalProcedure,
-      TreatmentOutcome,
-      CriticalCareMonitoring,
-      InfectionCase,
-      IsolationPrecaution,
-      AntibioticResistance,
-      PathologyCase,
-      ProviderPatientRelationship,
-      CareplanHandoff,
-      PatientTransfer,
+      Billing,
+      LabOrder,
+      Specimen,
+      LabResult,
     ]),
     BullModule.registerQueue({
       name: 'gdpr',
