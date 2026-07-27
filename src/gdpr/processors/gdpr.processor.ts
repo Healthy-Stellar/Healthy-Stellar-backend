@@ -21,6 +21,30 @@ import { PatientCounselingLog } from '../../pharmacy/entities/patient-counseling
 import { MedicationErrorLog } from '../../pharmacy/entities/medication-error-log.entity';
 import { Appointment } from '../../appointments/entities/appointment.entity';
 import { ConsultationNote } from '../../appointments/entities/consultation-note.entity';
+import { BillingEntity } from '../../billing/entities/billing.entity';
+import { InsuranceClaim } from '../../billing/entities/insurance-claim.entity';
+import { Insurance } from '../../billing/entities/insurance.entity';
+import { Payment } from '../../billing/entities/payment.entity';
+import { MedicationAdministrationRecord } from '../../medication-administration/entities/medication-administration-record.entity';
+import { MedicationOrder } from '../../medication-administration/entities/medication-order.entity';
+import { AdverseDrugReaction } from '../../medication-administration/entities/adverse-drug-reaction.entity';
+import { MedicationReconciliation } from '../../medication-administration/entities/medication-reconciliation.entity';
+import { MissedDose } from '../../medication-administration/entities/missed-dose.entity';
+import { PatientVital } from '../../healthcare-monitoring/entities/patient-vital.entity';
+import { ClinicalAlert } from '../../healthcare-monitoring/entities/clinical-alert.entity';
+import { HealthcareIncident } from '../../healthcare-monitoring/entities/healthcare-incident.entity';
+import { Diagnosis } from '../../diagnosis/entities/diagnosis.entity';
+import { TreatmentPlan } from '../../treatment-planning/entities/treatment-plan.entity';
+import { MedicalProcedure } from '../../treatment-planning/entities/medical-procedure.entity';
+import { TreatmentOutcome } from '../../treatment-planning/entities/treatment-outcome.entity';
+import { CriticalCareMonitoring } from '../../emergency-operations/entities/critical-care-monitoring.entity';
+import { InfectionCase } from '../../infection-control/entities/infection-case.entity';
+import { IsolationPrecaution } from '../../infection-control/entities/isolation-precaution.entity';
+import { AntibioticResistance } from '../../infection-control/entities/antibiotic-resistance.entity';
+import { PathologyCase } from '../../pathology/entities/pathology-case.entity';
+import { ProviderPatientRelationship } from '../../provider-patient/entities/provider-patient-relationship.entity';
+import { CareplanHandoff } from '../../provider-patient/entities/care-plan-handoff.entity';
+import { PatientTransfer } from '../../hospital-registry/entities/patient-transfer.entity';
 import { IpfsService } from '../../records/services/ipfs.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { DeletionRegistryService } from '../services/deletion-registry.service';
@@ -45,6 +69,30 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
     private readonly auditLogRepository: Repository<AuditLogEntity>,
     @InjectRepository(GdprComplianceLog)
     private readonly complianceLogRepository: Repository<GdprComplianceLog>,
+    @InjectRepository(BillingEntity) private readonly billingRepository: Repository<BillingEntity>,
+    @InjectRepository(InsuranceClaim) private readonly insuranceClaimRepository: Repository<InsuranceClaim>,
+    @InjectRepository(Insurance) private readonly insuranceRepository: Repository<Insurance>,
+    @InjectRepository(Payment) private readonly paymentRepository: Repository<Payment>,
+    @InjectRepository(MedicationAdministrationRecord) private readonly medAdminRecordRepository: Repository<MedicationAdministrationRecord>,
+    @InjectRepository(MedicationOrder) private readonly medicationOrderRepository: Repository<MedicationOrder>,
+    @InjectRepository(AdverseDrugReaction) private readonly adrRepository: Repository<AdverseDrugReaction>,
+    @InjectRepository(MedicationReconciliation) private readonly medReconciliationRepository: Repository<MedicationReconciliation>,
+    @InjectRepository(MissedDose) private readonly missedDoseRepository: Repository<MissedDose>,
+    @InjectRepository(PatientVital) private readonly patientVitalRepository: Repository<PatientVital>,
+    @InjectRepository(ClinicalAlert) private readonly clinicalAlertRepository: Repository<ClinicalAlert>,
+    @InjectRepository(HealthcareIncident) private readonly healthcareIncidentRepository: Repository<HealthcareIncident>,
+    @InjectRepository(Diagnosis) private readonly diagnosisRepository: Repository<Diagnosis>,
+    @InjectRepository(TreatmentPlan) private readonly treatmentPlanRepository: Repository<TreatmentPlan>,
+    @InjectRepository(MedicalProcedure) private readonly medicalProcedureRepository: Repository<MedicalProcedure>,
+    @InjectRepository(TreatmentOutcome) private readonly treatmentOutcomeRepository: Repository<TreatmentOutcome>,
+    @InjectRepository(CriticalCareMonitoring) private readonly criticalCareRepository: Repository<CriticalCareMonitoring>,
+    @InjectRepository(InfectionCase) private readonly infectionCaseRepository: Repository<InfectionCase>,
+    @InjectRepository(IsolationPrecaution) private readonly isolationPrecautionRepository: Repository<IsolationPrecaution>,
+    @InjectRepository(AntibioticResistance) private readonly antibioticResistanceRepository: Repository<AntibioticResistance>,
+    @InjectRepository(PathologyCase) private readonly pathologyCaseRepository: Repository<PathologyCase>,
+    @InjectRepository(ProviderPatientRelationship) private readonly providerPatientRepository: Repository<ProviderPatientRelationship>,
+    @InjectRepository(CareplanHandoff) private readonly careplanHandoffRepository: Repository<CareplanHandoff>,
+    @InjectRepository(PatientTransfer) private readonly patientTransferRepository: Repository<PatientTransfer>,
     private readonly ipfsService: IpfsService,
     private readonly notificationsService: NotificationsService,
     private readonly deletionRegistry: DeletionRegistryService,
@@ -191,6 +239,148 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
           await manager.delete(ConsultationNote, { appointmentId: In(appointmentIds) });
         }
         await manager.delete(Appointment, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'billing',
+      previewForUser: async (userId, manager) => {
+        const [billing, claims, insurance, payments] = await Promise.all([
+          manager.count(BillingEntity, { where: { patientId: userId } }),
+          manager.count(InsuranceClaim, { where: { patientId: userId } }),
+          manager.count(Insurance, { where: { patientId: userId } }),
+          manager.count(Payment, { where: { patientId: userId } }),
+        ]);
+        return billing + claims + insurance + payments;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(Payment, { patientId: userId });
+        await manager.delete(Insurance, { patientId: userId });
+        await manager.delete(InsuranceClaim, { patientId: userId });
+        await manager.delete(BillingEntity, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'medication-administration',
+      previewForUser: async (userId, manager) => {
+        const [records, orders, adr, recon, missed] = await Promise.all([
+          manager.count(MedicationAdministrationRecord, { where: { patientId: userId } }),
+          manager.count(MedicationOrder, { where: { patientId: userId } }),
+          manager.count(AdverseDrugReaction, { where: { patientId: userId } }),
+          manager.count(MedicationReconciliation, { where: { patientId: userId } }),
+          manager.count(MissedDose, { where: { patientId: userId } }),
+        ]);
+        return records + orders + adr + recon + missed;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(MissedDose, { patientId: userId });
+        await manager.delete(MedicationReconciliation, { patientId: userId });
+        await manager.delete(AdverseDrugReaction, { patientId: userId });
+        await manager.delete(MedicationOrder, { patientId: userId });
+        await manager.delete(MedicationAdministrationRecord, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'healthcare-monitoring',
+      previewForUser: async (userId, manager) => {
+        const [vitals, alerts, incidents] = await Promise.all([
+          manager.count(PatientVital, { where: { patientId: userId } }),
+          manager.count(ClinicalAlert, { where: { patientId: userId } }),
+          manager.count(HealthcareIncident, { where: { patientId: userId } }),
+        ]);
+        return vitals + alerts + incidents;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(HealthcareIncident, { patientId: userId });
+        await manager.delete(ClinicalAlert, { patientId: userId });
+        await manager.delete(PatientVital, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'diagnosis',
+      previewForUser: async (userId, manager) =>
+        manager.count(Diagnosis, { where: { patientId: userId } }),
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(Diagnosis, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'treatment-planning',
+      previewForUser: async (userId, manager) => {
+        const [plans, procedures, outcomes] = await Promise.all([
+          manager.count(TreatmentPlan, { where: { patientId: userId } }),
+          manager.count(MedicalProcedure, { where: { patientId: userId } }),
+          manager.count(TreatmentOutcome, { where: { patientId: userId } }),
+        ]);
+        return plans + procedures + outcomes;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(TreatmentOutcome, { patientId: userId });
+        await manager.delete(MedicalProcedure, { patientId: userId });
+        await manager.delete(TreatmentPlan, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'emergency-operations',
+      previewForUser: async (userId, manager) =>
+        manager.count(CriticalCareMonitoring, { where: { patientId: userId } }),
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(CriticalCareMonitoring, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'infection-control',
+      previewForUser: async (userId, manager) => {
+        const [cases, precautions, resistance] = await Promise.all([
+          manager.count(InfectionCase, { where: { patientId: userId } }),
+          manager.count(IsolationPrecaution, { where: { patientId: userId } }),
+          manager.count(AntibioticResistance, { where: { patientId: userId } }),
+        ]);
+        return cases + precautions + resistance;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(AntibioticResistance, { patientId: userId });
+        await manager.delete(IsolationPrecaution, { patientId: userId });
+        await manager.delete(InfectionCase, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'pathology',
+      previewForUser: async (userId, manager) =>
+        manager.count(PathologyCase, { where: { patientId: userId } }),
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(PathologyCase, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'provider-patient',
+      previewForUser: async (userId, manager) => {
+        const [relationships, handoffs] = await Promise.all([
+          manager.count(ProviderPatientRelationship, { where: { patientId: userId } }),
+          manager.count(CareplanHandoff, { where: { patientId: userId } }),
+        ]);
+        return relationships + handoffs;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(CareplanHandoff, { patientId: userId });
+        await manager.delete(ProviderPatientRelationship, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'hospital-registry',
+      previewForUser: async (userId, manager) =>
+        manager.count(PatientTransfer, { where: { patientId: userId } }),
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(PatientTransfer, { patientId: userId });
       },
     });
   }

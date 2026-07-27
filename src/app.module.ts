@@ -49,6 +49,7 @@ import { GdprModule } from './gdpr/gdpr.module';
 import { ProviderPatientModule } from './provider-patient/provider-patient.module';
 import { ConsistencyCheckerModule } from './consistency-checker/consistency-checker.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
+import { TenantGuard } from './tenant/guards/tenant.guard';
 import { DataResidencyInterceptor } from './common/interceptors/data-residency.interceptor';
 import { JobsModule } from './jobs/jobs.module';
 import { DataRetentionModule } from './data-retention/data-retention.module';
@@ -232,6 +233,10 @@ import { User } from './auth/entities/user.entity';
     {
       provide: APP_GUARD,
       useClass: CustomThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TenantGuard,
     },
     {
       provide: APP_GUARD,
