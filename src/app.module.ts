@@ -49,6 +49,7 @@ import { GdprModule } from './gdpr/gdpr.module';
 import { ProviderPatientModule } from './provider-patient/provider-patient.module';
 import { ConsistencyCheckerModule } from './consistency-checker/consistency-checker.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
+import { TenantGuard } from './tenant/guards/tenant.guard';
 import { DataResidencyInterceptor } from './common/interceptors/data-residency.interceptor';
 import { JobsModule } from './jobs/jobs.module';
 import { DataRetentionModule } from './data-retention/data-retention.module';
@@ -84,6 +85,9 @@ import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.int
 import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
 import { MedicalStaffModule } from './medical-staff/medical-staff.module';
 import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-monitoring.module';
+import { AppointmentsModule } from './appointments/appointments.module';
+import { SurgicalModule } from './surgical-management-system/surgical/Surgical.module';
+import { TelemedicineModule } from './telemedicine-and-remote/src/telemedicine/Telemedicine.module';
 import { User } from './auth/entities/user.entity';
 
 @Module({
@@ -175,6 +179,9 @@ import { User } from './auth/entities/user.entity';
     MedicalStaffModule,
     EhrImportModule,
     HealthcareMonitoringModule,
+    AppointmentsModule,
+    SurgicalModule,
+    TelemedicineModule,
     EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],
@@ -232,6 +239,10 @@ import { User } from './auth/entities/user.entity';
     {
       provide: APP_GUARD,
       useClass: CustomThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TenantGuard,
     },
     {
       provide: APP_GUARD,

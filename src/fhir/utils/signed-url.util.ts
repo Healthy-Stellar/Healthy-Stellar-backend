@@ -1,6 +1,42 @@
 import * as crypto from 'crypto';
 
-const SIGNING_SECRET = process.env.EXPORT_SIGNING_SECRET ?? 'dev-signing-secret';
+/**
+ * Validate and retrieve the signing secret for bulk-export URLs.
+ * CRITICAL: This must be a cryptographically secure secret in production.
+ * Falls back to dev-only default only in development mode.
+ */
+function getSigningSecret(): string {
+  const secret = process.env.EXPORT_SIGNING_SECRET;
+  const isDev = process.env.NODE_ENV !== 'production';
+
+  if (!secret) {
+    if (isDev) {
+      console.warn(
+        '⚠️  WARNING: EXPORT_SIGNING_SECRET not set. Using dev-only default. ' +
+        'This is insecure and must not be used in production.',
+      );
+      return 'dev-signing-secret';
+    }
+    throw new Error(
+      'CRITICAL: EXPORT_SIGNING_SECRET environment variable must be set in production. ' +
+      'Without it, bulk-export download URLs will be unsigned or use a publicly known secret. ' +
+      'This allows attackers to forge valid URLs to download full patient-data exports. ' +
+      'Set a cryptographically secure secret (minimum 32 characters) before deploying.',
+    );
+  }
+
+  // In production, enforce a minimum secret length to ensure cryptographic security
+  if (isDev === false && secret.length < 32) {
+    throw new Error(
+      'CRITICAL: EXPORT_SIGNING_SECRET must be at least 32 characters in production. ' +
+      `Current length: ${secret.length}. Use a cryptographically secure random string.`,
+    );
+  }
+
+  return secret;
+}
+
+const SIGNING_SECRET = getSigningSecret();
 const SIGNED_URL_TTL_S = parseInt(process.env.EXPORT_URL_TTL_S ?? '3600', 10);
 
 /**

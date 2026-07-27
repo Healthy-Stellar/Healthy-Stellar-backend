@@ -15,13 +15,16 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { PatientsService } from './patients.service';
 import { PatientTimelineService } from './services/patient-timeline.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { SetGeoRestrictionsDto } from './dto/set-geo-restrictions.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
+import { PatientTimelineDto, PatientTimelineResponse } from './dto/patient-timeline.dto';
+import { UpdatePatientProfileDto } from './dto/update-patient-profile.dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
 import { PatientPrivacyGuard } from './guards/patient-privacy.guard';
 import { AdminGuard } from './guards/admin-guard';
 import { PatientOwnerGuard } from './guards/patient-owner.guard';

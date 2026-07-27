@@ -180,7 +180,7 @@ describe('DlqService', () => {
   // ── replay ─────────────────────────────────────────────────────────────────
 
   describe('replay', () => {
-    it('re-enqueues with DLQ_MAX_ATTEMPTS and dlq-exponential backoff', async () => {
+    it('re-enqueues with DLQ_MAX_ATTEMPTS and built-in exponential backoff', async () => {
       repo.findOne.mockResolvedValue({ ...MOCK_ENTITY });
       repo.update.mockResolvedValue({} as any);
 
@@ -191,7 +191,7 @@ describe('DlqService', () => {
         MOCK_ENTITY.data,
         expect.objectContaining({
           attempts: DLQ_MAX_ATTEMPTS,
-          backoff: { type: DLQ_BACKOFF_TYPE },
+          backoff: { type: 'exponential', delay: DLQ_BASE_DELAY_MS },
         }),
       );
     });
