@@ -167,6 +167,10 @@ export class Patient {
   @Column('json', { nullable: true })
   emergencyContact?: Record<string, any>; // e.g. { name, phone, relationship }
 
+  /** Tenant-specific extended attributes (e.g. local insurance numbers, national ID formats). */
+  @Column('json', { nullable: true })
+  customFields?: Record<string, string>;
+
   /**
    * -----------------------------
    * Administrative / Workflow
@@ -197,8 +201,7 @@ export class Patient {
   @Column({
     type: 'jsonb',
     nullable: false,
-    default: () =>
-      `'${JSON.stringify(DEFAULT_NOTIFICATION_PREFERENCES)}'`,
+    default: () => `'${JSON.stringify(DEFAULT_NOTIFICATION_PREFERENCES)}'`,
   })
   notificationPreferences: NotificationPreferences;
 
