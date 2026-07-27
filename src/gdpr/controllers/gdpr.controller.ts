@@ -14,7 +14,7 @@ import { CreateErasureRequestDto } from '../dto/create-erasure-request.dto';
 export class GdprController {
   constructor(private readonly gdprService: GdprService) {}
 
-  @Post('data-export-request')
+  @Post(['data-export-request', 'export-request'])
   @HttpCode(HttpStatus.ACCEPTED)
   @RateLimit(5, 60)
   @ApiOperation({ summary: 'Request a full export of user data' })

@@ -45,16 +45,40 @@ export class TenantQuotaService {
   // ─── Public API ────────────────────────────────────────────────────────────
 
   /**
-   * Check whether the tenant is allowed to create one more record this month.
-   * Does NOT increment the counter – call `incrementRecords()` after the DB
-   * write succeeds.
+   * Atomically check and increment the monthly record quota.
+   * Uses a Lua script to prevent TOCTOU race conditions where multiple
+   * concurrent requests could all read the same pre-increment counter value
+   * and all be judged allowed, allowing bursts past the monthly limit.
+   *
+   * Returns the result based on the count BEFORE increment.
    */
   async checkRecordQuota(tenantId: string): Promise<QuotaCheckResult> {
     const limits = await this.resolvedLimits(tenantId);
     const key = QuotaRedisKeys.monthlyRecords(tenantId);
-    const used = await this.getCounter(key);
+    const ttl = secondsUntilMonthEnd();
+
+    // Lua script: atomically check and increment if under limit
+    // Returns [allowed, used] where used is the pre-increment count
+    const luaScript = `
+      local key = KEYS[1]
+      local limit = tonumber(ARGV[1])
+      local ttl = tonumber(ARGV[2])
+      local current = tonumber(redis.call('GET', key) or 0)
+      local allowed = current < limit
+      if allowed then
+        redis.call('INCR', key)
+        if current == 0 then
+          redis.call('EXPIRE', key, ttl)
+        end
+      end
+      return {allowed and 1 or 0, current}
+    `;
+
+    const result = await this.redis.eval(luaScript, 1, key, limits.recordsPerMonth, ttl) as [number, number];
+    const [allowedFlag, used] = result;
+
     return {
-      allowed: used < limits.recordsPerMonth,
+      allowed: allowedFlag === 1,
       used,
       limit: limits.recordsPerMonth,
       quotaType: 'records',

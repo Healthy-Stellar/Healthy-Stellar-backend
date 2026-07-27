@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, Between } from 'typeorm';
+import { DataSource, Repository, FindOptionsWhere, Between } from 'typeorm';
 import { Payment } from '../entities/payment.entity';
 import { Billing } from '../entities/billing.entity';
 import { BillingLineItem } from '../entities/billing-line-item.entity';
@@ -25,7 +25,7 @@ export class PaymentService {
     private readonly billingRepository: Repository<Billing>,
     @InjectRepository(BillingLineItem)
     private readonly lineItemRepository: Repository<BillingLineItem>,
-    private readonly invoicePdfService: InvoicePdfService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(createDto: CreatePaymentDto): Promise<Payment> {
@@ -120,13 +120,20 @@ export class PaymentService {
       throw new BadRequestException(`Payment is already in ${payment.status} status`);
     }
 
+    // Mark as PROCESSING outside the transaction so callers can distinguish
+    // "picked up but not yet committed" from PENDING/COMPLETED/FAILED.
     payment.status = PaymentStatus.PROCESSING;
     await this.paymentRepository.save(payment);
 
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
     try {
+      // 1. Apply payment allocations to line items.
       if (payment.paymentAllocation && payment.paymentAllocation.length > 0) {
         for (const allocation of payment.paymentAllocation) {
-          const lineItem = await this.lineItemRepository.findOne({
+          const lineItem = await queryRunner.manager.findOne(BillingLineItem, {
             where: { id: allocation.lineItemId },
           });
 
@@ -136,37 +143,16 @@ export class PaymentService {
               lineItem.adjustmentAmount =
                 Number(lineItem.adjustmentAmount) + allocation.adjustmentAmount;
             }
-            await this.lineItemRepository.save(lineItem);
+            await queryRunner.manager.save(BillingLineItem, lineItem);
           }
         }
       }
 
-      // Lock the billing row for the duration of the balance mutation so
-      // concurrent payments against the same billing record serialize
-      // instead of both reading a stale balance and both applying their
-      // deduction. The balance is re-validated under the lock — rather than
-      // clamping a negative result to zero — so a payment that no longer
-      // fits (because a concurrent payment already consumed the balance) is
-      // rejected instead of silently driving the balance negative.
-      await this.billingRepository.manager.transaction(async (manager) => {
-        const billing = await manager
-          .createQueryBuilder(Billing, 'billing')
-          .setLock('pessimistic_write')
-          .where('billing.id = :id', { id: payment.billingId })
-          .getOne();
-
-        if (!billing) {
-          return;
-        }
-
-        const paymentAmount = Number(payment.amount);
-        const currentBalance = Number(billing.balance);
-
-        if (paymentAmount > currentBalance) {
-          throw new BadRequestException(
-            `Payment amount ($${paymentAmount}) exceeds outstanding balance ($${currentBalance})`,
-          );
-        }
+      // 2. Update billing balance.
+      const billing = await queryRunner.manager.findOne(Billing, {
+        where: { id: payment.billingId },
+        relations: ['lineItems', 'payments'],
+      });
 
         billing.totalPayments = Number(billing.totalPayments) + paymentAmount;
         billing.balance = currentBalance - paymentAmount;
@@ -180,30 +166,27 @@ export class PaymentService {
         }
 
         billing.status = billing.balance <= 0 ? 'paid' : 'partial';
+        if (billing.balance < 0) billing.balance = 0;
 
-        await manager.save(Billing, billing);
-      });
+        await queryRunner.manager.save(Billing, billing);
+      }
 
+      // 3. Mark payment COMPLETED — all three writes commit atomically.
       payment.status = PaymentStatus.COMPLETED;
       payment.postedDate = new Date();
-      await this.paymentRepository.save(payment);
+      await queryRunner.manager.save(Payment, payment);
 
-      // Emit a patient-facing invoice PDF email once the payment is confirmed.
-      // Best-effort: failures here must not roll back a successful payment.
-      this.invoicePdfService.sendInvoiceEmail(payment.billingId).catch((error) => {
-        this.logger.warn(
-          `Failed to send invoice email for billing ${payment.billingId}: ${
-            error instanceof Error ? error.message : 'Unknown error'
-          }`,
-        );
-      });
-
+      await queryRunner.commitTransaction();
       return payment;
     } catch (error) {
+      await queryRunner.rollbackTransaction();
+
       payment.status = PaymentStatus.FAILED;
       payment.notes = `${payment.notes || ''}\nProcessing failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
       await this.paymentRepository.save(payment);
       throw error;
+    } finally {
+      await queryRunner.release();
     }
   }
 

@@ -43,6 +43,11 @@ export class WebhooksModule implements NestModule {
     consumer
       .apply(new WebhookSignatureMiddleware('STELLAR_WEBHOOK_SECRET') as any)
       .forRoutes({ path: 'webhooks/stellar', method: RequestMethod.POST });
+
+    // Insurance-claims webhook — verified with INSURANCE_WEBHOOK_SECRET
+    consumer
+      .apply(new WebhookSignatureMiddleware('INSURANCE_WEBHOOK_SECRET') as any)
+      .forRoutes({ path: 'webhooks/insurance-claims', method: RequestMethod.POST });
   }
 }
 

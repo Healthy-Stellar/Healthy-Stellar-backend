@@ -33,6 +33,13 @@ export interface SuspiciousAccessEvent {
   accessorName: string;
 }
 
+export interface DigestSummary {
+  accessGrantedCount: number;
+  accessRevokedCount: number;
+  recordUploadedCount: number;
+  totalEvents: number;
+}
+
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
@@ -68,7 +75,7 @@ export class MailService {
     patient: Patient,
     grantee: Provider,
     record: MedicalRecord,
-    language: string = 'en'
+    language: string = 'en',
   ): Promise<void> {
     const template = `access-granted/access-granted.${language}`;
     const subject = `Access Granted: ${grantee.name} can now view your records`;
@@ -105,7 +112,7 @@ export class MailService {
     patient: Patient,
     revokee: Provider,
     record: MedicalRecord,
-    language: string = 'en'
+    language: string = 'en',
   ): Promise<void> {
     const subject = `Access Revoked: ${revokee.name} no longer has access to your records`;
 
@@ -135,7 +142,7 @@ export class MailService {
     patient: Patient,
     record: MedicalRecord,
     uploadedBy?: Provider,
-    language: string = 'en'
+    language: string = 'en',
   ): Promise<void> {
     const subject = `New Record Available: ${record.title}`;
 
@@ -163,10 +170,37 @@ export class MailService {
     });
   }
 
+  async sendDigestEmail(
+    patient: Patient,
+    summary: DigestSummary,
+    language: string = 'en',
+  ): Promise<void> {
+    const subject = `Your Health Record Activity Summary (${summary.totalEvents} update${summary.totalEvents === 1 ? '' : 's'})`;
+
+    if (this.isTestEnv) {
+      this.logger.log(`[TEST] Would send '${subject}' to ${patient.email}`, { patient, summary });
+      return;
+    }
+
+    await this.circuitBreaker.execute('mail', async () => {
+      await this.mailerService.sendMail({
+        to: patient.email,
+        subject,
+        template: `digest/digest.${language}`,
+        context: {
+          patientName: patient.name,
+          ...summary,
+          unsubscribeUrl: this.buildUnsubscribeUrl(patient),
+          appUrl: this.appUrl,
+        },
+      });
+    });
+  }
+
   async sendSuspiciousAccessEmail(
     patient: Patient,
     event: SuspiciousAccessEvent,
-    language: string = 'en'
+    language: string = 'en',
   ): Promise<void> {
     const subject = '⚠️ Suspicious Access Detected on Your Health Records';
 

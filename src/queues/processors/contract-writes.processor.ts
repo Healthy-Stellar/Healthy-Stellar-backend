@@ -6,7 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { QUEUE_NAMES, JOB_TYPES } from '../queue.constants';
 import { StellarContractService } from '../../blockchain/stellar-contract.service';
 import { verifyQueuePayload } from '../queue-payload.util';
-import { DLQ_BACKOFF_TYPE, dlqBackoffStrategy } from '../../dlq/dlq-retry.strategy';
+import { DLQ_WORKER_SETTINGS } from '../../dlq/dlq-retry.strategy';
 
 /**
  * ContractWritesProcessor
@@ -16,7 +16,7 @@ import { DLQ_BACKOFF_TYPE, dlqBackoffStrategy } from '../../dlq/dlq-retry.strate
  */
 @Processor(QUEUE_NAMES.CONTRACT_WRITES, {
   concurrency: 3,
-  settings: { backoffStrategies: { [DLQ_BACKOFF_TYPE]: dlqBackoffStrategy } },
+  ...DLQ_WORKER_SETTINGS,
 })
 export class ContractWritesProcessor extends WorkerHost {
   private readonly logger = new Logger(ContractWritesProcessor.name);
