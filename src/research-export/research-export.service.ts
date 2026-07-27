@@ -321,7 +321,10 @@ export class ResearchExportService {
    * and stored via key-management / KMS (surfaced here as RESEARCH_PSEUDONYM_KEY).
    */
   private pseudonymKey(): Buffer {
-    const secret = this.config.get<string>('RESEARCH_PSEUDONYM_KEY', 'default-pseudonym-key');
+    const secret = this.config.get<string>('RESEARCH_PSEUDONYM_KEY');
+    if (!secret) {
+      throw new Error('RESEARCH_PSEUDONYM_KEY environment variable is required for pseudonymization');
+    }
     return scryptSync(secret, 'research-export-pseudonym', 32);
   }
 
