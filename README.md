@@ -1,350 +1,257 @@
 # Healthy-Stellar-backend
 
-NestJS Backend Documentation - Decentralized Healthcare System
-Comprehensive documentation for the NestJS backend that interfaces with Stellar Soroban smart contracts for the decentralized healthcare management system.
+NestJS backend for a decentralized healthcare system built on Stellar Soroban smart contracts.
 
 ## Table of Contents
 
-- [Architecture Overview](#architecture-overview)
 - [Project Structure](#project-structure)
+- [Local Development with Docker](#local-development-with-docker)
 - [Installation & Setup](#installation--setup)
 - [Configuration](#configuration)
-- [Core Modules](#core-modules)
+- [Security Headers](#security-headers)
 - [API Endpoints](#api-endpoints)
+- [Postman Collection](#postman-collection)
 - [Database Schema](#database-schema)
-- [Medical Records System](#medical-records-system)
-- [Authentication & Authorization](#authentication--authorization)
-- [Stellar Integration](#stellar-integration)
 - [Error Handling](#error-handling)
 - [Testing](#testing)
 - [Deployment](#deployment)
-
-## Architecture Overview
-
-The NestJS backend serves as the application layer between the frontend and Stellar blockchain, providing:
-
-- RESTful API endpoints for client applications
-- Off-chain data caching and indexing
-- User authentication and session management
-- Encryption/decryption of sensitive health data
-- Event listening and blockchain synchronization
-- Business logic orchestration
-- File upload and storage management
 
 ## Project Structure
 
 ```
 src/
-├── main.ts                          # Application entry point
-├── app.module.ts                    # Root application module
+├── main.ts
+├── app.module.ts
 ├── config/
-│   └── database.config.ts           # Database configuration
+│   └── database.config.ts
 ├── common/
 │   └── filters/
-│       └── http-exception.filter.ts  # Global exception filter
+│       └── http-exception.filter.ts
 └── medical-records/
-    ├── medical-records.module.ts    # Medical records module
-    ├── entities/                     # Database entities
-    │   ├── medical-record.entity.ts
-    │   ├── medical-record-version.entity.ts
-    │   ├── medical-history.entity.ts
-    │   ├── clinical-note-template.entity.ts
-    │   ├── medical-attachment.entity.ts
-    │   └── medical-record-consent.entity.ts
-    ├── dto/                          # Data Transfer Objects
-    │   ├── create-medical-record.dto.ts
-    │   ├── update-medical-record.dto.ts
-    │   ├── search-medical-records.dto.ts
-    │   ├── create-consent.dto.ts
-    │   └── create-clinical-template.dto.ts
-    ├── services/                     # Business logic services
-    │   ├── medical-records.service.ts
-    │   ├── clinical-templates.service.ts
-    │   ├── consent.service.ts
-    │   ├── file-upload.service.ts
-    │   └── reporting.service.ts
-    └── controllers/                  # API controllers
-        ├── medical-records.controller.ts
-        ├── clinical-templates.controller.ts
-        ├── consent.controller.ts
-        ├── file-upload.controller.ts
-        └── reporting.controller.ts
+    ├── medical-records.module.ts
+    ├── entities/
+    ├── dto/
+    ├── services/
+    └── controllers/
 ```
+
+## Local Development with Docker
+
+| Service  | Container   | Port(s)                | Purpose                    |
+|----------|-------------|------------------------|----------------------------|
+| api      | hs-api      | 3000                   | NestJS app with hot reload |
+| postgres | hs-postgres | 5432                   | PostgreSQL 15              |
+| redis    | hs-redis    | 6379                   | Redis 7                    |
+| mailhog  | hs-mailhog  | 1025 (SMTP), 8025 (UI) | Local email capture        |
+
+```bash
+cp .env.docker .env.docker.local
+docker compose -f docker-compose.local.yml up --build
+docker compose -f docker-compose.local.yml exec api npm run migration:run
+```
+
+- API: http://localhost:3000
+- Swagger: http://localhost:3000/api
+- MailHog: http://localhost:8025
+
+The `src/` directory is bind-mounted; NestJS runs with `--watch` so changes reload automatically.
+
+```bash
+docker compose -f docker-compose.local.yml logs -f api
+docker compose -f docker-compose.local.yml down        # keep volumes
+docker compose -f docker-compose.local.yml down -v     # wipe volumes
+```
+
+> `.env.docker` contains placeholder secrets for local use only. Never use outside local dev.
 
 ## Installation & Setup
 
-### Prerequisites
-
-- Node.js (v18 or higher)
-- PostgreSQL (v12 or higher)
-- npm or yarn
-
-### Installation Steps
+**Prerequisites:** Node.js v18+, PostgreSQL v12+
 
 1. Install dependencies:
-```bash
-npm install
-```
-
-2. Create a `.env` file from `.env.example`:
-```bash
-cp .env.example .env
-```
-
-3. Update the `.env` file with your database credentials and configuration.
-
-4. Run database migrations (if using migrations):
-```bash
-npm run migration:run
-```
-
+   `npm install`
+2. Set up environment variables:
+   `cp .env.example .env`
+3. Run database migrations:
+   `npm run migration:run`
+4. **Seed the database with test data:**
+   `npm run seed`
+   *(Why added: This generates fake users, medical records, and access grants via `src/database/seeder.ts` so you can log in and test the application).*
 5. Start the development server:
-```bash
-npm run start:dev
-```
-
-The application will be available at `http://localhost:3000`
-Swagger documentation will be available at `http://localhost:3000/api`
+   `npm run start:dev`
 
 ## Configuration
 
-### Environment Variables
+Copy `.env.example` to `.env`. Key sections:
 
-- `DB_HOST` - Database host (default: localhost)
-- `DB_PORT` - Database port (default: 5432)
-- `DB_USERNAME` - Database username (default: postgres)
-- `DB_PASSWORD` - Database password (default: postgres)
-- `DB_NAME` - Database name (default: healthy_stellar)
-- `PORT` - Application port (default: 3000)
-- `NODE_ENV` - Environment (development/production)
-- `UPLOAD_PATH` - File upload directory (default: ./storage/uploads)
-- `JWT_SECRET` - JWT secret key for authentication
-- `JWT_EXPIRES_IN` - JWT expiration time
+### Data residency and multi-region routing
 
-## Core Modules
+The backend now supports region-aware tenant database routing. Each tenant can declare a residency region and, when `strictDataResidency` is enabled, requests are rejected with `403 Forbidden` if they attempt to access data outside the configured region.
 
-### Medical Records Module
+Example environment variables:
 
-The medical records module provides comprehensive functionality for managing medical records, including:
+```bash
+DEFAULT_REGION=EU
+EU_DB_URL=sqlite://eu.sqlite
+US_DB_URL=sqlite://us.sqlite
+DB_TYPE_EU=sqlite
+DB_TYPE_US=sqlite
+```
 
-- Medical record CRUD operations
-- Version control and audit trails
-- Clinical note templates
-- Medical history and timeline tracking
-- File attachments (images, documents)
-- Consent management
-- Search and reporting
+Tenant example:
+
+```json
+{
+  "region": "EU",
+  "strictDataResidency": true
+}
+```
+
+When a policy violation occurs, the API returns:
+
+```text
+403 Forbidden
+Tenant data residency policy prohibits access outside the configured region.
+```
+
+For local development, the routing service initializes SQLite-backed regional datasources so tests and simulations can verify region selection without a full multi-database deployment.
+
+| Section            | Variables                                                      |
+|--------------------|----------------------------------------------------------------|
+| Core               | `NODE_ENV`, `PORT`, `APP_URL`, `APP_DOMAIN`                   |
+| Database           | `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_NAME` |
+| Encryption / PHI   | `ENCRYPTION_KEY`, `PHI_ENCRYPTION_KEY`                        |
+| JWT & Auth         | `JWT_SECRET`, `JWT_REFRESH_SECRET`, `SESSION_SECRET`          |
+| CORS & Security    | `ALLOWED_ORIGINS`, `CORS_ORIGIN`, `ADMIN_IP_ALLOWLIST`        |
+| Redis              | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`                  |
+| Email              | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`        |
+| Stellar Blockchain | `STELLAR_NETWORK`, `STELLAR_SECRET_KEY`, `STELLAR_CONTRACT_ID`|
+| IPFS               | `IPFS_HOST`, `IPFS_PORT`, `IPFS_URL`                         |
+| Webhooks           | `IPFS_WEBHOOK_SECRET`, `STELLAR_WEBHOOK_SECRET`, `QUEUE_HMAC_SECRET` |
+| OIDC / SSO         | `OIDC_PROVIDERS`, `OIDC_{PROVIDER}_CLIENT_ID`, …             |
+| Logging            | `LOG_LEVEL`, `LOKI_HOST`                                      |
+| Metrics & Tracing  | `METRICS_TOKEN`, `OTEL_EXPORTER_OTLP_ENDPOINT`               |
+| Backup             | `BACKUP_DIR`, `BACKUP_ENCRYPTION_KEY`, `BACKUP_RETENTION_DAYS`|
+| Feature Flags      | `TELEMEDICINE_ENABLED`, `SURGICAL_MANAGEMENT_ENABLED`         |
+
+Generate secrets with:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+## Security Headers
+
+Configured via `helmet()` in `src/main.ts` using `src/security/http-security.config.ts`:
+
+- `Content-Security-Policy` — restricts script/style/asset sources to prevent XSS
+- `X-Frame-Options: DENY` — blocks clickjacking via iframes
+- `X-Content-Type-Options: nosniff` — prevents MIME-type sniffing
+- `Strict-Transport-Security` — enforces HTTPS
+- `Referrer-Policy: no-referrer` — suppresses referrer leakage
+- `X-XSS-Protection: 0` — disables legacy browser XSS filter in favour of CSP
 
 ## API Endpoints
 
 ### Medical Records
-
-- `POST /medical-records` - Create a new medical record
-- `GET /medical-records/search` - Search medical records
-- `GET /medical-records/:id` - Get a medical record by ID
-- `GET /medical-records/:id/versions` - Get version history
-- `GET /medical-records/timeline/:patientId` - Get patient timeline
-- `PUT /medical-records/:id` - Update a medical record
-- `PUT /medical-records/:id/archive` - Archive a medical record
-- `PUT /medical-records/:id/restore` - Restore an archived record
-- `DELETE /medical-records/:id` - Delete a medical record (soft delete)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/medical-records` | Create record |
+| GET | `/medical-records/search` | Search records |
+| GET | `/medical-records/:id` | Get by ID |
+| GET | `/medical-records/:id/versions` | Version history |
+| GET | `/medical-records/timeline/:patientId` | Patient timeline |
+| PUT | `/medical-records/:id` | Update |
+| PUT | `/medical-records/:id/archive` | Archive |
+| PUT | `/medical-records/:id/restore` | Restore |
+| DELETE | `/medical-records/:id` | Soft delete |
 
 ### Clinical Templates
-
-- `POST /clinical-templates` - Create a clinical template
-- `GET /clinical-templates` - Get all active templates
-- `GET /clinical-templates/:id` - Get a template by ID
-- `PUT /clinical-templates/:id` - Update a template
-- `DELETE /clinical-templates/:id` - Delete a template
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/clinical-templates` | Create template |
+| GET | `/clinical-templates` | List active templates |
+| GET | `/clinical-templates/:id` | Get by ID |
+| PUT | `/clinical-templates/:id` | Update |
+| DELETE | `/clinical-templates/:id` | Delete |
 
 ### Consent Management
-
-- `POST /consents` - Create a new consent
-- `GET /consents/record/:recordId` - Get consents for a record
-- `GET /consents/patient/:patientId` - Get consents for a patient
-- `GET /consents/check` - Check if consent exists
-- `GET /consents/:id` - Get a consent by ID
-- `PUT /consents/:id/revoke` - Revoke a consent
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/consents` | Create consent |
+| GET | `/consents/record/:recordId` | By record |
+| GET | `/consents/patient/:patientId` | By patient |
+| GET | `/consents/check` | Check existence |
+| GET | `/consents/:id` | Get by ID |
+| PUT | `/consents/:id/revoke` | Revoke |
 
 ### File Attachments
-
-- `POST /attachments/upload` - Upload a file attachment
-- `GET /attachments/record/:recordId` - Get attachments for a record
-- `GET /attachments/:id` - Get an attachment by ID
-- `GET /attachments/:id/download` - Download an attachment
-- `DELETE /attachments/:id` - Delete an attachment
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/attachments/upload` | Upload file |
+| GET | `/attachments/record/:recordId` | By record |
+| GET | `/attachments/:id` | Get by ID |
+| GET | `/attachments/:id/download` | Download |
+| DELETE | `/attachments/:id` | Delete |
 
 ### Reporting
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/reports/patient/:patientId/summary` | Patient summary |
+| GET | `/reports/activity` | Activity report |
+| GET | `/reports/consent` | Consent report |
+| GET | `/reports/statistics` | Statistics |
 
-- `GET /reports/patient/:patientId/summary` - Get patient summary
-- `GET /reports/activity` - Get activity report
-- `GET /reports/consent` - Get consent report
-- `GET /reports/statistics` - Get statistics
+### Clinical Workflow
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/diagnosis/:id/treatment-plans` | Plans by diagnosis |
+| GET | `/diagnosis/patient/:patientId/treatment-plans` | Patient diagnoses + plans |
+| GET | `/treatment-plans` | Search treatment plans |
+| GET | `/treatment-plans/:id/progress` | Plan progress |
+| GET | `/pharmacy/prescriptions` | Search prescriptions |
+| PATCH | `/pharmacy/prescriptions/:id` | Update prescription |
+| POST | `/pharmacy/prescriptions/:id/notes` | Add note |
+| GET | `/pharmacy/prescriptions/:id/notes` | Get notes |
+| POST | `/clinical-notes` | Create note |
+| GET | `/clinical-notes` | List notes |
+| POST | `/clinical-notes/:id/sign` | Sign note |
+| GET | `/clinical-notes/:id/completeness` | Completeness check |
+
+## Postman Collection
+
+Import from `docs/postman/MedChain.postman_collection.json`. Environments: Local, Testnet, Staging. Run the **Login** request first — all subsequent requests use the JWT automatically.
 
 ## Database Schema
 
-### Medical Records
-
-The system uses the following main entities:
-
-1. **MedicalRecord** - Main medical record entity with version control
-2. **MedicalRecordVersion** - Version history for audit trails
-3. **MedicalHistory** - Timeline and activity tracking
-4. **ClinicalNoteTemplate** - Reusable clinical note templates
-5. **MedicalAttachment** - File attachments (images, documents)
-6. **MedicalRecordConsent** - Consent management and sharing
-
-## Medical Records System
-
-### Features
-
-#### 1. Medical Record Entity with Version Control
-- Complete version history tracking
-- Change tracking with before/after states
-- Change reason documentation
-- Automatic version numbering
-
-#### 2. Clinical Note Templates and Structured Data
-- Reusable templates for common clinical notes
-- Structured field definitions
-- Template categorization
-- System and custom templates
-
-#### 3. Medical History and Timeline Tracking
-- Complete audit trail of all record activities
-- Event types: created, updated, viewed, shared, archived, deleted
-- IP address and user agent tracking
-- Chronological timeline view
-
-#### 4. Medical Image and Document Attachment
-- Support for multiple file types (images, PDFs, documents)
-- File size validation (10MB max)
-- Secure file storage
-- Metadata tracking
-
-#### 5. Medical Record Sharing and Consent Management
-- Granular consent types (view, share, download, modify, delete)
-- Consent expiration management
-- Consent revocation with reason tracking
-- Sharing with users and organizations
-
-#### 6. Medical Record Search and Reporting
-- Advanced search with filters
-- Patient summary reports
-- Activity reports
-- Consent reports
-- Statistical analysis
-
-### Acceptance Criteria Met
-
-✅ **Medical records maintain complete audit trails**
-- All changes are tracked in MedicalRecordVersion
-- All activities are logged in MedicalHistory
-- IP addresses and user agents are recorded
-
-✅ **Clinical documentation follows medical standards**
-- Structured templates for consistent documentation
-- Version control ensures data integrity
-- Metadata support for additional context
-
-✅ **Medical history is easily accessible and searchable**
-- Timeline endpoint for chronological view
-- Search functionality with multiple filters
-- Activity reports for analysis
-
-✅ **Patient consent is properly managed and documented**
-- Comprehensive consent entity with status tracking
-- Expiration management
-- Revocation with audit trail
-- Consent verification endpoints
-
-## Authentication & Authorization
-
-(To be implemented - placeholder for future authentication system)
-
-## Stellar Integration
-
-(To be implemented - placeholder for Stellar Soroban smart contract integration)
+| Entity | Purpose |
+|--------|---------|
+| `MedicalRecord` | Main record with version control |
+| `MedicalRecordVersion` | Version history / audit trail |
+| `MedicalHistory` | Activity timeline |
+| `ClinicalNoteTemplate` | Reusable note templates |
+| `MedicalAttachment` | File attachments |
+| `MedicalRecordConsent` | Consent and sharing |
 
 ## Error Handling
 
-The application uses a global exception filter (`HttpExceptionFilter`) that:
-- Catches all exceptions
-- Formats error responses consistently
-- Logs errors appropriately
-- Provides detailed error information in development
-- Sanitizes error messages in production
-
-## Clinical Workflow APIs (#68)
-
-The backend now includes an integrated clinical workflow surface across diagnosis, treatment planning, pharmacy, and documentation modules.
-
-### Implemented API capabilities
-
-- Diagnosis and treatment planning integration:
-  - Get treatment plans by diagnosis
-  - Get patient diagnoses with linked treatment plans
-  - Validate diagnosis IDs on treatment plan create/update
-- Prescription and medication workflow improvements:
-  - Search prescriptions by status/patient/prescriber/date
-  - Update eligible prescriptions
-  - Add and retrieve prescription note history
-- Clinical documentation enhancements:
-  - Dedicated `clinical-notes` endpoints
-  - SOAP/progress/discharge/consultation note support
-  - Note completeness checks and signing workflow
-- Procedure/care tracking and decision support:
-  - Procedure cancellation endpoint
-  - Auto decision-support alerts on treatment/procedure lifecycle changes
-  - Treatment plan progress endpoint for care coordination dashboards
-
-### Key endpoint groups
-
-- `GET /diagnosis/:id/treatment-plans`
-- `GET /diagnosis/patient/:patientId/treatment-plans`
-- `GET /treatment-plans` (search filters)
-- `GET /treatment-plans/:id/progress`
-- `GET /pharmacy/prescriptions` (search filters)
-- `PATCH /pharmacy/prescriptions/:id`
-- `POST /pharmacy/prescriptions/:id/notes`
-- `GET /pharmacy/prescriptions/:id/notes`
-- `POST /clinical-notes`
-- `GET /clinical-notes`
-- `POST /clinical-notes/:id/sign`
-- `GET /clinical-notes/:id/completeness`
+Global `HttpExceptionFilter` formats all errors consistently, logs them, and sanitizes messages in production.
 
 ## Testing
 
-### Running Tests
-
 ```bash
-# Unit tests
-npm run test
-
-# E2E tests
-npm run test:e2e
-
-# Test coverage
-npm run test:cov
+npm run test        # unit
+npm run test:e2e    # e2e
+npm run test:cov    # coverage
 ```
 
 ## Deployment
-
-### Production Build
 
 ```bash
 npm run build
 npm run start:prod
 ```
 
-### Environment Considerations
-
-- Set `NODE_ENV=production`
-- Configure proper database credentials
-- Set up secure file storage
-- Configure CORS appropriately
-- Enable HTTPS
-- Set up proper logging and monitoring
+Set `NODE_ENV=production`, configure DB credentials, CORS, HTTPS, and logging before deploying.
 
 ## License
 

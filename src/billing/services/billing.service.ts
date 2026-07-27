@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, FindOptionsWhere, DataSource } from 'typeorm';
 import { Billing } from '../entities/billing.entity';
 import { BillingLineItem } from '../entities/billing-line-item.entity';
 import {
@@ -9,7 +9,6 @@ import {
   AddLineItemDto,
   UpdateLineItemDto,
 } from '../dto/billing.dto';
-import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class BillingService {
@@ -18,60 +17,74 @@ export class BillingService {
     private readonly billingRepository: Repository<Billing>,
     @InjectRepository(BillingLineItem)
     private readonly lineItemRepository: Repository<BillingLineItem>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
 
+  private async generateInvoiceNumber(): Promise<string> {
+    const result = await this.dataSource.query(`SELECT nextval('billing_invoice_seq') AS seq`);
+    const seq = String(result[0].seq).padStart(8, '0');
+    return `INV-${seq}`;
+  }
+
   async create(createDto: CreateBillingDto): Promise<Billing> {
-    const invoiceNumber = `INV-${Date.now()}-${uuidv4().substring(0, 4).toUpperCase()}`;
+    return this.dataSource.transaction(async (manager) => {
+      // Generate invoice number inside the transaction so the sequence advance
+      // is rolled back if the save fails — preventing invoice number gaps.
+      const result = await manager.query(`SELECT nextval('billing_invoice_seq') AS seq`);
+      const seq = String(result[0].seq).padStart(8, '0');
+      const invoiceNumber = `INV-${seq}`;
 
-    let totalCharges = 0;
-    const lineItems: BillingLineItem[] = [];
+      let totalCharges = 0;
+      const lineItems: BillingLineItem[] = [];
 
-    createDto.lineItems.forEach((item, index) => {
-      const units = item.units || 1;
-      const totalCharge = item.unitCharge * units;
-      totalCharges += totalCharge;
+      createDto.lineItems.forEach((item, index) => {
+        const units = item.units || 1;
+        const totalCharge = item.unitCharge * units;
+        totalCharges += totalCharge;
 
-      const lineItem = this.lineItemRepository.create({
-        lineNumber: index + 1,
-        serviceDate: new Date(item.serviceDate),
-        serviceDateEnd: item.serviceDateEnd ? new Date(item.serviceDateEnd) : undefined,
-        cptCode: item.cptCode,
-        cptDescription: item.cptDescription,
-        modifiers: item.modifiers,
-        diagnosisCodes: item.diagnosisCodes,
-        units,
-        unitCharge: item.unitCharge,
-        totalCharge,
-        revenueCode: item.revenueCode,
-        ndc: item.ndc,
-        notes: item.notes,
+        const lineItem = manager.create(BillingLineItem, {
+          lineNumber: index + 1,
+          serviceDate: new Date(item.serviceDate),
+          serviceDateEnd: item.serviceDateEnd ? new Date(item.serviceDateEnd) : undefined,
+          cptCode: item.cptCode,
+          cptDescription: item.cptDescription,
+          modifiers: item.modifiers,
+          diagnosisCodes: item.diagnosisCodes,
+          units,
+          unitCharge: item.unitCharge,
+          totalCharge,
+          revenueCode: item.revenueCode,
+          ndc: item.ndc,
+          notes: item.notes,
+        });
+
+        lineItems.push(lineItem);
       });
 
-      lineItems.push(lineItem);
-    });
+      const billing = manager.create(Billing, {
+        invoiceNumber,
+        patientId: createDto.patientId,
+        patientName: createDto.patientName,
+        encounterId: createDto.encounterId,
+        serviceDate: new Date(createDto.serviceDate),
+        providerId: createDto.providerId,
+        providerName: createDto.providerName,
+        providerNpi: createDto.providerNpi,
+        facilityId: createDto.facilityId,
+        facilityName: createDto.facilityName,
+        placeOfService: createDto.placeOfService,
+        totalCharges,
+        balance: totalCharges,
+        patientResponsibility: totalCharges,
+        diagnosisCodes: createDto.diagnosisCodes,
+        dueDate: createDto.dueDate ? new Date(createDto.dueDate) : undefined,
+        notes: createDto.notes,
+        lineItems,
+      });
 
-    const billing = this.billingRepository.create({
-      invoiceNumber,
-      patientId: createDto.patientId,
-      patientName: createDto.patientName,
-      encounterId: createDto.encounterId,
-      serviceDate: new Date(createDto.serviceDate),
-      providerId: createDto.providerId,
-      providerName: createDto.providerName,
-      providerNpi: createDto.providerNpi,
-      facilityId: createDto.facilityId,
-      facilityName: createDto.facilityName,
-      placeOfService: createDto.placeOfService,
-      totalCharges,
-      balance: totalCharges,
-      patientResponsibility: totalCharges,
-      diagnosisCodes: createDto.diagnosisCodes,
-      dueDate: createDto.dueDate ? new Date(createDto.dueDate) : undefined,
-      notes: createDto.notes,
-      lineItems,
+      return manager.save(billing);
     });
-
-    return this.billingRepository.save(billing);
   }
 
   async findById(id: string): Promise<Billing> {

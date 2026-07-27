@@ -1,16 +1,17 @@
-import { APP_FILTER, APP_GUARD, APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { Module } from '@nestjs/common';
+import { ConfigDriftService } from './config/config-drift.service';
+import { envValidationSchema } from './config/env.validation';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { ConfigModule } from '@nestjs/config';
-import { Module } from '@nestjs/common';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
+import { I18nModule, AcceptLanguageResolver, QueryResolver } from 'nestjs-i18n';
+import * as path from 'path';
 import { AuthModule } from './auth/auth.module';
+import { OidcModule } from './OAuth2/oidc.module';
+import { SecurityModule } from './security/security.module';
+import { AdminModule } from './admin/admin.module';
 import { BillingModule } from './billing/billing.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
 import { RecordsModule } from './records/records.module';
@@ -20,19 +21,15 @@ import { LaboratoryModule } from './laboratory/laboratory.module';
 import { DiagnosisModule } from './diagnosis/diagnosis.module';
 import { TreatmentPlanningModule } from './treatment-planning/treatment-planning.module';
 import { PharmacyModule } from './pharmacy/pharmacy.module';
+import { MedicationAdministrationModule } from './medication-administration/medication-administration.module';
 import { InfectionControlModule } from './infection-control/infection-control.module';
 import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
+import { EmergencyMedicalInfoModule } from './emergency-medical-info/emergency-medical-info.module';
+import { HospitalRegistryModule } from './hospital-registry/hospital-registry.module';
 import { AccessControlModule } from './access-control/access-control.module';
 import { TenantModule } from './tenant/tenant.module';
-import { I18nModule, AcceptLanguageResolver } from 'nestjshelp me solve this fronted issue as a single resource with this #50 Engagement Rewards UI/2
-Repo Avatar hman38705/socialflow-ai-dashboard
-
-Descriptions:
-##issue 108.2:-i18n';
-import * as path from 'path';
 import { FhirModule } from './fhir/fhir.module';
 import { AnalyticsModule } from './analytics/analytics.module';
-import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { QueueModule } from './queues/queue.module';
 import { StellarModule } from './stellar/stellar.module';
@@ -40,94 +37,54 @@ import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
+import { ClinicalMfaGuard } from './auth/guards/clinical-mfa.guard';
 import { ValidationModule } from './common/validation/validation.module';
 import { MedicalEmergencyErrorFilter } from './common/errors/medical-emergency-error.filter';
 import { MedicalDataValidationPipe } from './common/validation/medical-data.validator.pipe';
 import { TenantConfigModule } from './tenant-config/tenant-config.module';
+import { TenantIpAllowlistGuard } from './tenant-config/guards/tenant-ip-allowlist.guard';
 import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
+import { QueryPerformanceInterceptor } from './common/interceptors/query-performance.interceptor';
 import { GdprModule } from './gdpr/gdpr.module';
+import { ProviderPatientModule } from './provider-patient/provider-patient.module';
+import { ConsistencyCheckerModule } from './consistency-checker/consistency-checker.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
+import { DataResidencyInterceptor } from './common/interceptors/data-residency.interceptor';
 import { JobsModule } from './jobs/jobs.module';
+import { DataRetentionModule } from './data-retention/data-retention.module';
+import { DataResidencyModule } from './data-residency/data-residency.module';
+import { GraphqlModule } from './graphql/graphql.module';
+import { VersioningModule } from './versioning/versioning.module';
+import { LedgerReconciliationModule } from './ledger-reconciliation/ledger-reconciliation.module';
+import { StellarStreamModule } from './stellar-stream/stellar-stream.module';
+import { EhrImportModule } from './ehr-import/ehr-import.module';
 import { AuditModule } from './common/audit/audit.module';
-import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
-import { ThrottlerConfigService } from './common/throttler/throttler-config.service';
+import { CustomThrottlerGuard } from './common/throttler/custom-throttler.guard';
+import { ThrottlerConfigService } from './common/throttler/throttler.config';
 import { I18nAppModule } from './i18n/i18n.module';
 import { I18nExceptionFilter } from './i18n/filters/i18n-exception.filter';
-import { CircuitBreakerModule } from './common/circuit-breaker/chelp me solve this fronted issue as a single resource with this #50 Engagement Rewards UI/2
-Repo Avatar hman38705/socialflow-ai-dashboard
-
-Descriptions:
-##issue 108.2:ircuit-breaker.module';
+import { CircuitBreakerModule } from './common/circuit-breaker/circuit-breaker.module';
 import { CircuitBreakerExceptionFilter } from './common/circuit-breaker/filters/circuit-breaker-exception.filter';
 import { MetricsModule } from './metrics/metrics.module';
+import { HttpMetricsInterceptor } from './metrics/interceptors/http-metrics.interceptor';
 import { LoggerModule } from './common/logger/logger.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
-
-const hasBearerAuthUser = (req: any): boolean => {
-  const authHeader = req?.headers?.authorization;
-  if (!authHeader || Array.isArray(authHeader)) {
-    return false;
-  }
-
-  if (!authHeader.startsWith('Bearer ')) {
-    return false;
-  }
-
-  const token = authHeader.slice('Bearer '.length);
-  if (!token) {
-    return false;
-  }
-
-  const parts = token.split('.');
-  if (parts.length < 2) {
-    return false;
-  }
-
-  try {
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<
-      string,
-      any
-    >;
-    return Boolean(payload?.userId);
-  } catch {
-    return false;
-  }
-};
-
-const getUserTrackerFromRequest = (req: any): string => {
-  const authHeader = req?.headers?.authorization;
-  if (!authHeader || Array.isArray(authHeader)) {
-    return req?.ip || 'unknown-ip';
-  }
-
-  if (!authHeader.startsWith('Bearer ')) {
-    return req?.ip || 'unknown-ip';
-  }
-
-  const token = authHeader.slice('Bearer '.length);
-  const parts = token.split('.');
-  if (parts.length < 2) {
-    return req?.ip || 'unknown-ip';
-  }
-
-  try {
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<
-      string,
-      any
-    >;
-    if (payload?.userId) {
-      return `user:${payload.userId}`;
-    }
-
-    if (payload?.publicKey) {
-      return `publicKey:${payload.publicKey}`;
-    }
-  } catch {
-    // If we can't decode payload, fall back to IP.
-  }
-
-  return req?.ip || 'unknown-ip';
-};
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { EventStoreModule } from './event-store/event-store.module';
+import { BullBoardAuthMiddleware } from './queues/middleware/bull-board-auth.middleware';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { WebhooksModule } from './webhooks/webhooks.module';
+import { GovernanceAnalyticsModule } from './governance-analytics/governance-analytics.module';
+import { IdempotencyModule } from './idempotency/idempotency.module';
+import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor';
+import { DlqModule } from './dlq/dlq.module';
+import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
+import { IncidentModule } from './incident/incident.module';
+import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.interceptor';
+import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
+import { MedicalStaffModule } from './medical-staff/medical-staff.module';
+import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-monitoring.module';
+import { User } from './auth/entities/user.entity';
 
 @Module({
   imports: [
@@ -136,10 +93,13 @@ const getUserTrackerFromRequest = (req: any): string => {
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
       cache: true,
+      validationSchema: envValidationSchema,
+      validationOptions: { abortEarly: false },
     }),
     TypeOrmModule.forRootAsync({
       useClass: DatabaseConfig,
     }),
+    TypeOrmModule.forFeature([User]),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
@@ -152,13 +112,19 @@ const getUserTrackerFromRequest = (req: any): string => {
         path: path.join(__dirname, '/i18n/'),
         watch: true,
       },
-      resolvers: [AcceptLanguageResolver],
+      resolvers: [
+        { use: QueryResolver, options: ['lang'] },
+        AcceptLanguageResolver,
+      ],
     }),
     // Application modules
     TenantModule,
     CommonModule,
     I18nAppModule,
     AuthModule,
+    OidcModule,
+    SecurityModule,
+    AdminModule,
     BillingModule,
     MedicalRecordsModule,
     RecordsModule,
@@ -167,34 +133,85 @@ const getUserTrackerFromRequest = (req: any): string => {
     DiagnosisModule,
     TreatmentPlanningModule,
     PharmacyModule,
+    MedicationAdministrationModule,
     EmergencyOperationsModule,
+    EmergencyMedicalInfoModule,
+    HospitalRegistryModule,
     ValidationModule,
     InfectionControlModule,
     HealthModule,
     MetricsModule,
     NotificationsModule,
-    QueueModule,
+    QueueModule.forRoot({ isWorker: false }),
     FhirModule,
     AccessControlModule,
     JobsModule,
+    DataRetentionModule,
     StellarModule,
     AuditModule,
     TenantConfigModule,
-    FhirModule,
     AnalyticsModule,
     GdprModule,
+    DataResidencyModule,
+    ResearchExportModule,
+    ReconciliationModule,
+    GraphqlModule,
+    VersioningModule,
+    LedgerReconciliationModule,
+    StellarStreamModule,
+    EventStoreModule,
+    FeatureFlagModule,
+    ProjectionsModule,
+    CqrsModule,
+    ProviderPatientModule,
+    ConsistencyCheckerModule,
+    WebhooksModule,
+    GovernanceAnalyticsModule,
+    IdempotencyModule,
+    DlqModule,
+    OperatorRunbookModule,
+    IncidentModule,
+    BedOccupancyModule,
+    MedicalStaffModule,
+    EhrImportModule,
+    HealthcareMonitoringModule,
+    EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [
     AppService,
+    ConfigDriftService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: PiiRedactionInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: PaginationInterceptor,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: TracingInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,
-      useClass: TenantInterceptor
+      useClass: QueryPerformanceInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: HttpMetricsInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
       useClass: TenantInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: DataResidencyInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: IdempotencyInterceptor,
     },
     {
       provide: APP_FILTER,
@@ -216,10 +233,23 @@ const getUserTrackerFromRequest = (req: any): string => {
       provide: APP_GUARD,
       useClass: CustomThrottlerGuard,
     },
+    {
+      provide: APP_GUARD,
+      useClass: TenantIpAllowlistGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ClinicalMfaGuard,
+    },
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(RequestContextMiddleware).forRoutes('*');
+    // RequestIdMiddleware runs first to ensure X-Request-Id is set before
+    // RequestContextMiddleware stores it in AsyncLocalStorage
+    consumer.apply(RequestIdMiddleware, RequestContextMiddleware).forRoutes('*');
+
+    // Protect Bull Board dashboard with authentication
+    consumer.apply(BullBoardAuthMiddleware).forRoutes('/admin/queues');
   }
 }

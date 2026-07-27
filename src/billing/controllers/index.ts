@@ -5,3 +5,5 @@ export * from './claim.controller';
 export * from './payment.controller';
 export * from './denial.controller';
 export * from './report.controller';
+export * from './remittance.controller';
+export * from './dispute.controller';

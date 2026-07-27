@@ -10,12 +10,15 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { TenantContext } from '../context/tenant.context';
 import { TenantService } from '../services/tenant.service';
+import { TenantDatabaseRoutingService } from '../../database/tenant-database-routing.service';
+import { DataResidencyRegion } from '../../enums/data-residency.enum';
 
 @Injectable()
 export class TenantInterceptor implements NestInterceptor {
   constructor(
     @InjectDataSource() private dataSource: DataSource,
     private tenantService: TenantService,
+    private tenantDatabaseRoutingService: TenantDatabaseRoutingService,
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
@@ -48,9 +51,14 @@ export class TenantInterceptor implements NestInterceptor {
     }
 
     const schemaName = `tenant_${tenant.slug}`;
+    const routingDataSource = this.tenantDatabaseRoutingService.resolveDataSourceForTenant(
+      tenant.region as DataResidencyRegion,
+    );
 
-    // Set search_path for this connection
-    await this.dataSource.query(`SET search_path TO "${schemaName}", public`);
+    if (routingDataSource.options.type !== 'sqlite') {
+      await routingDataSource.query(`SET search_path TO "${schemaName}", public`);
+      await routingDataSource.query(`SELECT set_config('app.current_tenant_id', $1, false)`, [tenant.id]);
+    }
 
     // Store tenant context using AsyncLocalStorage
     return new Observable((observer) => {
@@ -59,6 +67,8 @@ export class TenantInterceptor implements NestInterceptor {
           tenantId: tenant.id,
           tenantSlug: tenant.slug,
           schemaName,
+          region: tenant.region as DataResidencyRegion,
+          strictDataResidency: tenant.strictDataResidency,
         },
         () => {
           next.handle().subscribe({

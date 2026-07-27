@@ -22,6 +22,12 @@ export class Tenant {
   slug: string;
 
   @Column({ unique: true, nullable: true })
+  contractId: string;
+
+  @Column({ nullable: true })
+  adminAddress: string;
+
+  @Column({ unique: true, nullable: true })
   stellarContractAddress: string;
 
   @Column({ nullable: true })

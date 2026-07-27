@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLog } from '../entities/audit-log.entity';
+import { SensitiveAuditLog } from '../entities/sensitive-audit-log.entity';
+import { QueryAuditLogsDto } from '../audit/dto/query-audit-logs.dto';
+import { PaginatedResponseDto } from '../dto/paginated-response.dto';
+import { PaginationUtil } from '../utils/pagination.util';
 
 export interface CreateAuditLogDto {
   operation: string;
@@ -20,11 +24,29 @@ export interface CreateAuditLogDto {
   sessionId?: string;
 }
 
+/** Entry shape for tamper-evident sensitive action logging */
+export interface SensitiveAuditEntry {
+  actorAddress: string;
+  action: string;
+  targetAddress?: string;
+  resourceType?: string;
+  resourceId?: string;
+  ipAddress?: string;
+  patientId?: string;
+  tenantId?: string;
+  actorRole?: string;
+  metadata?: Record<string, any>;
+}
+
+export type PaginatedAuditLogs = PaginatedResponseDto<SensitiveAuditLog>;
+
 @Injectable()
 export class AuditLogService {
   constructor(
     @InjectRepository(AuditLog)
     private readonly auditLogRepository: Repository<AuditLog>,
+    @InjectRepository(SensitiveAuditLog)
+    private readonly sensitiveRepo: Repository<SensitiveAuditLog>,
   ) {}
 
   async create(auditLogData: CreateAuditLogDto): Promise<AuditLog> {
@@ -101,5 +123,66 @@ export class AuditLogService {
       .execute();
 
     return result.affected || 0;
+  }
+
+  /**
+   * Record a sensitive action to the tamper-evident audit_log table.
+   * INSERT-only — UPDATE/DELETE are blocked at the DB level via triggers.
+   */
+  async log(entry: SensitiveAuditEntry): Promise<SensitiveAuditLog> {
+    const record = this.sensitiveRepo.create({
+      actorAddress: entry.actorAddress,
+      action: entry.action,
+      targetAddress: entry.targetAddress ?? null,
+      resourceType: entry.resourceType ?? null,
+      resourceId: entry.resourceId ?? null,
+      ipAddress: entry.ipAddress ?? null,
+      patientId: entry.patientId ?? null,
+      tenantId: entry.tenantId ?? null,
+      actorRole: entry.actorRole ?? null,
+      metadata: entry.metadata ?? {},
+    });
+    return this.sensitiveRepo.save(record);
+  }
+
+  /**
+   * Paginated query for GET /audit-logs (admin only).
+   * Supports filtering by actorAddress, actorId, action, actionType, patientId,
+   * startDate, and endDate.
+   */
+  async findAllSensitive(query: QueryAuditLogsDto): Promise<PaginatedAuditLogs> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+
+    const qb = this.sensitiveRepo.createQueryBuilder('al').orderBy('al.timestamp', 'DESC');
+
+    if (query.patientId) {
+      qb.andWhere('al.patientId = :patientId', { patientId: query.patientId });
+    }
+    if (query.actorAddress) {
+      qb.andWhere('al.actorAddress = :actorAddress', { actorAddress: query.actorAddress });
+    }
+    // actorId is an alternative filter for userId-based lookups stored in actorAddress
+    if (query.actorId) {
+      qb.andWhere('al.actorAddress = :actorId', { actorId: query.actorId });
+    }
+    // Prefer actionType enum over freeform action string when both are provided
+    if (query.actionType) {
+      qb.andWhere('al.action = :actionType', { actionType: query.actionType });
+    } else if (query.action) {
+      qb.andWhere('al.action = :action', { action: query.action });
+    }
+    // patientId filters on resourceId (patient records are stored with their patient UUID)
+    if (query.patientId) {
+      qb.andWhere('al.resourceId = :patientId', { patientId: query.patientId });
+    }
+    if (query.startDate) {
+      qb.andWhere('al.timestamp >= :startDate', { startDate: new Date(query.startDate) });
+    }
+    if (query.endDate) {
+      qb.andWhere('al.timestamp <= :endDate', { endDate: new Date(query.endDate) });
+    }
+
+    return PaginationUtil.paginateQueryBuilder(qb, { page, pageSize });
   }
 }

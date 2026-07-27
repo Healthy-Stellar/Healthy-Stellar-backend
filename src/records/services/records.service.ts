@@ -1,75 +1,89 @@
-import { Injectable, Inject, forwardRef, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Inject,
+  forwardRef,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Between } from 'typeorm';
+import { Traced } from '../../common/decorators/traced.decorator';
+import * as QRCode from 'qrcode';
 import { Record } from '../entities/record.entity';
+import { RecordVersion } from '../entities/record-version.entity';
 import { CreateRecordDto } from '../dto/create-record.dto';
 import { PaginationQueryDto } from '../dto/pagination-query.dto';
-import { PaginatedRecordsResponseDto, PaginationMeta } from '../dto/paginated-response.dto';
+import { PaginatedRecordsResponseDto } from '../dto/paginated-response.dto';
 import { RecentRecordDto } from '../dto/recent-record.dto';
-import { IpfsService } from './ipfs.service';
+import { IpfsWithBreakerService } from './ipfs-with-breaker.service';
 import { StellarService } from './stellar.service';
 import { AccessControlService } from '../../access-control/services/access-control.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { RecordEventStoreService, RecordState } from './record-event-store.service';
 import { RecordEvent, RecordEventType } from '../entities/record-event.entity';
+import { RecordResponseDto } from '../dto/record-response.dto';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @Injectable()
 export class RecordsService {
   constructor(
     @InjectRepository(Record)
     private recordRepository: Repository<Record>,
-    private ipfsService: IpfsService,
+    private dataSource: DataSource,
+    private ipfsService: IpfsWithBreakerService,
     private stellarService: StellarService,
     @Inject(forwardRef(() => AccessControlService))
     private accessControlService: AccessControlService,
     private auditLogService: AuditLogService,
-    private eventStore: RecordEventStoreService,
+    @Inject(forwardRef(() => ProviderPatientRelationshipService))
+    private providerPatientService: ProviderPatientRelationshipService,
   ) {}
 
+  @Traced('records.upload')
   async uploadRecord(
     dto: CreateRecordDto,
     encryptedBuffer: Buffer,
-    causedBy?: string,
+    providerId?: string,
   ): Promise<{ recordId: string; cid: string; stellarTxHash: string }> {
     const cid = await this.ipfsService.upload(encryptedBuffer);
     const stellarTxHash = await this.stellarService.anchorCid(dto.patientId, cid);
 
-    // Persist to the records table (read model / projection)
-    const record = this.recordRepository.create({
-      patientId: dto.patientId,
-      cid,
-      stellarTxHash,
-      recordType: dto.recordType,
-      description: dto.description,
-    });
-    const savedRecord = await this.recordRepository.save(record);
-
-    // Append the creation event to the event store
-    await this.eventStore.append(
-      savedRecord.id,
-      RecordEventType.RECORD_CREATED,
-      {
+    return this.dataSource.transaction(async (manager) => {
+      const record = manager.create(Record, {
         patientId: dto.patientId,
         cid,
         stellarTxHash,
         recordType: dto.recordType,
-        description: dto.description ?? null,
-        createdAt: savedRecord.createdAt,
-      },
-      causedBy,
-    );
+        description: dto.description,
+      });
 
-    return {
-      recordId: savedRecord.id,
-      cid: savedRecord.cid,
-      stellarTxHash: savedRecord.stellarTxHash,
-    };
+      const savedRecord = await manager.save(record);
+
+      if (providerId) {
+        await manager.query(
+          `INSERT INTO provider_patient_relationships
+             ("providerId", "patientId", "firstInteractionAt", "recordCount")
+           VALUES ($1, $2, NOW(), 1)
+           ON CONFLICT ("providerId", "patientId")
+           DO UPDATE SET
+             "recordCount" = provider_patient_relationships."recordCount" + 1`,
+          [providerId, dto.patientId],
+        );
+      }
+
+      return {
+        recordId: savedRecord.id,
+        cid: savedRecord.cid,
+        stellarTxHash: savedRecord.stellarTxHash,
+      };
+    });
   }
 
+  @Traced('records.findAll')
   async findAll(query: PaginationQueryDto): Promise<PaginatedRecordsResponseDto> {
     const {
       page = 1,
-      limit = 20,
+      pageSize = 20,
       recordType,
       fromDate,
       toDate,
@@ -78,7 +92,7 @@ export class RecordsService {
       patientId,
     } = query;
 
-    const where: FindOptionsWhere<Record> = {};
+    const where: FindOptionsWhere<Record> = { isDeleted: false };
     if (recordType) where.recordType = recordType;
     if (patientId) where.patientId = patientId;
     if (fromDate && toDate) {
@@ -89,18 +103,22 @@ export class RecordsService {
       where.createdAt = Between(new Date(0), new Date(toDate));
     }
 
+    const dir = order.toUpperCase() as 'ASC' | 'DESC';
     const skip = (page - 1) * limit;
+
+    // Always append `id` as a deterministic tie-breaker so rows with identical
+    // primary-sort values never shift between pages.
     const [data, total] = await this.recordRepository.findAndCount({
       where,
-      order: {
-        [sortBy]: order.toUpperCase() as any,
-      },
-      order: { [sortBy]: order.toUpperCase() },
+      order: { [sortBy]: dir, id: dir },
       take: limit,
       skip,
     });
 
     const totalPages = Math.ceil(total / limit);
+    // Expose the last-seen id so callers can use keyset pagination if desired.
+    const nextCursor = data.length > 0 ? data[data.length - 1].id : null;
+
     const meta: PaginationMeta = {
       total,
       page,
@@ -108,13 +126,29 @@ export class RecordsService {
       totalPages,
       hasNextPage: page < totalPages,
       hasPreviousPage: page > 1,
+      nextCursor,
     };
 
     return { data, meta };
   }
 
+  async generateQrCode(id: string, patientId: string): Promise<string> {
+    const record = await this.recordRepository.findOne({ where: { id } });
+    if (!record) throw new NotFoundException(`Record ${id} not found`);
+
+    const token = await this.stellarService.createShareLink(id, patientId);
+    const appDomain = process.env.APP_DOMAIN || 'https://app.domain.com';
+    const url = `${appDomain}/share/${token}`;
+    return QRCode.toDataURL(url);
+  }
+
+  @Traced('records.findOne', { 'phi.access': 'true' })
   async findOne(id: string, requesterId?: string): Promise<Record> {
     const record = await this.recordRepository.findOne({ where: { id } });
+
+    if (!record || (!includeDeleted && record.isDeleted)) {
+      throw new NotFoundException(`Record ${id} not found`);
+    }
 
     if (record && requesterId) {
       const emergencyGrant = await this.accessControlService.findActiveEmergencyGrant(
@@ -139,7 +173,72 @@ export class RecordsService {
       }
     }
 
+    // If a specific version is requested, overlay the versioned CID and hash
+    if (version !== undefined) {
+      const recordVersion = await this.recordVersionService.findVersion(id, version);
+      if (!recordVersion) {
+        throw new NotFoundException(`Version ${version} of record ${id} not found`);
+      }
+      return Object.assign(Object.create(Object.getPrototypeOf(record)), record, {
+        cid: recordVersion.cid,
+        stellarTxHash: recordVersion.stellarTxHash,
+        _version: recordVersion,
+      });
+    }
+
     return record;
+  }
+
+  async findOneById(
+    id: string,
+    requesterId: string,
+    requesterRole: UserRole,
+    preloadedRecord?: Record,
+  ): Promise<RecordResponseDto> {
+    const record =
+      preloadedRecord ??
+      (await this.recordRepository.findOne({
+        where: { id },
+      }));
+
+    if (!record) {
+      throw new NotFoundException(`Record ${id} not found`);
+    }
+
+    const canAccess = await this.accessControlService.canAccessRecord(
+      record.patientId,
+      requesterId,
+      requesterRole,
+      record.id,
+    );
+
+    if (!canAccess) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const isOwner = record.patientId === requesterId;
+
+    await this.auditLogService.create({
+      operation: 'RECORD_FETCH',
+      entityType: 'records',
+      entityId: record.id,
+      userId: requesterId,
+      status: 'success',
+      newValues: {
+        patientId: record.patientId,
+        accessType: isOwner ? 'owner' : 'grantee',
+      },
+    });
+
+    return {
+      id: record.id,
+      patientId: record.patientId,
+      recordType: record.recordType,
+      description: record.description ?? null,
+      stellarTxHash: record.stellarTxHash,
+      createdAt: record.createdAt,
+      ...(isOwner ? { cid: record.cid } : {}),
+    };
   }
 
   async findRecent(): Promise<RecentRecordDto[]> {
@@ -163,10 +262,13 @@ export class RecordsService {
   private truncateAddress(address: string): string {
     if (address.length <= 10) return address;
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  }
+
   /**
    * Derive the current state of a record by replaying its event stream.
    * Falls back to the latest snapshot + delta events for performance.
    */
+  @Traced('records.getStateFromEvents')
   async getStateFromEvents(id: string): Promise<RecordState> {
     const state = await this.eventStore.replayToState(id);
     if (!state || state.deleted) {
@@ -184,5 +286,106 @@ export class RecordsService {
       throw new NotFoundException(`No events found for record ${id}`);
     }
     return events;
+  }
+
+  /**
+   * Search records with dynamic filtering via QueryBuilder.
+   *
+   * Access control:
+   *  - Admin / Physician: can search all records, including by arbitrary patientAddress
+   *  - Patient / other roles: always scoped to their own patientId; patientAddress param ignored
+   *
+   * CID masking:
+   *  - Raw IPFS CIDs are only included when the caller is the record owner (patientId === callerId)
+   */
+  async search(
+    dto: SearchRecordsDto,
+    callerId: string,
+    callerRole: string,
+  ): Promise<SearchRecordsResponseDto> {
+    const { patientAddress, providerAddress, type, from, to, q, page = 1, pageSize = 20 } = dto;
+
+    const isPrivileged =
+      callerRole === UserRole.ADMIN || callerRole === (UserRole as any).PHYSICIAN || callerRole === 'physician';
+
+    const qb = this.recordRepository
+      .createQueryBuilder('record')
+      .select([
+        'record.id',
+        'record.patientId',
+        'record.providerId',
+        'record.cid',
+        'record.stellarTxHash',
+        'record.recordType',
+        'record.description',
+        'record.createdAt',
+      ])
+      // Always exclude soft-deleted records from search results
+      .andWhere('record.isDeleted = :isDeleted', { isDeleted: false });
+
+    // ── Access control scoping ────────────────────────────────────────────
+    if (isPrivileged) {
+      // Admin/Physician: honour the optional patientAddress filter
+      if (patientAddress) {
+        qb.andWhere('record.patientId = :patientAddress', { patientAddress });
+      }
+    } else {
+      // Non-privileged: always restrict to own records, ignore patientAddress param
+      qb.andWhere('record.patientId = :callerId', { callerId });
+    }
+
+    // ── Dynamic filters ───────────────────────────────────────────────────
+    if (providerAddress) {
+      qb.andWhere('record.providerId = :providerAddress', { providerAddress });
+    }
+
+    if (type) {
+      qb.andWhere('record.recordType = :type', { type });
+    }
+
+    if (from) {
+      qb.andWhere('record.createdAt >= :from', { from: new Date(from) });
+    }
+
+    if (to) {
+      qb.andWhere('record.createdAt <= :to', { to: new Date(to) });
+    }
+
+    // ── Full-text search on description ───────────────────────────────────
+    if (q) {
+      qb.andWhere('record.description ILIKE :q', { q: `%${q}%` });
+    }
+
+    // ── Pagination ────────────────────────────────────────────────────────
+    const skip = (page - 1) * pageSize;
+    qb.orderBy('record.createdAt', 'DESC').skip(skip).take(pageSize);
+
+    const [records, total] = await qb.getManyAndCount();
+
+    // ── CID masking: strip raw CID for non-owners ─────────────────────────
+    const data: SearchRecordItem[] = records.map((r) => {
+      const isOwner = r.patientId === callerId;
+      return {
+        id: r.id,
+        patientId: r.patientId,
+        providerId: r.providerId ?? null,
+        stellarTxHash: r.stellarTxHash ?? null,
+        recordType: r.recordType,
+        description: r.description ?? null,
+        createdAt: r.createdAt,
+        // Only expose raw CID to the record owner
+        ...(isOwner || isPrivileged ? { cid: r.cid } : {}),
+      };
+    });
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
   }
 }

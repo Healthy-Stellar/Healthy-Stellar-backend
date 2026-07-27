@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getRepositoryToken, getDataSourceToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BillingService } from './billing.service';
 import { Billing } from '../entities/billing.entity';
@@ -10,6 +10,15 @@ describe('BillingService', () => {
   let service: BillingService;
   let billingRepository: Repository<Billing>;
   let lineItemRepository: Repository<BillingLineItem>;
+
+  let invoiceSeq = 0;
+
+  const mockDataSource = {
+    query: jest.fn().mockImplementation(() => {
+      invoiceSeq += 1;
+      return Promise.resolve([{ seq: invoiceSeq }]);
+    }),
+  };
 
   const mockBillingRepository = {
     create: jest.fn(),
@@ -28,6 +37,7 @@ describe('BillingService', () => {
   };
 
   beforeEach(async () => {
+    invoiceSeq = 0;
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BillingService,
@@ -39,6 +49,10 @@ describe('BillingService', () => {
           provide: getRepositoryToken(BillingLineItem),
           useValue: mockLineItemRepository,
         },
+        {
+          provide: getDataSourceToken(),
+          useValue: mockDataSource,
+        },
       ],
     }).compile();
 
@@ -48,6 +62,11 @@ describe('BillingService', () => {
       getRepositoryToken(BillingLineItem),
     );
     jest.clearAllMocks();
+    // Re-wire the seq mock after clearAllMocks
+    mockDataSource.query.mockImplementation(() => {
+      invoiceSeq += 1;
+      return Promise.resolve([{ seq: invoiceSeq }]);
+    });
   });
 
   describe('create', () => {
@@ -321,6 +340,42 @@ describe('BillingService', () => {
 
       expect(result.isSentToCollections).toBe(true);
       expect(result.status).toBe('collections');
+    });
+  });
+
+  describe('concurrent invoice number generation', () => {
+    it('should produce 50 unique invoice numbers with no duplicates under concurrent load', async () => {
+      const createDto = {
+        patientId: 'patient-123',
+        patientName: 'John Doe',
+        serviceDate: '2024-01-15',
+        providerId: 'provider-123',
+        providerName: 'Dr. Smith',
+        diagnosisCodes: [{ code: 'J06.9', description: 'URI', isPrimary: true }],
+        lineItems: [
+          {
+            serviceDate: '2024-01-15',
+            cptCode: '99213',
+            cptDescription: 'Office visit',
+            unitCharge: 150,
+            units: 1,
+          },
+        ],
+      };
+
+      mockLineItemRepository.create.mockReturnValue({});
+      mockBillingRepository.create.mockImplementation((data) => ({ ...data }));
+      mockBillingRepository.save.mockImplementation((billing) => Promise.resolve(billing));
+
+      const results = await Promise.all(
+        Array.from({ length: 50 }, () => service.create(createDto)),
+      );
+
+      const invoiceNumbers = results.map((b) => b.invoiceNumber);
+      const unique = new Set(invoiceNumbers);
+
+      expect(unique.size).toBe(50);
+      invoiceNumbers.forEach((n) => expect(n).toMatch(/^INV-\d+$/));
     });
   });
 });

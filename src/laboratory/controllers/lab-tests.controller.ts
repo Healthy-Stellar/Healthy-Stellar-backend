@@ -9,6 +9,8 @@ import {
   Query,
   UseGuards,
   Request,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { LabTestsService } from '../services/lab-tests.service';
@@ -38,8 +40,8 @@ export class LabTestsController {
     @Query('category') category?: string,
     @Query('status') status?: TestStatus,
     @Query('search') search?: string,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
   ) {
     return this.labTestsService.findAll({
       category,

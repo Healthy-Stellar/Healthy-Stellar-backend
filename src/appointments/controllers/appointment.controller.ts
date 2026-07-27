@@ -1,10 +1,14 @@
-import { Controller, Get, Post, Body, Param, Patch, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { AppointmentService } from '../services/appointment.service';
 import { CreateAppointmentDto } from '../dto/create-appointment.dto';
 import { AppointmentStatus, MedicalPriority } from '../entities/appointment.entity';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
 
 @ApiTags('Appointments')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('appointments')
 export class AppointmentController {
   constructor(private readonly appointmentService: AppointmentService) {}
@@ -12,6 +16,7 @@ export class AppointmentController {
   @Post()
   @ApiOperation({ summary: 'Schedule a new appointment with medical priority' })
   @ApiResponse({ status: 201, description: 'Appointment scheduled successfully' })
+  @ApiResponse({ status: 409, description: 'Time slot is already booked (conflict)' })
   create(@Body() createAppointmentDto: CreateAppointmentDto) {
     return this.appointmentService.create(createAppointmentDto);
   }
@@ -47,10 +52,29 @@ export class AppointmentController {
     return this.appointmentService.getAvailableSlots(doctorId, new Date(date));
   }
 
+  @Get('providers/:id/availability')
+  @ApiOperation({ summary: 'Get provider availability with conflict detection' })
+  @ApiResponse({ status: 200, description: 'Provider availability status' })
+  @ApiQuery({ name: 'date', required: true, type: String })
+  getProviderAvailability(@Param('id') providerId: string, @Query('date') date: string) {
+    return this.appointmentService.getProviderAvailability(providerId, new Date(date));
+  }
+
   @Patch(':id/status')
   @ApiOperation({ summary: 'Update appointment status' })
   @ApiResponse({ status: 200, description: 'Appointment status updated successfully' })
   updateStatus(@Param('id') id: string, @Body('status') status: AppointmentStatus) {
     return this.appointmentService.updateStatus(id, status);
+  }
+
+  @Get(':id/telemedicine-token')
+  @ApiOperation({ summary: 'Issue a signed, time-limited join token for a telemedicine room' })
+  @ApiResponse({ status: 200, description: 'JWT join token and room URL' })
+  @ApiQuery({ name: 'participantId', required: true, type: String })
+  getTelemedicineToken(
+    @Param('id') id: string,
+    @Query('participantId') participantId: string,
+  ) {
+    return this.appointmentService.issueTelemedicineToken(id, participantId);
   }
 }

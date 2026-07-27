@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProviderDirectoryQueryDto } from '../dto/provider-directory-query.dto';
 import { User, UserRole } from '../entities/user.entity';
+import { PaginationUtil } from '../../common/utils/pagination.util';
+import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
 
 interface ProviderDirectoryRecord {
   id: string;
@@ -10,16 +12,9 @@ interface ProviderDirectoryRecord {
   role: 'doctor' | 'lab' | 'insurer';
   specialty: string | null;
   institution: string | null;
-  stellarPublicKey?: string | null;
-}
-
-interface ProviderDirectoryResult {
-  data: ProviderDirectoryRecord[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-  };
+  country: string | null;
+  isAcceptingPatients: boolean;
+  stellarAddress?: string | null;
 }
 
 @Injectable()
@@ -38,15 +33,16 @@ export class ProviderDirectoryService {
   async searchProviders(
     query: ProviderDirectoryQueryDto,
     includeSensitiveData: boolean,
-  ): Promise<ProviderDirectoryResult> {
+  ): Promise<PaginatedResponseDto<ProviderDirectoryRecord>> {
     const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 20;
-    const offset = (page - 1) * limit;
+    const pageSize = Number(query.pageSize) || 20;
+    const offset = (page - 1) * pageSize;
 
     const qb = this.usersRepository
       .createQueryBuilder('u')
       .where('u.role IN (:...providerRoles)', { providerRoles: this.providerRoles })
       .andWhere('u."isActive" = :isActive', { isActive: true })
+      .andWhere('u."isLicenseVerified" = :isVerified', { isVerified: true })
       .andWhere('u."deletedAt" IS NULL')
       .select('u.id', 'id')
       .addSelect(
@@ -54,20 +50,36 @@ export class ProviderDirectoryService {
         'displayName',
       )
       .addSelect('u.role', 'role')
-      .addSelect(`COALESCE(NULLIF(u."specialty", ''), NULLIF(u."specialization", ''))`, 'specialty')
-      .addSelect('u."institution"', 'institution');
+      .addSelect(`COALESCE(NULLIF(u."specialization", ''), NULLIF(u."specialty", ''))`, 'specialty')
+      .addSelect('u."institution"', 'institution')
+      .addSelect('u."country"', 'country')
+      .addSelect('u."isAcceptingPatients"', 'isAcceptingPatients');
 
     if (includeSensitiveData) {
-      qb.addSelect('u."stellarPublicKey"', 'stellarPublicKey');
+      qb.addSelect('u."stellarPublicKey"', 'stellarAddress');
     }
 
     if (query.role) {
       qb.andWhere('u.role = :role', { role: this.mapRoleAliasToEnum(query.role) });
     }
 
-    if (query.specialty) {
-      qb.andWhere(`COALESCE(u."specialty", u."specialization", '') ILIKE :specialty`, {
-        specialty: `%${query.specialty}%`,
+    if (query.specialty || query.specialization) {
+      const specialtySearch = query.specialty || query.specialization;
+      qb.andWhere(
+        `(COALESCE(u."specialty", '') ILIKE :specialty OR COALESCE(u."specialization", '') ILIKE :specialty)`,
+        {
+          specialty: `%${specialtySearch}%`,
+        },
+      );
+    }
+
+    if (query.country) {
+      qb.andWhere('u.country = :country', { country: query.country });
+    }
+
+    if (query.isAcceptingPatients !== undefined) {
+      qb.andWhere('u."isAcceptingPatients" = :isAcceptingPatients', {
+        isAcceptingPatients: query.isAcceptingPatients,
       });
     }
 
@@ -86,30 +98,30 @@ export class ProviderDirectoryService {
       .orderBy()
       .select('COUNT(DISTINCT u.id)', 'total')
       .getRawOne<{ total: string }>();
-    const rows = await qb.offset(offset).limit(limit).getRawMany<{
+    const rows = await qb.offset(offset).limit(pageSize).getRawMany<{
       id: string;
       displayName: string;
       role: UserRole;
       specialty: string | null;
       institution: string | null;
-      stellarPublicKey?: string | null;
+      country: string | null;
+      isAcceptingPatients: boolean;
+      stellarAddress?: string | null;
     }>();
 
-    return {
-      data: rows.map((row) => ({
-        id: row.id,
-        displayName: row.displayName,
-        role: this.mapRoleEnumToAlias(row.role),
-        specialty: row.specialty,
-        institution: row.institution,
-        ...(includeSensitiveData ? { stellarPublicKey: row.stellarPublicKey ?? null } : {}),
-      })),
-      pagination: {
-        page,
-        limit,
-        total: Number(totalRow?.total || 0),
-      },
-    };
+    const data = rows.map((row) => ({
+      id: row.id,
+      displayName: row.displayName,
+      role: this.mapRoleEnumToAlias(row.role),
+      specialty: row.specialty,
+      institution: row.institution,
+      country: row.country,
+      isAcceptingPatients: row.isAcceptingPatients,
+      ...(includeSensitiveData ? { stellarAddress: row.stellarAddress ?? null } : {}),
+    }));
+
+    const total = Number(totalRow?.total || 0);
+    return PaginationUtil.createResponse(data, total, page, pageSize);
   }
 
   private mapRoleAliasToEnum(role: 'doctor' | 'lab' | 'insurer'): UserRole {

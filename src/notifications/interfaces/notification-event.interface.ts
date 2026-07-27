@@ -4,6 +4,7 @@ export enum NotificationEventType {
   ACCESS_REVOKED = 'access.revoked',
   RECORD_UPLOADED = 'record.uploaded',
   EMERGENCY_ACCESS = 'emergency-access',
+  RECORD_AMENDED = 'record.amended',
 }
 
 export interface NotificationEvent {
@@ -12,4 +13,17 @@ export interface NotificationEvent {
   resourceId: string;
   timestamp: Date;
   metadata?: Record<string, any>;
+}
+
+export interface NotificationPreferences {
+  userId: string;
+  preferredLanguage: string;
+  emailEnabled?: boolean;
+  pushEnabled?: boolean;
+}
+
+export interface LocalizedNotification {
+  subject: string;
+  body: string;
+  lang: string;
 }

@@ -1,0 +1,22 @@
+{
+  "record_accessed": {
+    "subject": "Votre dossier médical a été consulté",
+    "body": "Votre dossier médical (ID : {resourceId}) a été consulté par {actorId} le {timestamp}."
+  },
+  "access_granted": {
+    "subject": "Accès accordé à votre dossier",
+    "body": "L'accès à votre dossier médical (ID : {resourceId}) a été accordé à {actorId}."
+  },
+  "access_revoked": {
+    "subject": "Accès révoqué de votre dossier",
+    "body": "L'accès à votre dossier médical (ID : {resourceId}) a été révoqué pour {actorId}."
+  },
+  "record_uploaded": {
+    "subject": "Nouveau dossier médical téléversé",
+    "body": "Un nouveau dossier médical (ID : {resourceId}) a été téléversé par {actorId}."
+  },
+  "emergency_access": {
+    "subject": "Accès d'urgence à votre dossier",
+    "body": "Un accès d'urgence à votre dossier médical (ID : {resourceId}) a été initié par {actorId} le {timestamp}."
+  }
+}

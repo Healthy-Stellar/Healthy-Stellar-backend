@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, FindOptionsWhere, Between } from 'typeorm';
 import { Payment } from '../entities/payment.entity';
@@ -12,9 +12,12 @@ import {
 } from '../dto/payment.dto';
 import { PaymentStatus, PaymentMethod } from '../../common/enums';
 import { v4 as uuidv4 } from 'uuid';
+import { InvoicePdfService } from './invoice-pdf.service';
 
 @Injectable()
 export class PaymentService {
+  private readonly logger = new Logger(PaymentService.name);
+
   constructor(
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
@@ -41,6 +44,22 @@ export class PaymentService {
       );
     }
 
+    // Idempotency: a client-supplied transactionId identifies a single
+    // logical payment attempt (e.g. a gateway charge). If a payment already
+    // exists for it, return that payment instead of creating a second
+    // Payment row and a second deduction from billing.balance.
+    if (createDto.transactionId) {
+      const existingPayment = await this.paymentRepository.findOne({
+        where: { transactionId: createDto.transactionId },
+      });
+      if (existingPayment) {
+        this.logger.warn(
+          `Duplicate payment request for transactionId=${createDto.transactionId}; returning existing payment ${existingPayment.id}`,
+        );
+        return existingPayment;
+      }
+    }
+
     const paymentNumber = `PAY-${Date.now()}-${uuidv4().substring(0, 4).toUpperCase()}`;
 
     const payment = this.paymentRepository.create({
@@ -65,11 +84,33 @@ export class PaymentService {
       notes: createDto.notes,
     });
 
-    await this.paymentRepository.save(payment);
+    try {
+      await this.paymentRepository.save(payment);
+    } catch (error) {
+      // A concurrent request carrying the same client-supplied transactionId
+      // may have won the race to insert first. The unique constraint on
+      // transactionId (see migration AddUniqueConstraintToPaymentTransactionId)
+      // turns that race into "return the existing payment" instead of a
+      // duplicate deduction against billing.balance.
+      if (createDto.transactionId && this.isDuplicateKeyError(error)) {
+        const existingPayment = await this.paymentRepository.findOne({
+          where: { transactionId: createDto.transactionId },
+        });
+        if (existingPayment) {
+          return existingPayment;
+        }
+      }
+      throw error;
+    }
 
     const processedPayment = await this.processPayment(payment.id);
 
     return processedPayment;
+  }
+
+  private isDuplicateKeyError(error: unknown): boolean {
+    const code = (error as { code?: string } | undefined)?.code;
+    return code === '23505';
   }
 
   async processPayment(paymentId: string): Promise<Payment> {
@@ -113,16 +154,15 @@ export class PaymentService {
         relations: ['lineItems', 'payments'],
       });
 
-      if (billing) {
-        billing.totalPayments = Number(billing.totalPayments) + Number(payment.amount);
-        billing.balance = Number(billing.balance) - Number(payment.amount);
+        billing.totalPayments = Number(billing.totalPayments) + paymentAmount;
+        billing.balance = currentBalance - paymentAmount;
 
         if (payment.isInsurancePayment) {
           billing.insuranceResponsibility =
-            Number(billing.insuranceResponsibility || 0) - Number(payment.amount);
+            Number(billing.insuranceResponsibility || 0) - paymentAmount;
         } else {
           billing.patientResponsibility =
-            Number(billing.patientResponsibility || 0) - Number(payment.amount);
+            Number(billing.patientResponsibility || 0) - paymentAmount;
         }
 
         billing.status = billing.balance <= 0 ? 'paid' : 'partial';

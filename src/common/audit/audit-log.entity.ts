@@ -22,6 +22,9 @@ export enum AuditAction {
   DATA_ACCESS = 'DATA_ACCESS',
   DATA_EXPORT = 'DATA_EXPORT',
   UNAUTHORIZED_ACCESS_ATTEMPT = 'UNAUTHORIZED_ACCESS_ATTEMPT',
+  API_KEY_CREATED = 'API_KEY_CREATED',
+  API_KEY_REVOKED = 'API_KEY_REVOKED',
+  API_KEY_USED = 'API_KEY_USED',
 }
 
 @Entity('audit_logs')
@@ -82,6 +85,12 @@ export class AuditLogEntity {
 
   @Column({ nullable: true })
   stellarTxHash: string;
+
+  @Column({ nullable: true, length: 64 })
+  previousHash: string;
+
+  @Column({ nullable: true, length: 64 })
+  entryHash: string;
 
   @Column({ default: false })
   requiresInvestigation: boolean;

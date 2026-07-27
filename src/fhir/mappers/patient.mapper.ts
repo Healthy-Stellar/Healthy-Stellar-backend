@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { User } from '../../users/entities/user.entity';
+import { User } from '../../auth/entities/user.entity';
 import { FhirMappingException } from '../exceptions/fhir-mapping.exception';
 
 @Injectable()

@@ -1,11 +1,16 @@
 import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { CreateDrugDto, CreatePrescriptionDto, FillPrescriptionDto } from '../dto/pharmacy.dto';
+import { CreateDrugDto, FillPrescriptionDto } from '../dto/pharmacy.dto';
+import { CreatePrescriptionDto } from '../dto/create-prescription.dto';
+import { DispensePrescriptionRequestDto } from '../dto/dispense-prescription-request.dto';
+import { PrescriptionService } from '../services/prescription.service';
 
 @ApiTags('Pharmacy Management')
 @ApiBearerAuth('medical-auth')
 @Controller('pharmacy')
 export class PharmacyController {
+  constructor(private readonly prescriptionService: PrescriptionService) {}
+
   @Post('drugs')
   @ApiOperation({
     summary: 'Add drug to inventory',
@@ -49,18 +54,56 @@ export class PharmacyController {
   @Post('prescriptions')
   @ApiOperation({
     summary: 'Create prescription',
-    description: 'Create new prescription order with safety checks',
+    description:
+      'Create a new prescription linked to a patient, prescribing doctor, and medication. ' +
+      'Validates that the prescribing doctor (medical-staff module) holds an active license, ' +
+      'and runs a drug-drug interaction check (blocks on major/contraindicated interactions, ' +
+      'warns on moderate interactions).',
   })
   @ApiResponse({ status: 201, description: 'Prescription created' })
+  @ApiResponse({ status: 403, description: "Prescribing doctor's license is not active" })
+  @ApiResponse({ status: 422, description: 'Blocked by a critical drug interaction' })
   async createPrescription(@Body() dto: CreatePrescriptionDto) {
-    return { id: 'rx-uuid', prescriptionNumber: 'RX-2024-0001', status: 'pending' };
+    return this.prescriptionService.create(dto);
+  }
+
+  @Get('prescriptions/patient/:patientId')
+  @ApiOperation({
+    summary: 'Get patient prescriptions',
+    description: 'Retrieve all prescriptions for a patient',
+  })
+  @ApiResponse({ status: 200, description: 'Prescriptions retrieved' })
+  async getPatientPrescriptions(@Param('patientId') patientId: string) {
+    return this.prescriptionService.getPatientPrescriptions(patientId);
   }
 
   @Get('prescriptions/:id')
-  @ApiOperation({ summary: 'Get prescription details' })
+  @ApiOperation({
+    summary: 'Get prescription details',
+    description: 'Retrieve a prescription including its items and full dispensing history.',
+  })
   @ApiResponse({ status: 200, description: 'Prescription retrieved' })
+  @ApiResponse({ status: 404, description: 'Prescription not found' })
   async getPrescription(@Param('id') id: string) {
-    return { id, status: 'pending' };
+    return this.prescriptionService.findOne(id);
+  }
+
+  @Post('prescriptions/:id/dispense')
+  @ApiOperation({
+    summary: 'Dispense prescription',
+    description:
+      'Dispense a prescription: runs a drug interaction check (blocking on severe ' +
+      'interactions, warning on moderate ones), deducts the dispensed quantity from ' +
+      'pharmacy inventory, and records a dispensing-history transaction.',
+  })
+  @ApiResponse({ status: 200, description: 'Prescription dispensed' })
+  @ApiResponse({ status: 400, description: 'Invalid status or insufficient inventory' })
+  @ApiResponse({ status: 422, description: 'Blocked by a severe drug interaction' })
+  async dispensePrescription(
+    @Param('id') id: string,
+    @Body() dto: DispensePrescriptionRequestDto,
+  ) {
+    return this.prescriptionService.dispensePrescription(id, dto);
   }
 
   @Post('prescriptions/:id/fill')
@@ -81,16 +124,6 @@ export class PharmacyController {
   @ApiResponse({ status: 200, description: 'Prescription verified' })
   async verifyPrescription(@Param('id') id: string, @Body() body: { pharmacistId: string }) {
     return { id, status: 'verified', verifiedBy: body.pharmacistId };
-  }
-
-  @Get('prescriptions/patient/:patientId')
-  @ApiOperation({
-    summary: 'Get patient prescriptions',
-    description: 'Retrieve all prescriptions for a patient',
-  })
-  @ApiResponse({ status: 200, description: 'Prescriptions retrieved' })
-  async getPatientPrescriptions(@Param('patientId') patientId: string) {
-    return [];
   }
 
   @Post('safety-check')

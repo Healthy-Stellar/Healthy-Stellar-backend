@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
 export enum ReminderType {
@@ -25,6 +26,10 @@ export enum ReminderStatus {
 export class AppointmentReminder {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Index()
+  @Column({ name: 'tenant_id', type: 'uuid' })
+  tenantId: string;
 
   @Column({ name: 'appointment_id' })
   appointmentId: string;

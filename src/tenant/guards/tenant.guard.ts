@@ -7,7 +7,6 @@ export class TenantGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
-    // If no user (public endpoint), allow - interceptor will handle tenant
     if (!user) {
       return true;
     }
@@ -18,9 +17,12 @@ export class TenantGuard implements CanActivate {
       throw new ForbiddenException('Tenant context not found');
     }
 
-    // Verify user belongs to the tenant
-    if (user.tenantId !== tenantId) {
-      throw new ForbiddenException('Access denied: User does not belong to this tenant');
+    if (!user.organizationId) {
+      throw new ForbiddenException('Access denied: No organization assigned to user');
+    }
+
+    if (user.organizationId !== tenantId) {
+      throw new ForbiddenException('Access denied: Cross-tenant access is not allowed');
     }
 
     return true;

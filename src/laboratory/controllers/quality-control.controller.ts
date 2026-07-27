@@ -8,6 +8,8 @@ import {
   Query,
   UseGuards,
   Request,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { QualityControlService } from '../services/quality-control.service';
@@ -39,8 +41,8 @@ export class QualityControlController {
     @Query('qcResult') qcResult?: QCResult,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
   ) {
     return this.qcService.findAll({
       equipmentId,

@@ -1,14 +1,17 @@
 import {
   Entity,
   Column,
+  Index,
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  OneToOne,
 } from 'typeorm';
 import { MfaEntity } from './mfa.entity';
 import { SessionEntity } from './session.entity';
 import { AuditLogEntity } from '../../common/audit/audit-log.entity';
+import type { Patient } from '../../users/entities/patient.entity';
 
 export enum UserRole {
   ADMIN = 'admin',
@@ -17,6 +20,16 @@ export enum UserRole {
   PATIENT = 'patient',
   BILLING_STAFF = 'billing_staff',
   MEDICAL_RECORDS = 'medical_records',
+  SUPER_ADMIN = 'super_admin',
+  COMPLIANCE_OFFICER = 'compliance_officer',
+  SURGEON = 'surgeon',
+}
+
+export enum UserStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  PENDING_VERIFICATION = 'PENDING_VERIFICATION',
 }
 
 @Entity('users')
@@ -44,6 +57,15 @@ export class User {
 
   @Column({ default: false })
   isActive: boolean;
+
+  @Column({ default: false })
+  isLicenseVerified: boolean;
+
+  @Column({ nullable: true, length: 100 })
+  country: string;
+
+  @Column({ default: true })
+  isAcceptingPatients: boolean;
 
   @Column({ default: false })
   mfaEnabled: boolean;
@@ -77,11 +99,16 @@ export class User {
 
   @Column({ default: true })
   emergencyAccessEnabled: boolean;
+
   @Column({ nullable: true, length: 255 })
   specialty: string;
 
   @Column({ nullable: true, length: 255 })
   institution: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  @Index()
+  organizationId: string;
 
   @Column({ nullable: true, length: 255, select: false })
   stellarPublicKey: string;
@@ -92,14 +119,45 @@ export class User {
   @Column({ type: 'simple-array', nullable: true })
   permissions: string[];
 
+  /** User status (active, suspended, etc.) */
+  @Column({ type: 'enum', enum: UserStatus, default: UserStatus.ACTIVE })
+  status: UserStatus;
+
+  @Column({ type: 'date', nullable: true })
+  licenseExpiryDate: Date;
+
+  @Column({ nullable: true })
+  department: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  licenseVerifiedAt: Date;
+
+  @Column({ nullable: true })
+  verifiedBy: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastAccessRevocationAt: Date;
+
+  @Column({ nullable: true })
+  revocationReason: string;
+
   @CreateDateColumn()
   createdAt: Date;
 
   @UpdateDateColumn()
   updatedAt: Date;
 
+  @Column({ nullable: true, length: 128, select: false })
+  passwordResetToken: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  passwordResetTokenExpiresAt: Date;
+
   @Column({ nullable: true })
   deletedAt: Date;
+
+  @OneToOne(() => Patient, (patient) => patient.user, { nullable: true })
+  patientProfile: Patient;
 
   @OneToMany(() => MfaEntity, (mfa) => mfa.user, { cascade: true })
   mfaDevices: MfaEntity[];

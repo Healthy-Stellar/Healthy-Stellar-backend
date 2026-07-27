@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: hs-api
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env.docker
+    volumes:
+      # Mount source so nest --watch picks up file changes
+      - .:/app
+      # Prevent host node_modules from overwriting the container's
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - hs-local
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: hs-postgres
+    environment:
+      POSTGRES_DB: healthy_stellar_dev
+      POSTGRES_USER: dev_user
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - hs-local
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U dev_user -d healthy_stellar_dev']
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: hs-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - hs-local
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
+      retries: 5
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: hs-mailhog
+    ports:
+      - '1025:1025'   # SMTP — point SMTP_HOST=mailhog, SMTP_PORT=1025 at this
+      - '8025:8025'   # Web UI — http://localhost:8025
+    networks:
+      - hs-local
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8025']
+      interval: 15s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+networks:
+  hs-local:
+    driver: bridge
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:

@@ -1,0 +1,164 @@
+# SLO Burn-Rate Alert Policies — Healthy Stellar Backend
+#
+# Multi-window burn-rate model (Google SRE Workbook, Chapter 5):
+#   Fast burn  — 14.4× budget rate, detected in 1 h window + 5 m confirmation
+#                Consumes ~2 % of monthly budget in 1 h → page immediately
+#   Slow burn  —  6×  budget rate, detected in 6 h window + 30 m confirmation
+#                Consumes ~5 % of monthly budget in 6 h → ticket / warn
+#
+# Burn-rate multiplier thresholds:
+#   SLO-1 (99.9 %): budget = 0.001  → fast threshold = 14.4×0.001 = 0.0144
+#   SLO-2 (99.0 %): budget = 0.01   → fast threshold = 14.4×0.01  = 0.144
+#   SLO-3 (99.5 %): budget = 0.005  → fast threshold = 14.4×0.005 = 0.072
+
+groups:
+  - name: slo_burn_rate_alerts
+    rules:
+
+      # ── SLO-1: API Availability ──────────────────────────────────────────────
+
+      - alert: SLO_ApiAvailability_FastBurn
+        expr: |
+          slo:api_availability:error_ratio:1h  > 0.0144
+          and
+          slo:api_availability:error_ratio:5m  > 0.0144
+        for: 2m
+        labels:
+          severity: critical
+          slo: api_availability
+          burn_rate: fast
+        annotations:
+          summary: "SLO-1 API Availability fast burn — error budget burning too quickly"
+          description: >
+            1 h error ratio {{ $value | humanizePercentage }} exceeds fast-burn threshold (1.44 %).
+            At this rate the 30-day error budget will be exhausted in < 2 days.
+            SLO target: 99.9 % availability.
+          runbook_url: "https://wiki.internal/runbooks/slo-api-availability"
+
+      - alert: SLO_ApiAvailability_SlowBurn
+        expr: |
+          slo:api_availability:error_ratio:6h  > 0.006
+          and
+          slo:api_availability:error_ratio:30m > 0.006
+        for: 15m
+        labels:
+          severity: warning
+          slo: api_availability
+          burn_rate: slow
+        annotations:
+          summary: "SLO-1 API Availability slow burn — elevated error rate"
+          description: >
+            6 h error ratio {{ $value | humanizePercentage }} exceeds slow-burn threshold (0.6 %).
+            At this rate ~5 % of the monthly error budget will be consumed in 6 h.
+            SLO target: 99.9 % availability.
+          runbook_url: "https://wiki.internal/runbooks/slo-api-availability"
+
+      - alert: SLO_ApiAvailability_BudgetExhausted
+        expr: slo:api_availability:error_budget_consumed:30d >= 1
+        for: 5m
+        labels:
+          severity: critical
+          slo: api_availability
+        annotations:
+          summary: "SLO-1 API Availability — 30-day error budget exhausted"
+          description: >
+            The 30-day error budget for API availability (SLO 99.9 %) has been fully consumed.
+            Current consumption: {{ $value | humanizePercentage }}.
+
+      # ── SLO-2: API Latency p99 < 1 s ────────────────────────────────────────
+
+      - alert: SLO_ApiLatency_FastBurn
+        expr: |
+          slo:api_latency:bad_ratio:1h  > 0.144
+          and
+          slo:api_latency:bad_ratio:5m  > 0.144
+        for: 2m
+        labels:
+          severity: critical
+          slo: api_latency
+          burn_rate: fast
+        annotations:
+          summary: "SLO-2 API Latency fast burn — too many slow requests"
+          description: >
+            1 h slow-request ratio {{ $value | humanizePercentage }} exceeds fast-burn threshold (14.4 %).
+            At this rate the 30-day latency error budget will be exhausted in < 2 days.
+            SLO target: 99 % of requests < 1 s.
+          runbook_url: "https://wiki.internal/runbooks/slo-api-latency"
+
+      - alert: SLO_ApiLatency_SlowBurn
+        expr: |
+          slo:api_latency:bad_ratio:6h  > 0.06
+          and
+          slo:api_latency:bad_ratio:30m > 0.06
+        for: 15m
+        labels:
+          severity: warning
+          slo: api_latency
+          burn_rate: slow
+        annotations:
+          summary: "SLO-2 API Latency slow burn — elevated slow-request rate"
+          description: >
+            6 h slow-request ratio {{ $value | humanizePercentage }} exceeds slow-burn threshold (6 %).
+            SLO target: 99 % of requests < 1 s.
+          runbook_url: "https://wiki.internal/runbooks/slo-api-latency"
+
+      - alert: SLO_ApiLatency_BudgetExhausted
+        expr: slo:api_latency:error_budget_consumed:30d >= 1
+        for: 5m
+        labels:
+          severity: critical
+          slo: api_latency
+        annotations:
+          summary: "SLO-2 API Latency — 30-day error budget exhausted"
+          description: >
+            The 30-day error budget for API latency (SLO 99 % < 1 s) has been fully consumed.
+            Current consumption: {{ $value | humanizePercentage }}.
+
+      # ── SLO-3: Stellar Tx Success Rate ──────────────────────────────────────
+
+      - alert: SLO_StellarTx_FastBurn
+        expr: |
+          slo:stellar_tx:error_ratio:1h  > 0.072
+          and
+          slo:stellar_tx:error_ratio:5m  > 0.072
+        for: 2m
+        labels:
+          severity: critical
+          slo: stellar_tx_success
+          burn_rate: fast
+        annotations:
+          summary: "SLO-3 Stellar Tx Success fast burn — high transaction failure rate"
+          description: >
+            1 h Stellar tx failure ratio {{ $value | humanizePercentage }} exceeds fast-burn threshold (7.2 %).
+            At this rate the 30-day error budget will be exhausted in < 2 days.
+            SLO target: 99.5 % Stellar transaction success rate.
+          runbook_url: "https://wiki.internal/runbooks/slo-stellar-tx"
+
+      - alert: SLO_StellarTx_SlowBurn
+        expr: |
+          slo:stellar_tx:error_ratio:6h  > 0.03
+          and
+          slo:stellar_tx:error_ratio:30m > 0.03
+        for: 15m
+        labels:
+          severity: warning
+          slo: stellar_tx_success
+          burn_rate: slow
+        annotations:
+          summary: "SLO-3 Stellar Tx Success slow burn — elevated failure rate"
+          description: >
+            6 h Stellar tx failure ratio {{ $value | humanizePercentage }} exceeds slow-burn threshold (3 %).
+            SLO target: 99.5 % Stellar transaction success rate.
+          runbook_url: "https://wiki.internal/runbooks/slo-stellar-tx"
+
+      - alert: SLO_StellarTx_BudgetExhausted
+        expr: slo:stellar_tx:error_budget_consumed:30d >= 1
+        for: 5m
+        labels:
+          severity: critical
+          slo: stellar_tx_success
+        annotations:
+          summary: "SLO-3 Stellar Tx — 30-day error budget exhausted"
+          description: >
+            The 30-day error budget for Stellar transaction success (SLO 99.5 %) has been fully consumed.
+            Current consumption: {{ $value | humanizePercentage }}.
