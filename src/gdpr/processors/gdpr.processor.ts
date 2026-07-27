@@ -21,10 +21,37 @@ import { PatientCounselingLog } from '../../pharmacy/entities/patient-counseling
 import { MedicationErrorLog } from '../../pharmacy/entities/medication-error-log.entity';
 import { Appointment } from '../../appointments/entities/appointment.entity';
 import { ConsultationNote } from '../../appointments/entities/consultation-note.entity';
+import { BillingEntity } from '../../billing/entities/billing.entity';
+import { InsuranceClaim } from '../../billing/entities/insurance-claim.entity';
+import { Insurance } from '../../billing/entities/insurance.entity';
+import { Payment } from '../../billing/entities/payment.entity';
+import { MedicationAdministrationRecord } from '../../medication-administration/entities/medication-administration-record.entity';
+import { MedicationOrder } from '../../medication-administration/entities/medication-order.entity';
+import { AdverseDrugReaction } from '../../medication-administration/entities/adverse-drug-reaction.entity';
+import { MedicationReconciliation } from '../../medication-administration/entities/medication-reconciliation.entity';
+import { MissedDose } from '../../medication-administration/entities/missed-dose.entity';
+import { PatientVital } from '../../healthcare-monitoring/entities/patient-vital.entity';
+import { ClinicalAlert } from '../../healthcare-monitoring/entities/clinical-alert.entity';
+import { HealthcareIncident } from '../../healthcare-monitoring/entities/healthcare-incident.entity';
+import { Diagnosis } from '../../diagnosis/entities/diagnosis.entity';
+import { TreatmentPlan } from '../../treatment-planning/entities/treatment-plan.entity';
+import { MedicalProcedure } from '../../treatment-planning/entities/medical-procedure.entity';
+import { TreatmentOutcome } from '../../treatment-planning/entities/treatment-outcome.entity';
+import { CriticalCareMonitoring } from '../../emergency-operations/entities/critical-care-monitoring.entity';
+import { InfectionCase } from '../../infection-control/entities/infection-case.entity';
+import { IsolationPrecaution } from '../../infection-control/entities/isolation-precaution.entity';
+import { AntibioticResistance } from '../../infection-control/entities/antibiotic-resistance.entity';
+import { PathologyCase } from '../../pathology/entities/pathology-case.entity';
+import { ProviderPatientRelationship } from '../../provider-patient/entities/provider-patient-relationship.entity';
+import { CareplanHandoff } from '../../provider-patient/entities/care-plan-handoff.entity';
+import { PatientTransfer } from '../../hospital-registry/entities/patient-transfer.entity';
 import { IpfsService } from '../../records/services/ipfs.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { DeletionRegistryService } from '../services/deletion-registry.service';
 import { DataRetentionService } from '../../data-retention/data-retention.service';
+import { Billing } from '../../billing/entities/billing.entity';
+import { generateGdprExportSignedUrl } from '../../fhir/utils/signed-url.util';
+import { FhirMapper } from '../../fhir/mappers/fhir.mapper';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -45,6 +72,10 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
     private readonly auditLogRepository: Repository<AuditLogEntity>,
     @InjectRepository(GdprComplianceLog)
     private readonly complianceLogRepository: Repository<GdprComplianceLog>,
+    @InjectRepository(Billing) private readonly billingRepository: Repository<Billing>,
+    @InjectRepository(LabOrder) private readonly labOrderRepository: Repository<LabOrder>,
+    @InjectRepository(Specimen) private readonly specimenRepository: Repository<Specimen>,
+    @InjectRepository(LabResult) private readonly labResultRepository: Repository<LabResult>,
     private readonly ipfsService: IpfsService,
     private readonly notificationsService: NotificationsService,
     private readonly deletionRegistry: DeletionRegistryService,
@@ -93,7 +124,8 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
 
     this.deletionRegistry.register({
       moduleName: 'records',
-      previewForUser: async (userId, manager) => manager.count(Record, { where: { patientId: userId } }),
+      previewForUser: async (userId, manager) =>
+        manager.count(Record, { where: { patientId: userId } }),
       deleteForUser: async (userId, manager) => {
         await manager.delete(Record, { patientId: userId });
       },
@@ -125,7 +157,11 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
         await manager.update(
           AccessGrant,
           { patientId: userId, status: GrantStatus.ACTIVE },
-          { status: GrantStatus.REVOKED, revokedAt: new Date(), revocationReason: 'GDPR Right to Erasure' },
+          {
+            status: GrantStatus.REVOKED,
+            revokedAt: new Date(),
+            revocationReason: 'GDPR Right to Erasure',
+          },
         );
       },
     });
@@ -193,6 +229,148 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
         await manager.delete(Appointment, { patientId: userId });
       },
     });
+
+    this.deletionRegistry.register({
+      moduleName: 'billing',
+      previewForUser: async (userId, manager) => {
+        const [billing, claims, insurance, payments] = await Promise.all([
+          manager.count(BillingEntity, { where: { patientId: userId } }),
+          manager.count(InsuranceClaim, { where: { patientId: userId } }),
+          manager.count(Insurance, { where: { patientId: userId } }),
+          manager.count(Payment, { where: { patientId: userId } }),
+        ]);
+        return billing + claims + insurance + payments;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(Payment, { patientId: userId });
+        await manager.delete(Insurance, { patientId: userId });
+        await manager.delete(InsuranceClaim, { patientId: userId });
+        await manager.delete(BillingEntity, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'medication-administration',
+      previewForUser: async (userId, manager) => {
+        const [records, orders, adr, recon, missed] = await Promise.all([
+          manager.count(MedicationAdministrationRecord, { where: { patientId: userId } }),
+          manager.count(MedicationOrder, { where: { patientId: userId } }),
+          manager.count(AdverseDrugReaction, { where: { patientId: userId } }),
+          manager.count(MedicationReconciliation, { where: { patientId: userId } }),
+          manager.count(MissedDose, { where: { patientId: userId } }),
+        ]);
+        return records + orders + adr + recon + missed;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(MissedDose, { patientId: userId });
+        await manager.delete(MedicationReconciliation, { patientId: userId });
+        await manager.delete(AdverseDrugReaction, { patientId: userId });
+        await manager.delete(MedicationOrder, { patientId: userId });
+        await manager.delete(MedicationAdministrationRecord, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'healthcare-monitoring',
+      previewForUser: async (userId, manager) => {
+        const [vitals, alerts, incidents] = await Promise.all([
+          manager.count(PatientVital, { where: { patientId: userId } }),
+          manager.count(ClinicalAlert, { where: { patientId: userId } }),
+          manager.count(HealthcareIncident, { where: { patientId: userId } }),
+        ]);
+        return vitals + alerts + incidents;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(HealthcareIncident, { patientId: userId });
+        await manager.delete(ClinicalAlert, { patientId: userId });
+        await manager.delete(PatientVital, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'diagnosis',
+      previewForUser: async (userId, manager) =>
+        manager.count(Diagnosis, { where: { patientId: userId } }),
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(Diagnosis, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'treatment-planning',
+      previewForUser: async (userId, manager) => {
+        const [plans, procedures, outcomes] = await Promise.all([
+          manager.count(TreatmentPlan, { where: { patientId: userId } }),
+          manager.count(MedicalProcedure, { where: { patientId: userId } }),
+          manager.count(TreatmentOutcome, { where: { patientId: userId } }),
+        ]);
+        return plans + procedures + outcomes;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(TreatmentOutcome, { patientId: userId });
+        await manager.delete(MedicalProcedure, { patientId: userId });
+        await manager.delete(TreatmentPlan, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'emergency-operations',
+      previewForUser: async (userId, manager) =>
+        manager.count(CriticalCareMonitoring, { where: { patientId: userId } }),
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(CriticalCareMonitoring, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'infection-control',
+      previewForUser: async (userId, manager) => {
+        const [cases, precautions, resistance] = await Promise.all([
+          manager.count(InfectionCase, { where: { patientId: userId } }),
+          manager.count(IsolationPrecaution, { where: { patientId: userId } }),
+          manager.count(AntibioticResistance, { where: { patientId: userId } }),
+        ]);
+        return cases + precautions + resistance;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(AntibioticResistance, { patientId: userId });
+        await manager.delete(IsolationPrecaution, { patientId: userId });
+        await manager.delete(InfectionCase, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'pathology',
+      previewForUser: async (userId, manager) =>
+        manager.count(PathologyCase, { where: { patientId: userId } }),
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(PathologyCase, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'provider-patient',
+      previewForUser: async (userId, manager) => {
+        const [relationships, handoffs] = await Promise.all([
+          manager.count(ProviderPatientRelationship, { where: { patientId: userId } }),
+          manager.count(CareplanHandoff, { where: { patientId: userId } }),
+        ]);
+        return relationships + handoffs;
+      },
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(CareplanHandoff, { patientId: userId });
+        await manager.delete(ProviderPatientRelationship, { patientId: userId });
+      },
+    });
+
+    this.deletionRegistry.register({
+      moduleName: 'hospital-registry',
+      previewForUser: async (userId, manager) =>
+        manager.count(PatientTransfer, { where: { patientId: userId } }),
+      deleteForUser: async (userId, manager) => {
+        await manager.delete(PatientTransfer, { patientId: userId });
+      },
+    });
   }
 
   private hashPlaceholder(value: string, seed: string): string {
@@ -235,21 +413,56 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
         where: { patientId: data.userId },
       });
       const auditLogEntity = await this.auditLogRepository.find({ where: { userId: data.userId } });
+      const billingRecords = await this.billingRepository.find({
+        where: { patientId: data.userId },
+      });
+      const labOrders = await this.labOrderRepository.find({ where: { patientId: data.userId } });
+      const specimens = await this.specimenRepository.find({ where: { patientId: data.userId } });
+      const orderRefs = labOrders.flatMap((o) => [o.id, (o as any).orderNumber].filter(Boolean));
+      const labResults = orderRefs.length
+        ? await this.labResultRepository.find({ where: { orderId: In(orderRefs) } })
+        : [];
 
-      const exportData = {
-        profile: user,
-        patient,
-        records,
-        medicalRecords,
-        accessGrants,
-        auditLogEntity, // Audit logs might contain Stellar transaction hashes
+      const toBasicResource = (moduleName: string, id: string, source: unknown) => ({
+        resource: {
+          resourceType: 'Basic',
+          id,
+          code: { text: moduleName },
+          extension: [
+            {
+              url: 'https://healthystellar.com/fhir/StructureDefinition/dsar-source-data',
+              valueString: JSON.stringify(source),
+            },
+          ],
+        },
+      });
+
+      const entry = [
+        ...(patient ? [{ resource: FhirMapper.toPatient(patient) }] : []),
+        ...medicalRecords.map((r) => ({ resource: FhirMapper.toDocumentReference(r) })),
+        ...records.map((r) => toBasicResource('records', r.id, r)),
+        ...accessGrants.map((g) => toBasicResource('access-grants', g.id, g)),
+        ...auditLogEntity.map((a) => toBasicResource('audit-logs', a.id, a)), // Audit logs might contain Stellar transaction hashes
+        ...billingRecords.map((b) => toBasicResource('billing', b.id, b)),
+        ...labOrders.map((o) => toBasicResource('laboratory-orders', o.id, o)),
+        ...specimens.map((s) => toBasicResource('laboratory-specimens', s.id, s)),
+        ...labResults.map((r) => toBasicResource('laboratory-results', r.id, r)),
+      ];
+
+      const bundle = {
+        resourceType: 'Bundle',
+        type: 'collection',
+        timestamp: new Date().toISOString(),
+        entry,
       };
 
       const tmpDir = os.tmpdir();
       const fileName = `gdpr-export-${data.userId}-${Date.now()}.json`;
       const filePath = path.join(tmpDir, fileName);
 
-      fs.writeFileSync(filePath, JSON.stringify(exportData, null, 2));
+      fs.writeFileSync(filePath, JSON.stringify(bundle, null, 2));
+
+      const signedUrl = generateGdprExportSignedUrl(data.requestId);
 
       // Simulate sending email via NotificationsService
       if (user?.email) {
@@ -259,20 +472,20 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
             user.email,
             'Your GDPR Data Export',
             'ExportReady',
-            { link: `https://api.healthystellar.com/downloads/${fileName}` },
+            { link: signedUrl },
           );
         } else if ((this.notificationsService as any).sendPatientEmailNotification) {
           await (this.notificationsService as any).sendPatientEmailNotification(
             data.userId,
             'Your GDPR Data Export',
-            `Your export is ready at: https://api.healthystellar.com/downloads/${fileName}`,
+            `Your export is ready at: ${signedUrl}`,
           );
         }
       }
 
       await this.gdprRequestRepository.update(data.requestId, {
         status: GdprRequestStatus.COMPLETED,
-        fileUrl: filePath,
+        fileUrl: signedUrl,
         completedAt: new Date(),
       });
     } catch (e) {
@@ -296,7 +509,10 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
       status: GdprRequestStatus.IN_PROGRESS,
     });
 
-    const policy = this.dataRetentionService?.getEffectivePolicy(data.tenantId ?? null, 'medical_records');
+    const policy = this.dataRetentionService?.getEffectivePolicy(
+      data.tenantId ?? null,
+      'medical_records',
+    );
     const action = policy?.action ?? 'anonymize';
 
     try {

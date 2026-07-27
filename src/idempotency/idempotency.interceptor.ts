@@ -14,8 +14,27 @@ import { HttpIdempotencyEntity } from './idempotency.entity';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const IDEMPOTENCY_HEADER = 'idempotency-key';
-/** Keys expire after 24 hours */
 const TTL_MS = 24 * 60 * 60 * 1000;
+/** How long (ms) a second request polls waiting for the first to finish */
+const LOCK_POLL_INTERVAL_MS = 100;
+const LOCK_TIMEOUT_MS = 10_000;
+
+/**
+ * Convert the composite key string into a 64-bit bigint suitable for
+ * pg_advisory_lock.  We use a deterministic hash so that every concurrent
+ * request for the *same* idempotency key maps to the same lock id.
+ */
+function keyToLockId(compositeKey: string): number {
+  // FNV-1a 64-bit hash (works in JS via 32-bit math + folding)
+  let hash = 0x811c9dc5; // FNV offset basis (32-bit)
+  for (let i = 0; i < compositeKey.length; i++) {
+    hash = (hash ^ compositeKey.charCodeAt(i)) >>> 0;
+    hash = (Math.imul(hash, 0x01000193)) >>> 0; // FNV prime
+  }
+  // Fold to a positive 32-bit integer (PostgreSQL advisory lock accepts int64,
+  // but a single 32-bit int is sufficient and simpler for our use-case)
+  return hash;
+}
 
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {

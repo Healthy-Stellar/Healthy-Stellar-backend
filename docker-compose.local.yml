@@ -30,6 +30,26 @@ services:
       start_period: 90s
       retries: 5
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: hs-worker
+    command: ['npm', 'run', 'start:worker:dev']
+    env_file:
+      - .env.docker
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - hs-local
+    restart: unless-stopped
+
   postgres:
     image: postgres:15-alpine
     container_name: hs-postgres

@@ -19,7 +19,6 @@ import { UpdateMedicalRecordDto } from '../dto/update-medical-record.dto';
 import { SearchMedicalRecordsDto } from '../dto/search-medical-records.dto';
 import { FullTextSearchDto } from '../dto/full-text-search.dto';
 import { AuditInterceptor } from '../../common/audit/audit.interceptor';
-import { PhiAuditInterceptor } from '../../common/audit/phi-audit.interceptor';
 import { AuditLog } from '../../common/audit/audit-log.decorator';
 import { PhiAuditInterceptor } from '../../common/interceptors/phi-audit.interceptor';
 import { CurrentTenant } from '@/tenant';

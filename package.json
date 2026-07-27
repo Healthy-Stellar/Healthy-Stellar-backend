@@ -173,7 +173,8 @@
     "sqlite3": "^5.1.7",
     "typeorm": "^0.3.28",
     "typescript-eslint": "^8.56.1",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "xml2js": "^0.6.2"
   },
   "devDependencies": {
     "@faker-js/faker": "^9.3.0",
@@ -198,6 +199,7 @@
     "@types/speakeasy": "^2.0.10",
     "@types/supertest": "^6.0.2",
     "@types/uuid": "^9.0.7",
+    "@types/xml2js": "^0.4.14",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",

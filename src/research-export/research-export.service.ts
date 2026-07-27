@@ -100,6 +100,7 @@ export class ResearchExportService {
   private readonly logger = new Logger(ResearchExportService.name);
   private readonly s3: S3Client;
   private readonly bucket: string;
+  private grantedOrganizationId: string;
 
   constructor(
     @InjectRepository(MedicalRecord)
@@ -124,7 +125,8 @@ export class ResearchExportService {
     filters: ResearchExportFiltersDto,
     options: { approvedBy?: string } = {},
   ): Promise<AnonymizedExport> {
-    await this.assertValidGrant(researcherId);
+    const grant = await this.assertValidGrant(researcherId);
+    this.grantedOrganizationId = grant.organizationId;
 
     // Real (non-dryRun) exports must be approved by an administrator before
     // the job is dispatched — researchers cannot self-authorise a dispatch.
@@ -190,7 +192,7 @@ export class ResearchExportService {
 
   // ─── Grant Validation ──────────────────────────────────────────────────────
 
-  private async assertValidGrant(researcherId: string): Promise<void> {
+  private async assertValidGrant(researcherId: string): Promise<AccessGrant> {
     const grant = await this.grantRepo.findOne({
       where: { granteeId: researcherId, status: GrantStatus.ACTIVE },
       order: { createdAt: 'DESC' },
@@ -203,6 +205,8 @@ export class ResearchExportService {
     if (grant.expiresAt && grant.expiresAt <= new Date()) {
       throw new ForbiddenException('Research access grant has expired');
     }
+
+    return grant;
   }
 
   // ─── Data Fetch ────────────────────────────────────────────────────────────
@@ -227,9 +231,9 @@ export class ResearchExportService {
   }
 
   private async fetchRecords(filters: ResearchExportFiltersDto): Promise<MedicalRecord[]> {
-    const qb = this.recordRepo.createQueryBuilder('r').where('r.status = :status', {
-      status: 'active',
-    });
+    const qb = this.recordRepo.createQueryBuilder('r')
+      .where('r.status = :status', { status: 'active' })
+      .andWhere('r.organizationId = :orgId', { orgId: this.grantedOrganizationId });
 
     if (filters.recordType) {
       qb.andWhere('r.recordType = :type', { type: filters.recordType });
@@ -317,7 +321,10 @@ export class ResearchExportService {
    * and stored via key-management / KMS (surfaced here as RESEARCH_PSEUDONYM_KEY).
    */
   private pseudonymKey(): Buffer {
-    const secret = this.config.get<string>('RESEARCH_PSEUDONYM_KEY', 'default-pseudonym-key');
+    const secret = this.config.get<string>('RESEARCH_PSEUDONYM_KEY');
+    if (!secret) {
+      throw new Error('RESEARCH_PSEUDONYM_KEY environment variable is required for pseudonymization');
+    }
     return scryptSync(secret, 'research-export-pseudonym', 32);
   }
 
