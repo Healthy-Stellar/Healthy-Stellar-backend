@@ -4,8 +4,13 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { SubscriptionsResolver } from './subscriptions.resolver';
 import { SubscriptionsService } from './subscriptions.service';
 import { SubscriptionAuthGuard } from './guards/subscription-auth.guard';
+import { SubscriptionRateLimiterService } from './services/subscription-rate-limiter.service';
 import { PubSubModule } from '../pubsub/pubsub.module';
-import { SubscriptionsActiveGauge } from '../metrics/custom-metrics.service';
+import {
+  SubscriptionsActiveGauge,
+  SubscriptionsRejectedCounter,
+  SubscriptionsTimedOutCounter,
+} from '../metrics/custom-metrics.service';
 
 @Module({
   imports: [
@@ -22,8 +27,11 @@ import { SubscriptionsActiveGauge } from '../metrics/custom-metrics.service';
     SubscriptionsResolver,
     SubscriptionsService,
     SubscriptionAuthGuard,
+    SubscriptionRateLimiterService,
     SubscriptionsActiveGauge,
+    SubscriptionsRejectedCounter,
+    SubscriptionsTimedOutCounter,
   ],
-  exports: [SubscriptionsService],
+  exports: [SubscriptionsService, SubscriptionRateLimiterService],
 })
 export class SubscriptionsModule {}
