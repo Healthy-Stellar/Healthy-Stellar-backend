@@ -123,16 +123,73 @@ Copy `.env.example` to `.env`. Key sections:
 
 ### Data residency and multi-region routing
 
-The backend now supports region-aware tenant database routing. Each tenant can declare a residency region and, when `strictDataResidency` is enabled, requests are rejected with `403 Forbidden` if they attempt to access data outside the configured region.
+The backend supports region-aware tenant database routing across four regions: **EU**, **US**, **APAC**, and **AFRICA**. Each tenant declares a residency region and, when `strictDataResidency` is enabled, requests are rejected with `403 Forbidden` if they attempt to access data outside the configured region.
 
-Example environment variables:
+Each region has its own set of environment variables for database, Stellar Horizon, and IPFS configuration:
+
+| Variable | Region | Description | Default |
+|----------|--------|-------------|---------|
+| `DEFAULT_REGION` | global | Default region for new tenants | `EU` |
+| `DB_TYPE_EU` | EU | Database type | `postgres` |
+| `DB_HOST_EU` | EU | Database host | — |
+| `DB_PORT_EU` | EU | Database port | `5432` |
+| `DB_NAME_EU` | EU | Database name | `healthy_stellar_eu` |
+| `EU_DB_URL` | EU | Database connection URL (overrides individual params) | — |
+| `DB_URL_EU` | EU | Fallback database URL | — |
+| `STELLAR_HORIZON_EU_URL` | EU | Stellar Horizon endpoint | `https://horizon.eu.stellar.org` |
+| `IPFS_NODES_EU` | EU | Comma-separated IPFS node URLs | `https://ipfs-eu-1.infura.io:5001` |
+| `DB_TYPE_US` | US | Database type | `postgres` |
+| `DB_HOST_US` | US | Database host | — |
+| `DB_PORT_US` | US | Database port | `5432` |
+| `DB_NAME_US` | US | Database name | `healthy_stellar_us` |
+| `US_DB_URL` | US | Database connection URL (overrides individual params) | — |
+| `DB_URL_US` | US | Fallback database URL | — |
+| `STELLAR_HORIZON_US_URL` | US | Stellar Horizon endpoint | `https://horizon.us.stellar.org` |
+| `IPFS_NODES_US` | US | Comma-separated IPFS node URLs | `https://ipfs-us-1.infura.io:5001` |
+| `DB_TYPE_APAC` | APAC | Database type | `postgres` |
+| `DB_HOST_APAC` | APAC | Database host | — |
+| `DB_PORT_APAC` | APAC | Database port | `5432` |
+| `DB_NAME_APAC` | APAC | Database name | `healthy_stellar_apac` |
+| `APAC_DB_URL` | APAC | Database connection URL (overrides individual params) | — |
+| `DB_URL_APAC` | APAC | Fallback database URL | — |
+| `STELLAR_HORIZON_APAC_URL` | APAC | Stellar Horizon endpoint | `https://horizon.apac.stellar.org` |
+| `IPFS_NODES_APAC` | APAC | Comma-separated IPFS node URLs | `https://ipfs-apac-1.infura.io:5001` |
+| `DB_TYPE_AFRICA` | AFRICA | Database type | `postgres` |
+| `DB_HOST_AFRICA` | AFRICA | Database host | — |
+| `DB_PORT_AFRICA` | AFRICA | Database port | `5432` |
+| `DB_NAME_AFRICA` | AFRICA | Database name | `healthy_stellar_africa` |
+| `AFRICA_DB_URL` | AFRICA | Database connection URL (overrides individual params) | — |
+| `DB_URL_AFRICA` | AFRICA | Fallback database URL | — |
+| `STELLAR_HORIZON_AFRICA_URL` | AFRICA | Stellar Horizon endpoint | `https://horizon.africa.stellar.org` |
+| `IPFS_NODES_AFRICA` | AFRICA | Comma-separated IPFS node URLs | `https://ipfs-africa-1.infura.io:5001` |
+
+Example configuration:
 
 ```bash
 DEFAULT_REGION=EU
-EU_DB_URL=sqlite://eu.sqlite
-US_DB_URL=sqlite://us.sqlite
-DB_TYPE_EU=sqlite
-DB_TYPE_US=sqlite
+DB_HOST_EU=postgres-eu.internal.example.com
+DB_PORT_EU=5432
+DB_NAME_EU=healthy_stellar_eu
+STELLAR_HORIZON_EU_URL=https://horizon.eu.stellar.org
+IPFS_NODES_EU=https://ipfs-eu-1.infura.io:5001
+
+DB_HOST_US=postgres-us.internal.example.com
+DB_PORT_US=5432
+DB_NAME_US=healthy_stellar_us
+STELLAR_HORIZON_US_URL=https://horizon.us.stellar.org
+IPFS_NODES_US=https://ipfs-us-1.infura.io:5001
+
+DB_HOST_APAC=postgres-apac.internal.example.com
+DB_PORT_APAC=5432
+DB_NAME_APAC=healthy_stellar_apac
+STELLAR_HORIZON_APAC_URL=https://horizon.apac.stellar.org
+IPFS_NODES_APAC=https://ipfs-apac-1.infura.io:5001
+
+DB_HOST_AFRICA=postgres-africa.internal.example.com
+DB_PORT_AFRICA=5432
+DB_NAME_AFRICA=healthy_stellar_africa
+STELLAR_HORIZON_AFRICA_URL=https://horizon.africa.stellar.org
+IPFS_NODES_AFRICA=https://ipfs-africa-1.infura.io:5001
 ```
 
 Tenant example:
@@ -163,6 +220,7 @@ For local development, the routing service initializes SQLite-backed regional da
 | Redis              | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`                  |
 | Email              | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`        |
 | Stellar Blockchain | `STELLAR_NETWORK`, `STELLAR_SECRET_KEY`, `STELLAR_CONTRACT_ID`|
+| Data Residency     | `DEFAULT_REGION`, `DB_TYPE_*`, `DB_HOST_*`, `DB_PORT_*`, `DB_NAME_*`, `*_DB_URL`, `STELLAR_HORIZON_*_URL`, `IPFS_NODES_*` |
 | IPFS               | `IPFS_HOST`, `IPFS_PORT`, `IPFS_URL`                         |
 | Webhooks           | `IPFS_WEBHOOK_SECRET`, `STELLAR_WEBHOOK_SECRET`, `QUEUE_HMAC_SECRET` |
 | OIDC / SSO         | `OIDC_PROVIDERS`, `OIDC_{PROVIDER}_CLIENT_ID`, …             |
