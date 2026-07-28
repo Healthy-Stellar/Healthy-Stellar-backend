@@ -104,6 +104,27 @@ export const ActiveProvidersTotalGauge = makeGaugeProvider({
   help: 'Total number of active providers',
 });
 
+/** subscriptions_active — gauge per connection_id */
+export const SubscriptionsActiveGauge = makeGaugeProvider({
+  name: 'subscriptions_active',
+  help: 'Number of currently active subscriptions per connection',
+  labelNames: ['connection_id'],
+});
+
+/** subscriptions_rejected_total — counter by connection */
+export const SubscriptionsRejectedCounter = makeCounterProvider({
+  name: 'subscriptions_rejected_total',
+  help: 'Total number of rejected subscription attempts',
+  labelNames: ['connection_id', 'reason'],
+});
+
+/** subscriptions_timedout_total — counter by connection and type */
+export const SubscriptionsTimedOutCounter = makeCounterProvider({
+  name: 'subscriptions_timedout_total',
+  help: 'Total number of timed-out subscriptions',
+  labelNames: ['connection_id', 'subscription_type'],
+});
+
 /** subscriptions_active — gauge tracking live GraphQL subscription iterators */
 export const SubscriptionsActiveGauge = makeGaugeProvider({
   name: 'subscriptions_active',

@@ -1,0 +1,22 @@
+{
+  "record_accessed": {
+    "subject": "נגשתה לרשומה הרפואית שלך",
+    "body": "נגשתה לרשומה הרפואית שלך (מזהה: {resourceId}) על ידי {actorId} ב-{timestamp}."
+  },
+  "access_granted": {
+    "subject": "הוענקה גישה לרשומה שלך",
+    "body": "הוענקה גישה לרשומה הרפואית שלך (מזהה: {resourceId}) ל-{actorId}."
+  },
+  "access_revoked": {
+    "subject": "בוטלה גישה לרשומה שלך",
+    "body": "בוטלה גישה לרשומה הרפואית שלך (מזהה: {resourceId}) מ-{actorId}."
+  },
+  "record_uploaded": {
+    "subject": "רשומה רפואית חדשה הועלתה",
+    "body": "רשומה רפואית חדשה (מזהה: {resourceId}) הועלתה על ידי {actorId}."
+  },
+  "emergency_access": {
+    "subject": "גישת חירום לרשומה שלך",
+    "body": "גישת חירום לרשומה הרפואית שלך (מזהה: {resourceId}) הופעלה על ידי {actorId} ב-{timestamp}."
+  }
+}

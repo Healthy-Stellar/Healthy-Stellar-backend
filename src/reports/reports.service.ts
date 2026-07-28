@@ -15,6 +15,7 @@ import * as PDFDocument from 'pdfkit';
 import { create as ipfsHttpClient } from 'ipfs-http-client';
 import { v4 as uuidv4 } from 'uuid';
 import { PassThrough } from 'stream';
+import { I18nService } from '../i18n/i18n.service';
 
 @Injectable()
 export class ReportsService {
@@ -27,6 +28,7 @@ export class ReportsService {
     private configService: ConfigService,
     private notificationsService: NotificationsService,
     private entityManager: EntityManager,
+    private i18nService: I18nService,
   ) {
     const ipfsUrl = this.configService.get<string>('IPFS_NODE_URL') || 'http://localhost:5001';
     this.ipfs = ipfsHttpClient({ url: ipfsUrl });
@@ -219,14 +221,18 @@ export class ReportsService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
+      // Detect RTL locale and set text direction accordingly
+      const isRtl = this.i18nService.isRtlLocale();
+      const textAlign = isRtl ? 'right' : 'left';
+
       doc.fontSize(20).text('Patient Activity Report', { align: 'center' });
       doc.moveDown();
-      doc.fontSize(12).text(`Patient Name: ${patient?.firstName || ''} ${patient?.lastName || ''}`);
-      doc.text(`Patient ID: ${patient?.id}`);
-      doc.text(`Generated On: ${new Date().toLocaleString()}`);
+      doc.fontSize(12).text(`Patient Name: ${patient?.firstName || ''} ${patient?.lastName || ''}`, { align: textAlign });
+      doc.text(`Patient ID: ${patient?.id}`, { align: textAlign });
+      doc.text(`Generated On: ${this.i18nService.formatDate(new Date())}`, { align: textAlign });
       doc.moveDown(2);
 
-      doc.fontSize(16).text('Medical Records Summary');
+      doc.fontSize(16).text('Medical Records Summary', { align: textAlign });
       doc.moveDown(0.5);
       if (records.length === 0) doc.fontSize(10).text('No recent active records found.');
       records.forEach((record) => {
@@ -242,7 +248,7 @@ export class ReportsService {
       });
       doc.moveDown();
 
-      doc.fontSize(16).text('Access Grants & Consents');
+      doc.fontSize(16).text('Access Grants & Consents', { align: textAlign });
       doc.moveDown(0.5);
       if (grants.length === 0) doc.fontSize(10).text('No access grants found.');
       grants.forEach((grant) => {
@@ -258,7 +264,7 @@ export class ReportsService {
       });
       doc.moveDown();
 
-      doc.fontSize(16).text('Recent Audit Logs');
+      doc.fontSize(16).text('Recent Audit Logs', { align: textAlign });
       doc.moveDown(0.5);
       if (logs.length === 0) doc.fontSize(10).text('No audit logs found.');
       logs.forEach((log) => {
