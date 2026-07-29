@@ -20,6 +20,8 @@ import { SafetyAlert } from './entities/safety-alert.entity';
 import { ControlledSubstanceLog } from './entities/controlled-substance-log.entity';
 
 import { RemotePrescription } from '../Telemedicine and Remote/src/telemedicine/entities/remote-prescription.entity';
+import { ExternalPharmacy } from './entities/external-pharmacy.entity';
+import { EprescriptionTransmission } from './entities/eprescription-transmission.entity';
 
 import { PharmacyController } from './controllers/pharmacy.controller';
 import { CdsHooksController } from './controllers/cds-hooks.controller';
@@ -28,6 +30,7 @@ import { DrugSupplierController } from './controllers/drug-supplier.controller';
 import { DrugFormularyController } from './controllers/drug-formulary.controller';
 import { DrugWasteController } from './controllers/drug-waste.controller';
 import { PurchaseOrderController } from './controllers/purchase-order.controller';
+import { EprescribingController } from './controllers/eprescribing.controller';
 import { PharmacyService } from './services/pharmacy.service';
 import { DrugInteractionService } from './services/drug-interaction.service';
 import { DrugRecallService } from './services/drug-recall.service';
@@ -39,6 +42,7 @@ import { PharmacyInventoryService } from './services/pharmacy-inventory.service'
 import { PrescriptionService } from './services/prescription.service';
 import { SafetyAlertService } from './services/safety-alert.service';
 import { ControlledSubstanceService } from './services/controlled-substance.service';
+import { EprescribingService } from './services/eprescribing.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { MedicalStaffModule } from '../medical-staff/medical-staff.module';
 import { QUEUE_NAMES } from '../queues/queue.constants';
@@ -62,6 +66,8 @@ import { QUEUE_NAMES } from '../queues/queue.constants';
       PharmacyReorderAlertSuppression,
       SafetyAlert,
       ControlledSubstanceLog,
+      ExternalPharmacy,
+      EprescriptionTransmission,
     ]),
     HttpModule,
     NotificationsModule,
@@ -76,6 +82,7 @@ import { QUEUE_NAMES } from '../queues/queue.constants';
     DrugFormularyController,
     DrugWasteController,
     PurchaseOrderController,
+    EprescribingController,
   ],
   providers: [
     PharmacyService,
@@ -89,7 +96,8 @@ import { QUEUE_NAMES } from '../queues/queue.constants';
     PrescriptionService,
     SafetyAlertService,
     ControlledSubstanceService,
+    EprescribingService,
   ],
-  exports: [PharmacyService, DrugInteractionService, PrescriptionService],
+  exports: [PharmacyService, DrugInteractionService, PrescriptionService, EprescribingService],
 })
 export class PharmacyModule { }
