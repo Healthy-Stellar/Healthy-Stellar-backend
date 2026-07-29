@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -23,6 +24,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { TenantContext } from '../../tenant/context/tenant.context';
 import { getRequestContext } from '../../common/middleware/request-context.middleware';
 import { UserRole } from '../../auth/entities/user.entity';
+import { WaitlistService } from './waitlist.service';
 
 /** How many minutes before the appointment start a join token becomes valid. */
 const TOKEN_VALID_BEFORE_MINUTES = 15;
@@ -43,6 +45,8 @@ const ADVISORY_LOCK_NAMESPACE = 'appt';
 
 @Injectable()
 export class AppointmentService {
+  private readonly logger = new Logger(AppointmentService.name);
+
   constructor(
     @InjectRepository(Appointment)
     private appointmentRepository: Repository<Appointment>,
@@ -51,6 +55,7 @@ export class AppointmentService {
     private readonly jwtService: JwtService,
     private readonly auditService: AuditService,
     private readonly configService: ConfigService,
+    private readonly waitlistService: WaitlistService,
   ) {}
 
   /**
@@ -421,6 +426,12 @@ export class AppointmentService {
     }).catch((err) => {
       console.error(`Failed to log appointment status change audit event: ${err.message}`);
     });
+
+    if (status === AppointmentStatus.CANCELLED) {
+      this.waitlistService.notifyNextEligible(updated).catch((err) => {
+        this.logger.error(`Waitlist notification failed for appointment ${id}: ${err.message}`);
+      });
+    }
 
     return updated;
   }

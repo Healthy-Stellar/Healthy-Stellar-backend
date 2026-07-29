@@ -13,9 +13,12 @@ import { UpdateOutbreakIncidentDto } from './dto/update-outbreak-incident.dto';
 import { CreateHandHygieneAuditDto } from './dto/create-hand-hygiene-audit.dto';
 import { CreateOutbreakThresholdDto } from './dto/create-outbreak-threshold.dto';
 import { UpdateOutbreakThresholdDto } from './dto/update-outbreak-threshold.dto';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('infection-control')
+@ApiBearerAuth('medical-auth')
+@UseGuards(JwtAuthGuard)
 @Controller('infection-control')
 export class InfectionControlController {
   constructor(
