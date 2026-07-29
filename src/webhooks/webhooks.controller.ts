@@ -1,13 +1,15 @@
-import { Controller, Post, Body, HttpCode, Inject, Logger, Get, Param, UseGuards, Req, Query, Delete, NotFoundException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiParam } from '@nestjs/swagger';
+import { Controller, Post, Body, HttpCode, Inject, Logger, Get, Param, UseGuards, Req, Query, Delete, NotFoundException, Put, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiParam, ApiBody } from '@nestjs/swagger';
 import { IpfsService } from '../stellar/services/ipfs.service';
 import { QueueService } from '../queues/queue.service';
 import { ConfigService } from '@nestjs/config';
 import { WebhookDeliveryService } from './services/webhook-delivery.service';
+import { WebhookSubscriptionService } from './services/webhook-subscription.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { InjectRepository } from '@nestjs/typeorm';
+import { CreateWebhookSubscriptionDto, UpdateWebhookSubscriptionDto } from './dto/webhook-subscription.dto';
 import { Repository } from 'typeorm';
 import { WebhookDelivery, WebhookDeliveryStatus } from './entities/webhook-delivery.entity';
 import { ClaimService } from '../billing/services/claim.service';
@@ -23,10 +25,73 @@ export class WebhooksController {
     private readonly queueService: QueueService,
     private readonly configService: ConfigService,
     private readonly webhookService: WebhookDeliveryService,
+    private readonly subscriptionService: WebhookSubscriptionService,
     @InjectRepository(WebhookDelivery)
     private readonly deliveryRepository: Repository<WebhookDelivery>,
     private readonly claimService: ClaimService,
   ) {}
+
+  // ── Tenant Self-Service Subscription Management ───────────────────────────
+
+  @Get('subscriptions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List webhook subscriptions for the authenticated tenant' })
+  async listSubscriptions(@Req() req: any) {
+    const tenantId = req.user?.tenantId ?? req.user?.organizationId;
+    return this.subscriptionService.listSubscriptions(tenantId);
+  }
+
+  @Post('subscriptions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a new webhook subscription (includes validation ping)' })
+  @ApiBody({ type: CreateWebhookSubscriptionDto })
+  async createSubscription(@Req() req: any, @Body() dto: CreateWebhookSubscriptionDto) {
+    const tenantId = req.user?.tenantId ?? req.user?.organizationId;
+    const userId = req.user?.id;
+    return this.subscriptionService.createSubscription(tenantId, userId, dto);
+  }
+
+  @Put('subscriptions/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update a webhook subscription' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiBody({ type: UpdateWebhookSubscriptionDto })
+  async updateSubscription(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateWebhookSubscriptionDto,
+  ) {
+    const tenantId = req.user?.tenantId ?? req.user?.organizationId;
+    const userId = req.user?.id;
+    return this.subscriptionService.updateSubscription(tenantId, id, userId, dto);
+  }
+
+  @Delete('subscriptions/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete a webhook subscription' })
+  @ApiParam({ name: 'id', type: String })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteSubscription(@Req() req: any, @Param('id') id: string) {
+    const tenantId = req.user?.tenantId ?? req.user?.organizationId;
+    const userId = req.user?.id;
+    await this.subscriptionService.deleteSubscription(tenantId, id, userId);
+  }
+
+  @Post('subscriptions/:id/rotate-secret')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Rotate the HMAC signing secret for a webhook subscription' })
+  @ApiParam({ name: 'id', type: String })
+  @HttpCode(HttpStatus.OK)
+  async rotateSubscriptionSecret(@Req() req: any, @Param('id') id: string) {
+    const tenantId = req.user?.tenantId ?? req.user?.organizationId;
+    const userId = req.user?.id;
+    return this.subscriptionService.rotateSecret(tenantId, id, userId);
+  }
 
   @Post('insurance-claims')
   @HttpCode(200)
