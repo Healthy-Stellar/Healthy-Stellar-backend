@@ -83,19 +83,17 @@ export class MfaService {
       throw new NotFoundException('User not found');
     }
 
-    let secret = '';
-    try {
-      secret = this.dataEncryptionService.decrypt(user.mfaSecret || '');
-    } catch {
-      secret = user.mfaSecret || '';
+    if (!user.mfaSecret) {
+      throw new BadRequestException('MFA setup has not been initiated. Call setup first.');
     }
 
-    if (!secret) {
-      secret = speakeasy.generateSecret({
-        name: `Healthy Stellar (${user.email})`,
-        issuer: 'Healthy Stellar',
-        length: 32,
-      }).base32;
+    let secret: string;
+    try {
+      secret = this.dataEncryptionService.decrypt(user.mfaSecret);
+    } catch {
+      throw new BadRequestException(
+        'MFA setup secret is invalid or corrupted. Please restart MFA setup.',
+      );
     }
 
     const verified = speakeasy.totp.verify({

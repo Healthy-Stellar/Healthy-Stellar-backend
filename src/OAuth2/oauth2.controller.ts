@@ -16,8 +16,10 @@ import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as crypto from 'crypto';
 
 import { PkceService } from './pkce.service';
+import { OAuth2ClientRegistryService } from './oauth2-client-registry.service';
 import { OAuth2AuthorizeQueryDto, OAuth2TokenDto } from './dto/oidc.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../auth/services/auth-token.service';
@@ -38,6 +40,7 @@ export class OAuth2Controller {
   constructor(
     private readonly pkce: PkceService,
     private readonly jwt: JwtService,
+    private readonly clientRegistry: OAuth2ClientRegistryService,
     @InjectRepository(Patient)
     private readonly patientRepo: Repository<Patient>,
   ) {}
@@ -54,6 +57,21 @@ export class OAuth2Controller {
   ) {
     if (query.response_type !== 'code') {
       throw new BadRequestException('unsupported_response_type');
+    }
+
+    const client = this.clientRegistry.getClient(query.client_id);
+    if (!client) {
+      throw new BadRequestException('invalid_client: unknown client_id');
+    }
+
+    if (!this.clientRegistry.isRedirectUriRegistered(client, query.redirect_uri)) {
+      throw new BadRequestException(
+        'invalid_request: redirect_uri is not registered for this client',
+      );
+    }
+
+    if (client.requirePkce && !query.code_challenge) {
+      throw new BadRequestException('invalid_request: code_challenge is required for this client');
     }
 
     const user = (req as any).user as JwtPayload;
@@ -89,6 +107,17 @@ export class OAuth2Controller {
       throw new BadRequestException(
         'invalid_request: code, client_id and redirect_uri are required',
       );
+    }
+
+    const client = this.clientRegistry.getClient(dto.client_id);
+    if (!client) {
+      throw new BadRequestException('invalid_client: unknown client_id');
+    }
+
+    if (client.clientSecret) {
+      if (!dto.client_secret || !this.isClientSecretValid(dto.client_secret, client.clientSecret)) {
+        throw new UnauthorizedException('invalid_client: client authentication failed');
+      }
     }
 
     // consumeCode validates PKCE when a challenge was stored for this code
@@ -135,5 +164,14 @@ export class OAuth2Controller {
     }
 
     return response;
+  }
+
+  private isClientSecretValid(provided: string, expected: string): boolean {
+    const providedBuf = Buffer.from(provided);
+    const expectedBuf = Buffer.from(expected);
+    if (providedBuf.length !== expectedBuf.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(providedBuf, expectedBuf);
   }
 }
