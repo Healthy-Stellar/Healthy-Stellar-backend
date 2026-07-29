@@ -49,8 +49,9 @@ export class ProjectionRebuildProcessor {
         progressPercent: 0,
       });
 
-      // Stream and republish all events through the EventBus
-      for await (const { event, version } of this.eventStore.streamAll(0)) {
+      // Stream and republish all events through the EventBus, in global
+      // insertion order (paginated by globalSequence — see EventStoreService#streamAll)
+      for await (const { event } of this.eventStore.streamAll(0)) {
         await this.eventBus.publish(event as unknown as IEvent);
         processed++;
         
