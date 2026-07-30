@@ -15,7 +15,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { MedicalRecordsService } from '../services/medical-records.service';
 import { CreateMedicalRecordDto } from '../dto/create-medical-record.dto';
-import { UpdateMedicalRecordDto } from '../dto/update-medical-record.dto';
+import { UpdateMedicalRecordDto } from '../dto/update-medical-record1.dto';
 import { SearchMedicalRecordsDto } from '../dto/search-medical-records.dto';
 import { FullTextSearchDto } from '../dto/full-text-search.dto';
 import { AuditInterceptor } from '../../common/audit/audit.interceptor';
