@@ -1,0 +1,4 @@
+patientId,recordType,description
+PAT-003,LAB_RESULT,Annual blood panel
+PAT-004,PRESCRIPTION,Metformin 500mg daily
+PAT-005,MEDICAL_REPORT,Annual physical examination

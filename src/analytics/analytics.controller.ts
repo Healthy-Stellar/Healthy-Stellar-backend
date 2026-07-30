@@ -1,4 +1,16 @@
-import { Controller, Get, Query, BadRequestException, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Query,
+  Body,
+  Header,
+  Res,
+  BadRequestException,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { AnalyticsService } from './analytics.service';
 import { OverviewResponseDto } from './dto/overview-response.dto';
@@ -7,11 +19,14 @@ import { TopProvidersResponseDto } from './dto/top-providers-response.dto';
 import { AdminStatsResponseDto } from './dto/admin-stats-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import { TenantGuard } from '../tenant/guards/tenant.guard';
+import { TenantInterceptor } from '../tenant/interceptors/tenant.interceptor';
 
 @ApiTags('Analytics')
 @ApiBearerAuth()
 @Controller('admin/analytics')
-@UseGuards(JwtAuthGuard, AdminGuard)
+@UseGuards(JwtAuthGuard, AdminGuard, TenantGuard)
+@UseInterceptors(TenantInterceptor)
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
@@ -25,6 +40,7 @@ export class AnalyticsController {
   }
 
   @Get('overview')
+  @Header('Cache-Control', 'max-age=60, stale-while-revalidate=30')
   @ApiOperation({ summary: 'Get system overview metrics' })
   @ApiResponse({
     status: 200,

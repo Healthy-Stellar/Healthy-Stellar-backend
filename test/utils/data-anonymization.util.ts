@@ -95,7 +95,9 @@ export function anonymizePatientData<T extends Record<string, any>>(
 ): T {
   initializeFaker(options);
   
-  const anonymized = { ...data };
+  // Use `any` cast so TypeScript doesn't complain about dynamic property access
+  // on a generic type — these are intentional runtime field mutations.
+  const anonymized: any = { ...data };
   
   // Anonymize name fields
   if (anonymized.firstName) anonymized.firstName = faker.person.firstName();
@@ -126,7 +128,7 @@ export function anonymizePatientData<T extends Record<string, any>>(
     anonymized.dateOfBirth = faker.date.birthdate({ min: age, max: age, mode: 'age' }).toISOString().split('T')[0];
   }
   
-  return anonymized;
+  return anonymized as T;
 }
 
 /**

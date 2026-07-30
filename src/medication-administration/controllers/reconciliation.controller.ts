@@ -8,7 +8,9 @@ import {
   ReconciliationType,
   ReconciliationStatus,
 } from '../entities/medication-reconciliation.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('medication-reconciliation')
 @Controller('medication-reconciliation')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ReconciliationController {

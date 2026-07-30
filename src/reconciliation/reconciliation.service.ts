@@ -4,7 +4,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
-import { MedicalRecord, MedicalRecordStatus } from '../medical-records/entities/medical-record.entity';
+import {
+  MedicalRecord,
+  MedicalRecordStatus,
+} from '../medical-records/entities/medical-record.entity';
 import { Patient } from '../patients/entities/patient.entity';
 import { NotificationsService } from '../notifications/services/notifications.service';
 import {
@@ -137,8 +140,8 @@ export class ReconciliationService {
         recordCountByPatient: native?.record_counts ?? {},
       };
     } catch (err: any) {
-      this.logger.warn(`On-chain snapshot failed, using empty state: ${err?.message}`);
-      return { patientCount: 0, providerList: [], recordCountByPatient: {} };
+      this.logger.warn(`On-chain snapshot failed, skipping reconciliation: ${err?.message}`);
+      throw err;
     }
   }
 
@@ -261,9 +264,7 @@ export class ReconciliationService {
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
-  private async saveReport(
-    data: Partial<ReconciliationReport>,
-  ): Promise<ReconciliationReport> {
+  private async saveReport(data: Partial<ReconciliationReport>): Promise<ReconciliationReport> {
     return this.reportRepo.save(this.reportRepo.create(data));
   }
 
@@ -293,8 +294,8 @@ export class ReconciliationService {
       throw new Error(`Contract simulation error: ${sim.error}`);
     }
 
-    const retval = (sim as StellarSdk.SorobanRpc.Api.SimulateTransactionSuccessResponse)
-      .result?.retval;
+    const retval = (sim as StellarSdk.SorobanRpc.Api.SimulateTransactionSuccessResponse).result
+      ?.retval;
     if (!retval) throw new Error('No return value from contract simulation');
     return retval;
   }

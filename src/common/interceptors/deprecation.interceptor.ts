@@ -1,4 +1,10 @@
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  GoneException,
+} from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { Reflector } from '@nestjs/core';
 import { DEPRECATED_ROUTE_KEY, DeprecatedRouteOptions } from '../decorators/deprecated.decorator';
@@ -23,6 +29,17 @@ export class DeprecationInterceptor implements NestInterceptor {
       // Set Sunset header if provided
       if (isDeprecatedOptions.sunsetDate) {
         response.setHeader('Sunset', isDeprecatedOptions.sunsetDate);
+
+        const sunsetTime = Date.parse(isDeprecatedOptions.sunsetDate);
+        if (!Number.isNaN(sunsetTime) && Date.now() >= sunsetTime) {
+          const reason = isDeprecatedOptions.reason ? ` ${isDeprecatedOptions.reason}` : '';
+          const replacement = isDeprecatedOptions.alternativeRoute
+            ? ` Use ${isDeprecatedOptions.alternativeRoute} instead.`
+            : '';
+          throw new GoneException(
+            `This endpoint is no longer available. Sunset date: ${isDeprecatedOptions.sunsetDate}.${reason}${replacement}`,
+          );
+        }
       }
 
       // Add a link to the alternative route if provided

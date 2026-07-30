@@ -5,7 +5,8 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
-import { BackupLog, BackupStatus } from '../entities/backup-log.entity';
+import { Cron } from '@nestjs/schedule';
+import { BackupLog, BackupStatus, BackupType } from '../entities/backup-log.entity';
 import { RecoveryTest, RecoveryTestStatus } from '../entities/recovery-test.entity';
 
 const execAsync = promisify(exec);
@@ -42,7 +43,15 @@ export class DisasterRecoveryService {
     private backupLogRepository: Repository<BackupLog>,
     @InjectRepository(RecoveryTest)
     private recoveryTestRepository: Repository<RecoveryTest>,
-  ) {}
+  ) {
+    this.validateRequiredConfiguration();
+  }
+
+  private validateRequiredConfiguration(): void {
+    if (!this.encryptionKey) {
+      throw new Error('BACKUP_ENCRYPTION_KEY environment variable is required for DisasterRecoveryService');
+    }
+  }
 
   async createRecoveryPlan(backupId: string): Promise<RecoveryPlan> {
     const backup = await this.backupLogRepository.findOne({ where: { id: backupId } });
@@ -304,6 +313,77 @@ export class DisasterRecoveryService {
     }
   }
 
+  /**
+   * Validates a backup's checksum and tests restore to a temporary database without
+   * applying any changes to the production database.
+   * Aborts with an error if the checksum does not match the stored value.
+   */
+  async dryRunRestore(backupId: string, requestedBy: string): Promise<RecoveryTest> {
+    const backup = await this.backupLogRepository.findOne({ where: { id: backupId } });
+
+    if (!backup) {
+      throw new Error(`Backup ${backupId} not found`);
+    }
+
+    if (backup.status === BackupStatus.FAILED) {
+      throw new Error(`Cannot dry-run a failed backup`);
+    }
+
+    const recoveryTest = this.recoveryTestRepository.create({
+      backupId,
+      status: RecoveryTestStatus.IN_PROGRESS,
+      testType: 'dry_run',
+      testResults: {},
+      testedBy: requestedBy,
+    });
+    await this.recoveryTestRepository.save(recoveryTest);
+
+    try {
+      // Step 1: Verify checksum — abort with error on mismatch
+      const integrityValid = await this.verifyBackupIntegrity(backup);
+      if (!integrityValid) {
+        throw new Error(
+          `Checksum mismatch for backup ${backupId}. ` +
+            `Expected ${backup.checksum}. Restore aborted.`,
+        );
+      }
+
+      // Step 2: Decrypt and decompress
+      const decryptedPath = await this.decryptBackup(backup.backupPath);
+      const decompressedPath = await this.decompressBackup(decryptedPath);
+
+      // Step 3: Test restore to temporary database only (validates without applying)
+      await this.testRestore(decompressedPath);
+
+      recoveryTest.status = RecoveryTestStatus.PASSED;
+      recoveryTest.completedAt = new Date();
+      recoveryTest.durationSeconds = Math.floor(
+        (recoveryTest.completedAt.getTime() - recoveryTest.startedAt.getTime()) / 1000,
+      );
+      recoveryTest.testResults = {
+        checksumVerified: true,
+        decryption: 'passed',
+        decompression: 'passed',
+        testRestore: 'passed',
+        appliedToProduction: false,
+      };
+
+      await this.recoveryTestRepository.save(recoveryTest);
+      await this.cleanupTempFiles([decryptedPath, decompressedPath]);
+
+      this.logger.log(`Dry-run restore for backup ${backupId} completed successfully`);
+      return recoveryTest;
+    } catch (error) {
+      recoveryTest.status = RecoveryTestStatus.FAILED;
+      recoveryTest.errorMessage = error.message;
+      recoveryTest.completedAt = new Date();
+      await this.recoveryTestRepository.save(recoveryTest);
+
+      this.logger.error(`Dry-run restore for backup ${backupId} failed: ${error.message}`);
+      throw error;
+    }
+  }
+
   async getRecoveryTests(limit: number = 50): Promise<RecoveryTest[]> {
     return this.recoveryTestRepository.find({
       relations: ['backup'],
@@ -314,5 +394,34 @@ export class DisasterRecoveryService {
 
   async scheduleRecoveryTest(backupId: string, testedBy: string): Promise<RecoveryTest> {
     return this.performRecovery({ backupId, validateOnly: true }, testedBy);
+  }
+
+  @Cron('0 5 * * 0') // Weekly on Sunday at 5 AM
+  async scheduledRestoreDrill() {
+    this.logger.log('Starting scheduled automated restore drill');
+
+    const latestVerifiedBackup = await this.backupLogRepository.findOne({
+      where: { status: BackupStatus.VERIFIED, backupType: BackupType.FULL },
+      order: { completedAt: 'DESC' },
+    });
+
+    if (!latestVerifiedBackup) {
+      this.logger.warn('No verified full backup found for automated restore drill');
+      return;
+    }
+
+    try {
+      await this.performRecovery(
+        { backupId: latestVerifiedBackup.id, validateOnly: true },
+        'automated-drill',
+      );
+      this.logger.log(
+        `Automated restore drill for backup ${latestVerifiedBackup.id} completed successfully`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Automated restore drill for backup ${latestVerifiedBackup.id} failed: ${error.message}`,
+      );
+    }
   }
 }

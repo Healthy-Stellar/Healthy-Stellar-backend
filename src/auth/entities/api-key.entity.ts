@@ -8,7 +8,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { User } from '../../auth/entities/user.entity';
+import { User } from './user.entity';
 
 export enum ApiKeyScope {
   READ_RECORDS = 'read:records',
@@ -40,6 +40,18 @@ export class ApiKey {
 
   @Column({ type: 'boolean', default: true, name: 'is_active' })
   isActive: boolean;
+
+  @Column({ type: 'timestamp', nullable: true, name: 'expires_at' })
+  expiresAt: Date | null;
+
+  @Column({ type: 'boolean', default: false, name: 'expiry_notified_30d' })
+  expiryNotified30d: boolean;
+
+  @Column({ type: 'boolean', default: false, name: 'expiry_notified_14d' })
+  expiryNotified14d: boolean;
+
+  @Column({ type: 'boolean', default: false, name: 'expiry_notified_7d' })
+  expiryNotified7d: boolean;
 
   @Column({ type: 'timestamp', nullable: true, name: 'last_used_at' })
   lastUsedAt: Date;

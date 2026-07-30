@@ -9,9 +9,12 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { DiagnosisService } from '../services/diagnosis.service';
+import { Icd11Service, Icd11SearchResultDto } from '../services/icd11.service';
 import {
   CreateDiagnosisDto,
   UpdateDiagnosisDto,
@@ -21,9 +24,31 @@ import {
 
 @ApiTags('Diagnosis')
 @ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('diagnosis')
 export class DiagnosisController {
-  constructor(private readonly diagnosisService: DiagnosisService) {}
+  constructor(
+    private readonly diagnosisService: DiagnosisService,
+    private readonly icd11Service: Icd11Service,
+  ) {}
+
+  @Get('icd11/search')
+  @ApiOperation({ summary: 'Autocomplete ICD-11 codes by keyword (code, title, or synonym)' })
+  @ApiQuery({
+    name: 'q',
+    required: true,
+    type: String,
+    description: 'Search keyword — matched against code, title, and synonyms',
+    example: 'diabetes',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Top 20 ICD-11 matches ranked by relevance',
+    type: [Icd11SearchResultDto],
+  })
+  async searchIcd11(@Query('q') q: string): Promise<Icd11SearchResultDto[]> {
+    return this.icd11Service.search(q ?? '');
+  }
 
   @Post()
   @ApiOperation({ summary: 'Create a new diagnosis' })

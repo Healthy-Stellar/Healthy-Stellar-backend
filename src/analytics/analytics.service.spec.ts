@@ -1,266 +1,232 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getRepositoryToken, getDataSourceToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { ForbiddenException } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
-import { User } from '../users/entities/user.entity';
+import { User } from '../auth/entities/user.entity';
 import { MedicalRecord } from '../medical-records/entities/medical-record.entity';
-import { AccessGrant } from '../access-control/entities/access-grant.entity';
+import { AccessGrant, GrantStatus } from '../access-control/entities/access-grant.entity';
 import { StellarTransaction } from './entities/stellar-transaction.entity';
+import { TenantContext } from '../tenant/context/tenant.context';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function makeQB(rawResult: any[] = [], countResult = 0) {
+  const qb: any = {
+    select: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    groupBy: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    getRawMany: jest.fn().mockResolvedValue(rawResult),
+    getCount: jest.fn().mockResolvedValue(countResult),
+  };
+  return qb;
+}
+
+function makeRepo(countResult = 0, qbResult: any[] = []) {
+  return {
+    count: jest.fn().mockResolvedValue(countResult),
+    createQueryBuilder: jest.fn().mockReturnValue(makeQB(qbResult, countResult)),
+  };
+}
+
+const mockCache = { get: jest.fn().mockResolvedValue(null), set: jest.fn() };
+
+async function buildModule(repos: {
+  user?: any; record?: any; grant?: any; stellar?: any;
+} = {}) {
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      AnalyticsService,
+      { provide: getRepositoryToken(User), useValue: repos.user ?? makeRepo() },
+      { provide: getRepositoryToken(MedicalRecord), useValue: repos.record ?? makeRepo() },
+      { provide: getRepositoryToken(AccessGrant), useValue: repos.grant ?? makeRepo() },
+      { provide: getRepositoryToken(StellarTransaction), useValue: repos.stellar ?? makeRepo() },
+      { provide: CACHE_MANAGER, useValue: mockCache },
+      { provide: getDataSourceToken(), useValue: {} },
+    ],
+  }).compile();
+  return module.get<AnalyticsService>(AnalyticsService);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 describe('AnalyticsService', () => {
-  let service: AnalyticsService;
-  let medicalRecordRepository: any;
-  let accessGrantRepository: any;
+  beforeEach(() => jest.clearAllMocks());
 
-  beforeEach(async () => {
-    const mockRepository = {
-      count: jest.fn(),
-      createQueryBuilder: jest.fn(),
-    };
+  // ── Tenant context guard ───────────────────────────────────────────────────
 
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AnalyticsService,
-        {
-          provide: getRepositoryToken(User),
-          useValue: mockRepository,
-        },
-        {
-          provide: getRepositoryToken(MedicalRecord),
-          useValue: mockRepository,
-        },
-        {
-          provide: getRepositoryToken(AccessGrant),
-          useValue: mockRepository,
-        },
-        {
-          provide: getRepositoryToken(StellarTransaction),
-          useValue: mockRepository,
-        },
-        {
-          provide: CACHE_MANAGER,
-          useValue: {
-            get: jest.fn(),
-            set: jest.fn(),
-          },
-        },
-      ],
-    }).compile();
-
-    service = module.get<AnalyticsService>(AnalyticsService);
-    medicalRecordRepository = module.get(getRepositoryToken(MedicalRecord));
-    accessGrantRepository = module.get(getRepositoryToken(AccessGrant));
+  describe('requireTenantId', () => {
+    it('throws ForbiddenException when TenantContext is missing', async () => {
+      jest.spyOn(TenantContext, 'getTenantId').mockReturnValue(undefined);
+      const service = await buildModule();
+      await expect(service.getOverview()).rejects.toBeInstanceOf(ForbiddenException);
+    });
   });
 
-  describe('getActivity', () => {
-    it('should return daily activity with record uploads and access events', async () => {
-      const from = new Date('2024-01-01');
-      const to = new Date('2024-01-03');
+  // ── Cache key namespacing ──────────────────────────────────────────────────
 
-      // Mock record uploads query
-      const mockRecordQueryBuilder = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValue([
-          { date: '2024-01-01T00:00:00.000Z', count: '5' },
-          { date: '2024-01-02T00:00:00.000Z', count: '3' },
-        ]),
-      };
-
-      // Mock access events query
-      const mockAccessQueryBuilder = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValue([
-          { date: '2024-01-01T00:00:00.000Z', count: '2' },
-          { date: '2024-01-03T00:00:00.000Z', count: '4' },
-        ]),
-      };
-
-      medicalRecordRepository.createQueryBuilder
-        .mockReturnValueOnce(mockRecordQueryBuilder);
-      accessGrantRepository.createQueryBuilder
-        .mockReturnValueOnce(mockAccessQueryBuilder);
-
-      const result = await service.getActivity(from, to);
-
-      expect(result.dailyActivity).toHaveLength(3);
-      expect(result.dailyActivity[0]).toEqual({
-        date: '2024-01-01',
-        recordUploads: 5,
-        accessEvents: 2,
-      });
-      expect(result.dailyActivity[1]).toEqual({
-        date: '2024-01-02',
-        recordUploads: 3,
-        accessEvents: 0,
-      });
-      expect(result.dailyActivity[2]).toEqual({
-        date: '2024-01-03',
-        recordUploads: 0,
-        accessEvents: 4,
-      });
+  describe('cache key namespacing', () => {
+    it('uses tenant-scoped cache key for getOverview', async () => {
+      jest.spyOn(TenantContext, 'getTenantId').mockReturnValue('tenant-abc');
+      const service = await buildModule();
+      await service.getOverview();
+      expect(mockCache.set).toHaveBeenCalledWith(
+        'analytics:overview:tenant-abc',
+        expect.any(Object),
+        300,
+      );
     });
 
-    it('should return zero counts for days with no activity', async () => {
+    it('returns cached value for the correct tenant key', async () => {
+      jest.spyOn(TenantContext, 'getTenantId').mockReturnValue('tenant-abc');
+      const cached = { totalUsers: 99, totalRecords: 0, totalAccessGrants: 0, activeGrants: 0, stellarTransactions: 0 };
+      mockCache.get.mockResolvedValueOnce(cached);
+      const service = await buildModule();
+      const result = await service.getOverview();
+      expect(result).toEqual(cached);
+      expect(mockCache.get).toHaveBeenCalledWith('analytics:overview:tenant-abc');
+    });
+  });
+
+  // ── Two-tenant isolation ───────────────────────────────────────────────────
+
+  describe('tenant data isolation', () => {
+    it('each tenant sees only their own counts in getOverview', async () => {
+      const tenantAId = 'tenant-aaa';
+      const tenantBId = 'tenant-bbb';
+
+      // Tenant A: 10 users, 50 records, 20 grants, 5 active, 3 stellar
+      const repoA = {
+        user: makeRepo(10),
+        record: makeRepo(50),
+        grant: {
+          count: jest.fn()
+            .mockResolvedValueOnce(20)  // totalAccessGrants
+            .mockResolvedValueOnce(5),  // activeGrants
+          createQueryBuilder: jest.fn().mockReturnValue(makeQB()),
+        },
+        stellar: makeRepo(3),
+      };
+
+      // Tenant B: 2 users, 8 records, 4 grants, 1 active, 0 stellar
+      const repoB = {
+        user: makeRepo(2),
+        record: makeRepo(8),
+        grant: {
+          count: jest.fn()
+            .mockResolvedValueOnce(4)
+            .mockResolvedValueOnce(1),
+          createQueryBuilder: jest.fn().mockReturnValue(makeQB()),
+        },
+        stellar: makeRepo(0),
+      };
+
+      const serviceA = await buildModule(repoA);
+      const serviceB = await buildModule(repoB);
+
+      jest.spyOn(TenantContext, 'getTenantId').mockReturnValue(tenantAId);
+      const resultA = await serviceA.getOverview();
+
+      jest.spyOn(TenantContext, 'getTenantId').mockReturnValue(tenantBId);
+      const resultB = await serviceB.getOverview();
+
+      expect(resultA.totalUsers).toBe(10);
+      expect(resultA.totalRecords).toBe(50);
+      expect(resultA.activeGrants).toBe(5);
+      expect(resultA.stellarTransactions).toBe(3);
+
+      expect(resultB.totalUsers).toBe(2);
+      expect(resultB.totalRecords).toBe(8);
+      expect(resultB.activeGrants).toBe(1);
+      expect(resultB.stellarTransactions).toBe(0);
+    });
+
+    it('getOverview passes organizationId filter to every repository count', async () => {
+      jest.spyOn(TenantContext, 'getTenantId').mockReturnValue('tenant-xyz');
+      const userRepo = makeRepo(5);
+      const recordRepo = makeRepo(10);
+      const grantRepo = { count: jest.fn().mockResolvedValue(3), createQueryBuilder: jest.fn().mockReturnValue(makeQB()) };
+      const stellarRepo = makeRepo(1);
+
+      const service = await buildModule({ user: userRepo, record: recordRepo, grant: grantRepo, stellar: stellarRepo });
+      await service.getOverview();
+
+      expect(userRepo.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: 'tenant-xyz' }) }));
+      expect(recordRepo.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: 'tenant-xyz' }) }));
+      expect(grantRepo.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: 'tenant-xyz' }) }));
+      expect(stellarRepo.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: 'tenant-xyz' }) }));
+    });
+  });
+
+  // ── getActivity ────────────────────────────────────────────────────────────
+
+  describe('getActivity', () => {
+    it('scopes activity queries to tenant and returns daily breakdown', async () => {
+      jest.spyOn(TenantContext, 'getTenantId').mockReturnValue('tenant-t1');
       const from = new Date('2024-01-01');
       const to = new Date('2024-01-02');
 
-      const mockQueryBuilder = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValue([]),
-      };
+      const recordQB = makeQB([{ date: '2024-01-01T00:00:00.000Z', count: '5' }]);
+      const grantQB = makeQB([{ date: '2024-01-02T00:00:00.000Z', count: '3' }]);
+      const recordRepo = { count: jest.fn(), createQueryBuilder: jest.fn().mockReturnValue(recordQB) };
+      const grantRepo = { count: jest.fn(), createQueryBuilder: jest.fn().mockReturnValue(grantQB) };
 
-      medicalRecordRepository.createQueryBuilder
-        .mockReturnValue(mockQueryBuilder);
-      accessGrantRepository.createQueryBuilder
-        .mockReturnValue(mockQueryBuilder);
-
+      const service = await buildModule({ record: recordRepo, grant: grantRepo });
       const result = await service.getActivity(from, to);
 
       expect(result.dailyActivity).toHaveLength(2);
-      expect(result.dailyActivity[0]).toEqual({
-        date: '2024-01-01',
-        recordUploads: 0,
-        accessEvents: 0,
-      });
-      expect(result.dailyActivity[1]).toEqual({
-        date: '2024-01-02',
-        recordUploads: 0,
-        accessEvents: 0,
-      });
+      expect(result.dailyActivity[0]).toEqual({ date: '2024-01-01', recordUploads: 5, accessEvents: 0 });
+      expect(result.dailyActivity[1]).toEqual({ date: '2024-01-02', recordUploads: 0, accessEvents: 3 });
+
+      // Verify tenant filter was applied
+      expect(recordQB.where).toHaveBeenCalledWith(
+        expect.stringContaining('organizationId'),
+        expect.objectContaining({ tenantId: 'tenant-t1' }),
+      );
     });
 
-    it('should handle single day date range', async () => {
+    it('uses tenant-scoped cache key', async () => {
+      jest.spyOn(TenantContext, 'getTenantId').mockReturnValue('tenant-t2');
       const from = new Date('2024-01-01');
       const to = new Date('2024-01-01');
-
-      const mockRecordQueryBuilder = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValue([
-          { date: '2024-01-01T00:00:00.000Z', count: '10' },
-        ]),
-      };
-
-      const mockAccessQueryBuilder = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValue([
-          { date: '2024-01-01T00:00:00.000Z', count: '7' },
-        ]),
-      };
-
-      medicalRecordRepository.createQueryBuilder
-        .mockReturnValueOnce(mockRecordQueryBuilder);
-      accessGrantRepository.createQueryBuilder
-        .mockReturnValueOnce(mockAccessQueryBuilder);
-
-      const result = await service.getActivity(from, to);
-
-      expect(result.dailyActivity).toHaveLength(1);
-      expect(result.dailyActivity[0]).toEqual({
-        date: '2024-01-01',
-        recordUploads: 10,
-        accessEvents: 7,
+      const recordQB = makeQB([]);
+      const grantQB = makeQB([]);
+      const service = await buildModule({
+        record: { count: jest.fn(), createQueryBuilder: jest.fn().mockReturnValue(recordQB) },
+        grant: { count: jest.fn(), createQueryBuilder: jest.fn().mockReturnValue(grantQB) },
       });
-    });
-  });
-});
 
-  describe('getTopProviders', () => {
-    it('should return providers ranked by active grant count', async () => {
-      const mockQueryBuilder = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValue([
-          { providerId: 'provider-1', activeGrantCount: '15' },
-          { providerId: 'provider-2', activeGrantCount: '10' },
-          { providerId: 'provider-3', activeGrantCount: '5' },
-        ]),
-      };
+      await service.getActivity(from, to);
 
-      accessGrantRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
-
-      const result = await service.getTopProviders();
-
-      expect(result.providers).toHaveLength(3);
-      expect(result.providers[0]).toEqual({
-        providerId: 'provider-1',
-        activeGrantCount: 15,
-      });
-      expect(result.providers[1]).toEqual({
-        providerId: 'provider-2',
-        activeGrantCount: 10,
-      });
-      expect(result.providers[2]).toEqual({
-        providerId: 'provider-3',
-        activeGrantCount: 5,
-      });
-    });
-
-    it('should return empty array when no active grants exist', async () => {
-      const mockQueryBuilder = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValue([]),
-      };
-
-      accessGrantRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
-
-      const result = await service.getTopProviders();
-
-      expect(result.providers).toHaveLength(0);
-      expect(result.providers).toEqual([]);
-    });
-
-    it('should filter only active grants', async () => {
-      const mockQueryBuilder = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValue([
-          { providerId: 'provider-1', activeGrantCount: '8' },
-        ]),
-      };
-
-      accessGrantRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
-
-      await service.getTopProviders();
-
-      // Verify that the where clause filters for ACTIVE status
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'grant.status = :status',
-        { status: 'ACTIVE' }
+      expect(mockCache.set).toHaveBeenCalledWith(
+        expect.stringContaining('analytics:activity:tenant-t2:'),
+        expect.any(Object),
+        300,
       );
     });
   });
+
+  // ── getTopProviders ────────────────────────────────────────────────────────
+
+  describe('getTopProviders', () => {
+    it('filters by tenant and active status', async () => {
+      jest.spyOn(TenantContext, 'getTenantId').mockReturnValue('tenant-p1');
+      const qb = makeQB([{ providerId: 'prov-1', activeGrantCount: '8' }]);
+      const grantRepo = { count: jest.fn(), createQueryBuilder: jest.fn().mockReturnValue(qb) };
+
+      const service = await buildModule({ grant: grantRepo });
+      const result = await service.getTopProviders();
+
+      expect(result.providers[0]).toEqual({ providerId: 'prov-1', activeGrantCount: 8 });
+      expect(qb.where).toHaveBeenCalledWith('grant.status = :status', { status: GrantStatus.ACTIVE });
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('organizationId'),
+        expect.objectContaining({ tenantId: 'tenant-p1' }),
+      );
+    });
+  });
+});

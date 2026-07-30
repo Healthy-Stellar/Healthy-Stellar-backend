@@ -8,3 +8,5 @@ export * from './payment.entity';
 export * from './claim-denial.entity';
 export * from './claim-appeal.entity';
 export * from './revenue-report.entity';
+export * from './remittance.entity';
+export * from './billing-dispute.entity';

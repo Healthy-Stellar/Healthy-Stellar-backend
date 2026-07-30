@@ -21,11 +21,11 @@ export class SessionEntity {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @Column({ unique: true })
-  refreshToken: string;
+  @Column({ name: 'refreshTokenHash', unique: true, length: 64 })
+  refreshTokenHash: string;
 
-  @Column({ unique: true })
-  accessToken: string;
+  @Column({ name: 'accessTokenHash', unique: true, length: 64 })
+  accessTokenHash: string;
 
   @Column()
   expiresAt: Date;

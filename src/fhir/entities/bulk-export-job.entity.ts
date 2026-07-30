@@ -14,6 +14,12 @@ export enum ExportJobStatus {
   CANCELLED = 'cancelled',
 }
 
+export enum ExportScope {
+  SYSTEM = 'system',
+  GROUP  = 'group',
+  PATIENT = 'patient',
+}
+
 @Entity('bulk_export_jobs')
 export class BulkExportJob {
   @PrimaryGeneratedColumn('uuid')
@@ -45,6 +51,26 @@ export class BulkExportJob {
 
   @Column({ type: 'timestamp', nullable: true })
   expiresAt: Date;
+
+  /** ISO 8601 instant — only resources updated after this date are exported. */
+  @Column({ type: 'timestamp', nullable: true })
+  since: Date | null;
+
+  /** Requested NDJSON output format (defaults to application/fhir+ndjson). */
+  @Column({ type: 'varchar', nullable: true, default: 'application/fhir+ndjson' })
+  outputFormat: string;
+
+  /** Export scope: system-level, group-level, or patient-level. */
+  @Column({
+    type: 'enum',
+    enum: ExportScope,
+    default: ExportScope.PATIENT,
+  })
+  exportScope: ExportScope;
+
+  /** For group-level exports, the FHIR Group resource ID. */
+  @Column({ type: 'varchar', nullable: true })
+  groupId: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

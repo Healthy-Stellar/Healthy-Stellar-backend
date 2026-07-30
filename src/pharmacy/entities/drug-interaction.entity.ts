@@ -39,6 +39,17 @@ export class DrugInteraction {
   @Column('text', { nullable: true })
   management: string;
 
+  @Column({ nullable: true })
+  mechanism: string;
+
+  @Column({
+    type: 'enum',
+    enum: ['A', 'B', 'C', 'D'],
+    nullable: true,
+    comment: 'A=excellent, B=good, C=fair, D=poor',
+  })
+  evidenceLevel: string;
+
   @CreateDateColumn()
   createdAt: Date;
 }

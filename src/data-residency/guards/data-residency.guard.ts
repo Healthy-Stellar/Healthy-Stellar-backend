@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { DataResidencyService } from '../services/data-residency.service';
 import { TenantService } from '../../tenant/tenant.service';
@@ -16,11 +17,21 @@ import { TenantService } from '../../tenant/tenant.service';
 @Injectable()
 export class DataResidencyGuard implements CanActivate {
   private readonly logger = new Logger(DataResidencyGuard.name);
+  private readonly trustedProxies: Set<string>;
 
   constructor(
     private dataResidencyService: DataResidencyService,
     private tenantService: TenantService,
-  ) {}
+    private config: ConfigService,
+  ) {
+    const proxies = this.config.get<string>('DATA_RESIDENCY_TRUSTED_PROXIES', '');
+    this.trustedProxies = new Set(
+      proxies
+        .split(',')
+        .map((ip) => ip.trim())
+        .filter(Boolean),
+    );
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
@@ -90,23 +101,29 @@ export class DataResidencyGuard implements CanActivate {
   }
 
   /**
-   * Extract client IP from request, handling proxies
+   * Extract client IP from request, handling proxies.
+   * Only trusts proxy headers (X-Forwarded-For, X-Client-IP) if the immediate
+   * connection is from a whitelisted trusted proxy IP.
    */
   private getClientIp(request: Request): string {
-    // Check for various proxy headers
-    const forwarded = request.headers['x-forwarded-for'];
-    if (forwarded) {
-      return typeof forwarded === 'string'
-        ? forwarded.split(',')[0].trim()
-        : forwarded[0];
+    const directIp = request.socket.remoteAddress || '0.0.0.0';
+
+    // Only trust proxy headers if request comes from a trusted proxy
+    if (this.trustedProxies.size > 0 && this.trustedProxies.has(directIp)) {
+      const forwarded = request.headers['x-forwarded-for'];
+      if (forwarded) {
+        return typeof forwarded === 'string'
+          ? forwarded.split(',')[0].trim()
+          : forwarded[0];
+      }
+
+      const clientIp = request.headers['x-client-ip'];
+      if (clientIp) {
+        return typeof clientIp === 'string' ? clientIp : clientIp[0];
+      }
     }
 
-    const clientIp = request.headers['x-client-ip'];
-    if (clientIp) {
-      return typeof clientIp === 'string' ? clientIp : clientIp[0];
-    }
-
-    // Fallback to socket remote address
-    return request.socket.remoteAddress || '0.0.0.0';
+    // Use direct connection IP if no trusted proxies configured or direct IP not in allowlist
+    return directIp;
   }
 }

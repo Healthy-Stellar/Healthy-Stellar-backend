@@ -6,33 +6,49 @@ import { SensitiveAuditLog } from './entities/sensitive-audit-log.entity';
 import { AuditLogService } from './services/audit-log.service';
 import { DataEncryptionService } from './services/data-encryption.service';
 import { TracingService } from './services/tracing.service';
+import { QueryPerformanceMonitor } from './services/query-performance-monitor.service';
 import { AuditSubscriber } from './subscribers/audit.subscriber';
+import { QueryPerformanceSubscriber } from './subscribers/query-performance.subscriber';
 import { RequestContextMiddleware } from './middleware/request-context.middleware';
 import { AuditContextGuard } from './guards/audit-context.guard';
+import { DatabaseQueryGuard } from './guards/database-query.guard';
 import { RedisLockService } from './utils/redis-lock.service';
+import { QueryPerformanceController } from './controllers/query-performance.controller';
+import { ErrorDocumentationController } from './controllers/error-documentation.controller';
+import { CacheModule } from './cache/cache.module';
+import { PhiAuditInterceptor } from './interceptors/phi-audit.interceptor';
 
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([AuditLog, SensitiveAuditLog])],
+  imports: [TypeOrmModule.forFeature([AuditLog, SensitiveAuditLog]), CacheModule],
+  controllers: [QueryPerformanceController, ErrorDocumentationController],
   providers: [
     AuditLogService,
+    PhiAuditInterceptor,
     DataEncryptionService,
     TracingService,
+    QueryPerformanceMonitor,
     {
       provide: 'DATA_SOURCE',
       useFactory: (dataSource: DataSource) => dataSource,
       inject: [DataSource],
     },
     AuditSubscriber,
+    QueryPerformanceSubscriber,
     AuditContextGuard,
+    DatabaseQueryGuard,
     RedisLockService,
   ],
-  exports: [AuditLogService, DataEncryptionService, TracingService, AuditSubscriber, AuditContextGuard, RedisLockService],
   exports: [
     AuditLogService,
+    PhiAuditInterceptor,
     DataEncryptionService,
+    TracingService,
+    QueryPerformanceMonitor,
     AuditSubscriber,
+    QueryPerformanceSubscriber,
     AuditContextGuard,
+    DatabaseQueryGuard,
     RedisLockService,
   ],
 })

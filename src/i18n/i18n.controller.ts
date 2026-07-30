@@ -15,7 +15,7 @@ export class I18nController {
     description: 'List of supported language codes',
     schema: {
       example: {
-        languages: ['en', 'fr', 'es', 'ar'],
+        languages: ['en', 'fr', 'es', 'ar', 'he'],
         default: 'en',
       },
     },

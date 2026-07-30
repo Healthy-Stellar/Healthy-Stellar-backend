@@ -1,7 +1,9 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { SystemHealthService } from '../services/system-health.service';
 import { DashboardService } from '../services/dashboard.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('healthcare-monitoring')
 @Controller('healthcare-monitoring')
 export class HealthcareMonitoringController {
   constructor(

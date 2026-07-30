@@ -9,7 +9,11 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  DefaultValuePipe,
+  ParseIntPipe,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -20,6 +24,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { BillingService } from '../services/billing.service';
+import { InvoicePdfService } from '../services/invoice-pdf.service';
 import {
   CreateBillingDto,
   UpdateBillingDto,
@@ -31,7 +36,40 @@ import {
 @ApiBearerAuth('medical-auth')
 @Controller('billing')
 export class BillingController {
-  constructor(private readonly billingService: BillingService) {}
+  constructor(
+    private readonly billingService: BillingService,
+    private readonly invoicePdfService: InvoicePdfService,
+  ) {}
+
+  @Get('invoices/:id/pdf')
+  @ApiOperation({
+    summary: 'Download invoice PDF',
+    description:
+      'Generate and stream a structured patient invoice PDF (itemised charges, tax, total, payment reference).',
+  })
+  @ApiParam({ name: 'id', description: 'Billing record UUID' })
+  @ApiResponse({ status: 200, description: 'Invoice PDF stream' })
+  @ApiResponse({ status: 404, description: 'Billing invoice not found' })
+  async getInvoicePdf(@Param('id') id: string, @Res() res: Response) {
+    const pdf = await this.invoicePdfService.generateInvoicePdf(id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="invoice-${id}.pdf"`,
+      'Content-Length': pdf.length,
+    });
+    res.end(pdf);
+  }
+
+  @Get('invoices/:id/pdf-link')
+  @ApiOperation({
+    summary: 'Get signed invoice PDF download link',
+    description: 'Persist the invoice PDF to file storage and return a time-limited signed URL.',
+  })
+  @ApiParam({ name: 'id', description: 'Billing record UUID' })
+  @ApiResponse({ status: 200, description: 'Signed download URL generated' })
+  async getInvoicePdfLink(@Param('id') id: string) {
+    return this.invoicePdfService.storeInvoicePdf(id);
+  }
 
   @Post()
   @ApiOperation({
@@ -119,8 +157,8 @@ export class BillingController {
   })
   async findByPatientId(
     @Param('patientId') patientId: string,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
   ) {
     return this.billingService.findByPatientId(patientId, { page, limit });
   }

@@ -15,6 +15,7 @@ import * as PDFDocument from 'pdfkit';
 import { create as ipfsHttpClient } from 'ipfs-http-client';
 import { v4 as uuidv4 } from 'uuid';
 import { PassThrough } from 'stream';
+import { I18nService } from '../i18n/i18n.service';
 
 @Injectable()
 export class ReportsService {
@@ -27,6 +28,7 @@ export class ReportsService {
     private configService: ConfigService,
     private notificationsService: NotificationsService,
     private entityManager: EntityManager,
+    private i18nService: I18nService,
   ) {
     const ipfsUrl = this.configService.get<string>('IPFS_NODE_URL') || 'http://localhost:5001';
     this.ipfs = ipfsHttpClient({ url: ipfsUrl });
@@ -39,6 +41,10 @@ export class ReportsService {
       status: ReportStatus.PENDING,
     });
     await this.reportJobRepository.save(job);
+    this.notificationsService.emitJobStatusUpdated(job.id, ReportStatus.PENDING, {
+      patientId,
+      message: 'Report request accepted',
+    });
 
     // Call async generation without awaiting
     this.generateReport(job.id, patientId, format).catch((err) => {
@@ -116,6 +122,10 @@ export class ReportsService {
   private async generateReport(jobId: string, patientId: string, format: ReportFormat) {
     try {
       await this.reportJobRepository.update(jobId, { status: ReportStatus.PROCESSING });
+      this.notificationsService.emitJobStatusUpdated(jobId, ReportStatus.PROCESSING, {
+        patientId,
+        message: 'Report generation in progress',
+      });
 
       const patient = await this.entityManager.findOne(User, { where: { id: patientId } });
       const records = await this.entityManager.find(MedicalRecord, {
@@ -150,13 +160,17 @@ export class ReportsService {
 
       const downloadToken = uuidv4();
       const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 48); // 48 hours local IPFS expiry rule proxy equivalent
+      expiresAt.setHours(expiresAt.getHours() + 48);
 
       await this.reportJobRepository.update(jobId, {
         status: ReportStatus.COMPLETED,
         ipfsHash,
         downloadToken,
         expiresAt,
+      });
+      this.notificationsService.emitJobStatusUpdated(jobId, ReportStatus.COMPLETED, {
+        patientId,
+        message: 'Report generation completed',
       });
 
       const downloadUrl = `${this.configService.get<string>('API_URL') || 'http://localhost:3000'}/api/v1/reports/${jobId}/download?token=${downloadToken}`;
@@ -186,6 +200,10 @@ export class ReportsService {
         status: ReportStatus.FAILED,
         errorDetails: error.message,
       });
+      this.notificationsService.emitJobStatusUpdated(jobId, ReportStatus.FAILED, {
+        patientId,
+        message: error?.message || 'Report generation failed',
+      });
     }
   }
 
@@ -203,24 +221,24 @@ export class ReportsService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      // Header
+      // Detect RTL locale and set text direction accordingly
+      const isRtl = this.i18nService.isRtlLocale();
+      const textAlign = isRtl ? 'right' : 'left';
+
       doc.fontSize(20).text('Patient Activity Report', { align: 'center' });
       doc.moveDown();
-      doc.fontSize(12).text(`Patient Name: ${patient?.firstName || ''} ${patient?.lastName || ''}`);
-      doc.text(`Patient ID: ${patient?.id}`);
-      doc.text(`Generated On: ${new Date().toLocaleString()}`);
+      doc.fontSize(12).text(`Patient Name: ${patient?.firstName || ''} ${patient?.lastName || ''}`, { align: textAlign });
+      doc.text(`Patient ID: ${patient?.id}`, { align: textAlign });
+      doc.text(`Generated On: ${this.i18nService.formatDate(new Date())}`, { align: textAlign });
       doc.moveDown(2);
 
-      // Records
-      doc.fontSize(16).text('Medical Records Summary');
+      doc.fontSize(16).text('Medical Records Summary', { align: textAlign });
       doc.moveDown(0.5);
       if (records.length === 0) doc.fontSize(10).text('No recent active records found.');
       records.forEach((record) => {
-        doc
-          .fontSize(10)
-          .text(
-            `- [${new Date(record.createdAt).toLocaleDateString()}] ${record.recordType?.toUpperCase() || 'UNKNOWN'}`,
-          );
+        doc.fontSize(10).text(
+          `- [${new Date(record.createdAt).toLocaleDateString()}] ${record.recordType?.toUpperCase() || 'UNKNOWN'}`,
+        );
         if (record.title) doc.text(`  Title: ${record.title}`);
         if (record.metadata?.transactionHash) {
           doc.fillColor('blue').fontSize(8).text(`  Tx Hash: ${record.metadata.transactionHash}`);
@@ -230,8 +248,7 @@ export class ReportsService {
       });
       doc.moveDown();
 
-      // Grants
-      doc.fontSize(16).text('Access Grants & Consents');
+      doc.fontSize(16).text('Access Grants & Consents', { align: textAlign });
       doc.moveDown(0.5);
       if (grants.length === 0) doc.fontSize(10).text('No access grants found.');
       grants.forEach((grant) => {
@@ -247,16 +264,13 @@ export class ReportsService {
       });
       doc.moveDown();
 
-      // Logs
-      doc.fontSize(16).text('Recent Audit Logs');
+      doc.fontSize(16).text('Recent Audit Logs', { align: textAlign });
       doc.moveDown(0.5);
       if (logs.length === 0) doc.fontSize(10).text('No audit logs found.');
       logs.forEach((log) => {
-        doc
-          .fontSize(9)
-          .text(
-            `[${new Date(log.timestamp).toLocaleString()}] ${log.action} - ${log.description || ''}`,
-          );
+        doc.fontSize(9).text(
+          `[${new Date(log.timestamp).toLocaleString()}] ${log.action} - ${log.description || ''}`,
+        );
         if (log.details?.transactionHash) {
           doc.fillColor('gray').fontSize(7).text(`  Tx Hash: ${log.details?.transactionHash}`);
           doc.fillColor('black');

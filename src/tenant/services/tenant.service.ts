@@ -1,8 +1,29 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Tenant } from '../entities/tenant.entity';
 import { CreateTenantDto, UpdateTenantDto } from '../dto/tenant.dto';
+
+/**
+ * Strict allowlist for tenant slugs used in DDL identifiers.
+ * Matches ^[a-z0-9_]{3,63}$ — no hyphens, quotes, spaces, or any character
+ * that could escape a quoted PostgreSQL identifier.
+ */
+const SLUG_RE = /^[a-z0-9_]{3,63}$/;
+
+/** Throws BadRequestException if slug does not pass the allowlist. */
+function assertSafeSlug(slug: string): void {
+  if (!SLUG_RE.test(slug)) {
+    throw new BadRequestException(
+      'Tenant slug must match ^[a-z0-9_]{3,63}$ (lowercase letters, digits, underscores only)',
+    );
+  }
+}
 
 @Injectable()
 export class TenantService {
@@ -14,46 +35,91 @@ export class TenantService {
   ) {}
 
   async create(createTenantDto: CreateTenantDto): Promise<Tenant> {
-    // Check if tenant with slug already exists
+    assertSafeSlug(createTenantDto.slug);
+
     const existing = await this.tenantRepository.findOne({
       where: { slug: createTenantDto.slug },
     });
-
     if (existing) {
       throw new ConflictException('Tenant with this slug already exists');
     }
 
-    // Create tenant record
     const tenant = this.tenantRepository.create(createTenantDto);
     await this.tenantRepository.save(tenant);
 
-    // Provision tenant schema
     await this.provisionTenantSchema(tenant.slug);
 
     return tenant;
   }
 
+  /**
+   * Provisions a schema for the given slug with three safety guarantees:
+   *
+   * 1. Slug allowlist — rejects any slug that doesn't match ^[a-z0-9_]{3,63}$
+   *    before it ever touches a SQL string.
+   *
+   * 2. PostgreSQL advisory lock — pg_try_advisory_lock(hashtext(schemaName))
+   *    prevents two concurrent calls for the same slug from racing. If the lock
+   *    is already held the call fails fast with a ConflictException rather than
+   *    producing a half-initialised duplicate schema.
+   *
+   * 3. Compensating saga — DDL statements (CREATE SCHEMA, CREATE TABLE) are
+   *    auto-committed by PostgreSQL and cannot be rolled back inside a
+   *    transaction. Instead we wrap the provisioning steps in try/catch and
+   *    DROP the schema on any failure, leaving the database in a clean state.
+   */
   async provisionTenantSchema(slug: string): Promise<void> {
+    assertSafeSlug(slug);
+
+    // schemaName is safe to interpolate: assertSafeSlug guarantees it contains
+    // only [a-z0-9_] — no characters that can escape a double-quoted identifier.
     const schemaName = `tenant_${slug}`;
 
-    // Create schema
-    await this.dataSource.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
+    // ── Advisory lock ────────────────────────────────────────────────────────
+    // Use a session-level advisory lock keyed on the schema name so concurrent
+    // provisioning attempts for the same slug are serialised. The lock is
+    // released automatically when the connection is returned to the pool.
+    const [{ acquired }] = await this.dataSource.query<[{ acquired: boolean }]>(
+      `SELECT pg_try_advisory_lock(hashtext($1)) AS acquired`,
+      [schemaName],
+    );
 
-    // Set search path to new schema
-    await this.dataSource.query(`SET search_path TO "${schemaName}", public`);
+    if (!acquired) {
+      throw new ConflictException(
+        `Schema provisioning for "${slug}" is already in progress`,
+      );
+    }
 
-    // Run migrations for tenant schema
-    await this.runTenantMigrations(schemaName);
+    // ── Compensating saga ────────────────────────────────────────────────────
+    // CREATE SCHEMA is DDL and auto-commits, so we track whether the schema was
+    // created and drop it on any subsequent failure (compensating transaction).
+    let schemaCreated = false;
 
-    // Seed base data
-    await this.seedTenantData(schemaName);
+    try {
+      await this.dataSource.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
+      schemaCreated = true;
 
-    // Reset search path
-    await this.dataSource.query(`SET search_path TO public`);
+      await this.runTenantMigrations(schemaName);
+      await this.seedTenantData(schemaName);
+    } catch (err) {
+      if (schemaCreated) {
+        // Best-effort rollback: drop the partially initialised schema.
+        await this.dataSource
+          .query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`)
+          .catch(() => {
+            // Log but do not mask the original error.
+          });
+      }
+      throw err;
+    } finally {
+      // Release the advisory lock regardless of outcome.
+      await this.dataSource
+        .query(`SELECT pg_advisory_unlock(hashtext($1))`, [schemaName])
+        .catch(() => {});
+    }
   }
 
   private async runTenantMigrations(schemaName: string): Promise<void> {
-    // Create core tables in tenant schema
     const tables = [
       `CREATE TABLE IF NOT EXISTS "${schemaName}".medical_records (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -91,7 +157,6 @@ export class TenantService {
       await this.dataSource.query(sql);
     }
 
-    // Create indexes
     await this.dataSource.query(
       `CREATE INDEX IF NOT EXISTS idx_medical_records_patient ON "${schemaName}".medical_records(patient_id)`,
     );
@@ -107,8 +172,6 @@ export class TenantService {
   }
 
   private async seedTenantData(schemaName: string): Promise<void> {
-    // Seed initial configuration data for tenant
-    // This can be expanded based on requirements
     await this.dataSource.query(`
       INSERT INTO "${schemaName}".medical_records (patient_id, record_type)
       VALUES ('system', 'initialization')
@@ -122,17 +185,13 @@ export class TenantService {
 
   async findById(id: string): Promise<Tenant> {
     const tenant = await this.tenantRepository.findOne({ where: { id } });
-    if (!tenant) {
-      throw new NotFoundException('Tenant not found');
-    }
+    if (!tenant) throw new NotFoundException('Tenant not found');
     return tenant;
   }
 
   async findBySlug(slug: string): Promise<Tenant> {
     const tenant = await this.tenantRepository.findOne({ where: { slug } });
-    if (!tenant) {
-      throw new NotFoundException('Tenant not found');
-    }
+    if (!tenant) throw new NotFoundException('Tenant not found');
     return tenant;
   }
 
@@ -144,12 +203,9 @@ export class TenantService {
 
   async delete(id: string): Promise<void> {
     const tenant = await this.findById(id);
+    assertSafeSlug(tenant.slug);
     const schemaName = `tenant_${tenant.slug}`;
-
-    // Drop schema (CASCADE will drop all tables)
     await this.dataSource.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
-
-    // Delete tenant record
     await this.tenantRepository.remove(tenant);
   }
 }

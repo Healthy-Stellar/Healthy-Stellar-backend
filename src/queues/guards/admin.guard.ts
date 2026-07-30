@@ -1,13 +1,25 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
-import { Observable } from 'rxjs';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 
 @Injectable()
 export class AdminGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean | Promise<boolean> | Observable<boolean> {
+  canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
-    // TODO: Implement proper role checking from JWT/session
-    return user && user.role === 'admin';
+    if (!user) {
+      throw new UnauthorizedException('Authentication required');
+    }
+
+    if (user.role !== 'admin') {
+      throw new ForbiddenException('Admin access required');
+    }
+
+    return true;
   }
 }
