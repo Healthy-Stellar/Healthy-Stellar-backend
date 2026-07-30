@@ -1,14 +1,17 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PatientsController } from './patients.controller';
 import { PatientsService } from './patients.service';
 import { PatientTimelineService } from './services/patient-timeline.service';
 import { Patient } from './entities/patient.entity';
-import { CorrectionRequest } from './entities/correction-request.entity';
-import { MedicalHistory } from '../medical-records/entities/medical-history.entity';
-import { AccessGrant } from '../access-control/entities/access-grant.entity';
+import { PatientGuardian } from './entities/patient-guardian.entity';
 import { PatientPrivacyGuard } from './guards/patient-privacy.guard';
 import { GeoRestrictionGuard } from './guards/geo-restriction.guard';
+import { GuardianAccessGuard } from './guards/guardian-access.guard';
+import { GuardianService } from './services/guardian.service';
+import { GuardianController } from './controllers/guardian.controller';
+import { GuardianAgeOutTask } from './tasks/guardian-age-out.task';
 import { AuthModule } from '../auth/auth.module';
 import { PatientProvidersController } from './controllers/patient-providers.controller';
 import { PatientPortalController } from './controllers/patient-portal.controller';
@@ -20,21 +23,22 @@ import { MedicalValidationModule } from '../data-validation-integrity/medical-va
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Patient, MedicalHistory, AccessGrant, CorrectionRequest]),
+    TypeOrmModule.forFeature([Patient, PatientGuardian]),
+    ScheduleModule.forRoot(),
     AuthModule,
     CommonModule,
     StellarModule,
     MedicalValidationModule,
   ],
-  controllers: [PatientsController, PatientProvidersController, PatientPortalController],
+  controllers: [PatientsController, GuardianController],
   providers: [
     PatientsService,
-    PatientTimelineService,
     PatientPrivacyGuard,
     GeoRestrictionGuard,
-    PatientProvidersService,
-    PatientPortalService,
+    GuardianService,
+    GuardianAccessGuard,
+    GuardianAgeOutTask,
   ],
-  exports: [PatientsService, PatientTimelineService, GeoRestrictionGuard, PatientPortalService],
+  exports: [PatientsService, GeoRestrictionGuard, GuardianService, GuardianAccessGuard],
 })
 export class PatientModule {}

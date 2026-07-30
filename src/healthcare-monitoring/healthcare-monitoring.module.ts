@@ -29,13 +29,7 @@ import { ClinicalAlert } from './entities/clinical-alert.entity';
 import { EquipmentStatus } from './entities/equipment-status.entity';
 import { ComplianceCheck } from './entities/compliance-check.entity';
 import { HealthcareIncident } from './entities/healthcare-incident.entity';
-import { PatientVital } from './entities/patient-vital.entity';
-import { AlertRule } from './entities/alert-rule.entity';
-
-// WS middleware/guard deps
-import { WsJwtMiddleware } from '../notifications/middleware/ws-jwt.middleware';
-import { AuthModule } from '../auth/auth.module';
-import { NotificationsModule } from '../notifications/notifications.module';
+import { OperatorRunbookModule } from '../operator-runbook/operator-runbook.module';
 
 @Module({
   imports: [
@@ -49,8 +43,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       AlertRule,
     ]),
     ScheduleModule.forRoot(),
-    AuthModule,
-    NotificationsModule,
+    OperatorRunbookModule,
   ],
   controllers: [
     HealthcareMonitoringController,

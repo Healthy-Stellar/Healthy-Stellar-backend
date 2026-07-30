@@ -74,25 +74,8 @@ import { MetricsModule } from './metrics/metrics.module';
 import { HttpMetricsInterceptor } from './metrics/interceptors/http-metrics.interceptor';
 import { LoggerModule } from './common/logger/logger.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
-import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
-import { EventStoreModule } from './event-store/event-store.module';
-import { BullBoardAuthMiddleware } from './queues/middleware/bull-board-auth.middleware';
-import { EventEmitterModule } from '@nestjs/event-emitter';
-import { WebhooksModule } from './webhooks/webhooks.module';
-import { GovernanceAnalyticsModule } from './governance-analytics/governance-analytics.module';
-import { IdempotencyModule } from './idempotency/idempotency.module';
-import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor';
-import { DlqModule } from './dlq/dlq.module';
-import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
-import { IncidentModule } from './incident/incident.module';
-import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.interceptor';
-import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
-import { MedicalStaffModule } from './medical-staff/medical-staff.module';
 import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-monitoring.module';
-import { AppointmentsModule } from './appointments/appointments.module';
-import { SurgicalModule } from './surgical-management-system/surgical/Surgical.module';
-import { TelemedicineModule } from './telemedicine-and-remote/src/telemedicine/Telemedicine.module';
-import { User } from './auth/entities/user.entity';
+import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
 
 @Module({
   imports: [
@@ -168,29 +151,8 @@ import { User } from './auth/entities/user.entity';
     ResearchExportModule,
     ReconciliationModule,
     GraphqlModule,
-    VersioningModule,
-    LedgerReconciliationModule,
-    StellarStreamModule,
-    EventStoreModule,
-    FeatureFlagModule,
-    ProjectionsModule,
-    CqrsModule,
-    ProviderPatientModule,
-    ConsistencyCheckerModule,
-    WebhooksModule,
-    GovernanceAnalyticsModule,
-    IdempotencyModule,
-    DlqModule,
-    OperatorRunbookModule,
-    IncidentModule,
-    BedOccupancyModule,
-    MedicalStaffModule,
-    EhrImportModule,
     HealthcareMonitoringModule,
-    AppointmentsModule,
-    SurgicalModule,
-    TelemedicineModule,
-    EventEmitterModule.forRoot(),
+    OperatorRunbookModule,
   ],
   controllers: [AppController],
   providers: [

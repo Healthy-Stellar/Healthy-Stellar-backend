@@ -1,7 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ClinicalAlert } from '../entities/clinical-alert.entity';
 import { HealthcareIncident } from '../entities/healthcare-incident.entity';
-import { NotificationsService } from '../../notifications/services/notifications.service';
+import { ResolvedRunbook } from '../../operator-runbook/services/runbook.service';
 
 @Injectable()
 export class NotificationService {
@@ -41,23 +41,33 @@ export class NotificationService {
     }
   }
 
-  async sendIncidentNotification(incident: HealthcareIncident): Promise<void> {
+  async sendIncidentNotification(
+    incident: HealthcareIncident,
+    runbook?: ResolvedRunbook,
+  ): Promise<void> {
     try {
+      const runbookSummary = runbook
+        ? `\n\nRunbook: ${runbook.runbookTitle} (${runbook.runbookId})\nURL: ${runbook.runbookUrl}\nSteps:\n${runbook.steps.join('\n')}`
+        : '';
+
       await this.sendEmailNotification({
         title: `Healthcare Incident Reported: ${incident.incidentNumber}`,
-        message: `${incident.title}\n\nSeverity: ${incident.severity}\nDepartment: ${incident.department}\nDescription: ${incident.description}`,
+        message: `${incident.title}\n\nSeverity: ${incident.severity}\nDepartment: ${incident.department}\nDescription: ${incident.description}${runbookSummary}`,
         priority: incident.severity === 'catastrophic' ? 'critical' : 'high',
       } as any);
 
       if (incident.severity === 'catastrophic' || incident.severity === 'major') {
         await this.sendSmsNotification({
           title: `URGENT: Healthcare Incident ${incident.incidentNumber}`,
-          message: `${incident.title} in ${incident.department}`,
+          message: `${incident.title} in ${incident.department}${runbook ? ` | Runbook: ${runbook.runbookUrl}` : ''}`,
           priority: 'critical',
         } as any);
       }
 
-      this.logger.log(`Incident notification sent for: ${incident.incidentNumber}`);
+      this.logger.log(
+        `Incident notification sent for: ${incident.incidentNumber}` +
+          (runbook ? ` with runbook ${runbook.runbookId}` : ''),
+      );
     } catch (error) {
       this.logger.error('Failed to send incident notification', error);
     }
