@@ -29,7 +29,7 @@ import { ClinicalAlert } from './entities/clinical-alert.entity';
 import { EquipmentStatus } from './entities/equipment-status.entity';
 import { ComplianceCheck } from './entities/compliance-check.entity';
 import { HealthcareIncident } from './entities/healthcare-incident.entity';
- feat/tenant-branding
+main
 import { OperatorRunbookModule } from '../operator-runbook/operator-runbook.module';
 
 import { PatientVital } from './entities/patient-vital.entity';
@@ -53,7 +53,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       AlertRule,
     ]),
     ScheduleModule.forRoot(),
- feat/tenant-branding
+main
     OperatorRunbookModule,
 
     AuthModule,

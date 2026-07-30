@@ -1,7 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ClinicalAlert } from '../entities/clinical-alert.entity';
 import { HealthcareIncident } from '../entities/healthcare-incident.entity';
- feat/tenant-branding
+main
 import { ResolvedRunbook } from '../../operator-runbook/services/runbook.service';
 
 import { NotificationsService } from '../../notifications/services/notifications.service';
@@ -50,7 +50,7 @@ export class NotificationService {
     runbook?: ResolvedRunbook,
   ): Promise<void> {
     try {
- feat/tenant-branding
+ main
       const runbookSummary = runbook
         ? `\n\nRunbook: ${runbook.runbookTitle} (${runbook.runbookId})\nURL: ${runbook.runbookUrl}\nSteps:\n${runbook.steps.join('\n')}`
         : '';
