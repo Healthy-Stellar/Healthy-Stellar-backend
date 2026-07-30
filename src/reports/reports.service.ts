@@ -11,6 +11,7 @@ import {
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { User } from '../auth/entities/user.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
+import { TenantBrandingService } from '../tenant-config/services/tenant-branding.service';
 import * as PDFDocument from 'pdfkit';
 import { create as ipfsHttpClient } from 'ipfs-http-client';
 import { v4 as uuidv4 } from 'uuid';
@@ -27,12 +28,13 @@ export class ReportsService {
     private configService: ConfigService,
     private notificationsService: NotificationsService,
     private entityManager: EntityManager,
+    private tenantBrandingService: TenantBrandingService,
   ) {
     const ipfsUrl = this.configService.get<string>('IPFS_NODE_URL') || 'http://localhost:5001';
     this.ipfs = ipfsHttpClient({ url: ipfsUrl });
   }
 
-  async requestReport(patientId: string, format: ReportFormat = ReportFormat.PDF) {
+  async requestReport(patientId: string, format: ReportFormat = ReportFormat.PDF, tenantId?: string) {
     const job = this.reportJobRepository.create({
       patientId,
       format,
@@ -41,7 +43,7 @@ export class ReportsService {
     await this.reportJobRepository.save(job);
 
     // Call async generation without awaiting
-    this.generateReport(job.id, patientId, format).catch((err) => {
+    this.generateReport(job.id, patientId, format, tenantId).catch((err) => {
       this.logger.error(`Report generation failed for job ${job.id}`, err.stack);
     });
 
@@ -113,11 +115,14 @@ export class ReportsService {
     }
   }
 
-  private async generateReport(jobId: string, patientId: string, format: ReportFormat) {
+  private async generateReport(jobId: string, patientId: string, format: ReportFormat, tenantId?: string) {
     try {
       await this.reportJobRepository.update(jobId, { status: ReportStatus.PROCESSING });
 
       const patient = await this.entityManager.findOne(User, { where: { id: patientId } });
+      const branding = tenantId
+        ? await this.tenantBrandingService.getBrandingOrDefault(tenantId)
+        : { primaryColor: '#667eea', secondaryColor: '#764ba2', organizationName: 'MedChain' };
       const records = await this.entityManager.find(MedicalRecord, {
         where: { patientId, status: MedicalRecordStatus.ACTIVE },
         order: { createdAt: 'DESC' },
@@ -134,7 +139,7 @@ export class ReportsService {
 
       let buffer: Buffer;
       if (format === ReportFormat.PDF) {
-        buffer = await this.generatePdfBuffer(patient, records, grants, userAuditLogs);
+        buffer = await this.generatePdfBuffer(patient, records, grants, userAuditLogs, branding);
       } else {
         buffer = await this.generateCsvBuffer(records, grants, userAuditLogs);
       }
@@ -170,6 +175,12 @@ export class ReportsService {
             patientName: patient?.firstName || 'Patient',
             downloadUrl,
             expiresAt: expiresAt.toISOString(),
+            organizationName: branding.organizationName || 'MedChain',
+            logoUrl: branding.logoUrl || '',
+            primaryColor: branding.primaryColor || '#667eea',
+            secondaryColor: branding.secondaryColor || '#764ba2',
+            supportEmail: branding.supportEmail || '',
+            supportPhone: branding.supportPhone || '',
           },
         );
       } catch (emailErr) {
@@ -194,7 +205,10 @@ export class ReportsService {
     records: MedicalRecord[],
     grants: AccessGrant[],
     logs: AuditLogEntity[],
+    branding: Partial<{ primaryColor: string; secondaryColor: string; organizationName: string; logoUrl: string }> = {},
   ): Promise<Buffer> {
+    const orgName = branding.organizationName || 'MedChain';
+    const primaryColor = branding.primaryColor || '#667eea';
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ margin: 50 });
       const chunks: Buffer[] = [];
@@ -203,8 +217,9 @@ export class ReportsService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      // Header
-      doc.fontSize(20).text('Patient Activity Report', { align: 'center' });
+      // Branded header
+      doc.fillColor(primaryColor).fontSize(20).text(`${orgName} — Patient Activity Report`, { align: 'center' });
+      doc.fillColor('black');
       doc.moveDown();
       doc.fontSize(12).text(`Patient Name: ${patient?.firstName || ''} ${patient?.lastName || ''}`);
       doc.text(`Patient ID: ${patient?.id}`);
@@ -212,7 +227,8 @@ export class ReportsService {
       doc.moveDown(2);
 
       // Records
-      doc.fontSize(16).text('Medical Records Summary');
+      doc.fillColor(primaryColor).fontSize(16).text('Medical Records Summary');
+      doc.fillColor('black');
       doc.moveDown(0.5);
       if (records.length === 0) doc.fontSize(10).text('No recent active records found.');
       records.forEach((record) => {
@@ -231,7 +247,8 @@ export class ReportsService {
       doc.moveDown();
 
       // Grants
-      doc.fontSize(16).text('Access Grants & Consents');
+      doc.fillColor(primaryColor).fontSize(16).text('Access Grants & Consents');
+      doc.fillColor('black');
       doc.moveDown(0.5);
       if (grants.length === 0) doc.fontSize(10).text('No access grants found.');
       grants.forEach((grant) => {
@@ -248,7 +265,8 @@ export class ReportsService {
       doc.moveDown();
 
       // Logs
-      doc.fontSize(16).text('Recent Audit Logs');
+      doc.fillColor(primaryColor).fontSize(16).text('Recent Audit Logs');
+      doc.fillColor('black');
       doc.moveDown(0.5);
       if (logs.length === 0) doc.fontSize(10).text('No audit logs found.');
       logs.forEach((log) => {

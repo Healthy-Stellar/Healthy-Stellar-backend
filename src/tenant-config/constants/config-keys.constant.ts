@@ -32,6 +32,15 @@ export const SUPPORTED_CONFIG_KEYS = {
   // Integration Settings
   HL7_INTEGRATION_ENABLED: 'hl7_integration_enabled',
   DICOM_INTEGRATION_ENABLED: 'dicom_integration_enabled',
+
+  // Branding
+  BRANDING_LOGO_URL: 'branding_logo_url',
+  BRANDING_PRIMARY_COLOR: 'branding_primary_color',
+  BRANDING_SECONDARY_COLOR: 'branding_secondary_color',
+  BRANDING_CUSTOM_DOMAIN: 'branding_custom_domain',
+  BRANDING_SUPPORT_EMAIL: 'branding_support_email',
+  BRANDING_SUPPORT_PHONE: 'branding_support_phone',
+  BRANDING_ORGANIZATION_NAME: 'branding_organization_name',
 } as const;
 
 /**
