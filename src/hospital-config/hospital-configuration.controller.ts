@@ -20,7 +20,9 @@ import { InsuranceProviderDto } from './src/hospital-configuration/dto/insurance
 import { BillingConfigDto } from './src/hospital-configuration/dto/insurance-billing.dto';
 import { EmergencyProtocolDto } from './src/hospital-configuration/dto/emergency-protocol.dto';
 import { HospitalConfigurationService } from './hospital-configuration.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('hospital-configuration')
 @Controller('hospital-configuration')
 export class HospitalConfigurationController {
   constructor(private readonly configService: HospitalConfigurationService) {}
@@ -197,5 +199,17 @@ export class HospitalConfigurationController {
   @Get('emergency-protocols/code/:code')
   getEmergencyProtocolByCode(@Param('code') code: string) {
     return this.configService.getEmergencyProtocolByCode(code);
+  }
+
+  // Timezone Management
+  @Get('timezone')
+  getTimezone(): { timezone: string } {
+    return { timezone: this.configService.getTimezone() };
+  }
+
+  @Put('timezone')
+  setTimezone(@Body() body: { timezone: string }): { timezone: string } {
+    this.configService.setTimezone(body.timezone);
+    return { timezone: body.timezone };
   }
 }

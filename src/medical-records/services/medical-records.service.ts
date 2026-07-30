@@ -623,4 +623,23 @@ export class MedicalRecordsService {
       },
     });
   }
+
+  async shareWithHospital(
+    recordId: string,
+    hospitalId: string,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repo = manager ? manager.getRepository(MedicalRecord) : this.medicalRecordRepository;
+    const record = await repo.findOne({
+      where: { id: recordId },
+    });
+    if (!record) {
+      throw new NotFoundException(`Medical record ${recordId} not found`);
+    }
+
+    record.organizationId = hospitalId;
+    await repo.save(record);
+
+    this.logger.log(`Medical record ${recordId} shared with hospital ${hospitalId}`);
+  }
 }

@@ -10,35 +10,47 @@ export class CheckpointService {
     private readonly repo: Repository<ProjectionCheckpoint>,
   ) {}
 
-  async getVersion(projectorName: string): Promise<number> {
-    const row = await this.repo.findOne({ where: { projectorName } });
+  async getVersion(projectorName: string, aggregateId: string): Promise<number> {
+    const row = await this.repo.findOne({ where: { projectorName, aggregateId } });
     return row?.lastProcessedVersion ?? 0;
   }
 
-  async advance(projectorName: string, version: number): Promise<void> {
+  async advance(projectorName: string, aggregateId: string, version: number): Promise<void> {
     await this.repo
       .createQueryBuilder()
       .insert()
       .into(ProjectionCheckpoint)
       .values({
         projectorName,
+        aggregateId,
         lastProcessedVersion: version,
         eventCount: () => '"event_count" + 1',
         updatedAt: new Date(),
       })
-      .orUpdate(['last_processed_version', 'event_count', 'updated_at'], ['projector_name'])
+      .orUpdate(
+        ['last_processed_version', 'event_count', 'updated_at'],
+        ['projector_name', 'aggregate_id'],
+      )
       .execute();
   }
 
+  /** Resets every per-aggregate checkpoint tracked for a projector (e.g. before a full replay). */
   async reset(projectorName: string): Promise<void> {
-    await this.repo.upsert(
-      {
-        projectorName,
-        lastProcessedVersion: 0,
-        eventCount: 0,
-        updatedAt: new Date(),
-      },
-      ['projectorName'],
-    );
+    await this.repo.delete({ projectorName });
+  }
+
+  /**
+   * Highest per-aggregate version recorded for a projector, for coarse admin
+   * status reporting only. This is NOT a substitute for the per-aggregate
+   * check in `getVersion` — a single number can't represent per-aggregate
+   * progress.
+   */
+  async getMaxVersion(projectorName: string): Promise<number> {
+    const result = await this.repo
+      .createQueryBuilder('checkpoint')
+      .select('MAX(checkpoint.lastProcessedVersion)', 'max')
+      .where('checkpoint.projectorName = :projectorName', { projectorName })
+      .getRawOne<{ max: string | null }>();
+    return result?.max ? Number(result.max) : 0;
   }
 }

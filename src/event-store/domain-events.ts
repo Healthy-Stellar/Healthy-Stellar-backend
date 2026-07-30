@@ -69,3 +69,27 @@ export class RecordDeleted implements DomainEvent {
     readonly metadata: Record<string, unknown> = {},
   ) {}
 }
+
+/**
+ * Emitted once per batch by the data-retention enforcement job for
+ * observability/audit purposes. One event per (policy, tenant, batch).
+ */
+export class RetentionBatchProcessed implements DomainEvent {
+  readonly eventType = 'retention.batch_processed';
+  readonly aggregateType = 'RetentionPolicy';
+  constructor(
+    readonly aggregateId: string,
+    readonly payload: {
+      policyId: string;
+      entityType: string;
+      tenantId: string | null;
+      action: string;
+      recordCount: number;
+      archivedCount: number;
+      deletedCount: number;
+      dryRun: boolean;
+      cutoffDate: string;
+    },
+    readonly metadata: Record<string, unknown> = {},
+  ) {}
+}

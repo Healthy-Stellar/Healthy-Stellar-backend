@@ -6,3 +6,5 @@ export * from './payment.service';
 export * from './denial.service';
 export * from './report.service';
 export * from './invoice-pdf.service';
+export * from './remittance.service';
+export * from './dispute.service';

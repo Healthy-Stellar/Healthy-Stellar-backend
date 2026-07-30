@@ -5,6 +5,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DlqJobEntity, DlqJobStatus } from './dlq-job.entity';
 import { QUEUE_NAMES } from '../queues/queue.constants';
+import { DLQ_MAX_ATTEMPTS, DLQ_BASE_DELAY_MS } from './dlq-retry.strategy';
 
 export interface DlqListOptions {
   queueName?: string;
@@ -133,9 +134,14 @@ export class DlqService {
       throw new BadRequestException(`No queue registered for '${entity.queueName}'`);
     }
 
+    // Use BullMQ's built-in 'exponential' backoff (not the custom
+    // 'dlq-exponential' strategy) so that ANY worker — even those that
+    // don't register a custom backoffStrategies entry — can resolve the
+    // delay when a replayed job fails and needs to retry.
+    // Delay sequence: 1 s → 2 s → 4 s (3 retries).
     const newJob = await queue.add(entity.jobName, entity.data, {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 2000 },
+      attempts: DLQ_MAX_ATTEMPTS,
+      backoff: { type: 'exponential', delay: DLQ_BASE_DELAY_MS },
       removeOnComplete: true,
       removeOnFail: false,
     });

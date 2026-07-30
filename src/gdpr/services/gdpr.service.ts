@@ -4,6 +4,9 @@ import { Repository, In } from 'typeorm';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bullmq';
 import { GdprRequest, GdprRequestType, GdprRequestStatus } from '../entities/gdpr-request.entity';
+import { GdprComplianceLog } from '../entities/gdpr-compliance-log.entity';
+import { DeletionPreviewEntry, DeletionRegistryService } from './deletion-registry.service';
+import { CreateErasureRequestDto } from '../dto/create-erasure-request.dto';
 
 @Injectable()
 export class GdprService {
@@ -12,8 +15,16 @@ export class GdprService {
   constructor(
     @InjectRepository(GdprRequest)
     private readonly gdprRequestRepository: Repository<GdprRequest>,
+    @InjectRepository(GdprComplianceLog)
+    private readonly complianceLogRepository: Repository<GdprComplianceLog>,
     @InjectQueue('gdpr') private gdprQueue: Queue,
+    private readonly deletionRegistry: DeletionRegistryService,
   ) {}
+
+  /** Dry-run: reports what an erasure request would delete/anonymise per module, without changing anything. */
+  async previewErasure(userId: string): Promise<DeletionPreviewEntry[]> {
+    return this.deletionRegistry.previewForUser(userId);
+  }
 
   async createExportRequest(userId: string): Promise<GdprRequest> {
     const existingRequest = await this.gdprRequestRepository.findOne({
@@ -48,7 +59,10 @@ export class GdprService {
     return request;
   }
 
-  async createErasureRequest(userId: string): Promise<GdprRequest> {
+  async createErasureRequest(
+    userId: string,
+    dto: CreateErasureRequestDto = {} as CreateErasureRequestDto,
+  ): Promise<GdprRequest> {
     const existingRequest = await this.gdprRequestRepository.findOne({
       where: {
         userId,
@@ -65,16 +79,36 @@ export class GdprService {
 
     const request = this.gdprRequestRepository.create({
       userId,
+      patientId: dto.patientId,
+      requestorIdentity: dto.requestorIdentity,
+      tenantId: dto.tenantId,
       type: GdprRequestType.ERASURE,
       status: GdprRequestStatus.PENDING,
     });
 
     await this.gdprRequestRepository.save(request);
 
-    // Add to BullMQ
+    await this.complianceLogRepository.save(
+      this.complianceLogRepository.create({
+        requestId: request.id,
+        patientId: dto.patientId,
+        tenantId: dto.tenantId,
+        operator: dto.requestorIdentity,
+        scope: 'gdpr-erasure-request',
+        details: {
+          action: 'ERASURE_REQUESTED',
+          requestorIdentity: dto.requestorIdentity,
+          tenantId: dto.tenantId,
+        },
+      }),
+    );
+
     await this.gdprQueue.add('erase-data', {
       requestId: request.id,
       userId,
+      patientId: dto.patientId,
+      requestorIdentity: dto.requestorIdentity,
+      tenantId: dto.tenantId,
     });
 
     this.logger.log(`Erasure request ${request.id} queued for user ${userId}`);

@@ -21,6 +21,8 @@ export enum UserRole {
   BILLING_STAFF = 'billing_staff',
   MEDICAL_RECORDS = 'medical_records',
   SUPER_ADMIN = 'super_admin',
+  COMPLIANCE_OFFICER = 'compliance_officer',
+  SURGEON = 'surgeon',
 }
 
 export enum UserStatus {

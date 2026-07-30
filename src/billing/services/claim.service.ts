@@ -387,6 +387,97 @@ export class ClaimService {
     });
   }
 
+  /** Receives a real-time adjudication callback from the payer webhook and updates the claim. */
+  async handleAdjudicationWebhook(payload: {
+    claimNumber: string;
+    decision: 'approved' | 'rejected';
+    payerClaimNumber?: string;
+    paidAmount?: number;
+    allowedAmount?: number;
+    adjustmentAmount?: number;
+    patientResponsibility?: number;
+    remarkCodes?: Array<{ code: string; description: string }>;
+  }): Promise<InsuranceClaim> {
+    const claim = await this.findByClaimNumber(payload.claimNumber);
+
+    claim.status = payload.decision === 'approved' ? ClaimStatus.APPROVED : ClaimStatus.REJECTED;
+    claim.adjudicatedAt = new Date();
+    claim.payerClaimNumber = payload.payerClaimNumber ?? claim.payerClaimNumber;
+    claim.paidAmount = payload.paidAmount ?? claim.paidAmount;
+    claim.allowedAmount = payload.allowedAmount ?? claim.allowedAmount;
+    claim.adjustmentAmount = payload.adjustmentAmount ?? claim.adjustmentAmount;
+    claim.patientResponsibility = payload.patientResponsibility ?? claim.patientResponsibility;
+    if (payload.remarkCodes) {
+      claim.remarkCodes = payload.remarkCodes;
+    }
+
+    claim.submissionHistory = [
+      ...(claim.submissionHistory || []),
+      {
+        date: new Date().toISOString(),
+        status: claim.status,
+        message: `Adjudication webhook received from payer: ${payload.decision}`,
+      },
+    ];
+
+    await this.claimRepository.save(claim);
+
+    if (claim.status === ClaimStatus.APPROVED) {
+      await this.generatePatientStatement(claim);
+    }
+
+    return claim;
+  }
+
+  /** Auto-generates/updates the patient statement for the remaining balance after adjudication. */
+  private async generatePatientStatement(claim: InsuranceClaim): Promise<void> {
+    const billing = await this.billingRepository.findOne({ where: { id: claim.billingId } });
+    if (!billing) {
+      return;
+    }
+
+    billing.totalPayments = Number(billing.totalPayments || 0) + Number(claim.paidAmount || 0);
+    billing.patientResponsibility = Number(claim.patientResponsibility || 0);
+    billing.balance = Math.max(
+      Number(billing.totalCharges || 0) - Number(billing.totalPayments || 0) - Number(billing.totalAdjustments || 0),
+      0,
+    );
+    billing.status = billing.balance > 0 ? 'statement_pending' : 'paid';
+
+    await this.billingRepository.save(billing);
+  }
+
+  /** Dashboard data: claim counts by status, plus aging buckets for unresolved claims. */
+  async getClaimsDashboard(): Promise<{
+    byStatus: Record<string, number>;
+    agingBuckets: Record<'0-30' | '31-60' | '61-90' | '90+', number>;
+  }> {
+    const claims = await this.claimRepository.find();
+
+    const byStatus: Record<string, number> = {};
+    for (const status of Object.values(ClaimStatus)) {
+      byStatus[status] = 0;
+    }
+
+    const agingBuckets = { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 };
+    const outstandingStatuses = [ClaimStatus.SUBMITTED, ClaimStatus.PENDING, ClaimStatus.ACCEPTED];
+    const now = Date.now();
+
+    for (const claim of claims) {
+      byStatus[claim.status] = (byStatus[claim.status] || 0) + 1;
+
+      if (outstandingStatuses.includes(claim.status) && claim.submittedAt) {
+        const ageDays = Math.floor((now - new Date(claim.submittedAt).getTime()) / 86_400_000);
+        if (ageDays <= 30) agingBuckets['0-30']++;
+        else if (ageDays <= 60) agingBuckets['31-60']++;
+        else if (ageDays <= 90) agingBuckets['61-90']++;
+        else agingBuckets['90+']++;
+      }
+    }
+
+    return { byStatus, agingBuckets };
+  }
+
   async voidClaim(id: string, reason: string): Promise<InsuranceClaim> {
     const claim = await this.findById(id);
 

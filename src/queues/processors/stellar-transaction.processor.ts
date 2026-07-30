@@ -8,11 +8,13 @@ import { QUEUE_NAMES, JOB_TYPES } from '../queue.constants';
 import { StellarTransactionJobDto } from '../dto/stellar-transaction-job.dto';
 import { StellarWithBreakerService } from '../../stellar/services/stellar-with-breaker.service';
 import { verifyQueuePayload } from '../queue-payload.util';
+import { DLQ_WORKER_SETTINGS } from '../../dlq/dlq-retry.strategy';
 
 const IDEMPOTENCY_TTL_SECONDS = 86400; // 24 hours
 
 @Processor(QUEUE_NAMES.STELLAR_TRANSACTIONS, {
   concurrency: 5,
+  ...DLQ_WORKER_SETTINGS,
 })
 export class StellarTransactionProcessor extends WorkerHost implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(StellarTransactionProcessor.name);

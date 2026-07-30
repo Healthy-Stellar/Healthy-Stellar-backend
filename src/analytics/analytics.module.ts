@@ -8,14 +8,22 @@ import { User } from '../auth/entities/user.entity';
 import { MedicalRecord } from '../medical-records/entities/medical-record.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
 import { StellarTransaction } from './entities/stellar-transaction.entity';
+import { Patient } from '../patients/entities/patient.entity';
 
 import { AnalyticsController } from './analytics.controller';
+import { AnalyticsCohortsController } from './analytics-cohorts.controller';
+import { OperationalDashboardController } from './operational-dashboard.controller';
 import { AnalyticsService } from './analytics.service';
+import { CohortQueryService } from './cohort-query.service';
+import { CohortReportsService } from './cohort-reports.service';
+import { OperationalDashboardService } from './services/operational-dashboard.service';
+import { OperationalDashboardGateway } from './gateways/operational-dashboard.gateway';
 import { TenantModule } from '../tenant/tenant.module';
+import { DatabaseModule } from '../database/database.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, MedicalRecord, AccessGrant, StellarTransaction]),
+    TypeOrmModule.forFeature([User, MedicalRecord, AccessGrant, StellarTransaction, Patient]),
     CacheModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -29,9 +37,16 @@ import { TenantModule } from '../tenant/tenant.module';
       }),
     }),
     TenantModule,
+    DatabaseModule,
   ],
-  controllers: [AnalyticsController],
-  providers: [AnalyticsService],
-  exports: [AnalyticsService],
+  controllers: [AnalyticsController, AnalyticsCohortsController, OperationalDashboardController],
+  providers: [
+    AnalyticsService,
+    CohortQueryService,
+    CohortReportsService,
+    OperationalDashboardService,
+    OperationalDashboardGateway,
+  ],
+  exports: [AnalyticsService, CohortQueryService, CohortReportsService, OperationalDashboardService],
 })
 export class AnalyticsModule {}

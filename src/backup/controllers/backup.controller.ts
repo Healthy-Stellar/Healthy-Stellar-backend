@@ -6,7 +6,9 @@ import { BackupService } from '../services/backup.service';
 import { DisasterRecoveryService, RecoveryOptions } from '../services/disaster-recovery.service';
 import { BackupVerificationService } from '../services/backup-verification.service';
 import { BackupMonitoringService } from '../services/backup-monitoring.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('backup')
 @Controller('backup')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class BackupController {
@@ -105,6 +107,15 @@ export class BackupController {
   @Roles('admin', 'system_admin')
   async getStatistics(@Query('days') days?: number) {
     return this.monitoringService.getBackupStatistics(days ? parseInt(days as any, 10) : 30);
+  }
+
+  @Post('restore/:id/dry-run')
+  @Roles('admin', 'system_admin')
+  async dryRunRestore(
+    @Param('id') id: string,
+    @Body('requestedBy') requestedBy: string,
+  ) {
+    return this.recoveryService.dryRunRestore(id, requestedBy ?? 'admin');
   }
 
   @Post('recovery/drill/trigger')

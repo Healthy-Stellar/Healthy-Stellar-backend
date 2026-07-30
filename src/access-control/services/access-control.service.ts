@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThanOrEqual, Repository } from 'typeorm';
+import { EntityManager, LessThanOrEqual, Repository } from 'typeorm';
 import { AccessGrant, AccessLevel, GrantStatus } from '../entities/access-grant.entity';
 import { CreateAccessGrantDto } from '../dto/create-access-grant.dto';
 import { CreateEmergencyAccessDto } from '../dto/create-emergency-access.dto';
@@ -91,6 +91,7 @@ export class AccessControlService {
       targetAddress: dto.granteeId,
       resourceType: 'AccessGrant',
       resourceId: updated.id,
+      patientId,
       metadata: { recordIds: updated.recordIds, accessLevel: updated.accessLevel },
     }).catch(() => {});
 
@@ -144,6 +145,7 @@ export class AccessControlService {
       targetAddress: finalGrant.granteeId,
       resourceType: 'AccessGrant',
       resourceId: finalGrant.id,
+      patientId,
       metadata: { reason: finalGrant.revocationReason },
     }).catch(() => {});
 
@@ -433,5 +435,32 @@ export class AccessControlService {
     });
 
     return !!validGrant;
+  }
+
+  async revokeAccessByPatient(
+    patientId: string,
+    granteeId: string,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repo = manager ? manager.getRepository(AccessGrant) : this.grantRepository;
+    const grants = await repo.find({
+      where: {
+        patientId,
+        granteeId,
+        status: GrantStatus.ACTIVE,
+      },
+    });
+
+    for (const grant of grants) {
+      grant.status = GrantStatus.REVOKED;
+      grant.revokedAt = new Date();
+      await repo.save(grant);
+      this.notificationsService.emitAccessRevoked(patientId, grant.id, {
+        granteeId: grant.granteeId,
+        revokedAt: grant.revokedAt.toISOString(),
+      });
+    }
+
+    this.logger.log(`Revoked ${grants.length} grants for patient ${patientId}, grantee ${granteeId}`);
   }
 }

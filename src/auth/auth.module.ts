@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 // Entities
 import { User } from './entities/user.entity';
@@ -34,6 +35,7 @@ import { ProvidersController } from './controllers/providers.controller';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { MfaVerifiedGuard } from './guards/mfa-verified.guard';
+import { ClinicalMfaGuard } from './guards/clinical-mfa.guard';
 import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
 import { ApiKeyGuard } from './guards/api-key.guard';
 import { ProviderDirectoryService } from './services/provider-directory.service';
@@ -43,11 +45,25 @@ import { SessionCleanupTask } from './tasks/session-cleanup.task';
 import { SecretRotationService } from './services/secret-rotation.service';
 import { SecretRotationController } from './controllers/secret-rotation.controller';
 import { SessionRevocationService } from './services/session-revocation.service';
+import { MAILER_SERVICE } from '../notifications/services/notifications.service';
+
+function buildMailerProvider() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { MailerService } = require('@nestjs-modules/mailer');
+    return { provide: MAILER_SERVICE, useExisting: MailerService };
+  } catch {
+    return null;
+  }
+}
+
+const mailerProvider = buildMailerProvider();
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, MfaEntity, SessionEntity, ApiKey, ProviderAvailability, AuditLogEntity]),
     PassportModule,
+    EventEmitterModule.forRoot(),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -80,6 +96,7 @@ import { SessionRevocationService } from './services/session-revocation.service'
     MfaVerifiedGuard,
     ApiKeyGuard,
     SessionCleanupTask,
+    ...(mailerProvider ? [mailerProvider] : []),
   ],
   controllers: [AuthController, MfaController, ProvidersController, SecretRotationController],
   exports: [

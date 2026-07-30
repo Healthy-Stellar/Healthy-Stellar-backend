@@ -6,12 +6,16 @@ import { ExpressAdapter } from '@bull-board/express';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { QUEUE_NAMES } from './queue.constants';
+import { DLQ_BACKOFF_TYPE, DLQ_MAX_ATTEMPTS } from '../dlq/dlq-retry.strategy';
 import { QueueService } from './queue.service';
 import { QueueController } from './queue.controller';
 import { EhrImportDlqController } from './controllers/ehr-import-dlq.controller';
 import { StellarTransactionProcessor } from './processors/stellar-transaction.processor';
 import { ContractWritesProcessor } from './processors/contract-writes.processor';
 import { EventIndexingProcessor } from './processors/event-indexing.processor';
+import { PanicAlertProcessor } from '../emergency-operations/processors/panic-alert.processor';
+import { PharmacyReorderAlertProcessor } from './processors/pharmacy-reorder-alert.processor';
+
 import { BlockchainModule } from '../blockchain/blockchain.module';
 import { QueueEventsListener } from './queue-events.listener';
 import { RecordsModule } from '../records/records.module';
@@ -38,11 +42,14 @@ export class QueueModule {
     // server from competing with the dedicated worker process for jobs.
     const workerProviders = options.isWorker
       ? [
-          StellarTransactionProcessor,
-          ContractWritesProcessor,
-          EventIndexingProcessor,
-          QueueEventsListener,
-        ]
+        StellarTransactionProcessor,
+        ContractWritesProcessor,
+        EventIndexingProcessor,
+        QueueEventsListener,
+        PanicAlertProcessor,
+        // Pharmacy background processors
+        PharmacyReorderAlertProcessor,
+      ]
       : [QueueEventsListener];
 
     return {
@@ -74,8 +81,8 @@ export class QueueModule {
               },
             },
             defaultJobOptions: {
-              attempts: 5,
-              backoff: { type: 'exponential', delay: 2000 },
+              attempts: DLQ_MAX_ATTEMPTS,
+              backoff: { type: DLQ_BACKOFF_TYPE },
               removeOnComplete: { count: 1000 },
               removeOnFail: { count: 5000 },
             },
@@ -93,6 +100,8 @@ export class QueueModule {
           { name: QUEUE_NAMES.EMAIL_NOTIFICATIONS },
           { name: QUEUE_NAMES.REPORTS },
           { name: QUEUE_NAMES.EHR_IMPORT },
+          { name: QUEUE_NAMES.USER_CSV_IMPORT },
+          { name: QUEUE_NAMES.PHARMACY_REORDER_ALERTS },
         ),
 
         // Bull Board dashboard — only useful when the HTTP server is running.
@@ -128,6 +137,11 @@ export class QueueModule {
           name: QUEUE_NAMES.EHR_IMPORT,
           adapter: BullMQAdapter,
         }),
+        BullBoardModule.forFeature({
+          name: QUEUE_NAMES.PHARMACY_REORDER_ALERTS,
+          adapter: BullMQAdapter,
+        }),
+
       ],
       controllers: [QueueController, EhrImportDlqController],
       providers: [

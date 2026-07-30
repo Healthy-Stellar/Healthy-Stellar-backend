@@ -19,13 +19,14 @@ export const API_VERSION_LIFECYCLE_POLICIES: ApiVersionLifecyclePolicy[] = [
     changelog:
       'https://github.com/Healthy-Stellar/Healthy-Stellar-backend/blob/main/docs/api-versioning.md#v1',
   },
-  // Example for future rollout:
-  // {
-  //   version: '2',
-  //   status: 'deprecated',
-  //   releaseDate: '2025-01-01',
-  //   baseUrl: '/v2',
-  //   sunsetDate: 'Wed, 01 Jan 2027 00:00:00 GMT',
-  //   replacementVersion: '3',
-  // },
+  {
+    version: '2',
+    status: 'deprecated',
+    releaseDate: '2025-01-01',
+    baseUrl: '/v2',
+    sunsetDate: 'Wed, 01 Jan 2027 00:00:00 GMT',
+    replacementVersion: '3',
+    changelog:
+      'https://github.com/Healthy-Stellar/Healthy-Stellar-backend/blob/main/docs/api-versioning.md#v2',
+  },
 ];

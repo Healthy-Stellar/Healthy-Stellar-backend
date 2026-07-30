@@ -27,12 +27,14 @@ import {
 } from './entities/security-incident.entity';
 import { DeviceTrustLevel } from './entities/medical-device.entity';
 import { AuditAction } from './entities/audit-log.entity';
+import { ApiTags } from '@nestjs/swagger';
 
 interface AuthUser {
   id: string;
   role: string;
 }
 
+@ApiTags('healthcare-security')
 @Controller('healthcare-security')
 export class HealthcareSecurityController {
   constructor(

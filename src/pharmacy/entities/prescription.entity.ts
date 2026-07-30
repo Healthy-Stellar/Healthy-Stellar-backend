@@ -5,15 +5,18 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  OneToMany,
 } from 'typeorm';
 import { ControlledSubstanceSchedule } from './drug.entity';
+import { PrescriptionItem } from './prescription-item.entity';
+import { PrescriptionDispenseRecord } from './prescription-dispense-record.entity';
 
 @Entity('prescriptions')
 export class Prescription {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
+  @Column({ nullable: true })
   @Index()
   prescriptionNumber: string;
 
@@ -21,35 +24,59 @@ export class Prescription {
   @Index()
   patientId: string;
 
-  @Column()
+  @Column({ nullable: true })
+  patientName: string;
+
+  @Column('simple-json', { nullable: true })
+  patientAllergies: string[];
+
+  /**
+   * Prescribing doctor (medical-staff module). `providerId` is kept for
+   * backward compatibility with older callers; `prescriberId` is the field
+   * used by the CRUD/dispense flow below and is validated against the
+   * medical-staff module's Doctor license status on creation.
+   */
+  @Column({ nullable: true })
   providerId: string;
+
+  @Column({ nullable: true })
+  @Index()
+  prescriberId: string;
 
   @Column()
   drugId: string;
 
-  @Column()
+  @Column({ nullable: true })
   drugName: string;
 
-  @Column()
+  @Column({ nullable: true })
   dosage: string;
 
-  @Column()
+  @Column({ nullable: true })
   quantity: number;
 
-  @Column()
+  /** Legacy refill count column; `refillsAllowed` is the field used going forward. */
+  @Column({ nullable: true })
   refills: number;
 
-  @Column()
+  @Column({ default: 0 })
+  refillsAllowed: number;
+
+  @Column({ default: 0 })
   refillsRemaining: number;
 
   @Column({ nullable: true, type: 'enum', enum: ControlledSubstanceSchedule })
   controlledSubstanceSchedule: ControlledSubstanceSchedule;
 
-  @Column('text')
+  @Column('text', { nullable: true })
   instructions: string;
 
-  @Column('date')
+  /** Legacy "date written" column; `prescriptionDate` is used going forward. */
+  @Column('date', { nullable: true })
   prescribedDate: Date;
+
+  @Column('date', { nullable: true })
+  prescriptionDate: Date;
 
   @Column('date', { nullable: true })
   filledDate: Date;
@@ -66,6 +93,12 @@ export class Prescription {
   @Column('timestamp', { nullable: true })
   verifiedAt: Date;
 
+  @Column({ nullable: true })
+  dispensedBy: string;
+
+  @Column('timestamp', { nullable: true })
+  dispensedAt: Date;
+
   @Column('simple-json', { nullable: true })
   safetyChecks: any;
 
@@ -73,8 +106,19 @@ export class Prescription {
   @Column('simple-json', { nullable: true })
   interactionCheck: any;
 
+  /** Drug-drug interaction check result captured at dispense time. */
+  @Column('simple-json', { nullable: true })
+  dispenseInteractionCheck: any;
+
   @Column('text', { nullable: true })
   notes: string;
+
+  @OneToMany(() => PrescriptionItem, (item) => item.prescription)
+  items: PrescriptionItem[];
+
+  /** Full dispensing history — one record per dispense transaction. */
+  @OneToMany(() => PrescriptionDispenseRecord, (record) => record.prescription)
+  dispenseRecords: PrescriptionDispenseRecord[];
 
   @CreateDateColumn()
   createdAt: Date;

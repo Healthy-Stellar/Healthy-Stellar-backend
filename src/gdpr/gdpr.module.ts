@@ -13,12 +13,18 @@ import { MedicalRecordsModule } from '../medical-records/medical-records.module'
 import { AccessControlModule } from '../access-control/access-control.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { StellarModule } from '../stellar/stellar.module';
+import { DataRetentionModule } from '../data-retention/data-retention.module';
 import { User } from '../auth/entities/user.entity';
 import { Patient } from '../patients/entities/patient.entity';
 import { Record } from '../records/entities/record.entity';
 import { MedicalRecord } from '../medical-records/entities/medical-record.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
+import { GdprComplianceLog } from './entities/gdpr-compliance-log.entity';
+import { Billing } from '../billing/entities/billing.entity';
+import { LabOrder } from '../laboratory/entities/lab-order.entity';
+import { Specimen } from '../laboratory/entities/specimen.entity';
+import { LabResult } from '../laboratory/entities/lab-result.entity';
 
 @Module({
   imports: [
@@ -30,6 +36,11 @@ import { AuditLogEntity } from '../common/audit/audit-log.entity';
       MedicalRecord,
       AccessGrant,
       AuditLogEntity,
+      GdprComplianceLog,
+      Billing,
+      LabOrder,
+      Specimen,
+      LabResult,
     ]),
     BullModule.registerQueue({
       name: 'gdpr',
@@ -41,6 +52,7 @@ import { AuditLogEntity } from '../common/audit/audit-log.entity';
     AccessControlModule,
     NotificationsModule,
     StellarModule,
+    DataRetentionModule,
   ],
   controllers: [GdprController],
   providers: [GdprService, GdprProcessor, DeletionRegistryService],

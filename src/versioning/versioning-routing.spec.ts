@@ -4,6 +4,7 @@ import {
   VersioningType,
   Controller,
   Get,
+  Logger,
   Version,
   VERSION_NEUTRAL,
 } from '@nestjs/common';
@@ -177,13 +178,23 @@ describe('API Versioning (routing)', () => {
     expect(res.body.version).toBe(2);
   });
 
-  it('deprecated version returns deprecation headers', async () => {
+  it('deprecated version returns RFC 8594 deprecation headers', async () => {
     const res = await request(httpApp).get('/v2/test-v1').expect(200);
     expect(res.headers['api-version']).toBe('v2');
     expect(res.headers['api-version-status']).toBe('deprecated');
-    expect(res.headers['deprecation']).toBe('true');
+    expect(res.headers['deprecation']).toBe('Wed, 01 Jan 2030 00:00:00 GMT');
     expect(res.headers['sunset']).toBe('Wed, 01 Jan 2030 00:00:00 GMT');
+    expect(res.headers['link']).toContain('rel="help"');
     expect(res.headers['link']).toContain('/v1');
+  });
+
+  it('deprecated version logs a server-side warning', async () => {
+    const loggerWarnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    await request(httpApp).get('/v2/test-v1').expect(200);
+    expect(loggerWarnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Deprecated API version v2 called'),
+    );
+    loggerWarnSpy.mockRestore();
   });
 
   it('sunset version returns 410 Gone', async () => {

@@ -4,6 +4,7 @@ import { ThrottlerGuard, ThrottlerException } from '@nestjs/throttler';
 import { THROTTLER_LIMIT, THROTTLER_TTL, THROTTLER_CATEGORY } from './throttler.decorator';
 import { PLAN_MULTIPLIERS, TenantSubscriptionPlan } from './throttler.config';
 import { Request, Response } from 'express';
+import { TenantConfigService } from '../../tenant-config/services/tenant-config.service';
 
 /**
  * Per-category rate limits.
@@ -24,6 +25,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     protected readonly options: any,
     protected readonly storageService: any,
     protected readonly reflector: Reflector,
+    private readonly tenantConfigService: TenantConfigService,
   ) {
     super(options, storageService, reflector);
   }
@@ -81,11 +83,16 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       ?? 'starter';
     const multiplier = PLAN_MULTIPLIERS[plan] ?? 1;
 
-    const limit = explicitLimit ?? Math.round(baseLimit * multiplier);
-    const ttl   = explicitTtl   ?? 60_000;
-
     // 3. Build tenant-aware, per-endpoint Redis key
     const tenantId       = (request.headers as any)['x-tenant-id'] ?? 'global';
+
+    // Fetch tenant‑specific overrides
+    const tenantLimit = await this.tenantConfigService.getRateLimit(tenantId, category);
+    const tenantWindow = await this.tenantConfigService.getRateWindow(tenantId, category);
+
+    const limit = explicitLimit ?? (tenantLimit ?? Math.round(baseLimit * multiplier));
+    const ttl   = explicitTtl ?? (tenantWindow ?? 60_000);
+
     const controllerName = classRef.name;
     const methodName     = handler.name;
     const tracker        = await this.getTracker(request);

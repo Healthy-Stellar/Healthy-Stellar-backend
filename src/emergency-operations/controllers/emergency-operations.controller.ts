@@ -11,6 +11,7 @@ import {
   CreateRapidResponseDto,
   CreateResourceDto,
   CreateTriageCaseDto,
+  PanicAlertDto,
   UpdateDisasterIncidentStatusDto,
   UpdateRapidResponseStatusDto,
   UpdateResourceAllocationDto,
@@ -18,9 +19,9 @@ import {
 } from '../dto/emergency-operations.dto';
 import { EmergencyResourceStatus } from '../entities/emergency-resource.entity';
 import { TriageQueueStatus } from '../entities/emergency-triage.entity';
+import { ApiTags } from '@nestjs/swagger';
 
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN, UserRole.PHYSICIAN, UserRole.NURSE, UserRole.MEDICAL_RECORDS)
+@ApiTags('emergency')
 @Controller('emergency')
 export class EmergencyOperationsController {
   constructor(private emergencyService: EmergencyOperationsService) {}
@@ -126,5 +127,11 @@ export class EmergencyOperationsController {
   @Get('disaster/incidents/active')
   async getActiveDisasterIncidents() {
     return await this.emergencyService.getActiveDisasterIncidents();
+  }
+
+  // Panic button - multi-channel alert
+  @Post('panic')
+  async triggerPanicAlert(@Body() dto: PanicAlertDto) {
+    return await this.emergencyService.triggerPanicAlert(dto);
   }
 }

@@ -29,6 +29,6 @@ import { ProvisioningProcessor } from './processors/provisioning.processor';
     EmailService,
     ProvisioningProcessor,
   ],
-  exports: [ProvisioningService],
+  exports: [ProvisioningService, EmailService],
 })
 export class TenantsModule {}

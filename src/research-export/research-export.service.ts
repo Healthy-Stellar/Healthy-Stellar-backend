@@ -2,6 +2,7 @@ import {
   Injectable,
   ForbiddenException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
@@ -13,6 +14,11 @@ import { MedicalRecord } from '../medical-records/entities/medical-record.entity
 import { Patient } from '../patients/entities/patient.entity';
 import { AccessGrant, GrantStatus } from '../access-control/entities/access-grant.entity';
 import { AuditService } from '../common/audit/audit.service';
+import { TenantConfigService } from '../tenant-config/services/tenant-config.service';
+import { TenantService } from '../tenant/services/tenant.service';
+import { TenantContext } from '../tenant/context/tenant.context';
+import { TenantDatabaseRoutingService } from '../database/tenant-database-routing.service';
+import { Tenant } from '../tenant/entities/tenant.entity';
 import {
   ResearchExportFiltersDto,
   AnonymizedRecord,
@@ -94,6 +100,7 @@ export class ResearchExportService {
   private readonly logger = new Logger(ResearchExportService.name);
   private readonly s3: S3Client;
   private readonly bucket: string;
+  private grantedOrganizationId: string;
 
   constructor(
     @InjectRepository(MedicalRecord)
@@ -118,7 +125,8 @@ export class ResearchExportService {
     filters: ResearchExportFiltersDto,
     options: { approvedBy?: string } = {},
   ): Promise<AnonymizedExport> {
-    await this.assertValidGrant(researcherId);
+    const grant = await this.assertValidGrant(researcherId);
+    this.grantedOrganizationId = grant.organizationId;
 
     // Real (non-dryRun) exports must be approved by an administrator before
     // the job is dispatched — researchers cannot self-authorise a dispatch.
@@ -184,7 +192,7 @@ export class ResearchExportService {
 
   // ─── Grant Validation ──────────────────────────────────────────────────────
 
-  private async assertValidGrant(researcherId: string): Promise<void> {
+  private async assertValidGrant(researcherId: string): Promise<AccessGrant> {
     const grant = await this.grantRepo.findOne({
       where: { granteeId: researcherId, status: GrantStatus.ACTIVE },
       order: { createdAt: 'DESC' },
@@ -197,14 +205,35 @@ export class ResearchExportService {
     if (grant.expiresAt && grant.expiresAt <= new Date()) {
       throw new ForbiddenException('Research access grant has expired');
     }
+
+    return grant;
   }
 
   // ─── Data Fetch ────────────────────────────────────────────────────────────
 
+  /**
+   * Fetch active medical records matching `filters` along with a map of
+   * their associated patients. Shared by both the S3-dispatch export
+   * pipeline and the `/research-export/anonymized` NDJSON stream so query
+   * logic for record selection lives in one place.
+   */
+  async fetchRecordsAndPatients(
+    filters: ResearchExportFiltersDto,
+  ): Promise<{ records: MedicalRecord[]; patientMap: Map<string, Patient> }> {
+    const records = await this.fetchRecords(filters);
+    const patientIds = [...new Set(records.map((r) => r.patientId))];
+
+    const patients = patientIds.length
+      ? await this.patientRepo.find({ where: { id: In(patientIds) } })
+      : [];
+
+    return { records, patientMap: new Map(patients.map((p) => [p.id, p])) };
+  }
+
   private async fetchRecords(filters: ResearchExportFiltersDto): Promise<MedicalRecord[]> {
-    const qb = this.recordRepo.createQueryBuilder('r').where('r.status = :status', {
-      status: 'active',
-    });
+    const qb = this.recordRepo.createQueryBuilder('r')
+      .where('r.status = :status', { status: 'active' })
+      .andWhere('r.organizationId = :orgId', { orgId: this.grantedOrganizationId });
 
     if (filters.recordType) {
       qb.andWhere('r.recordType = :type', { type: filters.recordType });
@@ -292,7 +321,10 @@ export class ResearchExportService {
    * and stored via key-management / KMS (surfaced here as RESEARCH_PSEUDONYM_KEY).
    */
   private pseudonymKey(): Buffer {
-    const secret = this.config.get<string>('RESEARCH_PSEUDONYM_KEY', 'default-pseudonym-key');
+    const secret = this.config.get<string>('RESEARCH_PSEUDONYM_KEY');
+    if (!secret) {
+      throw new Error('RESEARCH_PSEUDONYM_KEY environment variable is required for pseudonymization');
+    }
     return scryptSync(secret, 'research-export-pseudonym', 32);
   }
 

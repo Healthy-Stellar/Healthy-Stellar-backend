@@ -6,7 +6,7 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
-import { I18nModule, AcceptLanguageResolver } from 'nestjs-i18n';
+import { I18nModule, AcceptLanguageResolver, QueryResolver } from 'nestjs-i18n';
 import * as path from 'path';
 import { AuthModule } from './auth/auth.module';
 import { OidcModule } from './OAuth2/oidc.module';
@@ -21,6 +21,7 @@ import { LaboratoryModule } from './laboratory/laboratory.module';
 import { DiagnosisModule } from './diagnosis/diagnosis.module';
 import { TreatmentPlanningModule } from './treatment-planning/treatment-planning.module';
 import { PharmacyModule } from './pharmacy/pharmacy.module';
+import { MedicationAdministrationModule } from './medication-administration/medication-administration.module';
 import { InfectionControlModule } from './infection-control/infection-control.module';
 import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
 import { EmergencyMedicalInfoModule } from './emergency-medical-info/emergency-medical-info.module';
@@ -36,20 +37,27 @@ import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
+import { ClinicalMfaGuard } from './auth/guards/clinical-mfa.guard';
 import { ValidationModule } from './common/validation/validation.module';
 import { MedicalEmergencyErrorFilter } from './common/errors/medical-emergency-error.filter';
 import { MedicalDataValidationPipe } from './common/validation/medical-data.validator.pipe';
 import { TenantConfigModule } from './tenant-config/tenant-config.module';
+import { TenantIpAllowlistGuard } from './tenant-config/guards/tenant-ip-allowlist.guard';
 import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
 import { QueryPerformanceInterceptor } from './common/interceptors/query-performance.interceptor';
 import { GdprModule } from './gdpr/gdpr.module';
 import { ProviderPatientModule } from './provider-patient/provider-patient.module';
 import { ConsistencyCheckerModule } from './consistency-checker/consistency-checker.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
+import { TenantGuard } from './tenant/guards/tenant.guard';
 import { DataResidencyInterceptor } from './common/interceptors/data-residency.interceptor';
 import { JobsModule } from './jobs/jobs.module';
+ feat/idempotency-ttl-cleanup
+import { IdempotencyModule } from './idempotency/idempotency.module';
+
 import { DataRetentionModule } from './data-retention/data-retention.module';
 import { DataResidencyModule } from './data-residency/data-residency.module';
+main
 import { GraphqlModule } from './graphql/graphql.module';
 import { VersioningModule } from './versioning/versioning.module';
 import { LedgerReconciliationModule } from './ledger-reconciliation/ledger-reconciliation.module';
@@ -71,12 +79,20 @@ import { EventStoreModule } from './event-store/event-store.module';
 import { BullBoardAuthMiddleware } from './queues/middleware/bull-board-auth.middleware';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { GovernanceAnalyticsModule } from './governance-analytics/governance-analytics.module';
 import { IdempotencyModule } from './idempotency/idempotency.module';
 import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor';
 import { DlqModule } from './dlq/dlq.module';
 import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
 import { IncidentModule } from './incident/incident.module';
 import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.interceptor';
+import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
+import { MedicalStaffModule } from './medical-staff/medical-staff.module';
+import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-monitoring.module';
+import { AppointmentsModule } from './appointments/appointments.module';
+import { SurgicalModule } from './surgical-management-system/surgical/Surgical.module';
+import { TelemedicineModule } from './telemedicine-and-remote/src/telemedicine/Telemedicine.module';
+import { User } from './auth/entities/user.entity';
 
 @Module({
   imports: [
@@ -91,6 +107,7 @@ import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.int
     TypeOrmModule.forRootAsync({
       useClass: DatabaseConfig,
     }),
+    TypeOrmModule.forFeature([User]),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
@@ -103,7 +120,10 @@ import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.int
         path: path.join(__dirname, '/i18n/'),
         watch: true,
       },
-      resolvers: [AcceptLanguageResolver],
+      resolvers: [
+        { use: QueryResolver, options: ['lang'] },
+        AcceptLanguageResolver,
+      ],
     }),
     // Application modules
     TenantModule,
@@ -121,6 +141,7 @@ import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.int
     DiagnosisModule,
     TreatmentPlanningModule,
     PharmacyModule,
+    MedicationAdministrationModule,
     EmergencyOperationsModule,
     EmergencyMedicalInfoModule,
     HospitalRegistryModule,
@@ -133,7 +154,11 @@ import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.int
     FhirModule,
     AccessControlModule,
     JobsModule,
+ feat/idempotency-ttl-cleanup
+    IdempotencyModule,
+
     DataRetentionModule,
+ main
     StellarModule,
     AuditModule,
     TenantConfigModule,
@@ -153,10 +178,18 @@ import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.int
     ProviderPatientModule,
     ConsistencyCheckerModule,
     WebhooksModule,
+    GovernanceAnalyticsModule,
     IdempotencyModule,
     DlqModule,
     OperatorRunbookModule,
     IncidentModule,
+    BedOccupancyModule,
+    MedicalStaffModule,
+    EhrImportModule,
+    HealthcareMonitoringModule,
+    AppointmentsModule,
+    SurgicalModule,
+    TelemedicineModule,
     EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],
@@ -214,6 +247,18 @@ import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.int
     {
       provide: APP_GUARD,
       useClass: CustomThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TenantGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TenantIpAllowlistGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ClinicalMfaGuard,
     },
   ],
 })

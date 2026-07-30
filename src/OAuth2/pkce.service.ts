@@ -13,6 +13,8 @@ interface AuthCodeEntry {
   codeChallenge?: string;
   codeChallengeMethod?: 'S256';
   expiresAt: number;
+  /** SMART on FHIR: launch context token from EHR */
+  launch?: string;
 }
 
 @Injectable()
@@ -32,6 +34,7 @@ export class PkceService {
     scope: string,
     codeChallenge?: string,
     codeChallengeMethod?: 'S256',
+    launch?: string,
   ): string {
     const code = crypto.randomBytes(32).toString('base64url');
     this.codes.set(code, {
@@ -42,6 +45,7 @@ export class PkceService {
       codeChallenge,
       codeChallengeMethod,
       expiresAt: Date.now() + this.CODE_TTL_MS,
+      launch,
     });
     return code;
   }

@@ -3,9 +3,22 @@ import { QueueEvents } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DlqService } from './dlq.service';
 import { QUEUE_NAMES } from '../queues/queue.constants';
 import { createRedisRetryStrategy } from '../common/utils/connection-retry.util';
+
+export const DLQ_PERMANENT_FAILURE_EVENT = 'dlq.job.permanent-failure';
+
+export interface DlqPermanentFailurePayload {
+  dlqEntityId: string;
+  jobId: string;
+  queueName: string;
+  jobName: string;
+  failedReason: string;
+  attemptsMade: number;
+  timestamp: string;
+}
 
 /**
  * Listens to BullMQ QueueEvents for every registered queue.
@@ -21,6 +34,7 @@ export class DlqCaptureListener implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly configService: ConfigService,
     private readonly dlqService: DlqService,
+    private readonly eventEmitter: EventEmitter2,
 
     @InjectQueue(QUEUE_NAMES.STELLAR_TRANSACTIONS)
     private readonly stellarQueue: Queue,
@@ -71,16 +85,31 @@ export class DlqCaptureListener implements OnModuleInit, OnModuleDestroy {
           // Only capture when all retries are exhausted
           if (job.attemptsMade < maxAttempts) return;
 
-          await this.dlqService.capture({
+          const reason = failedReason ?? job.failedReason ?? 'Unknown error';
+          const saved = await this.dlqService.capture({
             jobId,
             queueName,
             jobName: job.name,
             data: job.data as Record<string, any>,
             opts: job.opts as Record<string, any>,
-            failedReason: failedReason ?? job.failedReason ?? 'Unknown error',
+            failedReason: reason,
             stackTrace: job.stacktrace?.join('\n') ?? undefined,
             attemptsMade: job.attemptsMade,
           });
+
+          const alertPayload: DlqPermanentFailurePayload = {
+            dlqEntityId: saved.id,
+            jobId,
+            queueName,
+            jobName: job.name,
+            failedReason: reason,
+            attemptsMade: job.attemptsMade,
+            timestamp: new Date().toISOString(),
+          };
+          this.eventEmitter.emit(DLQ_PERMANENT_FAILURE_EVENT, alertPayload);
+          this.logger.error(
+            `[DLQ] Permanent failure alert: job=${jobId} queue=${queueName} reason="${reason}"`,
+          );
         } catch (err) {
           this.logger.error(
             `[DLQ] Error capturing failed job ${jobId} from ${queueName}: ${(err as Error).message}`,

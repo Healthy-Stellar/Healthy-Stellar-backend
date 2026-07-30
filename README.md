@@ -6,6 +6,7 @@ NestJS backend for a decentralized healthcare system built on Stellar Soroban sm
 
 - [Project Structure](#project-structure)
 - [Local Development with Docker](#local-development-with-docker)
+- [Background Worker Process](#background-worker-process)
 - [Installation & Setup](#installation--setup)
 - [Configuration](#configuration)
 - [Security Headers](#security-headers)
@@ -40,6 +41,7 @@ src/
 | Service  | Container   | Port(s)                | Purpose                    |
 |----------|-------------|------------------------|----------------------------|
 | api      | hs-api      | 3000                   | NestJS app with hot reload |
+| worker   | hs-worker   | -                      | BullMQ queue processors    |
 | postgres | hs-postgres | 5432                   | PostgreSQL 15              |
 | redis    | hs-redis    | 6379                   | Redis 7                    |
 | mailhog  | hs-mailhog  | 1025 (SMTP), 8025 (UI) | Local email capture        |
@@ -48,6 +50,7 @@ src/
 cp .env.docker .env.docker.local
 docker compose -f docker-compose.local.yml up --build
 docker compose -f docker-compose.local.yml exec api npm run migration:run
+docker compose -f docker-compose.local.yml exec api npm run seed
 ```
 
 - API: http://localhost:3000
@@ -57,24 +60,62 @@ docker compose -f docker-compose.local.yml exec api npm run migration:run
 The `src/` directory is bind-mounted; NestJS runs with `--watch` so changes reload automatically.
 
 ```bash
-docker compose -f docker-compose.local.yml logs -f api
-docker compose -f docker-compose.local.yml down        # keep volumes
-docker compose -f docker-compose.local.yml down -v     # wipe volumes
+docker compose -f docker-compose.local.yml logs -f api      # Follow API logs
+docker compose -f docker-compose.local.yml logs -f worker   # Follow Worker logs
+docker compose -f docker-compose.local.yml down             # keep volumes
+docker compose -f docker-compose.local.yml down -v          # wipe volumes
 ```
 
 > `.env.docker` contains placeholder secrets for local use only. Never use outside local dev.
+
+## Background Worker Process
+
+The backend application uses [BullMQ](https://bullmq.io/) for managing and executing background queues. This is essential for offloading heavy operations or interacting with the Stellar blockchain without blocking the main HTTP event loop of the API service.
+
+The worker process is defined in `src/worker.ts` and `src/worker.module.ts`.
+
+### Key Responsibilities
+The worker processes tasks from several queues:
+- **`contract-writes`**: Schedules and signs write transactions to Stellar Soroban smart contracts.
+- **`stellar-transactions`**: Manages blockchain transaction submission and retry logic.
+- **`event-indexing`**: Scrapes and indexes events emitted by the smart contracts.
+- **`ipfs-uploads`**: Uploads records/PHI hashes to IPFS.
+- **`email-notifications`**: Sends transactional and notification emails.
+- **`reports`**: Processes PDF/CSV healthcare compliance report generation.
+- **`fhir-bulk-export` / `ehr-import`**: Processes FHIR/EHR batch data imports and exports.
+
+### Running the Worker
+
+#### With Docker Compose (Local Dev)
+The worker is included in `docker-compose.local.yml` and runs automatically when you spin up the project:
+```bash
+docker compose -f docker-compose.local.yml up --build
+```
+
+#### Bare Metal (Without Docker)
+If you run the NestJS API locally using `npm run start:dev`, you **MUST** also start the worker process in a separate terminal:
+```bash
+npm run start:worker:dev
+```
+Otherwise, any operations requiring blockchain interactions, event indexing, or email delivery will remain in the Redis queue and will not execute.
 
 ## Installation & Setup
 
 **Prerequisites:** Node.js v18+, PostgreSQL v12+
 
-```bash
-npm install
-cp .env.example .env
-# fill in .env
-npm run migration:run
-npm run start:dev
-```
+1. Install dependencies:
+   `npm install`
+2. Set up environment variables:
+   `cp .env.example .env`
+3. Run database migrations:
+   `npm run migration:run`
+4. **Seed the database with test data:**
+   `npm run seed`
+   *(Why added: This generates fake users, medical records, and access grants via `src/database/seeder.ts` so you can log in and test the application).*
+5. Start the development server:
+   `npm run start:dev`
+6. Start the background job worker process:
+   `npm run start:worker:dev`
 
 ## Configuration
 
@@ -82,16 +123,73 @@ Copy `.env.example` to `.env`. Key sections:
 
 ### Data residency and multi-region routing
 
-The backend now supports region-aware tenant database routing. Each tenant can declare a residency region and, when `strictDataResidency` is enabled, requests are rejected with `403 Forbidden` if they attempt to access data outside the configured region.
+The backend supports region-aware tenant database routing across four regions: **EU**, **US**, **APAC**, and **AFRICA**. Each tenant declares a residency region and, when `strictDataResidency` is enabled, requests are rejected with `403 Forbidden` if they attempt to access data outside the configured region.
 
-Example environment variables:
+Each region has its own set of environment variables for database, Stellar Horizon, and IPFS configuration:
+
+| Variable | Region | Description | Default |
+|----------|--------|-------------|---------|
+| `DEFAULT_REGION` | global | Default region for new tenants | `EU` |
+| `DB_TYPE_EU` | EU | Database type | `postgres` |
+| `DB_HOST_EU` | EU | Database host | — |
+| `DB_PORT_EU` | EU | Database port | `5432` |
+| `DB_NAME_EU` | EU | Database name | `healthy_stellar_eu` |
+| `EU_DB_URL` | EU | Database connection URL (overrides individual params) | — |
+| `DB_URL_EU` | EU | Fallback database URL | — |
+| `STELLAR_HORIZON_EU_URL` | EU | Stellar Horizon endpoint | `https://horizon.eu.stellar.org` |
+| `IPFS_NODES_EU` | EU | Comma-separated IPFS node URLs | `https://ipfs-eu-1.infura.io:5001` |
+| `DB_TYPE_US` | US | Database type | `postgres` |
+| `DB_HOST_US` | US | Database host | — |
+| `DB_PORT_US` | US | Database port | `5432` |
+| `DB_NAME_US` | US | Database name | `healthy_stellar_us` |
+| `US_DB_URL` | US | Database connection URL (overrides individual params) | — |
+| `DB_URL_US` | US | Fallback database URL | — |
+| `STELLAR_HORIZON_US_URL` | US | Stellar Horizon endpoint | `https://horizon.us.stellar.org` |
+| `IPFS_NODES_US` | US | Comma-separated IPFS node URLs | `https://ipfs-us-1.infura.io:5001` |
+| `DB_TYPE_APAC` | APAC | Database type | `postgres` |
+| `DB_HOST_APAC` | APAC | Database host | — |
+| `DB_PORT_APAC` | APAC | Database port | `5432` |
+| `DB_NAME_APAC` | APAC | Database name | `healthy_stellar_apac` |
+| `APAC_DB_URL` | APAC | Database connection URL (overrides individual params) | — |
+| `DB_URL_APAC` | APAC | Fallback database URL | — |
+| `STELLAR_HORIZON_APAC_URL` | APAC | Stellar Horizon endpoint | `https://horizon.apac.stellar.org` |
+| `IPFS_NODES_APAC` | APAC | Comma-separated IPFS node URLs | `https://ipfs-apac-1.infura.io:5001` |
+| `DB_TYPE_AFRICA` | AFRICA | Database type | `postgres` |
+| `DB_HOST_AFRICA` | AFRICA | Database host | — |
+| `DB_PORT_AFRICA` | AFRICA | Database port | `5432` |
+| `DB_NAME_AFRICA` | AFRICA | Database name | `healthy_stellar_africa` |
+| `AFRICA_DB_URL` | AFRICA | Database connection URL (overrides individual params) | — |
+| `DB_URL_AFRICA` | AFRICA | Fallback database URL | — |
+| `STELLAR_HORIZON_AFRICA_URL` | AFRICA | Stellar Horizon endpoint | `https://horizon.africa.stellar.org` |
+| `IPFS_NODES_AFRICA` | AFRICA | Comma-separated IPFS node URLs | `https://ipfs-africa-1.infura.io:5001` |
+
+Example configuration:
 
 ```bash
 DEFAULT_REGION=EU
-EU_DB_URL=sqlite://eu.sqlite
-US_DB_URL=sqlite://us.sqlite
-DB_TYPE_EU=sqlite
-DB_TYPE_US=sqlite
+DB_HOST_EU=postgres-eu.internal.example.com
+DB_PORT_EU=5432
+DB_NAME_EU=healthy_stellar_eu
+STELLAR_HORIZON_EU_URL=https://horizon.eu.stellar.org
+IPFS_NODES_EU=https://ipfs-eu-1.infura.io:5001
+
+DB_HOST_US=postgres-us.internal.example.com
+DB_PORT_US=5432
+DB_NAME_US=healthy_stellar_us
+STELLAR_HORIZON_US_URL=https://horizon.us.stellar.org
+IPFS_NODES_US=https://ipfs-us-1.infura.io:5001
+
+DB_HOST_APAC=postgres-apac.internal.example.com
+DB_PORT_APAC=5432
+DB_NAME_APAC=healthy_stellar_apac
+STELLAR_HORIZON_APAC_URL=https://horizon.apac.stellar.org
+IPFS_NODES_APAC=https://ipfs-apac-1.infura.io:5001
+
+DB_HOST_AFRICA=postgres-africa.internal.example.com
+DB_PORT_AFRICA=5432
+DB_NAME_AFRICA=healthy_stellar_africa
+STELLAR_HORIZON_AFRICA_URL=https://horizon.africa.stellar.org
+IPFS_NODES_AFRICA=https://ipfs-africa-1.infura.io:5001
 ```
 
 Tenant example:
@@ -122,6 +220,7 @@ For local development, the routing service initializes SQLite-backed regional da
 | Redis              | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`                  |
 | Email              | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`        |
 | Stellar Blockchain | `STELLAR_NETWORK`, `STELLAR_SECRET_KEY`, `STELLAR_CONTRACT_ID`|
+| Data Residency     | `DEFAULT_REGION`, `DB_TYPE_*`, `DB_HOST_*`, `DB_PORT_*`, `DB_NAME_*`, `*_DB_URL`, `STELLAR_HORIZON_*_URL`, `IPFS_NODES_*` |
 | IPFS               | `IPFS_HOST`, `IPFS_PORT`, `IPFS_URL`                         |
 | Webhooks           | `IPFS_WEBHOOK_SECRET`, `STELLAR_WEBHOOK_SECRET`, `QUEUE_HMAC_SECRET` |
 | OIDC / SSO         | `OIDC_PROVIDERS`, `OIDC_{PROVIDER}_CLIENT_ID`, …             |

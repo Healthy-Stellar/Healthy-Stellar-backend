@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThanOrEqual, In, Repository } from 'typeorm';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { LessThanOrEqual, In, Repository, DataSource } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   NotificationOutboxEntry,
@@ -24,8 +25,8 @@ const BASE_DELAY_MS = 30_000; // 30 s
  * Responsibilities:
  *  - Persist every notification side-effect to `notification_outbox` before
  *    attempting delivery (at-least-once guarantee).
- *  - Sweep PENDING entries on a schedule and retry FAILED entries whose
- *    `next_attempt_at` has elapsed, using exponential back-off.
+ *  - Sweep PENDING entries and FAILED entries whose back-off window has elapsed,
+ *    using exponential back-off.
  *  - Mark entries COMPLETED once {@link NotificationsService.notifyOnChainEvent}
  *    succeeds.
  */
@@ -33,12 +34,10 @@ const BASE_DELAY_MS = 30_000; // 30 s
 export class NotificationOutboxService implements OnModuleInit {
   private readonly logger = new Logger(NotificationOutboxService.name);
 
-  /** Guard against concurrent sweeps (e.g. slow DB + fast cron). */
-  private sweepRunning = false;
-
   constructor(
     @InjectRepository(NotificationOutboxEntry)
     private readonly outboxRepo: Repository<NotificationOutboxEntry>,
+    private readonly dataSource: DataSource,
     private readonly notificationsService: NotificationsService,
   ) {}
 
@@ -113,49 +112,52 @@ export class NotificationOutboxService implements OnModuleInit {
    */
   @Cron(CronExpression.EVERY_MINUTE)
   async sweep(): Promise<void> {
-    if (this.sweepRunning) {
-      this.logger.debug('Outbox sweep already running, skipping.');
-      return;
-    }
-
-    this.sweepRunning = true;
-    try {
-      await this.processBatch();
-    } finally {
-      this.sweepRunning = false;
-    }
+    await this.processBatch();
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
   private async processBatch(): Promise<void> {
-    const now = new Date();
+    const sql = `
+      UPDATE notification_outbox
+      SET status = 'processing'
+      WHERE id IN (
+        SELECT id FROM notification_outbox
+        WHERE status IN ('pending', 'failed')
+          AND (next_attempt_at IS NULL OR next_attempt_at <= NOW())
+        ORDER BY created_at ASC
+        LIMIT $1
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING *
+    `;
 
-    const entries = await this.outboxRepo.find({
-      where: [
-        { status: OutboxStatus.PENDING },
-        {
-          status: OutboxStatus.FAILED,
-          next_attempt_at: LessThanOrEqual(now),
-        },
-      ],
-      order: { created_at: 'ASC' },
-      take: BATCH_SIZE,
-    });
+    const claimed = (await this.dataSource.query(sql, [BATCH_SIZE])) as Record<string, unknown>[];
 
-    if (entries.length === 0) return;
+    if (claimed.length === 0) return;
 
-    this.logger.log(`Outbox sweep: processing ${entries.length} entries.`);
+    this.logger.log(`Outbox sweep: processing ${claimed.length} entries.`);
 
-    // Mark all as PROCESSING atomically to prevent double-processing.
-    await this.outboxRepo.update(
-      { id: In(entries.map((e) => e.id)) },
-      { status: OutboxStatus.PROCESSING },
-    );
-
-    for (const entry of entries) {
+    for (const raw of claimed) {
+      const entry = this.mapRawToEntity(raw);
       await this.processEntry(entry);
     }
+  }
+
+  private mapRawToEntity(raw: Record<string, unknown>): NotificationOutboxEntry {
+    const entity = new NotificationOutboxEntry();
+    entity.id = raw.id as string;
+    entity.dedupe_key = raw.dedupe_key as string;
+    entity.payload = raw.payload as Record<string, unknown>;
+    entity.patient_id = raw.patient_id as string;
+    entity.status = raw.status as OutboxStatus;
+    entity.attempts = raw.attempts as number;
+    entity.max_attempts = raw.max_attempts as number;
+    entity.next_attempt_at = raw.next_attempt_at as Date | null;
+    entity.last_error = raw.last_error as string | null;
+    entity.created_at = raw.created_at as Date;
+    entity.updated_at = raw.updated_at as Date;
+    return entity;
   }
 
   private async processEntry(entry: NotificationOutboxEntry): Promise<void> {

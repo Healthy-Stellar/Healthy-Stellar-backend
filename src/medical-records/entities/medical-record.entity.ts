@@ -99,6 +99,22 @@ export class MedicalRecord {
   @Column({ type: 'text', nullable: true, transformer: gcmTransformer })
   notes: string;
 
+  /**
+   * PHI: prescription details -- encrypted with key-managed AES-256-GCM.
+   * Encryption/decryption handled by PhiColumnEncryptionService.
+   * Raw column value is base64-encoded ciphertext.
+   */
+  @Column({ type: 'text', nullable: true })
+  prescriptionDetails?: string;
+
+  /**
+   * HMAC-SHA256 index of plaintext prescriptionDetails for exact-match lookup.
+   * Keyed with the patient DEK from KeyManagementService.
+   */
+  @Index()
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  prescriptionDetailsHmac?: string;
+
   @Column({
     type: 'enum',
     enum: MedicalRecordStatus,

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   Param,
@@ -14,23 +15,27 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { PatientsService } from './patients.service';
 import { PatientTimelineService } from './services/patient-timeline.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { SetGeoRestrictionsDto } from './dto/set-geo-restrictions.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
+import { PatientTimelineDto, PatientTimelineResponse } from './dto/patient-timeline.dto';
+import { UpdatePatientProfileDto } from './dto/update-patient-profile.dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
 import { PatientPrivacyGuard } from './guards/patient-privacy.guard';
 import { AdminGuard } from './guards/admin-guard';
 import { PatientOwnerGuard } from './guards/patient-owner.guard';
-import { SetGeoRestrictionsDto } from './dto/set-geo-restrictions.dto';
 import { GeoRestrictionGuard } from './guards/geo-restriction.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../auth/services/auth-token.service';
 import { CurrentUser } from '../common/decorators/audit-context.decorator';
+import { PhiAuditInterceptor } from '../common/interceptors/phi-audit.interceptor';
 
 @ApiTags('patients')
+@UseInterceptors(PhiAuditInterceptor)
 @Controller('patients')
 export class PatientsController {
   constructor(
@@ -104,6 +109,16 @@ export class PatientsController {
       user.role,
       dto,
     );
+  }
+
+  @Post('merge/:sourceId/:targetId')
+  @UseGuards(AdminGuard)
+  @ApiOperation({ summary: 'Merge duplicate patient records (admin only)' })
+  @ApiResponse({ status: 200, description: 'Patients merged successfully' })
+  @ApiResponse({ status: 404, description: 'Patient not found' })
+  @ApiResponse({ status: 409, description: 'Duplicate merge conflict' })
+  async mergePatients(@Param('sourceId') sourceId: string, @Param('targetId') targetId: string) {
+    return this.patientsService.mergePatients(sourceId, targetId, 'admin', undefined);
   }
 
   @Post(':id/admit')

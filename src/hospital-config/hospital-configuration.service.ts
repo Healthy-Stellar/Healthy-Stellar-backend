@@ -30,9 +30,20 @@ export class HospitalConfigurationService {
   private insuranceProviders: Map<string, InsuranceProviderDto> = new Map();
   private billingConfig: BillingConfigDto;
   private emergencyProtocols: Map<string, EmergencyProtocolDto> = new Map();
+  /** IANA timezone string for this hospital, e.g. "America/New_York" */
+  private timezone = 'UTC';
 
   constructor() {
     this.initializeDefaultConfigurations();
+  }
+
+  // Timezone Management
+  setTimezone(tz: string): void {
+    this.timezone = tz;
+  }
+
+  getTimezone(): string {
+    return this.timezone;
   }
 
   // Department Management

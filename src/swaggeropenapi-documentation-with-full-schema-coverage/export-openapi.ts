@@ -11,7 +11,7 @@ import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { writeFileSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
-import { AppModule } from '../src/app.module';
+import { AppModule } from '../app.module';
 
 async function exportOpenApi() {
   console.log('⚙️  Bootstrapping app (no HTTP listener)…');

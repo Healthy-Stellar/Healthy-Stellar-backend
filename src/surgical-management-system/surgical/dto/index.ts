@@ -133,6 +133,30 @@ export class CompleteSurgeryDto {
   notes?: string;
 }
 
+// Pre-Operative Checklist DTOs
+export class SurgicalChecklistItemDto {
+  @IsString()
+  @IsOptional()
+  id?: string;
+
+  @IsString()
+  label: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsBoolean()
+  completed: boolean;
+}
+
+export class SubmitSurgicalChecklistDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SurgicalChecklistItemDto)
+  items: SurgicalChecklistItemDto[];
+}
+
 // Operating Room DTOs
 export class CreateOperatingRoomDto {
   @IsString()
@@ -464,7 +488,7 @@ export class CreateSurgicalOutcomeDto {
 
   @IsBoolean()
   @IsOptional()
-  normothermia Maintained?: boolean;
+  normothermiaMaintained?: boolean;
 
   @IsString()
   @IsOptional()
@@ -545,7 +569,7 @@ export class UpdateSurgicalOutcomeDto {
 
   @IsBoolean()
   @IsOptional()
-  normothermia Maintained?: boolean;
+  normothermiaMaintained?: boolean;
 
   @IsString()
   @IsOptional()
@@ -602,4 +626,100 @@ export class QualityMetricsQueryDto {
   @IsString()
   @IsOptional()
   roomId?: string;
+}
+
+// ── Surgical Instrument DTOs (#695) ──────────────────────────────────────────
+import { InstrumentStatus } from '../entities';
+
+export class CreateInstrumentDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  barcode: string;
+
+  @IsEnum(InstrumentStatus)
+  @IsOptional()
+  status?: InstrumentStatus;
+
+  @Type(() => Date)
+  @IsDate()
+  @IsOptional()
+  sterileUntil?: Date;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
+export class UpdateInstrumentDto {
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @IsEnum(InstrumentStatus)
+  @IsOptional()
+  status?: InstrumentStatus;
+
+  @Type(() => Date)
+  @IsDate()
+  @IsOptional()
+  sterileUntil?: Date;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
+export class AssignInstrumentSetDto {
+  @IsUUID()
+  surgicalCaseId: string;
+
+  @IsArray()
+  @IsUUID('all', { each: true })
+  instrumentIds: string[];
+}
+
+export class VerifyInstrumentCountDto {
+  @IsUUID()
+  instrumentSetId: string;
+
+  @IsInt()
+  @Min(0)
+  count: number;
+
+  @IsString()
+  @IsOptional()
+  nurseId?: string;
+}
+
+export class RecordSterilisationDto {
+  @IsUUID()
+  instrumentId: string;
+
+  @Type(() => Date)
+  @IsDate()
+  sterilisedAt: Date;
+
+  @Type(() => Date)
+  @IsDate()
+  expiresAt: Date;
+
+  @IsString()
+  @IsOptional()
+  performedById?: string;
+
+  @IsString()
+  @IsOptional()
+  method?: string;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
+export class InstrumentQueryDto {
+  @IsEnum(InstrumentStatus)
+  @IsOptional()
+  status?: InstrumentStatus;
 }

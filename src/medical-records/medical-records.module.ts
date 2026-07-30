@@ -14,6 +14,7 @@ import { AccessControlModule } from '../access-control/access-control.module';
 import { ProviderPatientModule } from '../provider-patient/provider-patient.module';
 import { QUEUE_NAMES } from '../queues/queue.constants';
 import { MailModule } from '../email-notification-service-for-critical-access-events/mail.module';
+import { AuditModule } from '../common/audit/audit.module';
 
 import { MedicalRecordsService } from './services/medical-records.service';
 import { ClinicalTemplatesService } from './services/clinical-templates.service';
@@ -35,6 +36,7 @@ import { ReportingController } from './controllers/reporting.controller';
 import { ClinicalNotesController } from './controllers/clinical-notes.controller';
 
 import { ReportProcessor } from './processors/report.processor';
+import { OcrProcessor } from './processors/ocr.processor';
 
 import { Patient } from '../patients/entities/patient.entity';
 
@@ -44,6 +46,7 @@ import { Patient } from '../patients/entities/patient.entity';
     AccessControlModule,
     ProviderPatientModule,
     MailModule,
+    AuditModule,
     TypeOrmModule.forFeature([
       MedicalRecord,
       MedicalRecordVersion,
@@ -55,9 +58,10 @@ import { Patient } from '../patients/entities/patient.entity';
       ReportJob,
       Patient,
     ]),
-    BullModule.registerQueue({
-      name: QUEUE_NAMES.REPORTS,
-    }),
+    BullModule.registerQueue(
+      { name: QUEUE_NAMES.REPORTS },
+      { name: QUEUE_NAMES.OCR },
+    ),
   ],
   controllers: [
     MedicalRecordsController,
@@ -79,6 +83,7 @@ import { Patient } from '../patients/entities/patient.entity';
     EmailService,
     ClinicalNotesService,
     ReportProcessor,
+    OcrProcessor,
     MedicalRecordSearchSubscriber,
   ],
   exports: [

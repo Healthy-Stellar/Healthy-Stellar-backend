@@ -215,11 +215,10 @@ export class AuthService {
       await this.userRepository.save(user);
     }
 
-    // Check if MFA is enabled
     const mfaEnabled = await this.mfaService.isMfaEnabled(user.id);
+    const isClinicalRole = this.isClinicalRole(user.role);
 
-    // If healthcare staff and MFA not enabled, require it
-    if (user.role !== UserRole.PATIENT && !mfaEnabled) {
+    if (isClinicalRole && !mfaEnabled) {
       await this.auditLogService.log({
         actorAddress: user.id,
         action: 'LOGIN_FAILED',
@@ -275,6 +274,17 @@ export class AuthService {
       },
       mfaRequired: mfaEnabled,
     };
+  }
+
+  private isClinicalRole(role: UserRole): boolean {
+    return [
+      UserRole.PHYSICIAN,
+      'nurse',
+      'pharmacist',
+      'lab_technician',
+      'lab technician',
+      'medical_records',
+    ].includes(role as UserRole | string);
   }
 
   /**

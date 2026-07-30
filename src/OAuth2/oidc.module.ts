@@ -8,11 +8,14 @@ import { OidcClientRegistry, OidcStrategy } from './oidc.strategy';
 import { OidcService } from './oidc.service';
 import { OidcController } from './oidc.controller';
 import { OAuth2Controller } from './oauth2.controller';
+import { SmartConfigController } from './smart.controller';
 import { PkceService } from './pkce.service';
+import { OAuth2ClientRegistryService } from './oauth2-client-registry.service';
 import { buildOidcConfig } from './oidc.config';
 import { UsersModule } from '../users/users.module';
 import { User } from '../auth/entities/user.entity';
 import { AuthModule } from '../auth/auth.module';
+import { Patient } from '../users/entities/patient.entity';
 
 /**
  * Self-contained OIDC / OAuth2 SSO module.
@@ -40,7 +43,7 @@ import { AuthModule } from '../auth/auth.module';
         };
       },
     }),
-    TypeOrmModule.forFeature([OidcIdentity, User]),
+    TypeOrmModule.forFeature([OidcIdentity, User, Patient]),
     UsersModule,
     AuthModule,
   ],
@@ -58,8 +61,9 @@ import { AuthModule } from '../auth/auth.module';
     OidcStrategy,
     OidcService,
     PkceService,
+    OAuth2ClientRegistryService,
   ],
-  controllers: [OidcController, OAuth2Controller],
-  exports: [OidcService, OidcClientRegistry, PkceService],
+  controllers: [OidcController, OAuth2Controller, SmartConfigController],
+  exports: [OidcService, OidcClientRegistry, PkceService, OAuth2ClientRegistryService],
 })
 export class OidcModule {}

@@ -5,20 +5,80 @@ import { Cron } from '@nestjs/schedule';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import { BackupLog, BackupStatus } from '../entities/backup-log.entity';
+import { NotificationsService } from '../../notifications/services/notifications.service';
 
 @Injectable()
 export class BackupVerificationService {
   private readonly logger = new Logger(BackupVerificationService.name);
+  private readonly adminEmail = process.env.ADMIN_EMAIL || 'admin@healthystellar.io';
 
   constructor(
     @InjectRepository(BackupLog)
     private backupLogRepository: Repository<BackupLog>,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Cron('0 4 * * *') // Daily at 4 AM
   async scheduledVerification() {
     this.logger.log('Starting scheduled backup verification');
     await this.verifyRecentBackups();
+  }
+
+  /** Scheduled daily integrity check that validates the latest backup and alerts on failure. */
+  @Cron('0 0 * * *') // Daily at midnight
+  async dailyLatestBackupIntegrityCheck(): Promise<void> {
+    this.logger.log('Starting daily integrity check for latest backup');
+
+    const latestBackup = await this.backupLogRepository.findOne({
+      where: [{ status: BackupStatus.COMPLETED }, { status: BackupStatus.VERIFIED }],
+      order: { completedAt: 'DESC' },
+    });
+
+    if (!latestBackup) {
+      this.logger.warn('No completed backup found for daily integrity check');
+      await this.sendIntegrityAlert(null, 'No completed backup exists in the system');
+      return;
+    }
+
+    try {
+      const isValid = await this.verifyChecksum(latestBackup.backupPath, latestBackup.checksum);
+
+      if (!isValid) {
+        const message =
+          `Checksum mismatch for backup ${latestBackup.id} ` +
+          `(path: ${latestBackup.backupPath}). Backup may be corrupt.`;
+        this.logger.error(message);
+        await this.sendIntegrityAlert(latestBackup, message);
+        return;
+      }
+
+      this.logger.log(
+        `Daily integrity check passed for latest backup ${latestBackup.id}`,
+      );
+    } catch (error) {
+      const message = `Integrity check error for backup ${latestBackup.id}: ${error.message}`;
+      this.logger.error(message);
+      await this.sendIntegrityAlert(latestBackup, message);
+    }
+  }
+
+  private async sendIntegrityAlert(backup: BackupLog | null, details: string): Promise<void> {
+    try {
+      await this.notifications.sendEmail(
+        this.adminEmail,
+        '[ALERT] Backup integrity check failed',
+        'backup-integrity-alert',
+        {
+          backupId: backup?.id ?? 'N/A',
+          backupPath: backup?.backupPath ?? 'N/A',
+          backupStatus: backup?.status ?? 'N/A',
+          details,
+          checkedAt: new Date().toISOString(),
+        },
+      );
+    } catch (err) {
+      this.logger.error(`Failed to send integrity alert email: ${err.message}`);
+    }
   }
 
   async verifyRecentBackups(): Promise<void> {

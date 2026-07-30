@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -31,7 +32,7 @@ import { TenantQuotaService } from '../services/tenant-quota.service';
  */
 @ApiTags('Admin – Tenant Quotas')
 @ApiBearerAuth()
-// @UseGuards(JwtAuthGuard, AdminRoleGuard) // ← uncomment and swap to your actual guards
+@UseGuards(JwtAuthGuard, AdminRoleGuard)
 @Controller('admin/tenants')
 export class TenantQuotaAdminController {
   constructor(private readonly quotaService: TenantQuotaService) {}
@@ -92,8 +93,8 @@ export class TenantQuotaAdminController {
    * Manually reset Redis counters (useful after a tenant migration or
    * when a billing dispute is resolved in the tenant's favour).
    */
+  @Delete(':id/quota/counters')
   @HttpCode(HttpStatus.NO_CONTENT)
-  // @Delete(':id/quota/counters')  // uncomment when needed
   async resetCounters(@Param('id') tenantId: string): Promise<void> {
     await this.quotaService.resetCounters(tenantId);
   }

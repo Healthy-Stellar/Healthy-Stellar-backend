@@ -13,7 +13,8 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth }
 import { ClaimService } from '../services/claim.service';
 import { CreateClaimDto, UpdateClaimDto, SubmitClaimDto } from '../dto/claim.dto';
 
-@ApiTags('Insurance Claims')\n@ApiBearerAuth('medical-auth')
+@ApiTags('Insurance Claims')
+@ApiBearerAuth('medical-auth')
 @Controller('claims')
 export class ClaimController {
   constructor(private readonly claimService: ClaimService) {}
@@ -201,6 +202,16 @@ export class ClaimController {
     @Query('endDate') endDate: string,
   ) {
     return this.claimService.getDenialAnalysis(startDate, endDate);
+  }
+
+  @Get('dashboard/status-aging')
+  @ApiOperation({
+    summary: 'Claims dashboard',
+    description: 'Claim counts grouped by status plus aging buckets (0-30/31-60/61-90/90+) for unresolved claims',
+  })
+  @ApiResponse({ status: 200, description: 'Dashboard data retrieved' })
+  async getDashboard() {
+    return this.claimService.getClaimsDashboard();
   }
 
   @Get('pending/review')

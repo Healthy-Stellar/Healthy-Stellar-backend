@@ -57,7 +57,7 @@ export class ProjectionRebuildService {
     const raw = await this.redis.get(STATUS_KEY(projectorName));
 
     if (!raw) {
-      const lastProcessedVersion = await this.checkpoints.getVersion(projectorName);
+      const lastProcessedVersion = await this.checkpoints.getMaxVersion(projectorName);
       return {
         projectorName,
         status: RebuildStatus.IDLE,

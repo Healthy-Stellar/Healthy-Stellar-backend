@@ -90,6 +90,7 @@ export class WebhookDelivery {
     timestamp: string;
     httpStatus: number | null;
     error: string | null;
+    responseBodySnippet: string | null;
     durationMs: number;
   }>;
 

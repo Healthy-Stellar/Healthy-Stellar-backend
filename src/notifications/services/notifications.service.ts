@@ -7,6 +7,8 @@ import {
 } from '../interfaces/notification-event.interface';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { NotificationTemplateService } from './notification-template.service';
+import { NotificationPreferenceCenterService } from './notification-preference-center.service';
+import { NotificationChannel } from '../entities/notification-category-preference.entity';
 
 export const MAILER_SERVICE = 'MAILER_SERVICE';
 
@@ -21,6 +23,7 @@ export class NotificationsService {
     private readonly configService: ConfigService,
     private readonly templateService: NotificationTemplateService,
     @Optional() @Inject(MAILER_SERVICE) private readonly mailerService?: any,
+    @Optional() private readonly preferenceCenter?: NotificationPreferenceCenterService,
   ) {
     this.emailEnabled =
       this.configService.get<string>('ENABLE_EMAIL_NOTIFICATIONS', 'false') === 'true';
@@ -102,21 +105,30 @@ export class NotificationsService {
     };
 
     const preferenceKey = this.eventTypeToPreferenceKey(eventType);
-    const realtimeEnabled = preferenceKey
+    const category = this.eventTypeToCategory(eventType);
+
+    const legacyRealtimeEnabled = preferenceKey
       ? await this.preferencesService.isChannelEnabled(patientId, 'webSocket', preferenceKey)
       : true;
+    const categoryRealtimeEnabled = category
+      ? await this.isCategoryChannelEnabled(patientId, category, NotificationChannel.WEBSOCKET)
+      : true;
 
-    if (realtimeEnabled) {
+    if (legacyRealtimeEnabled && categoryRealtimeEnabled) {
       await this.publishRealtimeEvent(event);
     }
 
     if (this.emailEnabled && preferenceKey) {
-      const emailEnabled = await this.preferencesService.isChannelEnabled(
+      const legacyEmailEnabled = await this.preferencesService.isChannelEnabled(
         patientId,
         'email',
         preferenceKey,
       );
-      if (emailEnabled) {
+      const categoryEmailEnabled = category
+        ? await this.isCategoryChannelEnabled(patientId, category, NotificationChannel.EMAIL)
+        : true;
+
+      if (legacyEmailEnabled && categoryEmailEnabled) {
         await this.sendEmailNotification(event, patientId);
       }
     }
@@ -244,6 +256,30 @@ export class NotificationsService {
     } catch (error: any) {
       this.logger.error(`Failed to send email for ${event.eventType}: ${error?.message}`);
     }
+  }
+
+  private eventTypeToCategory(eventType: NotificationEventType): string | null {
+    switch (eventType) {
+      case NotificationEventType.RECORD_UPLOADED:
+        return 'new_record';
+      case NotificationEventType.ACCESS_GRANTED:
+        return 'access_granted';
+      case NotificationEventType.ACCESS_REVOKED:
+        return 'access_revoked';
+      default:
+        return null;
+    }
+  }
+
+  private async isCategoryChannelEnabled(
+    userId: string,
+    category: string,
+    channel: NotificationChannel,
+  ): Promise<boolean> {
+    if (!this.preferenceCenter) {
+      return true;
+    }
+    return this.preferenceCenter.isChannelEnabledForCategory(userId, category, channel);
   }
 
   private eventTypeToPreferenceKey(

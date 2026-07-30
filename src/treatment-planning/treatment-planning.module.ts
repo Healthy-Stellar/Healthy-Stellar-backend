@@ -9,10 +9,12 @@ import { ClinicalGuideline } from './entities/clinical-guideline.entity';
 import { DecisionSupportAlert } from './entities/decision-support-alert.entity';
 import { Diagnosis } from '../diagnosis/entities/diagnosis.entity';
 import { TreatmentPlanService } from './services/treatment-plan.service';
+import { TreatmentPlanningService } from './treatment-planning.service';
 import { MedicalProcedureService } from './services/medical-procedure.service';
 import { CarePlanTemplateService } from './services/care-plan-template.service';
 import { TreatmentOutcomeService } from './services/treatment-outcome.service';
 import { DecisionSupportService } from './services/decision-support.service';
+import { EventStoreModule } from '../event-store/event-store.module';
 import {
   TreatmentPlanController,
   MedicalProcedureController,
@@ -20,6 +22,7 @@ import {
   TreatmentOutcomeController,
   DecisionSupportController,
 } from './controllers/treatment-planning.controller';
+import { TreatmentPlanningController } from './treatment-planning.controller';
 
 @Module({
   imports: [
@@ -33,16 +36,19 @@ import {
       DecisionSupportAlert,
       Diagnosis,
     ]),
+    EventStoreModule,
   ],
   controllers: [
     TreatmentPlanController,
     MedicalProcedureController,
+    TreatmentPlanningController,
     CarePlanTemplateController,
     TreatmentOutcomeController,
     DecisionSupportController,
   ],
   providers: [
     TreatmentPlanService,
+    TreatmentPlanningService,
     MedicalProcedureService,
     CarePlanTemplateService,
     TreatmentOutcomeService,

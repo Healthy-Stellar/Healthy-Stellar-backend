@@ -35,13 +35,15 @@ export class MissedDoseService {
 
     const savedMissedDose = await this.missedDoseRepository.save(missedDose);
 
-    // Send alert for critical medications
+    // Every missed dose alerts the charge nurse; critical medications additionally escalate.
+    await this.alertService.sendMissedDoseChargeNurseAlert(savedMissedDose);
+    await this.missedDoseRepository.update(savedMissedDose.id, {
+      alertSent: true,
+      alertSentTime: new Date(),
+    });
+
     if (mar.isHighAlert) {
       await this.alertService.sendCriticalMissedDoseAlert(savedMissedDose);
-      await this.missedDoseRepository.update(savedMissedDose.id, {
-        alertSent: true,
-        alertSentTime: new Date(),
-      });
     }
 
     return savedMissedDose;

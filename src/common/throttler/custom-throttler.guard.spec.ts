@@ -17,8 +17,11 @@ describe('CustomThrottlerGuard', () => {
     storageService = {
       increment: jest.fn(),
     };
-
-    guard = new CustomThrottlerGuard({}, storageService, reflector);
+    const tenantConfigService = {
+      getRateLimit: jest.fn().mockResolvedValue(undefined),
+      getRateWindow: jest.fn().mockResolvedValue(undefined),
+    };
+    guard = new CustomThrottlerGuard({}, storageService, reflector, tenantConfigService as any);
 
     mockRequest = {
       user: null,

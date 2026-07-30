@@ -129,6 +129,22 @@ export class Patient {
   nationalIdType?: string; // e.g., Passport, SSN, NIN
 
   /**
+   * PHI: Social Security Number -- encrypted via key-managed transformer.
+   * Encryption/decryption handled by PhiColumnEncryptionService at the service layer.
+   * Raw column value is base64-encoded AES-256-GCM ciphertext.
+   */
+  @Column({ type: 'text', nullable: true })
+  ssn?: string;
+
+  /**
+   * HMAC-SHA256 index of the plaintext SSN for exact-match lookup.
+   * Keyed with the patient DEK from KeyManagementService.
+   */
+  @Index()
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  ssnHmac?: string;
+
+  /**
    * -----------------------------
    * Stellar / Blockchain Identity
    * -----------------------------
@@ -150,6 +166,10 @@ export class Patient {
 
   @Column('json', { nullable: true })
   emergencyContact?: Record<string, any>; // e.g. { name, phone, relationship }
+
+  /** Tenant-specific extended attributes (e.g. local insurance numbers, national ID formats). */
+  @Column('json', { nullable: true })
+  customFields?: Record<string, string>;
 
   /**
    * -----------------------------
@@ -181,8 +201,7 @@ export class Patient {
   @Column({
     type: 'jsonb',
     nullable: false,
-    default: () =>
-      `'${JSON.stringify(DEFAULT_NOTIFICATION_PREFERENCES)}'`,
+    default: () => `'${JSON.stringify(DEFAULT_NOTIFICATION_PREFERENCES)}'`,
   })
   notificationPreferences: NotificationPreferences;
 

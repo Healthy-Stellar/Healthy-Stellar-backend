@@ -8,9 +8,13 @@ export const QUEUE_NAMES = {
   REPORTS: 'reports',
   EHR_IMPORT: 'ehr-import',
   WEBHOOK_DELIVERY: 'webhook-delivery',
+  COMPLIANCE_REPORTS: 'compliance-reports',
+  USER_CSV_IMPORT: 'user-csv-import',
+  PHARMACY_REORDER_ALERTS: 'pharmacy-reorder-alerts',
 } as const;
 
 export const JOB_TYPES = {
+  PHARMACY_REORDER_ALERT: 'pharmacyReorderAlert',
   ANCHOR_RECORD: 'anchorRecord',
   GRANT_ACCESS: 'grantAccess',
   REVOKE_ACCESS: 'revokeAccess',

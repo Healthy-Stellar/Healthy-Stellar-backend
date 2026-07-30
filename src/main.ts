@@ -1,10 +1,11 @@
 import './tracing'; // Initialize tracing before any other imports
 import { NestFactory, Reflector } from '@nestjs/core';
 import { VersioningType, VERSION_NEUTRAL } from '@nestjs/common';
-import { I18nValidationPipe } from 'nestjs-i18n';
+import { I18nValidationPipe, I18nService } from 'nestjs-i18n';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { CustomI18nValidationFilter } from './common/filters/i18n-validation.filter';
 import helmet from 'helmet';
 import { nonceMiddleware } from './common/middleware/nonce.middleware';
 import { DeprecationInterceptor } from './common/interceptors/deprecation.interceptor';
@@ -94,7 +95,11 @@ async function bootstrap() {
     new DeprecationInterceptor(app.get(Reflector)),
   );
 
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  const i18nService = app.get(I18nService);
+  app.useGlobalFilters(
+    new CustomI18nValidationFilter(i18nService),
+    new GlobalExceptionFilter(),
+  );
   app.useGlobalPipes(
     new I18nValidationPipe({
       whitelist: true,

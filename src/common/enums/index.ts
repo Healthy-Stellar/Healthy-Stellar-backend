@@ -3,6 +3,7 @@ export enum ClaimStatus {
   PENDING = 'pending',
   SUBMITTED = 'submitted',
   ACCEPTED = 'accepted',
+  APPROVED = 'approved',
   REJECTED = 'rejected',
   PAID = 'paid',
   PARTIALLY_PAID = 'partially_paid',

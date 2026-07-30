@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, Between } from 'typeorm';
+import { DataSource, Repository, FindOptionsWhere, Between } from 'typeorm';
 import { Payment } from '../entities/payment.entity';
 import { Billing } from '../entities/billing.entity';
 import { BillingLineItem } from '../entities/billing-line-item.entity';
@@ -25,7 +25,7 @@ export class PaymentService {
     private readonly billingRepository: Repository<Billing>,
     @InjectRepository(BillingLineItem)
     private readonly lineItemRepository: Repository<BillingLineItem>,
-    private readonly invoicePdfService: InvoicePdfService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(createDto: CreatePaymentDto): Promise<Payment> {
@@ -42,6 +42,22 @@ export class PaymentService {
       throw new BadRequestException(
         `Payment amount ($${createDto.amount}) exceeds outstanding balance ($${billing.balance})`,
       );
+    }
+
+    // Idempotency: a client-supplied transactionId identifies a single
+    // logical payment attempt (e.g. a gateway charge). If a payment already
+    // exists for it, return that payment instead of creating a second
+    // Payment row and a second deduction from billing.balance.
+    if (createDto.transactionId) {
+      const existingPayment = await this.paymentRepository.findOne({
+        where: { transactionId: createDto.transactionId },
+      });
+      if (existingPayment) {
+        this.logger.warn(
+          `Duplicate payment request for transactionId=${createDto.transactionId}; returning existing payment ${existingPayment.id}`,
+        );
+        return existingPayment;
+      }
     }
 
     const paymentNumber = `PAY-${Date.now()}-${uuidv4().substring(0, 4).toUpperCase()}`;
@@ -68,11 +84,33 @@ export class PaymentService {
       notes: createDto.notes,
     });
 
-    await this.paymentRepository.save(payment);
+    try {
+      await this.paymentRepository.save(payment);
+    } catch (error) {
+      // A concurrent request carrying the same client-supplied transactionId
+      // may have won the race to insert first. The unique constraint on
+      // transactionId (see migration AddUniqueConstraintToPaymentTransactionId)
+      // turns that race into "return the existing payment" instead of a
+      // duplicate deduction against billing.balance.
+      if (createDto.transactionId && this.isDuplicateKeyError(error)) {
+        const existingPayment = await this.paymentRepository.findOne({
+          where: { transactionId: createDto.transactionId },
+        });
+        if (existingPayment) {
+          return existingPayment;
+        }
+      }
+      throw error;
+    }
 
     const processedPayment = await this.processPayment(payment.id);
 
     return processedPayment;
+  }
+
+  private isDuplicateKeyError(error: unknown): boolean {
+    const code = (error as { code?: string } | undefined)?.code;
+    return code === '23505';
   }
 
   async processPayment(paymentId: string): Promise<Payment> {
@@ -82,13 +120,20 @@ export class PaymentService {
       throw new BadRequestException(`Payment is already in ${payment.status} status`);
     }
 
+    // Mark as PROCESSING outside the transaction so callers can distinguish
+    // "picked up but not yet committed" from PENDING/COMPLETED/FAILED.
     payment.status = PaymentStatus.PROCESSING;
     await this.paymentRepository.save(payment);
 
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
     try {
+      // 1. Apply payment allocations to line items.
       if (payment.paymentAllocation && payment.paymentAllocation.length > 0) {
         for (const allocation of payment.paymentAllocation) {
-          const lineItem = await this.lineItemRepository.findOne({
+          const lineItem = await queryRunner.manager.findOne(BillingLineItem, {
             where: { id: allocation.lineItemId },
           });
 
@@ -98,58 +143,50 @@ export class PaymentService {
               lineItem.adjustmentAmount =
                 Number(lineItem.adjustmentAmount) + allocation.adjustmentAmount;
             }
-            await this.lineItemRepository.save(lineItem);
+            await queryRunner.manager.save(BillingLineItem, lineItem);
           }
         }
       }
 
-      const billing = await this.billingRepository.findOne({
+      // 2. Update billing balance.
+      const billing = await queryRunner.manager.findOne(Billing, {
         where: { id: payment.billingId },
         relations: ['lineItems', 'payments'],
       });
 
-      if (billing) {
-        billing.totalPayments = Number(billing.totalPayments) + Number(payment.amount);
-        billing.balance = Number(billing.balance) - Number(payment.amount);
+        billing.totalPayments = Number(billing.totalPayments) + paymentAmount;
+        billing.balance = currentBalance - paymentAmount;
 
         if (payment.isInsurancePayment) {
           billing.insuranceResponsibility =
-            Number(billing.insuranceResponsibility || 0) - Number(payment.amount);
+            Number(billing.insuranceResponsibility || 0) - paymentAmount;
         } else {
           billing.patientResponsibility =
-            Number(billing.patientResponsibility || 0) - Number(payment.amount);
+            Number(billing.patientResponsibility || 0) - paymentAmount;
         }
 
-        if (billing.balance <= 0) {
-          billing.status = 'paid';
-          billing.balance = 0;
-        } else {
-          billing.status = 'partial';
-        }
+        billing.status = billing.balance <= 0 ? 'paid' : 'partial';
+        if (billing.balance < 0) billing.balance = 0;
 
-        await this.billingRepository.save(billing);
+        await queryRunner.manager.save(Billing, billing);
       }
 
+      // 3. Mark payment COMPLETED — all three writes commit atomically.
       payment.status = PaymentStatus.COMPLETED;
       payment.postedDate = new Date();
-      await this.paymentRepository.save(payment);
+      await queryRunner.manager.save(Payment, payment);
 
-      // Emit a patient-facing invoice PDF email once the payment is confirmed.
-      // Best-effort: failures here must not roll back a successful payment.
-      this.invoicePdfService.sendInvoiceEmail(payment.billingId).catch((error) => {
-        this.logger.warn(
-          `Failed to send invoice email for billing ${payment.billingId}: ${
-            error instanceof Error ? error.message : 'Unknown error'
-          }`,
-        );
-      });
-
+      await queryRunner.commitTransaction();
       return payment;
     } catch (error) {
+      await queryRunner.rollbackTransaction();
+
       payment.status = PaymentStatus.FAILED;
       payment.notes = `${payment.notes || ''}\nProcessing failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
       await this.paymentRepository.save(payment);
       throw error;
+    } finally {
+      await queryRunner.release();
     }
   }
 
