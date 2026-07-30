@@ -74,19 +74,17 @@ export class TenantIpAllowlistGuard implements CanActivate {
     return true;
   }
 
+  /**
+   * Resolves the tenant to enforce the IP allowlist for.
+   *
+   * SECURITY: This must ALWAYS be derived from the authenticated user's own
+   * session/JWT (`request.user`), never from client-controlled input such as
+   * `request.params`, `request.query`, or request headers (e.g. `x-tenant-id`).
+   * Trusting client-supplied tenant identifiers here would let a caller name
+   * a different, unprotected tenant and bypass allowlist enforcement entirely,
+   * or spoof a header to redirect enforcement to a tenant of their choosing.
+   */
   private extractTenantId(request: any): string | null {
-    if (request.params?.tenantId) {
-      return request.params.tenantId;
-    }
-
-    if (request.query?.tenantId) {
-      return request.query.tenantId;
-    }
-
-    if (request.headers['x-tenant-id']) {
-      return request.headers['x-tenant-id'];
-    }
-
     if (request.user?.tenantId) {
       return request.user.tenantId;
     }
