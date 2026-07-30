@@ -9,12 +9,13 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { AppErrorCode, HTTP_STATUS_TO_ERROR_CODE } from '../exceptions/error-codes';
 
 interface ErrorResponse {
   statusCode: number;
   error: string;
   message: string;
-  code: string;
+  code: AppErrorCode | string;
   traceId: string;
   timestamp: string;
   path: string;
@@ -38,7 +39,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let statusCode: number;
     let error: string;
     let message: string;
-    let code: string;
+    let code: AppErrorCode | string;
     let details: any;
 
     if (exception instanceof HttpException) {
@@ -49,26 +50,30 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         const resp = exceptionResponse as any;
         error = resp.error || this.getHttpErrorName(statusCode);
         message = resp.message || exception.message;
-        code = resp.code || this.getDefaultErrorCode(statusCode);
+        // Prefer the domain-specific code already set on the exception body,
+        // then fall back to the taxonomy map, then to a generic string.
+        code = resp.code || this.resolveErrorCode(statusCode);
         details = resp.details;
 
         if (exception instanceof BadRequestException && Array.isArray(resp.message)) {
           details = resp.message.map((msg: any) => ({
             field: typeof msg === 'string' ? undefined : msg.property,
-            message: typeof msg === 'string' ? msg : Object.values(msg.constraints || {}).join(', '),
+            message:
+              typeof msg === 'string' ? msg : Object.values(msg.constraints || {}).join(', '),
           }));
           message = 'Validation failed';
+          code = AppErrorCode.VALIDATION_ERROR;
         }
       } else {
         error = this.getHttpErrorName(statusCode);
         message = exceptionResponse as string;
-        code = this.getDefaultErrorCode(statusCode);
+        code = this.resolveErrorCode(statusCode);
       }
     } else {
       statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
       error = 'Internal Server Error';
       message = 'An unexpected error occurred';
-      code = 'INTERNAL_ERROR';
+      code = AppErrorCode.INTERNAL_ERROR;
     }
 
     const errorResponse: ErrorResponse = {
@@ -99,8 +104,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
   private handleFhirException(exception: unknown, response: Response, traceId: string) {
     const status =
-      exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
-    const message = exception instanceof HttpException ? exception.message : 'Internal server error';
+      exception instanceof HttpException
+        ? exception.getStatus()
+        : HttpStatus.INTERNAL_SERVER_ERROR;
+    const message =
+      exception instanceof HttpException ? exception.message : 'Internal server error';
 
     const outcome = {
       resourceType: 'OperationOutcome',
@@ -123,6 +131,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     response.status(status).contentType('application/fhir+json').json(outcome);
   }
 
+  /** Maps an HTTP status to a typed AppErrorCode. */
+  private resolveErrorCode(statusCode: number): AppErrorCode {
+    return HTTP_STATUS_TO_ERROR_CODE[statusCode] ?? AppErrorCode.UNKNOWN_ERROR;
+  }
+
   private getHttpErrorName(statusCode: number): string {
     const errorNames: Record<number, string> = {
       400: 'Bad Request',
@@ -131,25 +144,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       404: 'Not Found',
       409: 'Conflict',
       422: 'Unprocessable Entity',
+      429: 'Too Many Requests',
       500: 'Internal Server Error',
       502: 'Bad Gateway',
       503: 'Service Unavailable',
     };
     return errorNames[statusCode] || 'Error';
-  }
-
-  private getDefaultErrorCode(statusCode: number): string {
-    const errorCodes: Record<number, string> = {
-      400: 'BAD_REQUEST',
-      401: 'UNAUTHORIZED',
-      403: 'FORBIDDEN',
-      404: 'NOT_FOUND',
-      409: 'CONFLICT',
-      422: 'VALIDATION_ERROR',
-      500: 'INTERNAL_ERROR',
-      502: 'BAD_GATEWAY',
-      503: 'SERVICE_UNAVAILABLE',
-    };
-    return errorCodes[statusCode] || 'UNKNOWN_ERROR';
   }
 }

@@ -4,6 +4,9 @@ import { Repository } from 'typeorm';
 import { PurchaseOrder, PurchaseOrderStatus } from '../entities/purchase-order.entity';
 import { DrugSupplierService } from './drug-supplier.service';
 import { PharmacyInventoryService } from './pharmacy-inventory.service';
+import { PaginationDto } from '../../common/dto/pagination.dto';
+import { PaginationUtil } from '../../common/utils/pagination.util';
+import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
 
 @Injectable()
 export class PurchaseOrderService {
@@ -38,8 +41,10 @@ export class PurchaseOrderService {
     return this.orderRepository.save(order);
   }
 
-  async findAll(): Promise<PurchaseOrder[]> {
-    return this.orderRepository.find({
+  async findAll(
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<PurchaseOrder>> {
+    return PaginationUtil.paginate(this.orderRepository, paginationDto, {
       relations: ['supplier'],
       order: { createdAt: 'DESC' },
     });
@@ -112,37 +117,59 @@ export class PurchaseOrderService {
     return this.orderRepository.save(order);
   }
 
-  async getPendingOrders(): Promise<PurchaseOrder[]> {
-    return this.orderRepository.find({
-      where: { status: PurchaseOrderStatus.PENDING },
-      relations: ['supplier'],
-      order: { createdAt: 'ASC' },
-    });
+  async getPendingOrders(
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<PurchaseOrder>> {
+    const query = this.orderRepository.createQueryBuilder('order')
+      .leftJoinAndSelect('order.supplier', 'supplier')
+      .where('order.status = :status', { status: PurchaseOrderStatus.PENDING })
+      .orderBy('order.createdAt', 'ASC');
+
+    return PaginationUtil.paginateQueryBuilder(query, paginationDto);
   }
 
-  async getOpenOrdersForDrug(drugId: string): Promise<PurchaseOrder[]> {
+  async getOpenOrdersForDrug(
+    drugId: string,
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<PurchaseOrder>> {
     const openStatuses = [
       PurchaseOrderStatus.PENDING,
       PurchaseOrderStatus.APPROVED,
       PurchaseOrderStatus.ORDERED,
       PurchaseOrderStatus.PARTIALLY_RECEIVED,
     ];
+
     const orders = await this.orderRepository.find({
       relations: ['supplier'],
       order: { createdAt: 'DESC' },
     });
 
-    return orders.filter(
+    const filtered = orders.filter(
       (order) =>
-        openStatuses.includes(order.status) && order.items.some((item) => item.drugId === drugId),
+        openStatuses.includes(order.status) &&
+        order.items.some((item) => item.drugId === drugId),
+    );
+
+    const skip = (paginationDto.page - 1) * paginationDto.pageSize;
+    const pageItems = filtered.slice(skip, skip + paginationDto.pageSize);
+
+    return PaginationUtil.createResponse(
+      pageItems,
+      filtered.length,
+      paginationDto.page,
+      paginationDto.pageSize,
     );
   }
 
-  async getOrdersBySupplier(supplierId: string): Promise<PurchaseOrder[]> {
-    return this.orderRepository.find({
-      where: { supplierId },
-      relations: ['supplier'],
-      order: { createdAt: 'DESC' },
-    });
+  async getOrdersBySupplier(
+    supplierId: string,
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<PurchaseOrder>> {
+    const query = this.orderRepository.createQueryBuilder('order')
+      .leftJoinAndSelect('order.supplier', 'supplier')
+      .where('order.supplierId = :supplierId', { supplierId })
+      .orderBy('order.createdAt', 'DESC');
+
+    return PaginationUtil.paginateQueryBuilder(query, paginationDto);
   }
 }

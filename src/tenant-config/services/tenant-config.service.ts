@@ -13,6 +13,8 @@ import {
   TENANT_CONFIG_CACHE_PREFIX,
 } from '../constants/config-keys.constant';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { CacheInvalidationService } from '../../common/cache/cache-invalidation.service';
+import { CacheInvalidationEventType } from '../../common/cache/cache-invalidation.enum';
 
 @Injectable()
 export class TenantConfigService {
@@ -24,6 +26,7 @@ export class TenantConfigService {
     private readonly tenantConfigRepository: Repository<TenantConfig>,
     private readonly configService: ConfigService,
     private readonly auditLogService: AuditLogService,
+    private readonly cacheInvalidationService: CacheInvalidationService,
   ) {
     // Initialize Redis client
     const redisUrl = this.configService.get<string>('REDIS_URL');
@@ -387,6 +390,13 @@ export class TenantConfigService {
       const cacheKey = this.getCacheKey(tenantId, key);
       await this.redisClient.del(cacheKey);
       this.logger.debug(`Cache invalidated for ${cacheKey}`);
+
+      // Publish cache invalidation event to all instances
+      await this.cacheInvalidationService.publishInvalidation(
+        CacheInvalidationEventType.TENANT_CONFIG_UPDATED,
+        tenantId,
+        key,
+      );
     } catch (error) {
       this.logger.error(`Cache invalidation error:`, error);
     }

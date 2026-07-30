@@ -1,12 +1,16 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigDriftService } from './config/config-drift.service';
+import { envValidationSchema } from './config/env.validation';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
-import { I18nModule, AcceptLanguageResolver } from 'nestjs-i18n';
+import { I18nModule, AcceptLanguageResolver, QueryResolver } from 'nestjs-i18n';
 import * as path from 'path';
 import { AuthModule } from './auth/auth.module';
+import { OidcModule } from './OAuth2/oidc.module';
+import { SecurityModule } from './security/security.module';
 import { AdminModule } from './admin/admin.module';
 import { BillingModule } from './billing/billing.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
@@ -17,8 +21,11 @@ import { LaboratoryModule } from './laboratory/laboratory.module';
 import { DiagnosisModule } from './diagnosis/diagnosis.module';
 import { TreatmentPlanningModule } from './treatment-planning/treatment-planning.module';
 import { PharmacyModule } from './pharmacy/pharmacy.module';
+import { MedicationAdministrationModule } from './medication-administration/medication-administration.module';
 import { InfectionControlModule } from './infection-control/infection-control.module';
 import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
+import { EmergencyMedicalInfoModule } from './emergency-medical-info/emergency-medical-info.module';
+import { HospitalRegistryModule } from './hospital-registry/hospital-registry.module';
 import { AccessControlModule } from './access-control/access-control.module';
 import { TenantModule } from './tenant/tenant.module';
 import { FhirModule } from './fhir/fhir.module';
@@ -30,20 +37,35 @@ import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
+import { ClinicalMfaGuard } from './auth/guards/clinical-mfa.guard';
 import { ValidationModule } from './common/validation/validation.module';
 import { MedicalEmergencyErrorFilter } from './common/errors/medical-emergency-error.filter';
 import { MedicalDataValidationPipe } from './common/validation/medical-data.validator.pipe';
 import { TenantConfigModule } from './tenant-config/tenant-config.module';
+import { TenantIpAllowlistGuard } from './tenant-config/guards/tenant-ip-allowlist.guard';
 import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
+import { QueryPerformanceInterceptor } from './common/interceptors/query-performance.interceptor';
 import { GdprModule } from './gdpr/gdpr.module';
-import { ResearchExportModule } from './research-export/research-export.module';
-import { ReconciliationModule } from './reconciliation/reconciliation.module';
+import { ProviderPatientModule } from './provider-patient/provider-patient.module';
+import { ConsistencyCheckerModule } from './consistency-checker/consistency-checker.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
+import { TenantGuard } from './tenant/guards/tenant.guard';
+import { DataResidencyInterceptor } from './common/interceptors/data-residency.interceptor';
 import { JobsModule } from './jobs/jobs.module';
+ feat/idempotency-ttl-cleanup
+import { IdempotencyModule } from './idempotency/idempotency.module';
+
+import { DataRetentionModule } from './data-retention/data-retention.module';
+import { DataResidencyModule } from './data-residency/data-residency.module';
+main
 import { GraphqlModule } from './graphql/graphql.module';
+import { VersioningModule } from './versioning/versioning.module';
+import { LedgerReconciliationModule } from './ledger-reconciliation/ledger-reconciliation.module';
+import { StellarStreamModule } from './stellar-stream/stellar-stream.module';
+import { EhrImportModule } from './ehr-import/ehr-import.module';
 import { AuditModule } from './common/audit/audit.module';
-import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
-import { ThrottlerConfigService } from './common/throttler/throttler-config.service';
+import { CustomThrottlerGuard } from './common/throttler/custom-throttler.guard';
+import { ThrottlerConfigService } from './common/throttler/throttler.config';
 import { I18nAppModule } from './i18n/i18n.module';
 import { I18nExceptionFilter } from './i18n/filters/i18n-exception.filter';
 import { CircuitBreakerModule } from './common/circuit-breaker/circuit-breaker.module';
@@ -62,10 +84,13 @@ import { OperatorRunbookModule } from './operator-runbook/operator-runbook.modul
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
       cache: true,
+      validationSchema: envValidationSchema,
+      validationOptions: { abortEarly: false },
     }),
     TypeOrmModule.forRootAsync({
       useClass: DatabaseConfig,
     }),
+    TypeOrmModule.forFeature([User]),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
@@ -78,13 +103,18 @@ import { OperatorRunbookModule } from './operator-runbook/operator-runbook.modul
         path: path.join(__dirname, '/i18n/'),
         watch: true,
       },
-      resolvers: [AcceptLanguageResolver],
+      resolvers: [
+        { use: QueryResolver, options: ['lang'] },
+        AcceptLanguageResolver,
+      ],
     }),
     // Application modules
     TenantModule,
     CommonModule,
     I18nAppModule,
     AuthModule,
+    OidcModule,
+    SecurityModule,
     AdminModule,
     BillingModule,
     MedicalRecordsModule,
@@ -94,21 +124,30 @@ import { OperatorRunbookModule } from './operator-runbook/operator-runbook.modul
     DiagnosisModule,
     TreatmentPlanningModule,
     PharmacyModule,
+    MedicationAdministrationModule,
     EmergencyOperationsModule,
+    EmergencyMedicalInfoModule,
+    HospitalRegistryModule,
     ValidationModule,
     InfectionControlModule,
     HealthModule,
     MetricsModule,
     NotificationsModule,
-    QueueModule,
+    QueueModule.forRoot({ isWorker: false }),
     FhirModule,
     AccessControlModule,
     JobsModule,
+ feat/idempotency-ttl-cleanup
+    IdempotencyModule,
+
+    DataRetentionModule,
+ main
     StellarModule,
     AuditModule,
     TenantConfigModule,
     AnalyticsModule,
     GdprModule,
+    DataResidencyModule,
     ResearchExportModule,
     ReconciliationModule,
     GraphqlModule,
@@ -118,9 +157,22 @@ import { OperatorRunbookModule } from './operator-runbook/operator-runbook.modul
   controllers: [AppController],
   providers: [
     AppService,
+    ConfigDriftService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: PiiRedactionInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: PaginationInterceptor,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: TracingInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: QueryPerformanceInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,
@@ -128,8 +180,15 @@ import { OperatorRunbookModule } from './operator-runbook/operator-runbook.modul
     },
     {
       provide: APP_INTERCEPTOR,
-      useClass: TenantInterceptor
       useClass: TenantInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: DataResidencyInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: IdempotencyInterceptor,
     },
     {
       provide: APP_FILTER,
@@ -151,10 +210,27 @@ import { OperatorRunbookModule } from './operator-runbook/operator-runbook.modul
       provide: APP_GUARD,
       useClass: CustomThrottlerGuard,
     },
+    {
+      provide: APP_GUARD,
+      useClass: TenantGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TenantIpAllowlistGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ClinicalMfaGuard,
+    },
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(RequestContextMiddleware).forRoutes('*');
+    // RequestIdMiddleware runs first to ensure X-Request-Id is set before
+    // RequestContextMiddleware stores it in AsyncLocalStorage
+    consumer.apply(RequestIdMiddleware, RequestContextMiddleware).forRoutes('*');
+
+    // Protect Bull Board dashboard with authentication
+    consumer.apply(BullBoardAuthMiddleware).forRoutes('/admin/queues');
   }
 }

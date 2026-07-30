@@ -22,33 +22,29 @@ export class StellarWithBreakerService {
     private readonly circuitBreaker: CircuitBreakerService,
   ) {}
 
-  async anchorRecord(patientId: string, cid: string): Promise<StellarTxResult> {
-    return this.executeWithBreaker(() => this.stellarService.anchorRecord(patientId, cid));
+  async anchorRecord(args: { patientId: string; cid: string }): Promise<StellarTxResult> {
+    return this.executeWithBreaker(() => this.stellarService.anchorRecord(args.patientId, args.cid));
   }
 
-  async grantAccess(
-    patientId: string,
-    granteeId: string,
-    recordId: string,
-    expiresAt: Date,
-  ): Promise<StellarTxResult> {
-    return this.executeWithBreaker(() =>
-      this.stellarService.grantAccess(patientId, granteeId, recordId, expiresAt),
-    );
+  async grantAccess(args: { patientId: string; granteeId: string; recordId: string; expiresAt: Date }): Promise<StellarTxResult> {
+    return this.executeWithBreaker(() => this.stellarService.grantAccess(args.patientId, args.granteeId, args.recordId, args.expiresAt));
   }
 
-  async revokeAccess(
-    patientId: string,
-    granteeId: string,
-    recordId: string,
-  ): Promise<StellarTxResult> {
-    return this.executeWithBreaker(() =>
-      this.stellarService.revokeAccess(patientId, granteeId, recordId),
-    );
+  async revokeAccess(args: { patientId: string; granteeId: string; recordId: string }): Promise<StellarTxResult> {
+    return this.executeWithBreaker(() => this.stellarService.revokeAccess(args.patientId, args.granteeId, args.recordId));
   }
 
   async verifyAccess(requesterId: string, recordId: string): Promise<StellarVerifyResult> {
     return this.executeWithBreaker(() => this.stellarService.verifyAccess(requesterId, recordId));
+  }
+
+  async createShareLink(recordId: string, patientId: string): Promise<string> {
+    return this.executeWithBreaker(() => this.stellarService.createShareLink(recordId, patientId));
+  }
+
+  async anchorCid(patientId: string, cid: string): Promise<string> {
+    const result = await this.anchorRecord({ patientId, cid });
+    return result.txHash;
   }
 
   private async executeWithBreaker<T>(fn: () => Promise<T>): Promise<T> {

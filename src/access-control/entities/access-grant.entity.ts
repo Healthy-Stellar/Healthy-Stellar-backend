@@ -14,6 +14,7 @@ export enum AccessLevel {
 
 export enum GrantStatus {
   ACTIVE = 'ACTIVE',
+  EXPIRING = 'EXPIRING',
   REVOKED = 'REVOKED',
   EXPIRED = 'EXPIRED',
 }
@@ -67,6 +68,10 @@ export class AccessGrant {
 
   @Column({ type: 'text', nullable: true })
   revocationReason: string;
+
+  @Column({ type: 'uuid' })
+  @Index()
+  organizationId: string;
 
   @Column({ type: 'varchar', nullable: true })
   sorobanTxHash: string;

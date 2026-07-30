@@ -1,15 +1,17 @@
 import './tracing'; // Initialize tracing before any other imports
 import { NestFactory, Reflector } from '@nestjs/core';
 import { VersioningType, VERSION_NEUTRAL } from '@nestjs/common';
-import { I18nValidationPipe } from 'nestjs-i18n';
+import { I18nValidationPipe, I18nService } from 'nestjs-i18n';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { CustomI18nValidationFilter } from './common/filters/i18n-validation.filter';
 import helmet from 'helmet';
 import { nonceMiddleware } from './common/middleware/nonce.middleware';
 import { DeprecationInterceptor } from './common/interceptors/deprecation.interceptor';
 import { Logger } from 'nestjs-pino';
 import { applySecurityHeaders } from './security/http-security.config';
+import { ApiVersionLifecycleInterceptor } from './versioning/api-version-lifecycle.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -66,13 +68,21 @@ async function bootstrap() {
   // Remove X-Powered-By header
   app.getHttpAdapter().getInstance().disable('x-powered-by');
 
-  // CORS Configuration with explicit origin whitelist
-  const corsOrigins = process.env.CORS_ALLOWED_ORIGINS
-    ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((origin) => origin.trim())
-    : ['http://localhost:3000', 'http://localhost:3001'];
+  // CORS Configuration
+  const isProd = process.env.NODE_ENV === 'production';
+  const defaultOrigins = isProd
+    ? []
+    : ['http://localhost:3000', 'http://localhost:4200'];
+  const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+    : defaultOrigins;
+
+  if (isProd && allowedOrigins.length === 0) {
+    throw new Error('ALLOWED_ORIGINS must be set in production');
+  }
 
   app.enableCors({
-    origin: corsOrigins,
+    origin: allowedOrigins,
     credentials: process.env.CORS_CREDENTIALS === 'true',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Trace-ID'],
@@ -80,9 +90,16 @@ async function bootstrap() {
     maxAge: 3600,
   });
 
-  app.useGlobalInterceptors(new DeprecationInterceptor(app.get(Reflector)));
+  app.useGlobalInterceptors(
+    new ApiVersionLifecycleInterceptor(),
+    new DeprecationInterceptor(app.get(Reflector)),
+  );
 
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  const i18nService = app.get(I18nService);
+  app.useGlobalFilters(
+    new CustomI18nValidationFilter(i18nService),
+    new GlobalExceptionFilter(),
+  );
   app.useGlobalPipes(
     new I18nValidationPipe({
       whitelist: true,
@@ -111,6 +128,43 @@ async function bootstrap() {
       - Medical data is anonymized in examples
       - Audit logging for all operations
       - End-to-end encryption
+      
+      ---
+      
+      ## Error Handling Guide
+      
+      All errors follow a standardized response format with machine-readable error codes:
+      
+      \`\`\`json
+      {
+        "statusCode": 409,
+        "error": "Conflict",
+        "message": "Resource version conflict",
+        "code": "RECORD_VERSION_CONFLICT",
+        "traceId": "550e8400-e29b-41d4-a716-446655440000",
+        "timestamp": "2024-05-30T10:30:45.123Z",
+        "path": "/api/v1/medical-records/123",
+        "details": {
+          "expectedVersion": "1",
+          "currentVersion": "2"
+        }
+      }
+      \`\`\`
+      
+      **Handle errors using the \`code\` field, not HTTP status codes.** Error codes are stable and SDK-friendly.
+      
+      ### Common Error Codes
+      
+      - \`VALIDATION_ERROR\` - Input validation failed
+      - \`UNAUTHORIZED\` - Missing/invalid authentication
+      - \`FORBIDDEN\` - Insufficient permissions
+      - \`NOT_FOUND\` - Resource not found
+      - \`RECORD_VERSION_CONFLICT\` - Optimistic locking conflict (use If-Match header)
+      - \`PATIENT_NOT_FOUND\` - Patient not found
+      - \`ACCESS_DENIED\` - Access control violation
+      - \`FHIR_VALIDATION_ERROR\` - FHIR resource validation failed
+      
+      See the **Error Responses** section for detailed error code documentation.
     `,
     )
     .setVersion('1.0.0')
@@ -137,6 +191,7 @@ async function bootstrap() {
     .addTag('Financial Reporting & Analytics', 'Revenue cycle and financial analytics')
     .addTag('Pharmacy Management', 'Drug inventory and prescription management')
     .addTag('Laboratory Management', 'Lab test ordering and result management')
+    .addTag('Error Responses', 'Standard error response format and error codes')
     .addServer('https://api.medical-system.com', 'Production Server')
     .addServer('https://staging-api.medical-system.com', 'Staging Server')
     .build();

@@ -11,10 +11,13 @@ import {
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { User } from '../auth/entities/user.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
+import { Billing } from '../billing/entities/billing.entity';
 import * as PDFDocument from 'pdfkit';
+import * as ExcelJS from 'exceljs';
 import { create as ipfsHttpClient } from 'ipfs-http-client';
 import { v4 as uuidv4 } from 'uuid';
 import { PassThrough } from 'stream';
+import { I18nService } from '../i18n/i18n.service';
 
 @Injectable()
 export class ReportsService {
@@ -27,6 +30,7 @@ export class ReportsService {
     private configService: ConfigService,
     private notificationsService: NotificationsService,
     private entityManager: EntityManager,
+    private i18nService: I18nService,
   ) {
     const ipfsUrl = this.configService.get<string>('IPFS_NODE_URL') || 'http://localhost:5001';
     this.ipfs = ipfsHttpClient({ url: ipfsUrl });
@@ -39,6 +43,10 @@ export class ReportsService {
       status: ReportStatus.PENDING,
     });
     await this.reportJobRepository.save(job);
+    this.notificationsService.emitJobStatusUpdated(job.id, ReportStatus.PENDING, {
+      patientId,
+      message: 'Report request accepted',
+    });
 
     // Call async generation without awaiting
     this.generateReport(job.id, patientId, format).catch((err) => {
@@ -116,6 +124,10 @@ export class ReportsService {
   private async generateReport(jobId: string, patientId: string, format: ReportFormat) {
     try {
       await this.reportJobRepository.update(jobId, { status: ReportStatus.PROCESSING });
+      this.notificationsService.emitJobStatusUpdated(jobId, ReportStatus.PROCESSING, {
+        patientId,
+        message: 'Report generation in progress',
+      });
 
       const patient = await this.entityManager.findOne(User, { where: { id: patientId } });
       const records = await this.entityManager.find(MedicalRecord, {
@@ -135,6 +147,14 @@ export class ReportsService {
       let buffer: Buffer;
       if (format === ReportFormat.PDF) {
         buffer = await this.generatePdfBuffer(patient, records, grants, userAuditLogs);
+      } else if (format === ReportFormat.XLSX) {
+        // Billing data is only needed for the XLSX "Billing Summary" sheet, so it is
+        // fetched lazily here rather than for every report format.
+        const billings = await this.entityManager.find(Billing, {
+          where: { patientId },
+          order: { serviceDate: 'DESC' },
+        });
+        buffer = await this.generateXlsxBuffer(patient, records, grants, userAuditLogs, billings);
       } else {
         buffer = await this.generateCsvBuffer(records, grants, userAuditLogs);
       }
@@ -150,13 +170,17 @@ export class ReportsService {
 
       const downloadToken = uuidv4();
       const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 48); // 48 hours local IPFS expiry rule proxy equivalent
+      expiresAt.setHours(expiresAt.getHours() + 48);
 
       await this.reportJobRepository.update(jobId, {
         status: ReportStatus.COMPLETED,
         ipfsHash,
         downloadToken,
         expiresAt,
+      });
+      this.notificationsService.emitJobStatusUpdated(jobId, ReportStatus.COMPLETED, {
+        patientId,
+        message: 'Report generation completed',
       });
 
       const downloadUrl = `${this.configService.get<string>('API_URL') || 'http://localhost:3000'}/api/v1/reports/${jobId}/download?token=${downloadToken}`;
@@ -186,6 +210,10 @@ export class ReportsService {
         status: ReportStatus.FAILED,
         errorDetails: error.message,
       });
+      this.notificationsService.emitJobStatusUpdated(jobId, ReportStatus.FAILED, {
+        patientId,
+        message: error?.message || 'Report generation failed',
+      });
     }
   }
 
@@ -203,24 +231,24 @@ export class ReportsService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      // Header
+      // Detect RTL locale and set text direction accordingly
+      const isRtl = this.i18nService.isRtlLocale();
+      const textAlign = isRtl ? 'right' : 'left';
+
       doc.fontSize(20).text('Patient Activity Report', { align: 'center' });
       doc.moveDown();
-      doc.fontSize(12).text(`Patient Name: ${patient?.firstName || ''} ${patient?.lastName || ''}`);
-      doc.text(`Patient ID: ${patient?.id}`);
-      doc.text(`Generated On: ${new Date().toLocaleString()}`);
+      doc.fontSize(12).text(`Patient Name: ${patient?.firstName || ''} ${patient?.lastName || ''}`, { align: textAlign });
+      doc.text(`Patient ID: ${patient?.id}`, { align: textAlign });
+      doc.text(`Generated On: ${this.i18nService.formatDate(new Date())}`, { align: textAlign });
       doc.moveDown(2);
 
-      // Records
-      doc.fontSize(16).text('Medical Records Summary');
+      doc.fontSize(16).text('Medical Records Summary', { align: textAlign });
       doc.moveDown(0.5);
       if (records.length === 0) doc.fontSize(10).text('No recent active records found.');
       records.forEach((record) => {
-        doc
-          .fontSize(10)
-          .text(
-            `- [${new Date(record.createdAt).toLocaleDateString()}] ${record.recordType?.toUpperCase() || 'UNKNOWN'}`,
-          );
+        doc.fontSize(10).text(
+          `- [${new Date(record.createdAt).toLocaleDateString()}] ${record.recordType?.toUpperCase() || 'UNKNOWN'}`,
+        );
         if (record.title) doc.text(`  Title: ${record.title}`);
         if (record.metadata?.transactionHash) {
           doc.fillColor('blue').fontSize(8).text(`  Tx Hash: ${record.metadata.transactionHash}`);
@@ -230,8 +258,7 @@ export class ReportsService {
       });
       doc.moveDown();
 
-      // Grants
-      doc.fontSize(16).text('Access Grants & Consents');
+      doc.fontSize(16).text('Access Grants & Consents', { align: textAlign });
       doc.moveDown(0.5);
       if (grants.length === 0) doc.fontSize(10).text('No access grants found.');
       grants.forEach((grant) => {
@@ -247,16 +274,13 @@ export class ReportsService {
       });
       doc.moveDown();
 
-      // Logs
-      doc.fontSize(16).text('Recent Audit Logs');
+      doc.fontSize(16).text('Recent Audit Logs', { align: textAlign });
       doc.moveDown(0.5);
       if (logs.length === 0) doc.fontSize(10).text('No audit logs found.');
       logs.forEach((log) => {
-        doc
-          .fontSize(9)
-          .text(
-            `[${new Date(log.timestamp).toLocaleString()}] ${log.action} - ${log.description || ''}`,
-          );
+        doc.fontSize(9).text(
+          `[${new Date(log.timestamp).toLocaleString()}] ${log.action} - ${log.description || ''}`,
+        );
         if (log.details?.transactionHash) {
           doc.fillColor('gray').fontSize(7).text(`  Tx Hash: ${log.details?.transactionHash}`);
           doc.fillColor('black');
@@ -291,5 +315,154 @@ export class ReportsService {
     });
 
     return Buffer.from(csv, 'utf-8');
+  }
+
+  /**
+   * Builds a multi-sheet XLSX workbook mirroring the sections used by the PDF/CSV
+   * exports (Medical Records, Access Grants, Audit Logs) plus a Summary overview
+   * sheet and a Billing Summary sheet sourced from the billing module. Date and
+   * currency columns use native Excel number formats so they render/sort/filter
+   * correctly instead of as plain text.
+   */
+  private async generateXlsxBuffer(
+    patient: User,
+    records: MedicalRecord[],
+    grants: AccessGrant[],
+    logs: AuditLogEntity[],
+    billings: Billing[],
+  ): Promise<Buffer> {
+    const DATE_FORMAT = 'yyyy-mm-dd';
+    const DATETIME_FORMAT = 'yyyy-mm-dd hh:mm:ss';
+    const CURRENCY_FORMAT = '"$"#,##0.00';
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Healthy Stellar Reports';
+    workbook.created = new Date();
+
+    const styleHeader = (worksheet: ExcelJS.Worksheet) => {
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true };
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE0E0E0' },
+        };
+      });
+    };
+
+    // ── Summary sheet ──────────────────────────────────────────────────────
+    const summarySheet = workbook.addWorksheet('Summary');
+    summarySheet.columns = [
+      { header: 'Field', key: 'field', width: 28 },
+      { header: 'Value', key: 'value', width: 40 },
+    ];
+    summarySheet.addRows([
+      { field: 'Patient Name', value: `${patient?.firstName || ''} ${patient?.lastName || ''}`.trim() },
+      { field: 'Patient ID', value: patient?.id || '' },
+      { field: 'Generated On', value: new Date() },
+      { field: 'Medical Records Count', value: records.length },
+      { field: 'Access Grants Count', value: grants.length },
+      { field: 'Audit Log Entries', value: logs.length },
+      { field: 'Billing Records Count', value: billings.length },
+    ]);
+    summarySheet.getCell('B4').numFmt = DATETIME_FORMAT; // "Generated On" row
+    styleHeader(summarySheet);
+
+    // ── Medical Records sheet ──────────────────────────────────────────────
+    const recordsSheet = workbook.addWorksheet('Medical Records');
+    recordsSheet.columns = [
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Type', key: 'type', width: 16 },
+      { header: 'Title', key: 'title', width: 30 },
+      { header: 'Transaction Hash', key: 'txHash', width: 44 },
+    ];
+    records.forEach((record) => {
+      const metadataHash = (record.metadata as Record<string, string>)?.transactionHash || '';
+      recordsSheet.addRow({
+        date: new Date(record.createdAt),
+        type: record.recordType?.toUpperCase() || 'UNKNOWN',
+        title: record.title || '',
+        txHash: metadataHash,
+      });
+    });
+    recordsSheet.getColumn('date').numFmt = DATE_FORMAT;
+    styleHeader(recordsSheet);
+
+    // ── Access Grants sheet ──────────────────────────────────────────────
+    const grantsSheet = workbook.addWorksheet('Access Grants');
+    grantsSheet.columns = [
+      { header: 'Granted To', key: 'grantedTo', width: 26 },
+      { header: 'Status', key: 'status', width: 14 },
+      { header: 'Access Level', key: 'accessLevel', width: 16 },
+      { header: 'Expires At', key: 'expiresAt', width: 14 },
+      { header: 'Transaction Hash', key: 'txHash', width: 44 },
+    ];
+    grants.forEach((grant) => {
+      const isExpired = grant.expiresAt && new Date(grant.expiresAt) < new Date();
+      grantsSheet.addRow({
+        grantedTo: grant.granteeId,
+        status: isExpired ? 'EXPIRED' : grant.status,
+        accessLevel: grant.accessLevel,
+        expiresAt: grant.expiresAt ? new Date(grant.expiresAt) : null,
+        txHash: grant.sorobanTxHash || '',
+      });
+    });
+    grantsSheet.getColumn('expiresAt').numFmt = DATE_FORMAT;
+    styleHeader(grantsSheet);
+
+    // ── Audit Logs sheet ───────────────────────────────────────────────────
+    const logsSheet = workbook.addWorksheet('Audit Logs');
+    logsSheet.columns = [
+      { header: 'Timestamp', key: 'timestamp', width: 20 },
+      { header: 'Action', key: 'action', width: 24 },
+      { header: 'Description', key: 'description', width: 40 },
+      { header: 'Transaction Hash', key: 'txHash', width: 44 },
+    ];
+    logs.forEach((log) => {
+      const metadataHash = log.details?.transactionHash || log.metadata?.transactionHash || '';
+      logsSheet.addRow({
+        timestamp: new Date(log.timestamp),
+        action: log.action,
+        description: log.description || '',
+        txHash: metadataHash,
+      });
+    });
+    logsSheet.getColumn('timestamp').numFmt = DATETIME_FORMAT;
+    styleHeader(logsSheet);
+
+    // ── Billing Summary sheet ──────────────────────────────────────────────
+    const billingSheet = workbook.addWorksheet('Billing Summary');
+    billingSheet.columns = [
+      { header: 'Invoice Number', key: 'invoiceNumber', width: 20 },
+      { header: 'Service Date', key: 'serviceDate', width: 14 },
+      { header: 'Provider', key: 'provider', width: 24 },
+      { header: 'Total Charges', key: 'totalCharges', width: 16 },
+      { header: 'Total Payments', key: 'totalPayments', width: 16 },
+      { header: 'Balance', key: 'balance', width: 16 },
+      { header: 'Status', key: 'status', width: 12 },
+      { header: 'Due Date', key: 'dueDate', width: 14 },
+    ];
+    billings.forEach((billing) => {
+      billingSheet.addRow({
+        invoiceNumber: billing.invoiceNumber,
+        serviceDate: billing.serviceDate ? new Date(billing.serviceDate) : null,
+        provider: billing.providerName,
+        totalCharges: Number(billing.totalCharges),
+        totalPayments: Number(billing.totalPayments),
+        balance: Number(billing.balance),
+        status: billing.status,
+        dueDate: billing.dueDate ? new Date(billing.dueDate) : null,
+      });
+    });
+    billingSheet.getColumn('serviceDate').numFmt = DATE_FORMAT;
+    billingSheet.getColumn('dueDate').numFmt = DATE_FORMAT;
+    billingSheet.getColumn('totalCharges').numFmt = CURRENCY_FORMAT;
+    billingSheet.getColumn('totalPayments').numFmt = CURRENCY_FORMAT;
+    billingSheet.getColumn('balance').numFmt = CURRENCY_FORMAT;
+    styleHeader(billingSheet);
+
+    const arrayBuffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(arrayBuffer);
   }
 }

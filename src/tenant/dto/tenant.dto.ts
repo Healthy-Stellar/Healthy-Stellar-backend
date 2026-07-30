@@ -1,17 +1,23 @@
 import { IsString, IsNotEmpty, Matches, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+import { IsString, IsNotEmpty, Matches, IsOptional } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
 export class CreateTenantDto {
   @ApiProperty({ example: 'City Care Hospital' })
   @IsString()
   @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ example: 'citycare', description: 'URL-safe slug for tenant identification' })
+  @ApiProperty({
+    example: 'citycare',
+    description: 'Lowercase letters, digits, and underscores only (3–63 chars)',
+  })
   @IsString()
   @IsNotEmpty()
-  @Matches(/^[a-z0-9-]+$/, {
-    message: 'Slug must contain only lowercase letters, numbers, and hyphens',
+  @Matches(/^[a-z0-9_]{3,63}$/, {
+    message: 'Slug must match ^[a-z0-9_]{3,63}$',
   })
   slug: string;
 

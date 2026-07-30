@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Query, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -6,7 +6,9 @@ import { BackupService } from '../services/backup.service';
 import { DisasterRecoveryService, RecoveryOptions } from '../services/disaster-recovery.service';
 import { BackupVerificationService } from '../services/backup-verification.service';
 import { BackupMonitoringService } from '../services/backup-monitoring.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('backup')
 @Controller('backup')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class BackupController {
@@ -31,8 +33,10 @@ export class BackupController {
 
   @Get('history')
   @Roles('admin', 'system_admin')
-  async getBackupHistory(@Query('limit') limit?: number) {
-    return this.backupService.getBackupHistory(limit ? parseInt(limit as any, 10) : 50);
+  async getBackupHistory(
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit = 50,
+  ) {
+    return this.backupService.getBackupHistory(limit);
   }
 
   @Get(':id')
@@ -79,8 +83,10 @@ export class BackupController {
 
   @Get('recovery/tests')
   @Roles('admin', 'system_admin')
-  async getRecoveryTests(@Query('limit') limit?: number) {
-    return this.recoveryService.getRecoveryTests(limit ? parseInt(limit as any, 10) : 50);
+  async getRecoveryTests(
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit = 50,
+  ) {
+    return this.recoveryService.getRecoveryTests(limit);
   }
 
   @Get('monitoring/health')
@@ -91,13 +97,30 @@ export class BackupController {
 
   @Get('monitoring/alerts')
   @Roles('admin', 'system_admin')
-  async getRecentAlerts(@Query('limit') limit?: number) {
-    return this.monitoringService.getRecentAlerts(limit ? parseInt(limit as any, 10) : 50);
+  async getRecentAlerts(
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit = 50,
+  ) {
+    return this.monitoringService.getRecentAlerts(limit);
   }
 
   @Get('monitoring/statistics')
   @Roles('admin', 'system_admin')
   async getStatistics(@Query('days') days?: number) {
     return this.monitoringService.getBackupStatistics(days ? parseInt(days as any, 10) : 30);
+  }
+
+  @Post('restore/:id/dry-run')
+  @Roles('admin', 'system_admin')
+  async dryRunRestore(
+    @Param('id') id: string,
+    @Body('requestedBy') requestedBy: string,
+  ) {
+    return this.recoveryService.dryRunRestore(id, requestedBy ?? 'admin');
+  }
+
+  @Post('recovery/drill/trigger')
+  @Roles('admin', 'system_admin')
+  async triggerRestoreDrill() {
+    return this.recoveryService.scheduledRestoreDrill();
   }
 }

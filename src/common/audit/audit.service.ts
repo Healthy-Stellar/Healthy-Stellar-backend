@@ -1,21 +1,33 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLogEntity, AuditAction } from './audit-log.entity';
 import { AuditEventDto } from './dto/audit-event.dto';
+import { AuditChainService } from './audit-chain.service';
+
 
 @Injectable()
 export class AuditService {
+  private readonly logger = new Logger(AuditService.name);
+
   constructor(
     @InjectRepository(AuditLogEntity)
     private auditLogRepository: Repository<AuditLogEntity>,
+    private readonly auditChainService: AuditChainService,
   ) {}
 
   /**
    * Log an audit event (medical record access, write, grant, revoke).
-   * Saves to audit_logs table. Optionally stores a Stellar tx hash for tamper-evidence.
+   * Saves to audit_logs table. Computes and stores hash chain values for tamper-proofing.
    */
   async log(event: AuditEventDto): Promise<AuditLogEntity> {
+    const latestEntry = await this.auditLogRepository
+      .createQueryBuilder('audit')
+      .orderBy('audit.createdAt', 'DESC')
+      .getOne();
+
+    const previousHash = latestEntry?.entryHash ?? null;
+
     const entry = this.auditLogRepository.create({
       userId: event.actorId,
       action: event.action,
@@ -27,13 +39,17 @@ export class AuditService {
       stellarTxHash: event.stellarTxHash ?? null,
       severity: 'LOW',
       entity: event.resourceType ?? 'MedicalRecord',
+      previousHash,
     });
-    return this.auditLogRepository.save(entry);
-  }
 
-  /**
-   * Log authentication events
-   */
+    const saved = await this.auditLogRepository.save(entry);
+
+    const entryData = this.auditChainService.getEntryData(saved);
+    const entryHash = this.auditChainService.computeEntryHash(previousHash, entryData);
+
+    saved.entryHash = entryHash;
+    return this.auditLogRepository.save(saved);
+  }
   async logAuthenticationEvent(
     action: AuditAction | string,
     success: boolean,

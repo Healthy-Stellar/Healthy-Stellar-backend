@@ -7,6 +7,7 @@ import { HealthcareMonitoringController } from './controllers/healthcare-monitor
 import { ClinicalAlertsController } from './controllers/clinical-alerts.controller';
 import { DashboardController } from './controllers/dashboard.controller';
 import { ComplianceController } from './controllers/compliance.controller';
+import { MonitoringController } from './controllers/monitoring.controller';
 
 // Services
 import { SystemHealthService } from './services/system-health.service';
@@ -16,6 +17,11 @@ import { ComplianceMonitoringService } from './services/compliance-monitoring.se
 import { IncidentTrackingService } from './services/incident-tracking.service';
 import { DashboardService } from './services/dashboard.service';
 import { NotificationService } from './services/notification.service';
+import { VitalsService } from './services/vitals.service';
+import { AlertRuleService } from './services/alert-rule.service';
+
+// Gateway
+import { VitalsGateway } from './vitals.gateway';
 
 // Entities
 import { SystemMetric } from './entities/system-metric.entity';
@@ -33,6 +39,8 @@ import { OperatorRunbookModule } from '../operator-runbook/operator-runbook.modu
       EquipmentStatus,
       ComplianceCheck,
       HealthcareIncident,
+      PatientVital,
+      AlertRule,
     ]),
     ScheduleModule.forRoot(),
     OperatorRunbookModule,
@@ -42,6 +50,7 @@ import { OperatorRunbookModule } from '../operator-runbook/operator-runbook.modu
     ClinicalAlertsController,
     DashboardController,
     ComplianceController,
+    MonitoringController,
   ],
   providers: [
     SystemHealthService,
@@ -51,6 +60,10 @@ import { OperatorRunbookModule } from '../operator-runbook/operator-runbook.modu
     IncidentTrackingService,
     DashboardService,
     NotificationService,
+    VitalsService,
+    AlertRuleService,
+    VitalsGateway,
+    WsJwtMiddleware,
   ],
   exports: [
     SystemHealthService,
@@ -58,6 +71,9 @@ import { OperatorRunbookModule } from '../operator-runbook/operator-runbook.modu
     EquipmentMonitoringService,
     ComplianceMonitoringService,
     IncidentTrackingService,
+    VitalsService,
+    VitalsGateway,
+    AlertRuleService,
   ],
 })
 export class HealthcareMonitoringModule {}

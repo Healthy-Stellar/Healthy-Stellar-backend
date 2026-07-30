@@ -1,9 +1,34 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, FindOptionsWhere } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { AuditLog, AuditAction, AuditSeverity } from '../entities/audit-log.entity';
-import { EncryptionService } from '../encryption/encryption.service';
+import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
+import { AuditLog, AuditAction, AuditSeverity } from './audit-log.entity';
+import { EncryptionService } from './encryption.service';
+
+/**
+ * Actions that require durable persistence under HIPAA.
+ * PHI access and authentication events must never be lost on process crash.
+ */
+const DURABLE_ACTIONS = new Set<AuditAction>([
+  AuditAction.PHI_ACCESS,
+  AuditAction.PHI_CREATE,
+  AuditAction.PHI_UPDATE,
+  AuditAction.PHI_DELETE,
+  AuditAction.PHI_EXPORT,
+  AuditAction.PHI_PRINT,
+  AuditAction.LOGIN_SUCCESS,
+  AuditAction.LOGIN_FAILURE,
+  AuditAction.LOGOUT,
+  AuditAction.MFA_SUCCESS,
+  AuditAction.MFA_FAILURE,
+  AuditAction.PASSWORD_CHANGE,
+]);
+
+const WAL_KEY = 'audit:wal';
+const WAL_FLUSH_BATCH = 50;
+const WAL_FLUSH_INTERVAL = 5000; // 5 seconds
 
 export interface AuditLogOptions {
   userId?: string;
@@ -36,42 +61,70 @@ export interface AuditQueryOptions {
 }
 
 @Injectable()
-export class AuditService {
+export class AuditService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(AuditService.name);
-  private logBuffer: Partial<AuditLog>[] = [];
-  private readonly BUFFER_SIZE = 50;
-  private readonly FLUSH_INTERVAL = 5000; // 5 seconds
+  private redis: Redis;
+  private flushTimer: NodeJS.Timeout | null = null;
 
   constructor(
     @InjectRepository(AuditLog)
     private readonly auditLogRepository: Repository<AuditLog>,
     private readonly encryptionService: EncryptionService,
     private readonly eventEmitter: EventEmitter2,
-  ) {
-    this.startBufferFlush();
+    private readonly configService: ConfigService,
+  ) {}
+
+  onModuleInit(): void {
+    this.redis = new Redis({
+      host: this.configService.get<string>('REDIS_HOST', 'localhost'),
+      port: this.configService.get<number>('REDIS_PORT', 6379),
+      password: this.configService.get<string>('REDIS_PASSWORD'),
+      db: this.configService.get<number>('REDIS_DB', 0),
+      lazyConnect: true,
+    });
+
+    this.redis.on('error', (err: Error) => {
+      this.logger.error('Redis connection error in AuditService WAL', err);
+    });
+
+    this.startWalFlushWorker();
+  }
+
+  async onApplicationShutdown(signal?: string): Promise<void> {
+    this.logger.log(`Shutdown signal received (${signal ?? 'unknown'}). Flushing audit WAL...`);
+
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer);
+      this.flushTimer = null;
+    }
+
+    await this.flushWal();
+    this.redis.disconnect();
+    this.logger.log('Audit WAL flushed and Redis disconnected.');
   }
 
   /**
-   * Log a HIPAA audit event - non-blocking with buffered writes
+   * Log a HIPAA audit event.
+   * - CRITICAL/EMERGENCY: persisted directly to DB immediately.
+   * - All other events (including PHI_ACCESS and AUTHENTICATION): written to Redis WAL
+   *   for crash-safe durability, then flushed to PostgreSQL by the background worker.
    */
   async log(options: AuditLogOptions): Promise<void> {
-    const entry = this.buildAuditEntry(options);
+    const entry = await this.buildAuditEntry(options);
 
-    // Emit event for real-time monitoring
     this.eventEmitter.emit('audit.logged', entry);
 
-    // Immediately persist critical events; buffer the rest
-    if (
+    const isCritical =
       options.severity === AuditSeverity.CRITICAL ||
-      options.severity === AuditSeverity.EMERGENCY
-    ) {
+      options.severity === AuditSeverity.EMERGENCY;
+
+    if (isCritical) {
       await this.persistAuditLog(entry);
-    } else {
-      this.logBuffer.push(entry);
-      if (this.logBuffer.length >= this.BUFFER_SIZE) {
-        await this.flushBuffer();
-      }
+      return;
     }
+
+    // PHI_ACCESS, AUTHENTICATION, and all other non-critical events go through WAL
+    await this.writeToWal(entry);
   }
 
   /**
@@ -204,12 +257,72 @@ export class AuditService {
     };
   }
 
-  private buildAuditEntry(options: AuditLogOptions): Partial<AuditLog> {
+  /**
+   * Write an audit entry to the Redis WAL list (RPUSH).
+   * Redis is the primary durable store — entries survive process crashes
+   * and are flushed to PostgreSQL by the background worker.
+   */
+  async writeToWal(entry: Partial<AuditLog>): Promise<void> {
+    try {
+      await this.redis.rpush(WAL_KEY, JSON.stringify(entry));
+    } catch (error) {
+      this.logger.error('Failed to write audit entry to Redis WAL, persisting directly', error);
+      await this.persistAuditLog(entry);
+    }
+  }
+
+  /**
+   * Flush WAL entries from Redis to PostgreSQL in batches.
+   * Reads a batch, saves to DB, then trims the consumed entries from the list.
+   */
+  async flushWal(): Promise<void> {
+    try {
+      const raw = await this.redis.lrange(WAL_KEY, 0, WAL_FLUSH_BATCH - 1);
+      if (raw.length === 0) return;
+
+      const entries: Partial<AuditLog>[] = raw.map((r) => JSON.parse(r) as Partial<AuditLog>);
+
+      await this.auditLogRepository.save(entries);
+
+      // Remove only the entries we just flushed
+      await this.redis.ltrim(WAL_KEY, raw.length, -1);
+
+      this.logger.debug(`Flushed ${entries.length} audit entries from WAL to DB`);
+    } catch (error) {
+      this.logger.error('Failed to flush audit WAL to database', error);
+    }
+  }
+
+  /**
+   * Fetch the integrityHash of the most-recently inserted audit row.
+   * Used to chain each new entry to its predecessor.
+   */
+  private async getLatestIntegrityHash(): Promise<string | null> {
+    const latest = await this.auditLogRepository.findOne({
+      where: {},
+      order: { createdAt: 'DESC' },
+      select: ['integrityHash'],
+    });
+    return latest?.integrityHash ?? null;
+  }
+
+  /**
+   * Build a tamper-evident audit entry.
+   *
+   * The integrityHash covers: userId, action, resource, timestamp, AND the
+   * previousHash of the preceding row.  Any deletion or modification of a
+   * historical row breaks the chain and is detectable by a sequential scan.
+   */
+  private async buildAuditEntry(options: AuditLogOptions): Promise<Partial<AuditLog>> {
+    const previousHash = await this.getLatestIntegrityHash();
+    const timestamp = new Date().toISOString();
+
     const dataString = JSON.stringify({
       userId: options.userId,
       action: options.action,
       resource: options.resource,
-      timestamp: new Date().toISOString(),
+      timestamp,
+      previousHash,
     });
 
     return {
@@ -231,6 +344,7 @@ export class AuditService {
       deviceId: options.deviceId || null,
       correlationId: options.correlationId || null,
       isAnomaly: false,
+      previousHash,
       integrityHash: this.encryptionService.createIntegritySignature(dataString),
     };
   }
@@ -243,26 +357,9 @@ export class AuditService {
     }
   }
 
-  private async flushBuffer(): Promise<void> {
-    if (this.logBuffer.length === 0) return;
-
-    const toFlush = [...this.logBuffer];
-    this.logBuffer = [];
-
-    try {
-      await this.auditLogRepository.save(toFlush);
-    } catch (error) {
-      this.logger.error(`Failed to flush ${toFlush.length} audit logs`, error);
-      // Re-add to buffer on failure (up to a limit to avoid memory issues)
-      if (this.logBuffer.length < 500) {
-        this.logBuffer.unshift(...toFlush);
-      }
-    }
-  }
-
-  private startBufferFlush(): void {
-    setInterval(() => {
-      void this.flushBuffer();
-    }, this.FLUSH_INTERVAL);
+  private startWalFlushWorker(): void {
+    this.flushTimer = setInterval(() => {
+      void this.flushWal();
+    }, WAL_FLUSH_INTERVAL);
   }
 }

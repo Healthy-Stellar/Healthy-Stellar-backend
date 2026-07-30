@@ -1,126 +1,122 @@
 import { Injectable, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerException } from '@nestjs/throttler';
-import { THROTTLER_LIMIT, THROTTLER_TTL } from './throttler.decorator';
+import { THROTTLER_LIMIT, THROTTLER_TTL, THROTTLER_CATEGORY } from './throttler.decorator';
+import { PLAN_MULTIPLIERS, TenantSubscriptionPlan } from './throttler.config';
 import { Request, Response } from 'express';
+import { TenantConfigService } from '../../tenant-config/services/tenant-config.service';
 
 /**
- * Enhanced throttler guard with custom rate limits per endpoint
- * and proper header management
+ * Per-category rate limits.
+ * authenticated / unauthenticated values cover the two auth states.
+ * Subscription-plan multipliers (PLAN_MULTIPLIERS) are applied on top.
  */
+const CATEGORY_LIMITS: Record<string, { authenticated: number; unauthenticated: number }> = {
+  auth:    { authenticated: 5,   unauthenticated: 5   },
+  read:    { authenticated: 100, unauthenticated: 50  },
+  write:   { authenticated: 20,  unauthenticated: 20  },
+  admin:   { authenticated: 50,  unauthenticated: 50  },
+  default: { authenticated: 100, unauthenticated: 100 },
+};
+
 @Injectable()
 export class CustomThrottlerGuard extends ThrottlerGuard {
   constructor(
     protected readonly options: any,
     protected readonly storageService: any,
     protected readonly reflector: Reflector,
+    private readonly tenantConfigService: TenantConfigService,
   ) {
     super(options, storageService, reflector);
   }
 
   /**
-   * Get tracker key for rate limiting
+   * Override canActivate so we control the full request lifecycle.
+   * This bypasses the v6 ThrottlerGuard.canActivate which changed the
+   * handleRequest signature to receive a requestProps object rather than
+   * a plain ExecutionContext.
    */
-  protected async getTracker(req: Request): Promise<string> {
-    const user = (req as any).user;
-
-    if (user) {
-      // Use Stellar public key if available, otherwise user ID
-      return user.stellarPublicKey || user.userId || user.id || this.getIpFromRequest(req);
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    if (await this.shouldSkip(context)) {
+      return true;
     }
-
-    return this.getIpFromRequest(req);
+    return this.handleRequest(context);
   }
 
-  /**
-   * Extract IP address handling proxies
-   */
-  private getIpFromRequest(req: Request): string {
-    const forwardedFor = req.headers['x-forwarded-for'];
-    if (forwardedFor) {
-      const ips = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-      return ips.split(',')[0].trim();
+  protected async getTracker(req: Request): Promise<string> {
+    const user = (req as any).user;
+    if (user) {
+      const userId = user.stellarPublicKey || user.userId || user.id;
+      if (userId) return `user:${userId}`;
     }
+    const apiKey = (req as any).apiKey;
+    if (apiKey?.id) return `api_key:${apiKey.id}`;
+    return `ip:${this.ipFrom(req)}`;
+  }
 
-    const realIp = req.headers['x-real-ip'];
-    if (realIp) {
-      return Array.isArray(realIp) ? realIp[0] : realIp;
-    }
-
+  private ipFrom(req: Request): string {
+    const fwd = req.headers['x-forwarded-for'];
+    if (fwd) return (Array.isArray(fwd) ? fwd[0] : fwd).split(',')[0].trim();
+    const real = req.headers['x-real-ip'];
+    if (real) return Array.isArray(real) ? real[0] : real;
     return req.ip || req.socket?.remoteAddress || 'unknown';
   }
 
-  /**
-   * Handle rate limit logic with custom limits
-   */
   async handleRequest(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request>();
+    const request  = context.switchToHttp().getRequest<Request>();
     const response = context.switchToHttp().getResponse<Response>();
-    const handler = context.getHandler();
+    const handler  = context.getHandler();
     const classRef = context.getClass();
 
-    // Get custom rate limits from decorators
-    const customLimit = this.reflector.getAllAndOverride<number>(THROTTLER_LIMIT, [
-      handler,
-      classRef,
-    ]);
-    const customTtl = this.reflector.getAllAndOverride<number>(THROTTLER_TTL, [handler, classRef]);
+    // 1. Read decorator metadata
+    const category      = this.reflector.getAllAndOverride<string>(THROTTLER_CATEGORY, [handler, classRef]) ?? 'default';
+    const explicitLimit = this.reflector.getAllAndOverride<number>(THROTTLER_LIMIT,     [handler, classRef]);
+    const explicitTtl   = this.reflector.getAllAndOverride<number>(THROTTLER_TTL,       [handler, classRef]);
 
-    // Determine rate limit configuration
-    const user = (request as any).user;
-    let limit: number;
-    let ttl: number;
+    // 2. Resolve effective limit — explicit decorator wins, otherwise category × plan multiplier
+    const isAuthenticated = !!(request as any).user;
+    const categoryLimits  = CATEGORY_LIMITS[category] ?? CATEGORY_LIMITS.default;
+    const baseLimit       = isAuthenticated ? categoryLimits.authenticated : categoryLimits.unauthenticated;
 
-    if (customLimit !== undefined && customTtl !== undefined) {
-      // Use custom limits from decorator
-      limit = customLimit;
-      ttl = customTtl;
-    } else if (user) {
-      // Authenticated user default limits
-      limit = 200;
-      ttl = 60000; // 60 seconds
-    } else {
-      // Unauthenticated default limits
-      limit = 100;
-      ttl = 60000; // 60 seconds
-    }
+    const plan: TenantSubscriptionPlan = ((request as any).user?.tenantPlan as TenantSubscriptionPlan)
+      ?? ((request.headers as any)['x-tenant-plan'] as TenantSubscriptionPlan)
+      ?? 'starter';
+    const multiplier = PLAN_MULTIPLIERS[plan] ?? 1;
 
-    // Get tracker
-    const tracker = await this.getTracker(request);
-    const key = this.generateKey(context, tracker, ttl);
+    // 3. Build tenant-aware, per-endpoint Redis key
+    const tenantId       = (request.headers as any)['x-tenant-id'] ?? 'global';
 
-    // Check and increment rate limit
+    // Fetch tenant‑specific overrides
+    const tenantLimit = await this.tenantConfigService.getRateLimit(tenantId, category);
+    const tenantWindow = await this.tenantConfigService.getRateWindow(tenantId, category);
+
+    const limit = explicitLimit ?? (tenantLimit ?? Math.round(baseLimit * multiplier));
+    const ttl   = explicitTtl ?? (tenantWindow ?? 60_000);
+
+    const controllerName = classRef.name;
+    const methodName     = handler.name;
+    const tracker        = await this.getTracker(request);
+    const key            = `throttle:${category}:${tenantId}:${controllerName}:${methodName}:${tracker}`;
+
+    // 4. Increment counter and compute headers
     const { totalHits, timeToExpire } = await this.storageService.increment(key, ttl);
+    const remaining  = Math.max(0, limit - totalHits);
+    const resetTime  = Math.ceil(Date.now() / 1000) + Math.ceil(timeToExpire / 1000);
 
-    // Calculate remaining requests
-    const remaining = Math.max(0, limit - totalHits);
-    const resetTime = Math.ceil(Date.now() / 1000) + Math.ceil(timeToExpire / 1000);
-
-    // Set rate limit headers
-    response.setHeader('X-RateLimit-Limit', limit);
+    response.setHeader('X-RateLimit-Limit',     limit);
     response.setHeader('X-RateLimit-Remaining', remaining);
-    response.setHeader('X-RateLimit-Reset', resetTime);
+    response.setHeader('X-RateLimit-Reset',     resetTime);
+    response.setHeader('X-RateLimit-Category',  category);
 
-    // Check if limit exceeded
+    // 5. Enforce limit
     if (totalHits > limit) {
       const retryAfter = Math.ceil(timeToExpire / 1000);
       response.setHeader('Retry-After', retryAfter);
-
-      throw new ThrottlerException(`Rate limit exceeded. Try again in ${retryAfter} seconds.`);
+      throw new ThrottlerException(
+        `Rate limit exceeded for ${category} endpoints. Retry after ${retryAfter}s.`,
+      );
     }
 
     return true;
-  }
-
-  /**
-   * Generate storage key
-   */
-  private generateKey(context: ExecutionContext, tracker: string, ttl: number): string {
-    const request = context.switchToHttp().getRequest();
-    const handler = context.getHandler();
-    const className = context.getClass().name;
-    const methodName = handler.name;
-
-    return `throttle:${className}:${methodName}:${tracker}:${ttl}`;
   }
 }

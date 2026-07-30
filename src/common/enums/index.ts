@@ -3,6 +3,7 @@ export enum ClaimStatus {
   PENDING = 'pending',
   SUBMITTED = 'submitted',
   ACCEPTED = 'accepted',
+  APPROVED = 'approved',
   REJECTED = 'rejected',
   PAID = 'paid',
   PARTIALLY_PAID = 'partially_paid',
@@ -137,4 +138,18 @@ export enum AlertType {
   GUIDELINE_RECOMMENDATION = 'guideline_recommendation',
   CONTRAINDICATION = 'contraindication',
   DUPLICATE_THERAPY = 'duplicate_therapy',
+}
+
+export enum SubscriptionCadence {
+  MONTHLY = 'monthly',
+  QUARTERLY = 'quarterly',
+  ANNUAL = 'annual',
+}
+
+export enum SubscriptionStatus {
+  ACTIVE = 'active',
+  PAST_DUE = 'past_due',
+  CANCELLED = 'cancelled',
+  SUSPENDED = 'suspended',
+  EXPIRED = 'expired',
 }

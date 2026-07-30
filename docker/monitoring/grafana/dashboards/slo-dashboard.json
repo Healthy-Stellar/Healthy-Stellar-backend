@@ -1,0 +1,119 @@
+{
+  "uid": "slo-dashboard",
+  "title": "SLO Dashboard — Healthy Stellar",
+  "description": "Error budget consumption and burn rates for API Availability, API Latency p99, and Stellar Tx Success SLOs.",
+  "tags": ["slo", "error-budget", "medchain"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": {
+    "list": [
+      {
+        "name": "SLO Alerts",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "enable": true,
+        "expr": "ALERTS{slo=~\".+\", alertstate=\"firing\"}",
+        "iconColor": "red",
+        "titleFormat": "{{ alertname }}"
+      }
+    ]
+  },
+  "panels": [
+
+    { "type": "row", "title": "SLO-1 — API Availability (target 99.9 %)", "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 }, "id": 1 },
+
+    {
+      "id": 2, "type": "gauge", "title": "Error Budget Remaining",
+      "gridPos": { "x": 0, "y": 1, "w": 4, "h": 6 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "minVizValue": 0, "maxVizValue": 100, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": 0 }, { "color": "yellow", "value": 25 }, { "color": "green", "value": 50 }] } },
+      "targets": [{ "expr": "clamp_min((1 - slo:api_availability:error_budget_consumed:30d) * 100, 0)", "legendFormat": "Budget %" }]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Current Error Ratio (1 h)",
+      "gridPos": { "x": 4, "y": 1, "w": 4, "h": 6 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 0.001 }, { "color": "red", "value": 0.0144 }] } },
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
+      "targets": [{ "expr": "slo:api_availability:error_ratio:1h", "legendFormat": "Error ratio" }]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Burn Rate (1 h vs 6 h)",
+      "gridPos": { "x": 8, "y": 1, "w": 16, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "legend": { "displayMode": "list" } },
+      "targets": [
+        { "expr": "slo:api_availability:error_ratio:1h / 0.001",  "legendFormat": "1 h burn rate" },
+        { "expr": "slo:api_availability:error_ratio:6h / 0.001",  "legendFormat": "6 h burn rate" },
+        { "expr": "14.4", "legendFormat": "Fast-burn threshold (14.4×)" },
+        { "expr": "6",    "legendFormat": "Slow-burn threshold (6×)" }
+      ]
+    },
+
+    { "type": "row", "title": "SLO-2 — API Latency p99 < 1 s (target 99 %)", "gridPos": { "x": 0, "y": 7, "w": 24, "h": 1 }, "id": 10 },
+
+    {
+      "id": 11, "type": "gauge", "title": "Error Budget Remaining",
+      "gridPos": { "x": 0, "y": 8, "w": 4, "h": 6 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "minVizValue": 0, "maxVizValue": 100, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": 0 }, { "color": "yellow", "value": 25 }, { "color": "green", "value": 50 }] } },
+      "targets": [{ "expr": "clamp_min((1 - slo:api_latency:error_budget_consumed:30d) * 100, 0)", "legendFormat": "Budget %" }]
+    },
+    {
+      "id": 12, "type": "stat", "title": "Slow-Request Ratio (1 h)",
+      "gridPos": { "x": 4, "y": 8, "w": 4, "h": 6 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.144 }] } },
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
+      "targets": [{ "expr": "slo:api_latency:bad_ratio:1h", "legendFormat": "Slow ratio" }]
+    },
+    {
+      "id": 13, "type": "timeseries", "title": "Latency p99 over time",
+      "gridPos": { "x": 8, "y": 8, "w": 16, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99 latency" },
+        { "expr": "1", "legendFormat": "SLO threshold (1 s)" }
+      ]
+    },
+
+    { "type": "row", "title": "SLO-3 — Stellar Tx Success (target 99.5 %)", "gridPos": { "x": 0, "y": 14, "w": 24, "h": 1 }, "id": 20 },
+
+    {
+      "id": 21, "type": "gauge", "title": "Error Budget Remaining",
+      "gridPos": { "x": 0, "y": 15, "w": 4, "h": 6 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "minVizValue": 0, "maxVizValue": 100, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": 0 }, { "color": "yellow", "value": 25 }, { "color": "green", "value": 50 }] } },
+      "targets": [{ "expr": "clamp_min((1 - slo:stellar_tx:error_budget_consumed:30d) * 100, 0)", "legendFormat": "Budget %" }]
+    },
+    {
+      "id": 22, "type": "stat", "title": "Tx Failure Ratio (1 h)",
+      "gridPos": { "x": 4, "y": 15, "w": 4, "h": 6 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 0.005 }, { "color": "red", "value": 0.072 }] } },
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
+      "targets": [{ "expr": "slo:stellar_tx:error_ratio:1h", "legendFormat": "Failure ratio" }]
+    },
+    {
+      "id": 23, "type": "timeseries", "title": "Stellar Tx Burn Rate (1 h vs 6 h)",
+      "gridPos": { "x": 8, "y": 15, "w": 16, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "expr": "slo:stellar_tx:error_ratio:1h / 0.005",  "legendFormat": "1 h burn rate" },
+        { "expr": "slo:stellar_tx:error_ratio:6h / 0.005",  "legendFormat": "6 h burn rate" },
+        { "expr": "14.4", "legendFormat": "Fast-burn threshold (14.4×)" },
+        { "expr": "6",    "legendFormat": "Slow-burn threshold (6×)" }
+      ]
+    },
+
+    { "type": "row", "title": "Error Budget Summary", "gridPos": { "x": 0, "y": 21, "w": 24, "h": 1 }, "id": 30 },
+
+    {
+      "id": 31, "type": "table", "title": "30-Day Error Budget Consumption",
+      "gridPos": { "x": 0, "y": 22, "w": 24, "h": 6 },
+      "options": { "sortBy": [{ "displayName": "SLO", "desc": false }] },
+      "targets": [
+        { "expr": "slo:api_availability:error_budget_consumed:30d * 100",  "legendFormat": "API Availability",   "instant": true },
+        { "expr": "slo:api_latency:error_budget_consumed:30d * 100",        "legendFormat": "API Latency p99",    "instant": true },
+        { "expr": "slo:stellar_tx:error_budget_consumed:30d * 100",         "legendFormat": "Stellar Tx Success", "instant": true }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 100 }] } } }
+    }
+  ]
+}

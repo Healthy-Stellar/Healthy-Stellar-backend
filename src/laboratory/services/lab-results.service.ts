@@ -1,12 +1,17 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { LabResult, ResultStatus } from '../entities/lab-result.entity';
 import { LabResultValue, AbnormalFlag } from '../entities/lab-result-value.entity';
 import { LabOrderItem, OrderItemStatus } from '../entities/lab-order-item.entity';
 import { LabTestParameter } from '../entities/lab-test-parameter.entity';
 import { CreateLabResultDto } from '../dto/create-lab-result.dto';
 import { CriticalAlertsService } from './critical-alerts.service';
+import {
+  CRITICAL_VALUE_DETECTED,
+  CriticalValueDetectedEvent,
+} from '../events/critical-value-detected.event';
 
 @Injectable()
 export class LabResultsService {
@@ -22,6 +27,7 @@ export class LabResultsService {
     @InjectRepository(LabTestParameter)
     private parameterRepository: Repository<LabTestParameter>,
     private criticalAlertsService: CriticalAlertsService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async create(createDto: CreateLabResultDto, userId: string): Promise<LabResult> {
@@ -224,10 +230,25 @@ export class LabResultsService {
         value.abnormalFlag === AbnormalFlag.CRITICAL_LOW ||
         value.abnormalFlag === AbnormalFlag.CRITICAL_HIGH
       ) {
-        await this.criticalAlertsService.create({
+        const alert = await this.criticalAlertsService.create({
           resultValueId: value.id,
           notifiedTo: providerId,
         });
+
+        const patientId = labResult.orderItem?.labOrder?.patientId ?? 'unknown';
+
+        this.eventEmitter.emit(
+          CRITICAL_VALUE_DETECTED,
+          new CriticalValueDetectedEvent(
+            alert.id,
+            value.id,
+            providerId,
+            value.parameter?.parameterName ?? 'Unknown test',
+            value.numericValue,
+            value.parameter?.unit ?? '',
+            patientId,
+          ),
+        );
       }
     }
   }

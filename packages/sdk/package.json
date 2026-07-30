@@ -21,6 +21,11 @@
       "import": "./dist/apis/index.js",
       "require": "./dist/apis/index.js",
       "types": "./dist/apis/index.d.ts"
+    },
+    "./graphql": {
+      "import": "./dist/graphql/index.js",
+      "require": "./dist/graphql/index.js",
+      "types": "./dist/graphql/index.d.ts"
     }
   },
   "files": [

@@ -201,6 +201,35 @@ export class CreateDisasterIncidentDto {
   notes?: string;
 }
 
+export class PanicAlertDto {
+  @IsOptional()
+  @IsUUID()
+  patientId?: string;
+
+  @IsOptional()
+  @IsString()
+  patientLocation?: string;
+
+  @IsString()
+  emergencyType: string;
+
+  @IsOptional()
+  @IsUUID()
+  requestingStaffId?: string;
+
+  @IsOptional()
+  @IsString()
+  requestingStaffName?: string;
+
+  @IsOptional()
+  @IsString()
+  ward?: string;
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
 export class UpdateDisasterIncidentStatusDto {
   @IsEnum(DisasterIncidentStatus)
   status: DisasterIncidentStatus;

@@ -18,6 +18,10 @@ export class AuditEventDto {
   @IsOptional()
   resourceId?: string;
 
+  @IsUUID()
+  @IsOptional()
+  tenantId?: string;
+
   @IsString()
   @IsOptional()
   resourceType?: string;

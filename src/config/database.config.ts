@@ -3,17 +3,18 @@ import { TypeOrmOptionsFactory, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { AuditSubscriber } from '../common/subscribers/audit.subscriber';
+import { createTypeOrmRetryCallback, MAX_RETRIES, RETRY_DELAY_MS } from '../common/utils/connection-retry.util';
 
 /**
  * TypeORM Database Configuration
- * HIPAA-Compliant PostgreSQL Configuration
  *
- * Security Requirements:
- * - synchronize: false in ALL environments (schema changes via migrations only)
- * - SSL/TLS encryption for production
- * - Connection pooling with limits
- * - Query timeout enforcement
- * - Audit logging enabled
+ * Connection pool sizing guidance (issue #574):
+ *   Development  — DB_POOL_MIN=2,  DB_POOL_MAX=10
+ *   Staging      — DB_POOL_MIN=5,  DB_POOL_MAX=20
+ *   Production   — DB_POOL_MIN=10, DB_POOL_MAX=50  (tune against Postgres max_connections)
+ *
+ * Rule of thumb: (DB_POOL_MAX × worker_processes) < pg max_connections × 0.8
+ * Monitor pg_pool_size / pg_pool_checked_out Prometheus gauges to detect exhaustion.
  */
 @Injectable()
 export class DatabaseConfig implements TypeOrmOptionsFactory {
@@ -21,7 +22,11 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
 
   createTypeOrmOptions(): TypeOrmModuleOptions {
     const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
-    const sslEnabled = this.configService.get<string>('DB_SSL_ENABLED', 'false') === 'true';
+    const isStaging = this.configService.get<string>('NODE_ENV') === 'staging';
+
+    // Production-safe pool defaults: larger pool for production/staging workloads
+    const defaultPoolMax = isProduction ? 50 : isStaging ? 20 : 10;
+    const defaultPoolMin = isProduction ? 10 : isStaging ? 5 : 2;
 
     // Validate required configuration
     const requiredVars = ['DB_HOST', 'DB_PORT', 'DB_USERNAME', 'DB_PASSWORD', 'DB_NAME'];
@@ -39,15 +44,20 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       password: this.configService.get<string>('DB_PASSWORD'),
       database: this.configService.get<string>('DB_NAME'),
 
-      // SSL/TLS Configuration for encrypted connections (HIPAA requirement)
-      ssl: sslEnabled
+      // SSL: always enabled in production; opt-in via DB_SSL_ENABLED in other envs
+      ssl: isProduction
         ? {
-            rejectUnauthorized: isProduction,
+            rejectUnauthorized: true,
             ca: this.configService.get<string>('DB_SSL_CA'),
             cert: this.configService.get<string>('DB_SSL_CERT'),
             key: this.configService.get<string>('DB_SSL_KEY'),
           }
-        : false,
+        : this.configService.get<string>('DB_SSL_ENABLED') === 'true'
+          ? {
+              rejectUnauthorized: false,
+              ca: this.configService.get<string>('DB_SSL_CA'),
+            }
+          : false,
 
       // Entity and Migration paths
       entities: [__dirname + '/../**/*.entity{.ts,.js}'],
@@ -55,100 +65,62 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       subscribers: [AuditSubscriber],
 
       // CRITICAL: synchronize MUST be false in ALL environments
-      // All schema changes MUST go through versioned migrations
       synchronize: false,
-
-      // Migrations should be run manually with proper audit trail
       migrationsRun: false,
 
-      // Logging configuration for audit trail
-      // Logging configuration for audit trail and query profiling
-      logging: isProduction
-        ? ['error', 'warn', 'migration']
-        : ['query', 'error', 'warn', 'migration'],
-      logger: 'advanced-console',
+      // logging: ['error'] in production, ['query', 'error'] in development
+      logging: isProduction ? ['error'] : ['query', 'error'],
 
-      // Connection pool configuration for HIPAA compliance
+      // Connection pool — env vars override environment-aware defaults (see class comment)
       extra: {
-        // Maximum connection pool size
-        max: this.configService.get<number>('DB_POOL_MAX', 20),
-        // Minimum connection pool size
-        min: this.configService.get<number>('DB_POOL_MIN', 2),
-        // Connection timeout (default 2 seconds)
+        max: this.configService.get<number>('DB_POOL_MAX', defaultPoolMax),
+        min: this.configService.get<number>('DB_POOL_MIN', defaultPoolMin),
         connectionTimeoutMillis: this.configService.get<number>('DB_CONNECTION_TIMEOUT_MS', 2000),
-        // Idle timeout (default 30 seconds)
         idleTimeoutMillis: this.configService.get<number>('DB_IDLE_TIMEOUT_MS', 30000),
-        // Statement timeout (60 seconds) - prevent long-running queries
-        statement_timeout: 60000,
-        // Application name for audit logging
+        statement_timeout: this.configService.get<number>('DB_STATEMENT_TIMEOUT_MS', 10000),
+        query_timeout: this.configService.get<number>('DB_QUERY_TIMEOUT_MS', 30000),
         application_name: 'healthy-stellar-backend',
-        // Enable SSL mode
-        ...(sslEnabled && { sslmode: 'require' }),
       },
 
-      // Connection retry strategy
-      retryAttempts: 3,
-      retryDelay: 3000,
+      retryAttempts: MAX_RETRIES,
+      retryDelay: RETRY_DELAY_MS,
+      toRetry: createTypeOrmRetryCallback(),
 
-      // Slow query profiling threshold (milliseconds)
       maxQueryExecutionTime: this.configService.get<number>('DB_SLOW_QUERY_MS', 100),
-
-      // Enable automatic query result caching
-      cache: {
-        type: 'database',
-        tableName: 'query_cache',
-        duration: 60000, // 1 minute
-      },
     };
   }
 }
 
 /**
- * DataSource configuration for TypeORM CLI (migrations)
- * Used by: npm run migration:generate, migration:run, migration:revert
- *
- * Configuration is loaded from environment variables via DATABASE_URL or individual vars
+ * DataSource configuration for TypeORM CLI (migrations).
+ * Used by: npm run migration:run, migration:revert, migration:generate
  */
 export const dataSourceOptions: DataSourceOptions = {
   type: 'postgres',
-
-  // Support DATABASE_URL for simplified configuration
   url: process.env.DATABASE_URL,
-
-  // Fallback to individual environment variables
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432', 10),
   username: process.env.DB_USERNAME,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
 
-  // SSL Configuration
+  // SSL enabled for production
   ssl:
-    process.env.DB_SSL_ENABLED === 'true'
-      ? {
-          rejectUnauthorized: process.env.NODE_ENV === 'production',
-          ca: process.env.DB_SSL_CA,
-          cert: process.env.DB_SSL_CERT,
-          key: process.env.DB_SSL_KEY,
-        }
-      : false,
+    process.env.NODE_ENV === 'production'
+      ? { rejectUnauthorized: true }
+      : process.env.DB_SSL_ENABLED === 'true'
+        ? { rejectUnauthorized: false }
+        : false,
 
-  // Entity and Migration paths
   entities: [__dirname + '/../**/*.entity{.ts,.js}'],
   migrations: [__dirname + '/../migrations/*{.ts,.js}'],
   subscribers: [AuditSubscriber],
 
-  // CRITICAL: synchronize MUST be false
   synchronize: false,
 
-  // Enable logging in development
-  logging: process.env.NODE_ENV !== 'production',
-  
-  // Enable detailed logging in development for profiling
   logging:
-    process.env.NODE_ENV === 'production'
-      ? ['error', 'warn', 'migration']
-      : ['query', 'error', 'warn', 'migration'],
+    process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'error'],
+
   maxQueryExecutionTime: parseInt(process.env.DB_SLOW_QUERY_MS || '100', 10),
 };
 
