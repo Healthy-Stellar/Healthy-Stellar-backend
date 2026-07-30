@@ -13,6 +13,7 @@ import { User } from '../auth/entities/user.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
 import { TenantBrandingService } from '../tenant-config/services/tenant-branding.service';
 import * as PDFDocument from 'pdfkit';
+import * as ExcelJS from 'exceljs';
 import { create as ipfsHttpClient } from 'ipfs-http-client';
 import { v4 as uuidv4 } from 'uuid';
 import { PassThrough } from 'stream';
@@ -346,5 +347,154 @@ main
     });
 
     return Buffer.from(csv, 'utf-8');
+  }
+
+  /**
+   * Builds a multi-sheet XLSX workbook mirroring the sections used by the PDF/CSV
+   * exports (Medical Records, Access Grants, Audit Logs) plus a Summary overview
+   * sheet and a Billing Summary sheet sourced from the billing module. Date and
+   * currency columns use native Excel number formats so they render/sort/filter
+   * correctly instead of as plain text.
+   */
+  private async generateXlsxBuffer(
+    patient: User,
+    records: MedicalRecord[],
+    grants: AccessGrant[],
+    logs: AuditLogEntity[],
+    billings: Billing[],
+  ): Promise<Buffer> {
+    const DATE_FORMAT = 'yyyy-mm-dd';
+    const DATETIME_FORMAT = 'yyyy-mm-dd hh:mm:ss';
+    const CURRENCY_FORMAT = '"$"#,##0.00';
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Healthy Stellar Reports';
+    workbook.created = new Date();
+
+    const styleHeader = (worksheet: ExcelJS.Worksheet) => {
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true };
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE0E0E0' },
+        };
+      });
+    };
+
+    // ── Summary sheet ──────────────────────────────────────────────────────
+    const summarySheet = workbook.addWorksheet('Summary');
+    summarySheet.columns = [
+      { header: 'Field', key: 'field', width: 28 },
+      { header: 'Value', key: 'value', width: 40 },
+    ];
+    summarySheet.addRows([
+      { field: 'Patient Name', value: `${patient?.firstName || ''} ${patient?.lastName || ''}`.trim() },
+      { field: 'Patient ID', value: patient?.id || '' },
+      { field: 'Generated On', value: new Date() },
+      { field: 'Medical Records Count', value: records.length },
+      { field: 'Access Grants Count', value: grants.length },
+      { field: 'Audit Log Entries', value: logs.length },
+      { field: 'Billing Records Count', value: billings.length },
+    ]);
+    summarySheet.getCell('B4').numFmt = DATETIME_FORMAT; // "Generated On" row
+    styleHeader(summarySheet);
+
+    // ── Medical Records sheet ──────────────────────────────────────────────
+    const recordsSheet = workbook.addWorksheet('Medical Records');
+    recordsSheet.columns = [
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Type', key: 'type', width: 16 },
+      { header: 'Title', key: 'title', width: 30 },
+      { header: 'Transaction Hash', key: 'txHash', width: 44 },
+    ];
+    records.forEach((record) => {
+      const metadataHash = (record.metadata as Record<string, string>)?.transactionHash || '';
+      recordsSheet.addRow({
+        date: new Date(record.createdAt),
+        type: record.recordType?.toUpperCase() || 'UNKNOWN',
+        title: record.title || '',
+        txHash: metadataHash,
+      });
+    });
+    recordsSheet.getColumn('date').numFmt = DATE_FORMAT;
+    styleHeader(recordsSheet);
+
+    // ── Access Grants sheet ──────────────────────────────────────────────
+    const grantsSheet = workbook.addWorksheet('Access Grants');
+    grantsSheet.columns = [
+      { header: 'Granted To', key: 'grantedTo', width: 26 },
+      { header: 'Status', key: 'status', width: 14 },
+      { header: 'Access Level', key: 'accessLevel', width: 16 },
+      { header: 'Expires At', key: 'expiresAt', width: 14 },
+      { header: 'Transaction Hash', key: 'txHash', width: 44 },
+    ];
+    grants.forEach((grant) => {
+      const isExpired = grant.expiresAt && new Date(grant.expiresAt) < new Date();
+      grantsSheet.addRow({
+        grantedTo: grant.granteeId,
+        status: isExpired ? 'EXPIRED' : grant.status,
+        accessLevel: grant.accessLevel,
+        expiresAt: grant.expiresAt ? new Date(grant.expiresAt) : null,
+        txHash: grant.sorobanTxHash || '',
+      });
+    });
+    grantsSheet.getColumn('expiresAt').numFmt = DATE_FORMAT;
+    styleHeader(grantsSheet);
+
+    // ── Audit Logs sheet ───────────────────────────────────────────────────
+    const logsSheet = workbook.addWorksheet('Audit Logs');
+    logsSheet.columns = [
+      { header: 'Timestamp', key: 'timestamp', width: 20 },
+      { header: 'Action', key: 'action', width: 24 },
+      { header: 'Description', key: 'description', width: 40 },
+      { header: 'Transaction Hash', key: 'txHash', width: 44 },
+    ];
+    logs.forEach((log) => {
+      const metadataHash = log.details?.transactionHash || log.metadata?.transactionHash || '';
+      logsSheet.addRow({
+        timestamp: new Date(log.timestamp),
+        action: log.action,
+        description: log.description || '',
+        txHash: metadataHash,
+      });
+    });
+    logsSheet.getColumn('timestamp').numFmt = DATETIME_FORMAT;
+    styleHeader(logsSheet);
+
+    // ── Billing Summary sheet ──────────────────────────────────────────────
+    const billingSheet = workbook.addWorksheet('Billing Summary');
+    billingSheet.columns = [
+      { header: 'Invoice Number', key: 'invoiceNumber', width: 20 },
+      { header: 'Service Date', key: 'serviceDate', width: 14 },
+      { header: 'Provider', key: 'provider', width: 24 },
+      { header: 'Total Charges', key: 'totalCharges', width: 16 },
+      { header: 'Total Payments', key: 'totalPayments', width: 16 },
+      { header: 'Balance', key: 'balance', width: 16 },
+      { header: 'Status', key: 'status', width: 12 },
+      { header: 'Due Date', key: 'dueDate', width: 14 },
+    ];
+    billings.forEach((billing) => {
+      billingSheet.addRow({
+        invoiceNumber: billing.invoiceNumber,
+        serviceDate: billing.serviceDate ? new Date(billing.serviceDate) : null,
+        provider: billing.providerName,
+        totalCharges: Number(billing.totalCharges),
+        totalPayments: Number(billing.totalPayments),
+        balance: Number(billing.balance),
+        status: billing.status,
+        dueDate: billing.dueDate ? new Date(billing.dueDate) : null,
+      });
+    });
+    billingSheet.getColumn('serviceDate').numFmt = DATE_FORMAT;
+    billingSheet.getColumn('dueDate').numFmt = DATE_FORMAT;
+    billingSheet.getColumn('totalCharges').numFmt = CURRENCY_FORMAT;
+    billingSheet.getColumn('totalPayments').numFmt = CURRENCY_FORMAT;
+    billingSheet.getColumn('balance').numFmt = CURRENCY_FORMAT;
+    styleHeader(billingSheet);
+
+    const arrayBuffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(arrayBuffer);
   }
 }

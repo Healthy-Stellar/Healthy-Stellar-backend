@@ -55,11 +55,11 @@ main
   controllers: [PatientsController, PatientProvidersController, PatientPortalController],
   providers: [
     PatientsService,
-    PatientTimelineService,
     PatientPrivacyGuard,
     GeoRestrictionGuard,
-    PatientProvidersService,
-    PatientPortalService,
+    GuardianService,
+    GuardianAccessGuard,
+    GuardianAgeOutTask,
   ],
   exports: [PatientsService, PatientTimelineService, GeoRestrictionGuard, PatientPortalService],
  main
