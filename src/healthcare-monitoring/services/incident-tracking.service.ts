@@ -8,6 +8,7 @@ import {
   IncidentStatus,
 } from '../entities/healthcare-incident.entity';
 import { NotificationService } from './notification.service';
+import { RunbookService, ResolvedRunbook } from '../../operator-runbook/services/runbook.service';
 
 @Injectable()
 export class IncidentTrackingService {
@@ -17,6 +18,7 @@ export class IncidentTrackingService {
     @InjectRepository(HealthcareIncident)
     private incidentRepository: Repository<HealthcareIncident>,
     private notificationService: NotificationService,
+    private runbookService: RunbookService,
   ) {}
 
   async reportIncident(incidentData: {
@@ -52,16 +54,20 @@ export class IncidentTrackingService {
 
     const savedIncident = await this.incidentRepository.save(incident);
 
+    const runbook = await this.runbookService.resolveForCategory(incidentData.incidentType);
+
     // Send notifications for high severity incidents
     if (
       savedIncident.severity === IncidentSeverity.MAJOR ||
       savedIncident.severity === IncidentSeverity.CATASTROPHIC
     ) {
-      await this.notificationService.sendIncidentNotification(savedIncident);
+      await this.notificationService.sendIncidentNotification(savedIncident, runbook);
     }
 
-    this.logger.log(`Healthcare incident reported: ${savedIncident.incidentNumber}`);
-    return savedIncident;
+    this.logger.log(
+      `Healthcare incident reported: ${savedIncident.incidentNumber} | runbook: ${runbook.runbookId}`,
+    );
+    return { ...savedIncident, runbook };
   }
 
   async assignIncident(
@@ -88,7 +94,7 @@ export class IncidentTrackingService {
   async startInvestigation(
     incidentId: string,
     investigatorId: string,
-  ): Promise<HealthcareIncident> {
+  ): Promise<HealthcareIncident & { runbook: ResolvedRunbook }> {
     const incident = await this.incidentRepository.findOne({ where: { id: incidentId } });
     if (!incident) {
       throw new Error('Incident not found');
@@ -104,7 +110,10 @@ export class IncidentTrackingService {
       description: 'Investigation started',
     });
 
-    return await this.incidentRepository.save(incident);
+    const saved = await this.incidentRepository.save(incident);
+    const runbook = await this.runbookService.resolveForCategory(saved.incidentType);
+    await this.notificationService.sendIncidentNotification(saved, runbook);
+    return { ...saved, runbook };
   }
 
   async updateInvestigation(
