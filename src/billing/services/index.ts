@@ -8,3 +8,4 @@ export * from './report.service';
 export * from './invoice-pdf.service';
 export * from './remittance.service';
 export * from './dispute.service';
+export * from './subscription.service';

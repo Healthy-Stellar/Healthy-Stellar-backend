@@ -14,6 +14,8 @@ import {
   RevenueReport,
   Remittance,
   BillingDispute,
+  SubscriptionPlan,
+  PatientSubscription,
 } from './entities';
 
 import {
@@ -27,6 +29,7 @@ import {
   InvoicePdfService,
   RemittanceService,
   DisputeService,
+  SubscriptionService,
 } from './services';
 
 import {
@@ -40,6 +43,7 @@ import {
   ReportController,
   RemittanceController,
   DisputeController,
+  SubscriptionController,
 } from './controllers';
 
 @Module({
@@ -57,6 +61,8 @@ import {
       RevenueReport,
       Remittance,
       BillingDispute,
+      SubscriptionPlan,
+      PatientSubscription,
     ]),
   ],
   controllers: [
@@ -70,6 +76,7 @@ import {
     ReportController,
     RemittanceController,
     DisputeController,
+    SubscriptionController,
   ],
   providers: [
     MedicalCodeService,
@@ -82,6 +89,7 @@ import {
     InvoicePdfService,
     RemittanceService,
     DisputeService,
+    SubscriptionService,
   ],
   exports: [
     MedicalCodeService,
@@ -94,6 +102,7 @@ import {
     InvoicePdfService,
     RemittanceService,
     DisputeService,
+    SubscriptionService,
   ],
 })
 export class BillingModule {}

@@ -139,3 +139,17 @@ export enum AlertType {
   CONTRAINDICATION = 'contraindication',
   DUPLICATE_THERAPY = 'duplicate_therapy',
 }
+
+export enum SubscriptionCadence {
+  MONTHLY = 'monthly',
+  QUARTERLY = 'quarterly',
+  ANNUAL = 'annual',
+}
+
+export enum SubscriptionStatus {
+  ACTIVE = 'active',
+  PAST_DUE = 'past_due',
+  CANCELLED = 'cancelled',
+  SUSPENDED = 'suspended',
+  EXPIRED = 'expired',
+}
