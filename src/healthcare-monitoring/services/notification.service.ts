@@ -1,7 +1,11 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ClinicalAlert } from '../entities/clinical-alert.entity';
 import { HealthcareIncident } from '../entities/healthcare-incident.entity';
+ feat/tenant-branding
 import { ResolvedRunbook } from '../../operator-runbook/services/runbook.service';
+
+import { NotificationsService } from '../../notifications/services/notifications.service';
+main
 
 @Injectable()
 export class NotificationService {
@@ -46,10 +50,13 @@ export class NotificationService {
     runbook?: ResolvedRunbook,
   ): Promise<void> {
     try {
+ feat/tenant-branding
       const runbookSummary = runbook
         ? `\n\nRunbook: ${runbook.runbookTitle} (${runbook.runbookId})\nURL: ${runbook.runbookUrl}\nSteps:\n${runbook.steps.join('\n')}`
         : '';
 
+
+main
       await this.sendEmailNotification({
         title: `Healthcare Incident Reported: ${incident.incidentNumber}`,
         message: `${incident.title}\n\nSeverity: ${incident.severity}\nDepartment: ${incident.department}\nDescription: ${incident.description}${runbookSummary}`,
