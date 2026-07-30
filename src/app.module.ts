@@ -52,6 +52,8 @@ import { MetricsModule } from './metrics/metrics.module';
 import { HttpMetricsInterceptor } from './metrics/interceptors/http-metrics.interceptor';
 import { LoggerModule } from './common/logger/logger.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
+import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-monitoring.module';
+import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
 
 @Module({
   imports: [
@@ -110,6 +112,8 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
     ResearchExportModule,
     ReconciliationModule,
     GraphqlModule,
+    HealthcareMonitoringModule,
+    OperatorRunbookModule,
   ],
   controllers: [AppController],
   providers: [
