@@ -229,6 +229,102 @@ describe('EventStoreService', () => {
       expect(snap!.state).toEqual({ patientId: 'p1', cid: 'Qm1' });
     });
   });
+
+  // ── streamAll ───────────────────────────────────────────────────────────────
+
+  describe('streamAll', () => {
+    /**
+     * A stateful fake query builder that mimics what Postgres would actually
+     * do for `WHERE global_sequence > :cursor ORDER BY global_sequence ASC
+     * LIMIT :take`: it re-evaluates the filter/limit against the full row
+     * set on every call, exactly like the real per-page SELECT does.
+     */
+    function buildPaginatedQb(rows: EventEntity[]) {
+      let cursor = -Infinity;
+      let limit = rows.length;
+      const qb: Partial<SelectQueryBuilder<EventEntity>> = {};
+      qb.where = jest.fn().mockImplementation((_cond: string, params: { cursor: number }) => {
+        cursor = params.cursor;
+        return qb;
+      });
+      qb.orderBy = jest.fn().mockReturnValue(qb);
+      qb.take = jest.fn().mockImplementation((n: number) => {
+        limit = n;
+        return qb;
+      });
+      qb.getMany = jest.fn().mockImplementation(() =>
+        Promise.resolve(
+          rows
+            .filter((r) => r.globalSequence > cursor)
+            .sort((a, b) => a.globalSequence - b.globalSequence)
+            .slice(0, limit),
+        ),
+      );
+      return qb;
+    }
+
+    it('streams interleaved events from multiple aggregates fully, exactly once, and in global order across pages', async () => {
+      // Two aggregates whose per-aggregate `version` numbers deliberately
+      // collide (both have a v1, v2, ...), which is exactly what made the
+      // old `WHERE version > :cursor` pagination unsafe: a cursor derived
+      // from one aggregate's version silently skipped/duplicated events
+      // belonging to the other. `globalSequence` is unique and ordered
+      // across the whole table, so it must not collide.
+      const rows: EventEntity[] = [
+        makeEvent({ id: 'e1', aggregateId: 'agg-A', version: 1, globalSequence: 1, eventType: 'RecordUploaded' }),
+        makeEvent({ id: 'e2', aggregateId: 'agg-B', version: 1, globalSequence: 2, eventType: 'RecordUploaded' }),
+        makeEvent({ id: 'e3', aggregateId: 'agg-A', version: 2, globalSequence: 3, eventType: 'AccessGranted' }),
+        makeEvent({ id: 'e4', aggregateId: 'agg-B', version: 2, globalSequence: 4, eventType: 'AccessGranted' }),
+        makeEvent({ id: 'e5', aggregateId: 'agg-A', version: 3, globalSequence: 5, eventType: 'AccessRevoked' }),
+      ];
+
+      const qb = buildPaginatedQb(rows);
+      eventRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+      const seen: { aggregateId: string; version?: number; globalSequence: number }[] = [];
+      // A page size of 2 forces multiple round-trips over 5 rows
+      // (2 + 2 + 1, then a final empty page that ends the stream),
+      // proving the cursor survives across multiple pages, not just one.
+      for await (const { event, globalSequence } of service.streamAll(0, 2)) {
+        seen.push({ aggregateId: event.aggregateId, version: event.version, globalSequence });
+      }
+
+      // Every row streamed exactly once, in strict global order.
+      expect(seen.map((s) => s.globalSequence)).toEqual([1, 2, 3, 4, 5]);
+      expect(seen).toHaveLength(rows.length);
+
+      // Both aggregates are represented in full despite overlapping versions.
+      expect(seen.map((s) => s.aggregateId)).toEqual([
+        'agg-A',
+        'agg-B',
+        'agg-A',
+        'agg-B',
+        'agg-A',
+      ]);
+      expect(seen.filter((s) => s.aggregateId === 'agg-A')).toHaveLength(3);
+      expect(seen.filter((s) => s.aggregateId === 'agg-B')).toHaveLength(2);
+
+      // No (aggregateId, version) pair was skipped or emitted twice.
+      const uniqueKeys = new Set(seen.map((s) => `${s.aggregateId}:${s.version}`));
+      expect(uniqueKeys.size).toBe(rows.length);
+
+      // Confirms pagination actually happened across multiple round-trips
+      // (3 pages of data plus the trailing empty page that ends the loop).
+      expect(eventRepo.createQueryBuilder).toHaveBeenCalledTimes(4);
+    });
+
+    it('returns nothing when the store is empty', async () => {
+      const qb = buildPaginatedQb([]);
+      eventRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+      const seen: unknown[] = [];
+      for await (const item of service.streamAll(0, 2)) {
+        seen.push(item);
+      }
+
+      expect(seen).toHaveLength(0);
+    });
+  });
 });
 
 // ── MedicalRecordAggregate ────────────────────────────────────────────────────

@@ -12,8 +12,7 @@ import { RunbookMappingController } from './controllers/runbook-mapping.controll
 import { Runbook } from './entities/runbook.entity';
 import { RunbookExecution } from './entities/runbook-execution.entity';
 import { RunbookService } from './services/runbook.service';
-import { RunbookController } from './controllers/runbook.controller';
-import { AuditModule } from '../common/audit/audit.module';
+import { RunbookMappingController } from './controllers/runbook-mapping.controller';
 
 @Module({
   imports: [

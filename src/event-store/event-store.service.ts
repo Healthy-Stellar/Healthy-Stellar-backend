@@ -144,27 +144,38 @@ export class EventStoreService {
   /**
    * Stream all events from the event store for replaying (rebuilding projections).
    * Uses batched loading to maintain memory efficiency.
+   *
+   * Pages by `globalSequence`, not `version`: `version` is scoped per
+   * aggregate, so paginating by it corrupts full-stream reads — once the
+   * cursor passes another aggregate's version number, that aggregate's
+   * remaining events get silently skipped (or duplicated, if the cursor
+   * happens to be lower than events already emitted). `globalSequence` is a
+   * single strictly-increasing counter across every aggregate, so ordering
+   * and cursoring by it is safe.
    */
-  async *streamAll(fromVersion = 0): AsyncGenerator<{ event: DomainEvent; version: number }> {
-    const batchSize = 100;
-    let currentVersion = fromVersion;
+  async *streamAll(
+    fromSequence = 0,
+    batchSize = 100,
+  ): AsyncGenerator<{ event: DomainEvent; globalSequence: number }> {
+    let cursor = fromSequence;
 
     while (true) {
       const rows = await this.eventRepo
         .createQueryBuilder('e')
-        .where('e.version > :currentVersion', { currentVersion })
-        .orderBy('e.version', 'ASC')
+        .where('e.globalSequence > :cursor', { cursor })
+        .orderBy('e.globalSequence', 'ASC')
         .take(batchSize)
         .getMany();
 
       if (rows.length === 0) break;
 
       for (const row of rows) {
+        const globalSequence = Number(row.globalSequence);
         yield {
           event: this._rowToDomainEvent(row),
-          version: row.version,
+          globalSequence,
         };
-        currentVersion = row.version;
+        cursor = globalSequence;
       }
     }
   }

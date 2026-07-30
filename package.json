@@ -136,6 +136,7 @@
     "csv-writer": "^1.6.0",
     "dataloader": "^2.2.3",
     "dotenv": "^16.6.1",
+    "exceljs": "^4.4.0",
     "express-rate-limit": "^8.2.1",
     "geoip-lite": "^2.0.1",
     "graphql": "^16.13.2",

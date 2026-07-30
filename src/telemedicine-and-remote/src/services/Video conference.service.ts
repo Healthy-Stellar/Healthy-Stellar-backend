@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+  import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { VideoConferenceSession, SessionStatus } from '../entities/video-conference-session.entity';
@@ -16,6 +16,7 @@ export interface JoinSessionDto {
   sessionId: string;
   participantType: 'patient' | 'provider';
   participantId: string;
+  token: string;
 }
 
 @Injectable()
@@ -71,8 +72,16 @@ export class VideoConferenceService {
     }
 
     // Verify participant token
-    const validToken =
+    const expectedToken =
       dto.participantType === 'patient' ? session.patientToken : session.providerToken;
+
+    if (!expectedToken) {
+      throw new BadRequestException('No token configured for this participant type');
+    }
+
+    if (dto.token !== expectedToken) {
+      throw new BadRequestException('Invalid participant token');
+    }
 
     const now = new Date();
     const participants = session.participants || {};

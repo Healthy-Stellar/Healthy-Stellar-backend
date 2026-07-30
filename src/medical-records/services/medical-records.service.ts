@@ -5,7 +5,7 @@ import { MedicalRecord, MedicalRecordStatus } from '../entities/medical-record.e
 import { MedicalRecordVersion } from '../entities/medical-record-version.entity';
 import { MedicalHistory, HistoryEventType } from '../entities/medical-history.entity';
 import { CreateMedicalRecordDto } from '../dto/create-medical-record.dto';
-import { UpdateMedicalRecordDto } from '../dto/update-medical-record.dto';
+import { UpdateMedicalRecordDto } from '../dto/update-medical-record1.dto';
 import { SearchMedicalRecordsDto } from '../dto/search-medical-records.dto';
 import { FullTextSearchDto } from '../dto/full-text-search.dto';
 import { AccessControlService } from '../../access-control/services/access-control.service';
