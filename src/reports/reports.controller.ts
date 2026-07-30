@@ -25,7 +25,7 @@ export class ReportsController {
   @Post('generate')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Queue a report generation job' })
+  @ApiOperation({ summary: 'Queue a report generation job (pdf, csv, or xlsx)' })
   @ApiResponse({ status: 202, description: 'Report generation queued' })
   async generateReport(
     @Req() req: Request,
