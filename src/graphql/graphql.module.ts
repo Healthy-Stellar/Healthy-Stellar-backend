@@ -6,7 +6,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PubSub } from 'graphql-subscriptions';
 import { join } from 'path';
 import depthLimit from 'graphql-depth-limit';
-import { fieldExtensionsEstimator, getComplexity, simpleEstimator } from 'graphql-query-complexity';
 import { GraphQLError } from 'graphql';
 
 
@@ -86,55 +85,16 @@ import { DevicesModule } from '../devices/devices.module';
           playground: !isProd,
           introspection: !isProd,
 
-          // Depth limit + complexity enforcement (DoS protection)
+          // Depth limit enforcement (DoS protection), validation-rule level:
+          // this runs during GraphQL's validation phase, before the
+          // operation is even resolved, so a rejected query never reaches a
+          // resolver. The env-configured value here is the hard,
+          // environment-wide ceiling; per-tenant tightening of both depth
+          // and complexity limits, plus the per-field complexity budget
+          // itself, are enforced by ComplexityPlugin (see
+          // ./plugins/complexity.plugin.ts), which is auto-registered via
+          // its `@Plugin()` decorator + inclusion in `providers` below.
           validationRules: [depthLimit(Number(process.env.GRAPHQL_MAX_QUERY_DEPTH ?? 7))],
-          plugins: [
-            {
-              async requestDidStart() {
-                return {
-                  async didResolveOperation(requestContext: any) {
-                    const maxDepth = Number(process.env.GRAPHQL_MAX_QUERY_DEPTH ?? 7);
-                    const complexityThreshold = Number(process.env.GRAPHQL_QUERY_COMPLEXITY_THRESHOLD ?? 150);
-
-                    // Complexity estimator with default field cost=1 and list cost=10.
-                    // Default field cost can be overridden via graphql-query-complexity fieldExtensions.
-                    // List fields are weighted higher to reduce DoS via large pagination selections.
-
-                    const complexity = getComplexity({
-                      schema: requestContext.schema,
-                      operationName: requestContext.request.operationName,
-                      query: requestContext.document,
-                      variables: requestContext.request.variables,
-                      estimators: [
-                        fieldExtensionsEstimator({
-                          // If a field extension specifies complexity, it will be used.
-                          defaultComplexity: 1,
-                        } as any),
-                        simpleEstimator({ defaultComplexity: 1, listComplexity: 10 } as any),
-
-                      ],
-                    });
-
-                    if (complexity > complexityThreshold) {
-                      throw new GraphQLError(
-                        `Query complexity ${complexity} exceeds maximum allowed complexity of ${complexityThreshold}. ` +
-                        `Reduce nested selection depth, page results, or trim requested fields.`,
-                        {
-                          extensions: {
-                            code: 'GRAPHQL_QUERY_COMPLEXITY_EXCEEDED',
-                            complexity,
-                            threshold: complexityThreshold,
-                            maxDepth,
-                          },
-                        },
-                      );
-                    }
-                  },
-                };
-              },
-            },
-          ],
-
 
           // graphql-ws (recommended transport) for GraphQL subscriptions
           subscriptions: {
