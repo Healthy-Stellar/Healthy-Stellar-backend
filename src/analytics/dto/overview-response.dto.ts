@@ -1,4 +1,4 @@
-import { IsNumber } from 'class-validator';
+import { IsNumber, IsString } from 'class-validator';
 
 export class OverviewResponseDto {
   @IsNumber()
@@ -15,4 +15,8 @@ export class OverviewResponseDto {
 
   @IsNumber()
   stellarTransactions: number;
+
+  /** ISO-8601 timestamp of when this snapshot was taken inside the transaction. */
+  @IsString()
+  lastUpdatedAt: string;
 }

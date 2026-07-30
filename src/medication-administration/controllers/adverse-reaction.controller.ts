@@ -5,7 +5,9 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { ReactionSeverity } from '../entities/adverse-drug-reaction.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('adverse-reactions')
 @Controller('adverse-reactions')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AdverseReactionController {

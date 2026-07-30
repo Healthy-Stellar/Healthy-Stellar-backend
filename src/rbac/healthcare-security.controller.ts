@@ -9,6 +9,8 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  ParseIntPipe,
+  DefaultValuePipe,
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { AuditService } from './audit/audit.service';
@@ -25,12 +27,14 @@ import {
 } from './entities/security-incident.entity';
 import { DeviceTrustLevel } from './entities/medical-device.entity';
 import { AuditAction } from './entities/audit-log.entity';
+import { ApiTags } from '@nestjs/swagger';
 
 interface AuthUser {
   id: string;
   role: string;
 }
 
+@ApiTags('healthcare-security')
 @Controller('healthcare-security')
 export class HealthcareSecurityController {
   constructor(
@@ -53,8 +57,8 @@ export class HealthcareSecurityController {
     @Query('action') action?: AuditAction,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
-    @Query('limit') limit = '100',
-    @Query('offset') offset = '0',
+    @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit = 100,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset = 0,
   ) {
     return this.auditService.query({
       userId,
@@ -62,8 +66,8 @@ export class HealthcareSecurityController {
       action,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
+      limit,
+      offset,
     });
   }
 
@@ -79,9 +83,9 @@ export class HealthcareSecurityController {
   @HipaaRoles('admin', 'security-officer')
   async checkUserAnomalies(
     @Param('userId') userId: string,
-    @Query('windowMinutes') windowMinutes = '60',
+    @Query('windowMinutes', new DefaultValuePipe(60), ParseIntPipe) windowMinutes = 60,
   ) {
-    const isAnomaly = await this.auditService.detectAnomalies(userId, parseInt(windowMinutes));
+    const isAnomaly = await this.auditService.detectAnomalies(userId, windowMinutes);
     return { userId, isAnomaly, checkedAt: new Date() };
   }
 

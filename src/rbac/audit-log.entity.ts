@@ -50,6 +50,7 @@ export enum AuditSeverity {
 @Index(['userId', 'createdAt'])
 @Index(['action', 'createdAt'])
 @Index(['patientIdHash', 'createdAt'])
+@Index(['patientIdHash', 'action', 'createdAt'])
 @Index(['severity', 'createdAt'])
 @Index(['ipAddress', 'createdAt'])
 export class AuditLog {
@@ -107,6 +108,13 @@ export class AuditLog {
 
   @Column({ type: 'varchar', length: 128 })
   integrityHash: string;
+
+  /**
+   * SHA-256 of the previous row's integrityHash, forming a tamper-evident chain.
+   * NULL only for the very first row in the table.
+   */
+  @Column({ type: 'varchar', length: 128, nullable: true })
+  previousHash: string | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

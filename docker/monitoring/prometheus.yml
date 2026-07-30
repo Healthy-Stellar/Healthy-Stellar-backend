@@ -5,6 +5,9 @@ global:
 rule_files:
   - "medical_alerts.yml"
   - "app-alerts.yml"
+  - "slo-rules.yml"
+  - "slo-alerts.yml"
+  - "sla-alerts.yml"
 
 alerting:
   alertmanagers:

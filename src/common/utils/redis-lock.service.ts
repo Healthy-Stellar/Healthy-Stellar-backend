@@ -1,10 +1,11 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
 @Injectable()
 export class RedisLockService implements OnModuleInit, OnModuleDestroy {
   private redis: Redis;
+  private logger = new Logger(RedisLockService.name);
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -14,6 +15,15 @@ export class RedisLockService implements OnModuleInit, OnModuleDestroy {
       port: this.configService.get('REDIS_PORT', 6379),
       password: this.configService.get('REDIS_PASSWORD'),
       db: this.configService.get('REDIS_DB', 0),
+      maxRetriesPerRequest: null,
+      retryStrategy: (times: number) => {
+        this.logger.error(`[Redis Lock] Connection attempt ${times} failed.`);
+        if (times >= 10) {
+          this.logger.error(`[Redis Lock] Max connection retries (10) exhausted. Exiting...`);
+          process.exit(1);
+        }
+        return 3000;
+      },
     });
   }
 

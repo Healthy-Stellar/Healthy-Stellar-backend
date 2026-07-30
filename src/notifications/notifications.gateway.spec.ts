@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationsGateway } from './notifications.gateway';
 import { NotificationQueueService } from './services/notification-queue.service';
+import { WsJwtMiddleware } from './middleware/ws-jwt.middleware';
 import { NotificationEventType } from './interfaces/notification-event.interface';
 
 describe('NotificationsGateway', () => {
@@ -17,6 +18,10 @@ describe('NotificationsGateway', () => {
             getQueuedEvents: jest.fn(),
             queueEvent: jest.fn(),
           },
+        },
+        {
+          provide: WsJwtMiddleware,
+          useValue: { build: jest.fn().mockReturnValue(jest.fn()) },
         },
       ],
     }).compile();

@@ -12,7 +12,9 @@ import {
 import { PathologyQualityService } from '../services/pathology-quality.service';
 import { CreateQualityControlDto } from '../dto/create-quality-control.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pathology/quality')
 @Controller('pathology/quality')
 @UseGuards(JwtAuthGuard)
 export class QualityControlController {

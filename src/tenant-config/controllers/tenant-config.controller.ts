@@ -13,7 +13,9 @@ import {
   ParseUUIDPipe,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
+import { I18nContext } from 'nestjs-i18n';
 import { Throttle } from '@nestjs/throttler';
 import { TenantConfigService } from '../services/tenant-config.service';
 import { UpdateTenantConfigDto, BulkUpdateTenantConfigDto } from '../dto/update-tenant-config.dto';
@@ -21,7 +23,9 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { UserRole } from '../../auth/entities/user.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('admin/tenants')
 @Controller('admin/tenants')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Throttle({ default: { limit: 100, ttl: 60000 } }) // 100 requests per minute
@@ -265,17 +269,21 @@ export class TenantConfigController {
    * In production, implement proper tenant isolation based on user's organization
    */
   private validateTenantAccess(user: any, tenantId: string): void {
-    // TODO: Implement proper tenant isolation
-    // For now, only admins can access any tenant
-    // In production, check if user belongs to the tenant's organization
-
     if (!user) {
       throw new BadRequestException(I18nContext.current()?.t('errors.USER_NOT_AUTHENTICATED') || 'User not authenticated');
     }
 
-    // Example: if (user.tenantId && user.tenantId !== tenantId) {
-    //   throw new ForbiddenException(I18nContext.current()?.t('errors.ACCESS_DENIED_TO_THIS_TENANT') || 'Access denied to this tenant');
-    // }
+    // Role-based isolation exception
+    if (user.role === UserRole.SUPER_ADMIN) {
+      return;
+    }
+
+    // Enforce organization-level isolation
+    const userOrgId = user.organizationId || user.tenantId; // Handle both key mappings
+    if (userOrgId && userOrgId !== tenantId) {
+      this.logger.warn(`Tenant isolation breach attempt (IDOR): User ${user.id} from organization ${userOrgId} tried to access ${tenantId}`);
+      throw new ForbiddenException(I18nContext.current()?.t('errors.ACCESS_DENIED_TO_THIS_TENANT') || 'Access denied to this tenant');
+    }
   }
 
   /**

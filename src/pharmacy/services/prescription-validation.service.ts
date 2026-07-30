@@ -3,7 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Prescription } from '../entities/prescription.entity';
 import { Drug } from '../entities/drug.entity';
+import { ControlledSubstanceSchedule } from '../entities/drug.entity';
 import { SafetyAlert } from '../entities/safety-alert.entity';
+import { PdmpService } from './pdmp.service';
+import {
+  PrescriptionValidationError,
+  PrescriptionValidationErrorCode,
+} from '../errors/prescription-validation.error';
+
+const SCHEDULE_II_MAX_AGE_DAYS = 90;
 
 export interface PatientFactors {
   age: number;
@@ -19,6 +27,7 @@ export interface PatientFactors {
 
 export interface ValidationResult {
   isValid: boolean;
+  errors: PrescriptionValidationError[];
   alerts: Array<{
     type: string;
     severity: 'minor' | 'moderate' | 'major' | 'critical';
@@ -36,11 +45,13 @@ export class PrescriptionValidationService {
     private drugRepository: Repository<Drug>,
     @InjectRepository(SafetyAlert)
     private alertRepository: Repository<SafetyAlert>,
+    private readonly pdmpService: PdmpService,
   ) {}
 
   async validatePrescription(
     prescriptionId: string,
     patientFactors: PatientFactors,
+    prescriberDeaNumber?: string,
   ): Promise<ValidationResult> {
     const prescription = await this.prescriptionRepository.findOne({
       where: { id: prescriptionId },
@@ -50,6 +61,12 @@ export class PrescriptionValidationService {
     if (!prescription) {
       return {
         isValid: false,
+        errors: [
+          new PrescriptionValidationError(
+            PrescriptionValidationErrorCode.DEA_NUMBER_REQUIRED,
+            'Prescription not found',
+          ),
+        ],
         alerts: [
           {
             type: 'prescription-not-found',
@@ -61,74 +78,127 @@ export class PrescriptionValidationService {
       };
     }
 
+    const errors: PrescriptionValidationError[] = [];
     const alerts = [];
 
-    // Validate each drug in the prescription
+    // ── DEA / Schedule II rules ──────────────────────────────────────────────
+    const controlledErrors = await this.validateControlledSubstance(
+      prescription,
+      prescriberDeaNumber,
+    );
+    errors.push(...controlledErrors);
+
+    // ── PDMP check ───────────────────────────────────────────────────────────
+    const pdmpErrors = await this.validatePdmp(prescription.patientId);
+    errors.push(...pdmpErrors);
+
+    // ── Per-drug clinical rules ──────────────────────────────────────────────
     for (const item of prescription.items) {
       const drug = item.drug;
 
-      // Age-based validation
       const ageAlerts = this.validateAgeAppropriate(drug, patientFactors.age, item);
       alerts.push(...ageAlerts);
 
-      // Renal function validation
       if (patientFactors.renalFunction && patientFactors.renalFunction !== 'normal') {
-        const renalAlerts = this.validateRenalDosing(drug, patientFactors.renalFunction, item);
-        alerts.push(...renalAlerts);
+        alerts.push(...this.validateRenalDosing(drug, patientFactors.renalFunction, item));
       }
 
-      // Hepatic function validation
       if (patientFactors.hepaticFunction && patientFactors.hepaticFunction !== 'normal') {
-        const hepaticAlerts = this.validateHepaticDosing(
-          drug,
-          patientFactors.hepaticFunction,
-          item,
-        );
-        alerts.push(...hepaticAlerts);
+        alerts.push(...this.validateHepaticDosing(drug, patientFactors.hepaticFunction, item));
       }
 
-      // Pregnancy validation
       if (patientFactors.pregnancy) {
-        const pregnancyAlerts = this.validatePregnancySafety(drug, item);
-        alerts.push(...pregnancyAlerts);
+        alerts.push(...this.validatePregnancySafety(drug, item));
       }
 
-      // Breastfeeding validation
       if (patientFactors.breastfeeding) {
-        const breastfeedingAlerts = this.validateBreastfeedingSafety(drug, item);
-        alerts.push(...breastfeedingAlerts);
+        alerts.push(...this.validateBreastfeedingSafety(drug, item));
       }
 
-      // Weight-based dosing validation
       if (patientFactors.weight) {
-        const weightAlerts = this.validateWeightBasedDosing(drug, patientFactors.weight, item);
-        alerts.push(...weightAlerts);
+        alerts.push(...this.validateWeightBasedDosing(drug, patientFactors.weight, item));
       }
 
-      // Medical condition contraindications
-      const conditionAlerts = this.validateMedicalConditions(
-        drug,
-        patientFactors.medicalConditions,
-        item,
-      );
-      alerts.push(...conditionAlerts);
-
-      // Dosage form and route validation
-      const routeAlerts = this.validateRouteAndForm(drug, item);
-      alerts.push(...routeAlerts);
+      alerts.push(...this.validateMedicalConditions(drug, patientFactors.medicalConditions, item));
+      alerts.push(...this.validateRouteAndForm(drug, item));
     }
 
-    // Overall prescription validation
-    const overallAlerts = this.validateOverallPrescription(prescription, patientFactors);
-    alerts.push(...overallAlerts);
+    alerts.push(...this.validateOverallPrescription(prescription, patientFactors));
 
-    const criticalAlerts = alerts.filter((alert) => alert.severity === 'critical');
-    const isValid = criticalAlerts.length === 0;
+    const criticalAlerts = alerts.filter((a) => a.severity === 'critical');
+    const isValid = errors.length === 0 && criticalAlerts.length === 0;
 
-    return {
-      isValid,
-      alerts,
-    };
+    return { isValid, errors, alerts };
+  }
+
+  // ── DEA / Schedule II validation ──────────────────────────────────────────
+
+  private async validateControlledSubstance(
+    prescription: Prescription,
+    prescriberDeaNumber?: string,
+  ): Promise<PrescriptionValidationError[]> {
+    const errors: PrescriptionValidationError[] = [];
+    const schedule = prescription.controlledSubstanceSchedule;
+
+    if (!schedule) return errors;
+
+    // All controlled substances require a DEA number
+    if (!prescriberDeaNumber?.trim()) {
+      errors.push(
+        new PrescriptionValidationError(
+          PrescriptionValidationErrorCode.DEA_NUMBER_REQUIRED,
+          `A valid DEA registration number is required to prescribe Schedule ${schedule} controlled substances.`,
+        ),
+      );
+    }
+
+    if (schedule === ControlledSubstanceSchedule.SCHEDULE_II) {
+      // CII: no refills allowed
+      if (prescription.refills > 0) {
+        errors.push(
+          new PrescriptionValidationError(
+            PrescriptionValidationErrorCode.SCHEDULE_II_NO_REFILLS,
+            `Schedule II prescriptions may not have refills. This prescription specifies ${prescription.refills} refill(s).`,
+          ),
+        );
+      }
+
+      // CII: must be filled within 90 days of the written date
+      const writtenDate = new Date(prescription.prescribedDate);
+      const ageInDays = (Date.now() - writtenDate.getTime()) / 86_400_000;
+      if (ageInDays > SCHEDULE_II_MAX_AGE_DAYS) {
+        errors.push(
+          new PrescriptionValidationError(
+            PrescriptionValidationErrorCode.SCHEDULE_II_EXPIRED,
+            `Schedule II prescription is ${Math.floor(ageInDays)} days old. Maximum fill age is ${SCHEDULE_II_MAX_AGE_DAYS} days.`,
+          ),
+        );
+      }
+    }
+
+    return errors;
+  }
+
+  // ── PDMP validation ───────────────────────────────────────────────────────
+
+  private async validatePdmp(patientId: string): Promise<PrescriptionValidationError[]> {
+    const history = await this.pdmpService.getPatientHistory(patientId);
+    if (!history) return [];
+
+    const errors: PrescriptionValidationError[] = [];
+
+    // Flag if patient has received controlled substances from 3+ prescribers or pharmacies in 90 days
+    if (history.multiplePrescriberCount >= 3 || history.multiplePharmacyCount >= 3) {
+      errors.push(
+        new PrescriptionValidationError(
+          PrescriptionValidationErrorCode.PDMP_FLAG,
+          `PDMP history indicates potential misuse: ${history.multiplePrescriberCount} prescribers and ${history.multiplePharmacyCount} pharmacies in the past 90 days.`,
+          'major',
+        ),
+      );
+    }
+
+    return errors;
   }
 
   private validateAgeAppropriate(drug: Drug, age: number, item: any): any[] {

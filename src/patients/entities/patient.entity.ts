@@ -4,8 +4,31 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  VersionColumn,
   Index,
 } from 'typeorm';
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  NotificationPreferences,
+} from '../types/notification-preferences.type';
+
+export enum PatientSex {
+  MALE = 'male',
+  FEMALE = 'female',
+  OTHER = 'other',
+  UNKNOWN = 'unknown',
+}
+
+export enum PatientBloodGroup {
+  A_PLUS = 'A+',
+  A_MINUS = 'A-',
+  B_PLUS = 'B+',
+  B_MINUS = 'B-',
+  AB_PLUS = 'AB+',
+  AB_MINUS = 'AB-',
+  O_PLUS = 'O+',
+  O_MINUS = 'O-',
+}
 
 @Entity('patients')
 export class Patient {
@@ -37,8 +60,12 @@ export class Patient {
   @Column({ type: 'date' })
   dateOfBirth: string;
 
-  @Column()
-  sex: 'male' | 'female' | 'other' | 'unknown';
+  @Column({
+    type: 'enum',
+    enum: PatientSex,
+    default: PatientSex.UNKNOWN,
+  })
+  sex: PatientSex;
 
   @Column({ nullable: true })
   genderIdentity?: string;
@@ -48,8 +75,12 @@ export class Patient {
    * Medical Demographics
    * -----------------------------
    */
-  @Column({ nullable: true })
-  bloodGroup?: 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-';
+  @Column({
+    type: 'enum',
+    enum: PatientBloodGroup,
+    nullable: true,
+  })
+  bloodGroup?: PatientBloodGroup;
 
   @Column('json', { nullable: true })
   knownAllergies?: string[];
@@ -78,7 +109,10 @@ export class Patient {
   email?: string;
 
   @Column('json', { nullable: true })
-  address?: string;
+  address?: any;
+
+  @Column({ default: false })
+  isPhoneVerified: boolean;
 
   /**
    * -----------------------------
@@ -93,6 +127,22 @@ export class Patient {
 
   @Column({ nullable: true })
   nationalIdType?: string; // e.g., Passport, SSN, NIN
+
+  /**
+   * PHI: Social Security Number -- encrypted via key-managed transformer.
+   * Encryption/decryption handled by PhiColumnEncryptionService at the service layer.
+   * Raw column value is base64-encoded AES-256-GCM ciphertext.
+   */
+  @Column({ type: 'text', nullable: true })
+  ssn?: string;
+
+  /**
+   * HMAC-SHA256 index of the plaintext SSN for exact-match lookup.
+   * Keyed with the patient DEK from KeyManagementService.
+   */
+  @Index()
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  ssnHmac?: string;
 
   /**
    * -----------------------------
@@ -116,6 +166,10 @@ export class Patient {
 
   @Column('json', { nullable: true })
   emergencyContact?: Record<string, any>; // e.g. { name, phone, relationship }
+
+  /** Tenant-specific extended attributes (e.g. local insurance numbers, national ID formats). */
+  @Column('json', { nullable: true })
+  customFields?: Record<string, string>;
 
   /**
    * -----------------------------
@@ -144,6 +198,13 @@ export class Patient {
   @Column('simple-array', { nullable: true, default: null })
   allowedCountries: string[] | null;
 
+  @Column({
+    type: 'jsonb',
+    nullable: false,
+    default: () => `'${JSON.stringify(DEFAULT_NOTIFICATION_PREFERENCES)}'`,
+  })
+  notificationPreferences: NotificationPreferences;
+
   /**
    * -----------------------------
    * System Metadata
@@ -154,6 +215,10 @@ export class Patient {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  /** Optimistic concurrency — incremented by TypeORM on every save */
+  @VersionColumn({ default: 0 })
+  version: number;
 }
 
 export default Patient;

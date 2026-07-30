@@ -1,35 +1,55 @@
 import { ObjectType, Field, ID, registerEnumType } from '@nestjs/graphql';
 
-export enum GqlRecordType {
-  MEDICAL_REPORT = 'MEDICAL_REPORT',
-  LAB_RESULT = 'LAB_RESULT',
-  PRESCRIPTION = 'PRESCRIPTION',
-  IMAGING = 'IMAGING',
-  CONSULTATION = 'CONSULTATION',
+export enum GqlMedicalRecordStatus {
+  ACTIVE = 'active',
+  ARCHIVED = 'archived',
+  DELETED = 'deleted',
 }
 
+export enum GqlRecordType {
+  CONSULTATION = 'consultation',
+  DIAGNOSIS = 'diagnosis',
+  TREATMENT = 'treatment',
+  LAB_RESULT = 'lab_result',
+  IMAGING = 'imaging',
+  PRESCRIPTION = 'prescription',
+  SURGERY = 'surgery',
+  EMERGENCY = 'emergency',
+  OTHER = 'other',
+}
+
+registerEnumType(GqlMedicalRecordStatus, { name: 'MedicalRecordStatus' });
 registerEnumType(GqlRecordType, { name: 'RecordType' });
 
 @ObjectType()
-export class MedicalRecordType {
+export class MedicalRecord {
   @Field(() => ID)
   id: string;
 
   @Field()
   patientId: string;
 
-  @Field()
-  cid: string;
-
-  @Field({ nullable: true })
-  stellarTxHash?: string;
-
   @Field(() => GqlRecordType)
   recordType: GqlRecordType;
+
+  @Field(() => GqlMedicalRecordStatus)
+  status: GqlMedicalRecordStatus;
+
+  @Field({ nullable: true })
+  title?: string;
 
   @Field({ nullable: true })
   description?: string;
 
+  @Field({ nullable: true })
+  stellarTxHash?: string;
+
   @Field()
   createdAt: Date;
+
+  @Field()
+  updatedAt: Date;
+
+  @Field({ nullable: true })
+  uploadedBy?: string;
 }

@@ -2,14 +2,110 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
+import { createWriteStream } from 'fs';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { BackupLog, BackupType, BackupStatus } from '../entities/backup-log.entity';
 
-const execAsync = promisify(exec);
+/** Strict allowlist validators for database connection env variables. */
+const HOSTNAME_RE = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/;
+const IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
+
+function validateDbHost(value: string): string {
+  // Allow plain hostnames, FQDNs, and IPv4 addresses
+  const ipv4Re = /^(\d{1,3}\.){3}\d{1,3}$/;
+  if (!HOSTNAME_RE.test(value) && !ipv4Re.test(value)) {
+    throw new Error(`DB_HOST contains invalid characters: "${value}"`);
+  }
+  return value;
+}
+
+function validateDbPort(value: string): string {
+  const port = parseInt(value, 10);
+  if (isNaN(port) || port < 1 || port > 65535 || String(port) !== value.trim()) {
+    throw new Error(`DB_PORT is not a valid port number: "${value}"`);
+  }
+  return value;
+}
+
+function validateDbIdentifier(value: string, envVar: string): string {
+  if (!IDENTIFIER_RE.test(value)) {
+    throw new Error(`${envVar} contains invalid characters: "${value}"`);
+  }
+  return value;
+}
+
+/**
+ * Runs a command safely using spawn (no shell) and resolves/rejects based on
+ * the process exit code.  stdout/stderr are forwarded to the provided logger.
+ */
+function spawnAsync(
+  command: string,
+  args: string[],
+  options: { env?: NodeJS.ProcessEnv; logger?: Logger } = {},
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      shell: false, // never invoke a shell
+      env: options.env ?? process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    child.stdout?.on('data', (data: Buffer) => {
+      options.logger?.debug(`[${command}] ${data.toString().trim()}`);
+    });
+
+    child.stderr?.on('data', (data: Buffer) => {
+      options.logger?.debug(`[${command} stderr] ${data.toString().trim()}`);
+    });
+
+    child.on('error', reject);
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`${command} exited with code ${code}`));
+      }
+    });
+  });
+}
+
+/**
+ * Like spawnAsync but pipes stdout directly into a file instead of logging it.
+ * Used for COPY … TO STDOUT so the NDJSON rows land in the backup file.
+ */
+function spawnAsyncToFile(
+  command: string,
+  args: string[],
+  destFile: string,
+  options: { env?: NodeJS.ProcessEnv; logger?: Logger } = {},
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const out = createWriteStream(destFile, { flags: 'w' });
+    const child = spawn(command, args, {
+      shell: false,
+      env: options.env ?? process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    child.stdout?.pipe(out);
+
+    child.stderr?.on('data', (data: Buffer) => {
+      options.logger?.debug(`[${command} stderr] ${data.toString().trim()}`);
+    });
+
+    child.on('error', (err) => { out.destroy(); reject(err); });
+
+    child.on('close', (code) => {
+      out.end();
+      if (code === 0) resolve();
+      else reject(new Error(`${command} exited with code ${code}`));
+    });
+  });
+}
 
 @Injectable()
 export class BackupService {
@@ -21,7 +117,15 @@ export class BackupService {
   constructor(
     @InjectRepository(BackupLog)
     private backupLogRepository: Repository<BackupLog>,
-  ) {}
+  ) {
+    this.validateRequiredConfiguration();
+  }
+
+  private validateRequiredConfiguration(): void {
+    if (!this.encryptionKey) {
+      throw new Error('BACKUP_ENCRYPTION_KEY environment variable is required for BackupService');
+    }
+  }
 
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
   async scheduledFullBackup() {
@@ -167,34 +271,85 @@ export class BackupService {
   }
 
   private async backupDatabase(outputPath: string): Promise<void> {
-    const dbHost = process.env.DB_HOST || 'localhost';
-    const dbPort = process.env.DB_PORT || '5432';
-    const dbName = process.env.DB_NAME || 'healthy_stellar';
-    const dbUser = process.env.DB_USERNAME || 'medical_user';
+    const dbHost = validateDbHost(process.env.DB_HOST || 'localhost');
+    const dbPort = validateDbPort(process.env.DB_PORT || '5432');
+    const dbName = validateDbIdentifier(process.env.DB_NAME || 'healthy_stellar', 'DB_NAME');
+    const dbUser = validateDbIdentifier(process.env.DB_USERNAME || 'medical_user', 'DB_USERNAME');
 
-    const command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} \
-      --format=custom --verbose --clean --no-owner --no-privileges \
-      --file=${outputPath}.pgdump`;
-
-    await execAsync(command, {
-      env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD },
-    });
+    await spawnAsync(
+      'pg_dump',
+      [
+        '-h', dbHost,
+        '-p', dbPort,
+        '-U', dbUser,
+        '-d', dbName,
+        '--format=custom',
+        '--verbose',
+        '--clean',
+        '--no-owner',
+        '--no-privileges',
+        `--file=${outputPath}.pgdump`,
+      ],
+      {
+        env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD },
+        logger: this.logger,
+      },
+    );
   }
 
   private async backupDatabaseIncremental(outputPath: string, sinceDate: Date): Promise<void> {
-    const dbHost = process.env.DB_HOST || 'localhost';
-    const dbPort = process.env.DB_PORT || '5432';
-    const dbName = process.env.DB_NAME || 'healthy_stellar';
-    const dbUser = process.env.DB_USERNAME || 'medical_user';
+    const dbHost = validateDbHost(process.env.DB_HOST || 'localhost');
+    const dbPort = validateDbPort(process.env.DB_PORT || '5432');
+    const dbName = validateDbIdentifier(process.env.DB_NAME || 'healthy_stellar', 'DB_NAME');
+    const dbUser = validateDbIdentifier(process.env.DB_USERNAME || 'medical_user', 'DB_USERNAME');
 
-    // Export only changed data using WAL archiving or timestamp-based queries
-    const command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} \
-      --format=custom --verbose --clean --no-owner --no-privileges \
-      --file=${outputPath}.pgdump`;
+    // Timestamp-filtered logical export.
+    // Each table is exported as NDJSON (one JSON object per line) using the SQL
+    // form of COPY … TO STDOUT, which works server-side and is safe to pipe.
+    // TypeORM uses camelCase column names with no custom naming strategy.
+    const tables: Array<{ name: string; tsCol: string }> = [
+      { name: 'medical_records',         tsCol: '"updatedAt"' },
+      { name: 'medical_record_versions', tsCol: '"createdAt"' },
+      { name: 'medical_history',         tsCol: '"eventDate"' },
+      { name: 'medical_attachments',     tsCol: '"updatedAt"' },
+      { name: 'medical_record_consents', tsCol: '"updatedAt"' },
+      { name: 'audit_logs',              tsCol: '"createdAt"' },
+      { name: 'access_grants',           tsCol: '"updatedAt"' },
+    ];
 
-    await execAsync(command, {
-      env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD },
-    });
+    // Build a single SQL script: one COPY statement per table, all appended to
+    // the same output file via >> so the result is a single NDJSON file.
+    // We use `COPY (SELECT row_to_json(r) …) TO '<file>' (APPEND)` — the APPEND
+    // option is available in Postgres 17+. For older versions we fall back to
+    // running each COPY to a separate file and concatenating them afterwards.
+    const sinceDateIso = sinceDate.toISOString();
+    const destFile = `${outputPath}.pgdump`;
+
+    // Write a SQL script to a temp file so we never interpolate user-controlled
+    // data into shell arguments (sinceDate comes from our own DB, but be safe).
+    const scriptLines = tables.map(
+      (t) =>
+        `COPY (SELECT row_to_json(r) FROM ` +
+        `(SELECT * FROM ${t.name} WHERE ${t.tsCol} >= '${sinceDateIso}') r) ` +
+        `TO STDOUT;`,
+    );
+    const scriptContent = scriptLines.join('\n') + '\n';
+
+    const scriptPath = `${outputPath}.sql`;
+    await fs.writeFile(scriptPath, scriptContent, 'utf8');
+
+    try {
+      // psql -f reads the script from a file; stdout is redirected to destFile
+      // by spawnAsync capturing stdout into the file via a writable stream.
+      await spawnAsyncToFile(
+        'psql',
+        ['-h', dbHost, '-p', dbPort, '-U', dbUser, '-d', dbName, '-f', scriptPath],
+        destFile,
+        { env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD }, logger: this.logger },
+      );
+    } finally {
+      await fs.unlink(scriptPath).catch(() => undefined);
+    }
   }
 
   private async encryptBackup(inputPath: string): Promise<string> {
@@ -224,7 +379,7 @@ export class BackupService {
 
   private async compressBackup(inputPath: string): Promise<string> {
     const outputPath = `${inputPath}.gz`;
-    await execAsync(`gzip -9 ${inputPath}`);
+    await spawnAsync('gzip', ['-9', inputPath], { logger: this.logger });
     return outputPath;
   }
 

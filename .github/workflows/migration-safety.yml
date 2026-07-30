@@ -1,0 +1,57 @@
+name: Migration Safety Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  migration-safety:
+    name: Migration safety gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run migration safety check
+        id: migration_check
+        run: |
+          npm run check:migrations
+        continue-on-error: true
+
+      - name: Detect migration-reviewed label
+        id: label_check
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const labels = JSON.parse(process.env.PR_LABELS || '[]');
+          const approved = labels.some((label) => label.name === 'migration-reviewed');
+          console.log(`approved=${approved}`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `approved=${approved}\n`);
+          NODE
+        env:
+          PR_LABELS: '${{ toJson(github.event.pull_request.labels) }}'
+
+      - name: Fail PR when migration safety fails without review label
+        if: ${{ steps.migration_check.outcome == 'failure' && steps.label_check.outputs.approved != 'true' }}
+        run: |
+          echo "Migration safety check failed and PR is not labeled migration-reviewed."
+          exit 1
+
+      - name: Force-approve migration safety via label
+        if: ${{ steps.migration_check.outcome == 'failure' && steps.label_check.outputs.approved == 'true' }}
+        run: |
+          echo "Migration safety check failed, but PR has migration-reviewed label. Passing as admin-approved."

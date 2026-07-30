@@ -1,41 +1,46 @@
 groups:
-  - name: medical_system
+  - name: infrastructure_alerts
     rules:
-      # Service Availability
       - alert: ServiceDown
         expr: up == 0
         for: 1m
         labels:
           severity: critical
+          component: infrastructure
         annotations:
           summary: "Service {{ $labels.job }} is down"
-          description: "{{ $labels.job }} has been down for more than 1 minute."
+          description: "{{ $labels.job }} on {{ $labels.instance }} has been unreachable for > 1 minute."
 
-      # System Resources
-      - alert: HighCPUUsage
+      - alert: NodeHighCPU
         expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
         for: 5m
         labels:
           severity: warning
+          component: infrastructure
         annotations:
-          summary: "High CPU usage on {{ $labels.instance }}"
-          description: "CPU usage is above 80% for 5 minutes."
+          summary: "High CPU on {{ $labels.instance }}"
+          description: "Node CPU usage has been above 80 % for 5 minutes."
 
-      - alert: HighMemoryUsage
-        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+      - alert: NodeHighMemory
+        expr: |
+          (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
+          / node_memory_MemTotal_bytes * 100 > 85
         for: 5m
         labels:
           severity: warning
+          component: infrastructure
         annotations:
-          summary: "High Memory usage on {{ $labels.instance }}"
-          description: "Memory usage is above 85% for 5 minutes."
+          summary: "High memory on {{ $labels.instance }}"
+          description: "Node memory usage has been above 85 % for 5 minutes."
 
-      # Application Performance
-      - alert: HighErrorRate
-        expr: rate(http_requests_total{status=~"5.."}[5m]) > 1
-        for: 1m
+      - alert: NodeDiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+          / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 < 15
+        for: 10m
         labels:
-          severity: critical
+          severity: warning
+          component: infrastructure
         annotations:
-          summary: "High HTTP Error Rate"
-          description: "More than 1 error per second detected."
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Filesystem {{ $labels.mountpoint }} has less than 15 % free space."

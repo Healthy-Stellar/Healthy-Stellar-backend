@@ -9,6 +9,8 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { Icd10ValidationService } from './services/icd10-validation.service';
@@ -199,7 +201,10 @@ export class MedicalValidationController {
   @ApiOperation({ summary: 'Get reference data update history' })
   @ApiQuery({ name: 'system', required: false })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  async getUpdateHistory(@Query('system') system?: string, @Query('limit') limit: number = 10) {
+  async getUpdateHistory(
+    @Query('system') system?: string,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit = 10,
+  ) {
     return this.referenceDataService.getUpdateHistory(system, limit);
   }
 

@@ -1,10 +1,13 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { Injectable } from '@nestjs/common';
+import { DataResidencyRegion } from '../../enums/data-residency.enum';
 
 export interface TenantContextData {
   tenantId: string;
   tenantSlug: string;
   schemaName: string;
+  region?: DataResidencyRegion;
+  strictDataResidency?: boolean;
 }
 
 @Injectable()

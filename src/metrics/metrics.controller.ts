@@ -9,12 +9,16 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiSecurity } from '@nestjs/swagger';
 import { MetricsService } from './metrics.service';
 import { MetricsAuthGuard } from './guards/metrics-auth.guard';
+import { SloService } from './slo.service';
 
 @ApiTags('Metrics')
 @Controller('metrics')
 @UseGuards(MetricsAuthGuard)
 export class MetricsController {
-  constructor(private readonly metricsService: MetricsService) {}
+  constructor(
+    private readonly metricsService: MetricsService,
+    private readonly sloService: SloService,
+  ) {}
 
   @Get()
   @HttpCode(HttpStatus.OK)
@@ -51,5 +55,18 @@ medchain_stellar_tx_duration_seconds_bucket{operation="anchor_record",le="0.5"} 
   })
   async getMetrics(): Promise<string> {
     return this.metricsService.getMetrics();
+  }
+
+  @Get('slo')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get current SLO status',
+    description:
+      'Returns error budget consumption and current error ratios for all defined SLOs. ' +
+      'Queries the Prometheus HTTP API; returns nulls when Prometheus is unreachable.',
+  })
+  @ApiResponse({ status: 200, description: 'SLO statuses returned successfully' })
+  async getSloStatus() {
+    return this.sloService.getSloStatuses();
   }
 }

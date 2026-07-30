@@ -1,53 +1,32 @@
-import { ObjectType, Field, ID, registerEnumType } from '@nestjs/graphql';
-
-export enum GqlAccessLevel {
-  READ = 'READ',
-  READ_WRITE = 'READ_WRITE',
-}
-
-export enum GqlGrantStatus {
-  ACTIVE = 'ACTIVE',
-  REVOKED = 'REVOKED',
-  EXPIRED = 'EXPIRED',
-}
-
-registerEnumType(GqlAccessLevel, { name: 'AccessLevel' });
-registerEnumType(GqlGrantStatus, { name: 'GrantStatus' });
+import { Field, ID, ObjectType } from '@nestjs/graphql';
+import { GrantStatus } from '../enums';
+import { User } from './user.type';
 
 @ObjectType()
-export class AccessGrantType {
+export class AccessGrant {
   @Field(() => ID)
   id: string;
 
-  @Field()
+  @Field(() => String)
   patientId: string;
 
-  @Field()
-  granteeId: string;
+  @Field(() => User)
+  patient: User;
 
-  @Field(() => [String])
-  recordIds: string[];
+  @Field(() => String)
+  providerId: string;
 
-  @Field(() => GqlAccessLevel)
-  accessLevel: GqlAccessLevel;
+  @Field(() => User)
+  provider: User;
 
-  @Field(() => GqlGrantStatus)
-  status: GqlGrantStatus;
+  @Field(() => String)
+  recordId: string;
 
-  @Field()
-  isEmergency: boolean;
+  @Field(() => GrantStatus)
+  status: GrantStatus;
 
-  @Field({ nullable: true })
-  emergencyReason?: string;
-
-  @Field({ nullable: true })
+  @Field(() => Date, { nullable: true })
   expiresAt?: Date;
-
-  @Field({ nullable: true })
-  revokedAt?: Date;
-
-  @Field({ nullable: true })
-  revocationReason?: string;
 
   @Field()
   createdAt: Date;

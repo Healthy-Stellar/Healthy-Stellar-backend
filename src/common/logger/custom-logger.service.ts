@@ -1,6 +1,7 @@
 import { Injectable, Scope, LoggerService } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { getRequestContext } from '../middleware/request-context.middleware';
+import { pushLogEntry } from '../../incident/incident-log.buffer';
 
 @Injectable({ scope: Scope.TRANSIENT })
 export class CustomLoggerService implements LoggerService {
@@ -22,6 +23,7 @@ export class CustomLoggerService implements LoggerService {
 
   log(message: any, context?: string) {
     this.logger.info(this.enrichLogData(message, context));
+    pushLogEntry({ level: 'info', message: String(message), timestamp: new Date().toISOString(), context });
   }
 
   error(message: any, trace?: string, context?: string) {
@@ -32,10 +34,12 @@ export class CustomLoggerService implements LoggerService {
       },
       message,
     );
+    pushLogEntry({ level: 'error', message: String(message), timestamp: new Date().toISOString(), context });
   }
 
   warn(message: any, context?: string) {
     this.logger.warn(this.enrichLogData(message, context));
+    pushLogEntry({ level: 'warn', message: String(message), timestamp: new Date().toISOString(), context });
   }
 
   debug(message: any, context?: string) {

@@ -2,7 +2,9 @@ import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
 import { ClinicalAlertService } from '../services/clinical-alert.service';
 import { DashboardService } from '../services/dashboard.service';
 import { AlertType, AlertPriority } from '../entities/clinical-alert.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('clinical-alerts')
 @Controller('clinical-alerts')
 export class ClinicalAlertsController {
   constructor(

@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Res, UseGuards, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { AuditService } from './audit.service';
@@ -30,8 +30,8 @@ export class AuditController {
     @Query('patientId') patientId?: string,
     @Query('fromDate') fromDate?: string,
     @Query('toDate') toDate?: string,
-    @Query('page') page = 1,
-    @Query('limit') limit = 20,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
   ): Promise<{ data: AuditLogEntity[]; total: number; page: number; limit: number }> {
     return this.auditService.findAll({
       patientId,
