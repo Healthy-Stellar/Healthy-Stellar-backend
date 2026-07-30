@@ -9,7 +9,8 @@ import {
 import { MedicalHistory, HistoryEventType } from '../entities/medical-history.entity';
 import { CreateConsentDto } from '../dto/create-consent.dto';
 import { MedicalRecordsService } from './medical-records.service';
-
+import { TenantContext } from '../../tenant/context/tenant.context';
+ 
 @Injectable()
 export class ConsentService {
   private readonly logger = new Logger(ConsentService.name);
@@ -28,7 +29,8 @@ export class ConsentService {
     grantedBy: string,
   ): Promise<MedicalRecordConsent> {
     // Verify medical record exists
-    await this.medicalRecordsService.findOne(createDto.recordId, patientId);
+    const organizationId = TenantContext.getTenantId();
+    await this.medicalRecordsService.findOne(createDto.recordId, patientId, organizationId);
 
     const consent = this.consentRepository.create({
       ...createDto,

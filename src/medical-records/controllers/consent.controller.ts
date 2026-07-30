@@ -4,6 +4,7 @@ import { ConsentService } from '../services/consent.service';
 import { MedicalRecordsService } from '../services/medical-records.service';
 import { CreateConsentDto } from '../dto/create-consent.dto';
 import { ConsentType } from '../entities/medical-record-consent.entity';
+import { TenantContext } from '../../tenant/context/tenant.context';
 
 @ApiTags('Consent Management')
 @Controller('consents')
@@ -18,7 +19,8 @@ export class ConsentController {
   @ApiResponse({ status: 201, description: 'Consent created successfully' })
   async create(@Body() createDto: CreateConsentDto, @Req() req: any) {
     // Get patientId from the medical record
-    const record = await this.medicalRecordsService.findOne(createDto.recordId);
+    const organizationId = TenantContext.getTenantId();
+    const record = await this.medicalRecordsService.findOne(createDto.recordId, undefined, organizationId);
     const patientId = record.patientId;
     const grantedBy = req.user?.id || '00000000-0000-0000-0000-000000000000';
     return this.consentService.create(createDto, patientId, grantedBy);
