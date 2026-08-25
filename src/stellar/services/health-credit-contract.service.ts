@@ -66,6 +66,9 @@ export class HealthCreditContractService {
     this.sourceKeypair = StellarSdk.Keypair.fromSecret(secretKey);
 
     const contractId = this.configService.get<string>('HEALTH_CREDIT_CONTRACT_ID', '');
+    if (!contractId || !contractId.trim()) {
+      throw new Error('HEALTH_CREDIT_CONTRACT_ID is required for HealthCreditContractService');
+    }
     this.contract = new StellarSdk.Contract(contractId);
 
     this.feeBudget = parseInt(this.configService.get<string>('STELLAR_FEE_BUDGET', '10000000'), 10);

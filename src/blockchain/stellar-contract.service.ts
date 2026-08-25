@@ -64,6 +64,9 @@ export class StellarContractService {
     this.sourceKeypair = StellarSdk.Keypair.fromSecret(secretKey);
 
     const contractId = this.configService.get<string>('STELLAR_CONTRACT_ID', '');
+    if (!contractId || !contractId.trim()) {
+      throw new Error('STELLAR_CONTRACT_ID is required for StellarContractService');
+    }
     this.contract = new StellarSdk.Contract(contractId);
 
     this.feeBudget = parseInt(this.configService.get<string>('STELLAR_FEE_BUDGET', '10000000'), 10);
