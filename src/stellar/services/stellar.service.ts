@@ -75,6 +75,9 @@ export class StellarService {
     this.sourceKeypair = StellarSdk.Keypair.fromSecret(secretKey);
 
     this.contractId = this.configService.get<string>('STELLAR_CONTRACT_ID', '');
+    if (!this.contractId || !this.contractId.trim()) {
+      throw new Error('STELLAR_CONTRACT_ID is required for StellarService');
+    }
     this.feeBudget = parseInt(this.configService.get<string>('STELLAR_FEE_BUDGET', '10000000'), 10);
     this.maxRetries = parseInt(this.configService.get<string>('STELLAR_MAX_RETRIES', '3'), 10);
 
@@ -291,13 +294,6 @@ export class StellarService {
       });
       throw error;
     }
-
-    return this.withRetry('anchorRecord', () =>
-      this.invokeContractInternal('anchor_record', [
-        StellarSdk.nativeToScVal(patientId, { type: 'string' }),
-        StellarSdk.nativeToScVal(cid, { type: 'string' }),
-      ]),
-    );
   }
 
   /**
