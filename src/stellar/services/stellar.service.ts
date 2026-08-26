@@ -392,6 +392,40 @@ export class StellarService {
     }
   }
 
+  async createShareLink(recordId: string, patientId: string): Promise<string> {
+    const expiresAtMs = Date.now() + 24 * 60 * 60 * 1000;
+    this.logger.log(
+      `[createShareLink] recordId=${recordId} patientId=${patientId} expiresAt=${new Date(expiresAtMs).toISOString()}`,
+    );
+
+    this.stellarTracing.addSpanEvent('stellar.createShareLink.started', {
+      recordId,
+      patientId,
+      network: this.network,
+    });
+
+    try {
+      const result = await this.withRetry('createShareLink', () =>
+        this.invokeContractInternal('create_share_link', [
+          StellarSdk.nativeToScVal(recordId, { type: 'string' }),
+          StellarSdk.nativeToScVal(patientId, { type: 'string' }),
+          StellarSdk.nativeToScVal(expiresAtMs, { type: 'u64' }),
+        ]),
+      );
+
+      this.stellarTracing.addSpanEvent('stellar.createShareLink.completed', {
+        txHash: result.txHash,
+      });
+
+      return result.txHash;
+    } catch (error) {
+      this.stellarTracing.addSpanEvent('stellar.createShareLink.error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
   /**
    * Check whether a requester currently has valid access to a record.
    * This is a read-only simulation — it does not submit a transaction.
