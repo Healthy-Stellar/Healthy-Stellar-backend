@@ -26,6 +26,13 @@ export class InfectionControlController {
     private readonly outbreakAlertsService: OutbreakAlertsService,
   ) {}
 
+
+  // Dashboard AC
+  @Get('dashboard/missing-precautions')
+  getCasesMissingPrecautions() {
+    return this.infectionControlService.getCasesMissingPrecautions();
+  }
+
   // Infection Cases
   @Post('cases')
   createInfectionCase(@Body() dto: CreateInfectionCaseDto) {
