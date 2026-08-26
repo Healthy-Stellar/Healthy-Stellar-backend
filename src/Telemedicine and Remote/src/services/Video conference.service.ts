@@ -16,6 +16,14 @@ export interface JoinSessionDto {
   sessionId: string;
   participantType: 'patient' | 'provider';
   participantId: string;
+  participantToken: string;
+}
+
+export interface TurnCredentials {
+  username: string;
+  credential: string;
+  urls: string[];
+  expiresAt: Date;
 }
 
 @Injectable()
@@ -70,9 +78,13 @@ export class VideoConferenceService {
       throw new BadRequestException('Session has ended');
     }
 
-    // Verify participant token
+    // Verify the participant token before changing session state.
     const validToken =
       dto.participantType === 'patient' ? session.patientToken : session.providerToken;
+
+    if (!validToken || !this.tokensMatch(dto.participantToken, validToken)) {
+      throw new BadRequestException('Invalid participant token');
+    }
 
     const now = new Date();
     const participants = session.participants || {};
@@ -100,6 +112,44 @@ export class VideoConferenceService {
       session,
       accessToken,
       streamUrl,
+    };
+  }
+
+  async authenticateSignalingSession(
+    sessionId: string,
+    sessionToken: string,
+  ): Promise<VideoConferenceSession> {
+    const session = await this.findOne(sessionId);
+
+    if (!sessionToken || !this.tokensMatch(sessionToken, session.sessionToken)) {
+      throw new BadRequestException('Invalid session token');
+    }
+
+    if (session.status === SessionStatus.ENDED) {
+      throw new BadRequestException('Session has ended');
+    }
+
+    return session;
+  }
+
+  issueTurnCredentials(participantId: string): TurnCredentials {
+    const secret = process.env.TURN_SECRET;
+    const turnUrl = process.env.TURN_URL;
+
+    if (!secret || !turnUrl) {
+      throw new BadRequestException('TURN service is not configured');
+    }
+
+    const ttlSeconds = Number(process.env.TURN_CREDENTIAL_TTL_SECONDS || 300);
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    const username = `${Math.floor(expiresAt.getTime() / 1000)}:${participantId}`;
+    const credential = crypto.createHmac('sha1', secret).update(username).digest('base64');
+
+    return {
+      username,
+      credential,
+      urls: [turnUrl],
+      expiresAt,
     };
   }
 
@@ -263,8 +313,18 @@ export class VideoConferenceService {
   }
 
   private generateStreamUrl(roomId: string): string {
-    // In production: return actual stream URL from video service provider
-    return `wss://video.telemedicine.example.com/stream/${roomId}`;
+    const signalingUrl = process.env.VIDEO_SIGNALING_URL || 'wss://localhost/telemedicine';
+    return `${signalingUrl.replace(/\/$/, '')}/${roomId}`;
+  }
+
+  private tokensMatch(left: string, right: string): boolean {
+    const leftBuffer = Buffer.from(left);
+    const rightBuffer = Buffer.from(right);
+
+    return (
+      leftBuffer.length === rightBuffer.length &&
+      crypto.timingSafeEqual(leftBuffer, rightBuffer)
+    );
   }
 
   // HIPAA compliance helpers

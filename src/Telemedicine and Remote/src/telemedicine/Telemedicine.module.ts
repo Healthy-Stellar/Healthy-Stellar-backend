@@ -21,6 +21,7 @@ import { TelehealthBilling } from './entities/telehealth-billing.entity';
 import { RemotePrescription } from './entities/remote-prescription.entity';
 import { QualityOutcome } from './entities/quality-outcome.entity';
 import { VideoConferenceSession } from './entities/video-conference-session.entity';
+import { TelemedicineSignalingGateway } from './telemedicine-signaling.gateway';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { VideoConferenceSession } from './entities/video-conference-session.enti
     RemotePrescriptionService,
     QualityOutcomeService,
     HipaaComplianceService,
+    TelemedicineSignalingGateway,
   ],
   exports: [VirtualVisitService, RemoteMonitoringService, QualityOutcomeService],
 })
