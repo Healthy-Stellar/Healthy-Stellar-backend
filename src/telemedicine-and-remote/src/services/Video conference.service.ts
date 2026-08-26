@@ -1,7 +1,7 @@
-  import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+  import { Injectable, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { VideoConferenceSession, SessionStatus } from '../entities/video-conference-session.entity';
+import { VideoConferenceSession, SessionStatus } from '../entity/Video conference session.entity';
 import * as crypto from 'crypto';
 
 export interface CreateSessionDto {
@@ -17,6 +17,18 @@ export interface JoinSessionDto {
   participantType: 'patient' | 'provider';
   participantId: string;
   token: string;
+}
+
+export interface TurnCredentials {
+  username: string;
+  credential: string;
+  expiresAt: Date;
+}
+
+export interface IceServer {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
 }
 
 @Injectable()
@@ -64,6 +76,7 @@ export class VideoConferenceService {
     session: VideoConferenceSession;
     accessToken: string;
     streamUrl: string;
+    iceServers: IceServer[];
   }> {
     const session = await this.findOne(dto.sessionId);
 
@@ -103,13 +116,45 @@ export class VideoConferenceService {
 
     // In production, integrate with video service provider
     const accessToken = this.generateAccessToken(session, dto.participantType);
+    const turnCredentials = this.generateTurnCredentials(dto.participantId);
     const streamUrl = this.generateStreamUrl(session.roomId);
 
     return {
       session,
       accessToken,
       streamUrl,
+      iceServers: this.getIceServers(turnCredentials),
     };
+  }
+
+  async authenticateSignaling(sessionId: string, token: string): Promise<VideoConferenceSession> {
+    const session = await this.findOne(sessionId);
+
+    if (session.status === SessionStatus.ENDED) {
+      throw new UnauthorizedException('Session has ended');
+    }
+
+    const expected = Buffer.from(session.sessionToken);
+    const provided = Buffer.from(token || '');
+    if (expected.length !== provided.length || !crypto.timingSafeEqual(expected, provided)) {
+      throw new UnauthorizedException('Invalid signaling session token');
+    }
+
+    return session;
+  }
+
+  async recordConnectionState(
+    sessionId: string,
+    participantType: 'patient' | 'provider',
+    state: string,
+    details?: Record<string, unknown>,
+  ): Promise<VideoConferenceSession> {
+    return this.logTechnicalIssue(sessionId, {
+      event: 'connection-state',
+      participantType,
+      state,
+      ...details,
+    });
   }
 
   async endSession(sessionId: string): Promise<VideoConferenceSession> {
@@ -272,8 +317,42 @@ export class VideoConferenceService {
   }
 
   private generateStreamUrl(roomId: string): string {
-    // In production: return actual stream URL from video service provider
-    return `wss://video.telemedicine.example.com/stream/${roomId}`;
+    const signalingUrl = process.env.TELEMEDICINE_SIGNALING_URL || '/telemedicine/signaling';
+    return `${signalingUrl}?roomId=${encodeURIComponent(roomId)}`;
+  }
+
+  private generateTurnCredentials(participantId: string): TurnCredentials {
+    const ttlSeconds = Math.max(60, Number(process.env.TELEMEDICINE_TURN_TTL_SECONDS || 3600));
+    const expiresAtSeconds = Math.floor(Date.now() / 1000) + ttlSeconds;
+    const username = `${expiresAtSeconds}:${participantId}`;
+    const secret = process.env.TURN_SHARED_SECRET || 'development-turn-secret';
+    const credential = crypto.createHmac('sha1', secret).update(username).digest('base64');
+
+    return {
+      username,
+      credential,
+      expiresAt: new Date(expiresAtSeconds * 1000),
+    };
+  }
+
+  private getIceServers(credentials: TurnCredentials): IceServer[] {
+    const stunUrls = (process.env.TELEMEDICINE_STUN_URLS || 'stun:stun.l.google.com:19302')
+      .split(',')
+      .map((url) => url.trim())
+      .filter(Boolean);
+    const turnUrls = (process.env.TELEMEDICINE_TURN_URLS || 'turn:localhost:3478')
+      .split(',')
+      .map((url) => url.trim())
+      .filter(Boolean);
+
+    return [
+      { urls: stunUrls },
+      {
+        urls: turnUrls,
+        username: credentials.username,
+        credential: credentials.credential,
+      },
+    ];
   }
 
   // HIPAA compliance helpers
