@@ -7,6 +7,8 @@ import { CreateDiagnosisDto, UpdateDiagnosisDto, SearchDiagnosisDto } from '../d
 import { MedicalCodeService } from '../../billing/services/medical-code.service';
 import { CodeType } from '../../common/enums';
 import { TreatmentPlan } from '../../treatment-planning/entities/treatment-plan.entity';
+import { NotificationsService } from '../../notifications/services/notifications.service';
+import { DiagnosisStatus, DiagnosisSeverity } from '../../common/enums';
 
 @Injectable()
 export class DiagnosisService {
@@ -18,6 +20,7 @@ export class DiagnosisService {
     @InjectRepository(TreatmentPlan)
     private readonly treatmentPlanRepository: Repository<TreatmentPlan>,
     private readonly medicalCodeService: MedicalCodeService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(createDiagnosisDto: CreateDiagnosisDto): Promise<Diagnosis> {
@@ -38,7 +41,25 @@ export class DiagnosisService {
     }
 
     const diagnosis = this.diagnosisRepository.create(createDiagnosisDto);
-    return await this.diagnosisRepository.save(diagnosis);
+    const saved = await this.diagnosisRepository.save(diagnosis);
+
+    // Emit diagnosis creation notification
+    const actorId = createDiagnosisDto.createdBy || createDiagnosisDto.providerId || 'system';
+    this.notificationsService.emitDiagnosisCreated(
+      actorId,
+      saved.id,
+      {
+        patientId: saved.patientId,
+        providerId: saved.providerId,
+        diagnosisCode: icd10Code.code,
+        diagnosisDescription: icd10Code.description,
+        severity: saved.severity,
+        isPrimary: saved.isPrimary,
+        treatmentPlanIds: [],
+      },
+    );
+
+    return saved;
   }
 
   async findById(id: string): Promise<Diagnosis> {
@@ -91,7 +112,50 @@ export class DiagnosisService {
 
     // Update diagnosis
     Object.assign(diagnosis, updateDiagnosisDto);
-    return await this.diagnosisRepository.save(diagnosis);
+    const saved = await this.diagnosisRepository.save(diagnosis);
+
+    // Emit notifications for escalations
+    const actorId = updateDiagnosisDto.updatedBy || diagnosis.providerId || 'system';
+    const treatmentPlans = await this.getTreatmentPlansForDiagnosis(diagnosis.id);
+    const treatmentPlanIds = treatmentPlans.map(plan => plan.id);
+
+    // Check for severity escalation
+    if (changes.severity && previousValues.severity) {
+      const previousSeverityLevel = this.getSeverityLevel(previousValues.severity);
+      const newSeverityLevel = this.getSeverityLevel(changes.severity);
+      if (newSeverityLevel > previousSeverityLevel) {
+        this.notificationsService.emitDiagnosisSeverityEscalated(
+          actorId,
+          diagnosis.id,
+          {
+            patientId: diagnosis.patientId,
+            providerId: diagnosis.providerId,
+            previousSeverity: previousValues.severity,
+            newSeverity: changes.severity,
+            treatmentPlanIds,
+            reason: updateDiagnosisDto.changeReason,
+          },
+        );
+      }
+    }
+
+    // Check for status confirmation
+    if (changes.status === DiagnosisStatus.CONFIRMED && previousValues.status !== DiagnosisStatus.CONFIRMED) {
+      this.notificationsService.emitDiagnosisStatusConfirmed(
+        actorId,
+        diagnosis.id,
+        {
+          patientId: diagnosis.patientId,
+          providerId: diagnosis.providerId,
+          severity: diagnosis.severity,
+          isPrimary: diagnosis.isPrimary,
+          treatmentPlanIds,
+          reason: updateDiagnosisDto.changeReason,
+        },
+      );
+    }
+
+    return saved;
   }
 
   async search(searchDto: SearchDiagnosisDto): Promise<Diagnosis[]> {
@@ -231,5 +295,16 @@ export class DiagnosisService {
     if (changes.clinicalNotes) return 'notes_update';
     if (changes.icd10CodeId) return 'code_update';
     return 'general_update';
+  }
+
+  private getSeverityLevel(severity: DiagnosisSeverity | null | undefined): number {
+    if (!severity) return 0;
+    const levels: Record<string, number> = {
+      [DiagnosisSeverity.MILD]: 1,
+      [DiagnosisSeverity.MODERATE]: 2,
+      [DiagnosisSeverity.SEVERE]: 3,
+      [DiagnosisSeverity.CRITICAL]: 4,
+    };
+    return levels[severity] ?? 0;
   }
 }
