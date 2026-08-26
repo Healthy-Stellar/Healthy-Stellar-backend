@@ -11,6 +11,8 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { TransferService } from '../services/transfer.service';
 import { CreateTransferDto } from '../dto/create-transfer.dto';
 import { AcceptTransferDto } from '../dto/accept-transfer.dto';
+import { RejectTransferDto } from '../dto/reject-transfer.dto';
+import { CancelTransferDto } from '../dto/cancel-transfer.dto';
 import { TransferStatus } from '../entities/patient-transfer.entity';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -41,6 +43,24 @@ export class TransferController {
   @ApiResponse({ status: 404, description: 'Transfer not found' })
   acceptTransfer(@Param('id') id: string, @Body() dto: AcceptTransferDto) {
     return this.transferService.acceptTransfer(id, dto);
+  }
+
+  @Post(':id/reject')
+  @ApiOperation({ summary: 'Reject a pending transfer request' })
+  @ApiResponse({ status: 200, description: 'Transfer rejected successfully' })
+  @ApiResponse({ status: 400, description: 'Transfer is not in pending status' })
+  @ApiResponse({ status: 404, description: 'Transfer not found' })
+  rejectTransfer(@Param('id') id: string, @Body() dto: RejectTransferDto) {
+    return this.transferService.rejectTransfer(id, dto);
+  }
+
+  @Post(':id/cancel')
+  @ApiOperation({ summary: 'Cancel a pending transfer request' })
+  @ApiResponse({ status: 200, description: 'Transfer cancelled successfully' })
+  @ApiResponse({ status: 400, description: 'Transfer is not in pending status' })
+  @ApiResponse({ status: 404, description: 'Transfer not found' })
+  cancelTransfer(@Param('id') id: string, @Body() dto: CancelTransferDto) {
+    return this.transferService.cancelTransfer(id, dto);
   }
 
   @Get(':id')

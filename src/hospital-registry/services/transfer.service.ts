@@ -12,6 +12,8 @@ import { PatientTransfer, TransferStatus } from '../entities/patient-transfer.en
 import { HospitalRegistry } from '../entities/hospital-registry.entity';
 import { CreateTransferDto } from '../dto/create-transfer.dto';
 import { AcceptTransferDto } from '../dto/accept-transfer.dto';
+import { RejectTransferDto } from '../dto/reject-transfer.dto';
+import { CancelTransferDto } from '../dto/cancel-transfer.dto';
 import { MedicalRecordsService } from '../../medical-records/services/medical-records.service';
 import { AccessControlService } from '../../access-control/services/access-control.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
@@ -138,6 +140,68 @@ export class TransferService {
     return transfer;
   }
 
+  async rejectTransfer(transferId: string, dto: RejectTransferDto): Promise<PatientTransfer> {
+    const transfer = await this.transferRepo.findOne({
+      where: { id: transferId },
+      relations: ['fromHospital', 'toHospital'],
+    });
+
+    if (!transfer) {
+      throw new NotFoundException('Transfer not found');
+    }
+
+    if (transfer.status !== TransferStatus.PENDING) {
+      throw new BadRequestException('Transfer is not in pending status');
+    }
+
+    transfer.status = TransferStatus.REJECTED;
+    transfer.rejectedAt = new Date();
+    transfer.rejectedBy = dto.rejectedBy;
+    transfer.rejectionReason = dto.reason;
+
+    const saved = await this.transferRepo.save(transfer);
+
+    try {
+      await this.sendRejectNotification(saved);
+    } catch (err) {
+      this.logger.warn('Failed to send rejection notification: ' + (err instanceof Error ? err.message : String(err)));
+    }
+
+    this.logger.log('Transfer ' + transferId + ' rejected by ' + dto.rejectedBy);
+    return saved;
+  }
+
+  async cancelTransfer(transferId: string, dto: CancelTransferDto): Promise<PatientTransfer> {
+    const transfer = await this.transferRepo.findOne({
+      where: { id: transferId },
+      relations: ['fromHospital', 'toHospital'],
+    });
+
+    if (!transfer) {
+      throw new NotFoundException('Transfer not found');
+    }
+
+    if (transfer.status !== TransferStatus.PENDING) {
+      throw new BadRequestException('Transfer is not in pending status');
+    }
+
+    transfer.status = TransferStatus.CANCELLED;
+    transfer.cancelledAt = new Date();
+    transfer.cancelledBy = dto.cancelledBy;
+    transfer.cancellationReason = dto.reason;
+
+    const saved = await this.transferRepo.save(transfer);
+
+    try {
+      await this.sendCancellationNotification(saved);
+    } catch (err) {
+      this.logger.warn('Failed to send cancellation notification: ' + (err instanceof Error ? err.message : String(err)));
+    }
+
+    this.logger.log('Transfer ' + transferId + ' cancelled by ' + dto.cancelledBy);
+    return saved;
+  }
+
   async listTransfers(filters?: {
     patientId?: string;
     fromHospitalId?: string;
@@ -175,6 +239,42 @@ export class TransferService {
         );
       } catch (err) {
         this.logger.warn('Failed to send notification to ' + email + ': ' + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+  }
+
+  private async sendRejectNotification(transfer: PatientTransfer): Promise<void> {
+    if (transfer.fromHospital?.email) {
+      try {
+        this.notificationsService.emitRecordUploaded(
+          'system', transfer.id, {
+            targetUserId: transfer.fromHospital.email,
+            transferId: transfer.id,
+            patientName: transfer.patientName,
+            type: 'transfer_rejected',
+            rejectionReason: transfer.rejectionReason,
+          },
+        );
+      } catch (err) {
+        this.logger.warn('Failed to send rejection notification to ' + transfer.fromHospital.email + ': ' + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+  }
+
+  private async sendCancellationNotification(transfer: PatientTransfer): Promise<void> {
+    if (transfer.toHospital?.email) {
+      try {
+        this.notificationsService.emitRecordUploaded(
+          'system', transfer.id, {
+            targetUserId: transfer.toHospital.email,
+            transferId: transfer.id,
+            patientName: transfer.patientName,
+            type: 'transfer_cancelled',
+            cancellationReason: transfer.cancellationReason,
+          },
+        );
+      } catch (err) {
+        this.logger.warn('Failed to send cancellation notification to ' + transfer.toHospital.email + ': ' + (err instanceof Error ? err.message : String(err)));
       }
     }
   }
