@@ -21,10 +21,12 @@ import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.
 import { MetricsModule } from '../metrics/metrics.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     ConfigModule,
+    AuthModule,
     CircuitBreakerModule,
     MetricsModule,
     TypeOrmModule.forFeature([HttpIdempotencyEntity, MultiSigTransactionEntity]),
