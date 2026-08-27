@@ -62,6 +62,18 @@ function abiTypeToScVal(abiType, varName) {
   return map[abiType] ?? `StellarSdk.nativeToScVal(${varName})`;
 }
 
+function abiTypeToOnChainTs(abiType) {
+  if (abiType === 'u64' || abiType === 'i64') return 'bigint | number';
+  return abiTypeToTs(abiType);
+}
+
+function abiTypeToResultTs(method, key, abiType) {
+  if (method.name === 'verify_access' && key === 'expires_at' && abiType === 'u64') {
+    return 'string | null';
+  }
+  return abiTypeToTs(abiType);
+}
+
 // ── Code generation ───────────────────────────────────────────────────────────
 
 function toPascalCase(str) {
@@ -107,12 +119,42 @@ for (const method of abi.methods) {
   } else if (typeof method.returns === 'object') {
     out += `export interface ${ifaceName} {\n`;
     for (const [k, v] of Object.entries(method.returns)) {
-      out += `  ${toCamelCase(k)}: ${abiTypeToTs(v)};\n`;
+      out += `  ${toCamelCase(k)}: ${abiTypeToResultTs(method, k, v)};\n`;
     }
     out += `}\n\n`;
   } else {
     out += `export type ${ifaceName} = ${abiTypeToTs(method.returns)};\n\n`;
   }
+}
+
+// Return-value decoders
+for (const method of abi.methods) {
+  if (method.returns === 'void' || !method.returns || typeof method.returns !== 'object') continue;
+
+  const methodName = toPascalCase(method.name);
+  const onChainType = `OnChain${methodName}Response`;
+  out += `export interface ${onChainType} {\n`;
+  for (const [key, type] of Object.entries(method.returns)) {
+    out += `  ${key}: ${abiTypeToOnChainTs(type)};\n`;
+  }
+  out += `}\n\n`;
+
+  out += `export function decode${methodName}Result(retval: StellarSdk.xdr.ScVal): ${methodName}Result {\n`;
+  out += `  const native = StellarSdk.scValToNative(retval) as Partial<${onChainType}>;\n`;
+  out += `  return {\n`;
+  for (const [key, type] of Object.entries(method.returns)) {
+    const camel = toCamelCase(key);
+    let expression = `native?.${key}`;
+    if (method.name === 'verify_access' && key === 'has_access') {
+      expression = `Boolean(native?.${key})`;
+    } else if (method.name === 'verify_access' && key === 'expires_at' && type === 'u64') {
+      expression = `native?.${key} != null ? new Date(Number(native.${key})).toISOString() : null`;
+    } else {
+      expression = `native?.${key} as ${abiTypeToResultTs(method, key, type)}`;
+    }
+    out += `    ${camel}: ${expression},\n`;
+  }
+  out += `  };\n}\n\n`;
 }
 
 // ScVal encoders
