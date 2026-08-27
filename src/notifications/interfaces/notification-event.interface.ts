@@ -5,6 +5,9 @@ export enum NotificationEventType {
   RECORD_UPLOADED = 'record.uploaded',
   EMERGENCY_ACCESS = 'emergency-access',
   RECORD_AMENDED = 'record.amended',
+  DIAGNOSIS_CREATED = 'diagnosis.created',
+  DIAGNOSIS_SEVERITY_ESCALATED = 'diagnosis.severity_escalated',
+  DIAGNOSIS_STATUS_CONFIRMED = 'diagnosis.status_confirmed',
 }
 
 export interface NotificationEvent {

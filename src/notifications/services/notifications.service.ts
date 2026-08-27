@@ -89,6 +89,36 @@ export class NotificationsService {
     });
   }
 
+  emitDiagnosisCreated(actorId: string, diagnosisId: string, metadata?: Record<string, any>): void {
+    this.emitEvent({
+      eventType: NotificationEventType.DIAGNOSIS_CREATED,
+      actorId,
+      resourceId: diagnosisId,
+      timestamp: new Date(),
+      metadata,
+    });
+  }
+
+  emitDiagnosisSeverityEscalated(actorId: string, diagnosisId: string, metadata?: Record<string, any>): void {
+    this.emitEvent({
+      eventType: NotificationEventType.DIAGNOSIS_SEVERITY_ESCALATED,
+      actorId,
+      resourceId: diagnosisId,
+      timestamp: new Date(),
+      metadata,
+    });
+  }
+
+  emitDiagnosisStatusConfirmed(actorId: string, diagnosisId: string, metadata?: Record<string, any>): void {
+    this.emitEvent({
+      eventType: NotificationEventType.DIAGNOSIS_STATUS_CONFIRMED,
+      actorId,
+      resourceId: diagnosisId,
+      timestamp: new Date(),
+      metadata,
+    });
+  }
+
   async notifyOnChainEvent(
     eventType: NotificationEventType,
     actorId: string,
