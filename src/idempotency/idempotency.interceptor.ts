@@ -3,7 +3,6 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
-  ConflictException,
   UnprocessableEntityException,
   Logger,
 } from '@nestjs/common';
