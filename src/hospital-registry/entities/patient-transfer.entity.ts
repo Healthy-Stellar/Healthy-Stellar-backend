@@ -82,6 +82,24 @@ export class PatientTransfer {
   @Column({ name: 'initiated_by', type: 'uuid' })
   initiatedBy: string;
 
+  @Column({ name: 'rejected_at', type: 'timestamp', nullable: true })
+  rejectedAt: Date;
+
+  @Column({ name: 'rejected_by', type: 'uuid', nullable: true })
+  rejectedBy: string;
+
+  @Column({ name: 'rejection_reason', type: 'text', nullable: true })
+  rejectionReason: string;
+
+  @Column({ name: 'cancelled_at', type: 'timestamp', nullable: true })
+  cancelledAt: Date;
+
+  @Column({ name: 'cancelled_by', type: 'uuid', nullable: true })
+  cancelledBy: string;
+
+  @Column({ name: 'cancellation_reason', type: 'text', nullable: true })
+  cancellationReason: string;
+
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
 
