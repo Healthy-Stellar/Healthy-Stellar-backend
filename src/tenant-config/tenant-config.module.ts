@@ -13,20 +13,23 @@ import { CommonModule } from '../common/common.module';
 
 @Global()
 @Module({
-feat/tenant-branding
   imports: [
     TypeOrmModule.forFeature([TenantConfig, TenantBranding]),
     MulterModule.register({ limits: { fileSize: 2 * 1024 * 1024 } }),
     CommonModule,
   ],
   controllers: [TenantConfigController, TenantBrandingController],
-  providers: [TenantConfigService, TenantBrandingService, FeatureFlagGuard],
-  exports: [TenantConfigService, TenantBrandingService, FeatureFlagGuard],
-
-  imports: [TypeOrmModule.forFeature([TenantConfig]), CommonModule],
-  controllers: [TenantConfigController],
-  providers: [TenantConfigService, FeatureFlagGuard, TenantIpAllowlistGuard],
-  exports: [TenantConfigService, FeatureFlagGuard, TenantIpAllowlistGuard],
-main
+  providers: [
+    TenantConfigService,
+    TenantBrandingService,
+    FeatureFlagGuard,
+    TenantIpAllowlistGuard,
+  ],
+  exports: [
+    TenantConfigService,
+    TenantBrandingService,
+    FeatureFlagGuard,
+    TenantIpAllowlistGuard,
+  ],
 })
 export class TenantConfigModule {}
