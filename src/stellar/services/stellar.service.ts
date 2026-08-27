@@ -18,7 +18,8 @@ import {
  * StellarService
  *
  * Injectable NestJS provider that abstracts all Stellar/Soroban SDK interactions.
- * Supports runtime switching between Testnet and Mainnet via STELLAR_NETWORK env var.
+ * Supports runtime switching between Testnet and
+ * Mainnet via STELLAR_NETWORK env var.
  *
  * Required methods (Issue #234):
  *  • submitTransaction  — sign & submit a pre-built XDR transaction
@@ -94,7 +95,8 @@ export class StellarService {
   // ── Issue #234 — Required public API ─────────────────────────────────────
 
   /**
-   * Submit a pre-built, XDR-encoded transaction to the network.
+   * Submit a pre-built, 
+   * XDR-encoded transaction to the network.
    * Signs with the configured source keypair, submits, and polls for confirmation.
    *
    * @param xdr  Base64-encoded XDR transaction envelope.
@@ -209,6 +211,7 @@ export class StellarService {
       const confirmed = await this.pollForConfirmation(sendResult.hash);
 
       // Decode the return value — never leak raw ScVal
+      // To ensure successful result
       const successSim =
         simResult as StellarSdk.SorobanRpc.Api.SimulateTransactionSuccessResponse;
       const returnValue = successSim.result?.retval
@@ -430,7 +433,8 @@ export class StellarService {
 
   /**
    * Build, simulate, sign, submit, and await a Soroban contract invocation.
-   * Used internally by the legacy domain methods (anchorRecord, grantAccess, revokeAccess).
+   * Used internally by the legacy domain methods 
+   * (anchorRecord, grantAccess, revokeAccess).
    */
   private async invokeContractInternal(
     method: string,
