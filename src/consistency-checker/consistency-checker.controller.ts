@@ -1,9 +1,14 @@
-import { Controller, Get, Post, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Controller, Get, Post, HttpCode, HttpStatus, Param, Body, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ConsistencyCheckerService, ConsistencyReport } from './consistency-checker.service';
 import { ConsistencyIncident } from './consistency-incident.entity';
+import { ResolveIncidentDto } from './dto/resolve-incident.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 
 @ApiTags('consistency-checker')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('consistency')
 export class ConsistencyCheckerController {
   constructor(private readonly checker: ConsistencyCheckerService) {}
@@ -27,5 +32,17 @@ export class ConsistencyCheckerController {
   @ApiOperation({ summary: 'List open consistency incidents with severity and affected record count' })
   async incidents(): Promise<ConsistencyIncident[]> {
     return this.checker.listOpenIncidents();
+  }
+
+  @Post('incidents/:id/resolve')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Manually resolve a consistency incident' })
+  @ApiResponse({ status: 200, description: 'Resolved incident' })
+  @ApiResponse({ status: 404, description: 'Incident not found' })
+  async resolveIncident(
+    @Param('id') id: string,
+    @Body() dto: ResolveIncidentDto,
+  ): Promise<ConsistencyIncident> {
+    return this.checker.resolveIncident(id, dto.resolvedBy, dto.reason);
   }
 }
