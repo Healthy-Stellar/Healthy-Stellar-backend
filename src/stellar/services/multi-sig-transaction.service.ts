@@ -1,22 +1,29 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, LessThan } from "typeorm";
-import { Cron, CronExpression } from "@nestjs/schedule";
-import { MultiSigTransactionEntity } from "../entities/multi-sig-transaction.entity";
-import { MultiSigTransactionStatus, SignatureStatus, CreateMultiSigPaymentDto, ApproveRejectDto, MultiSigTransactionResponse } from "../interfaces/multi-sig.interface";
-import { StellarService } from "./stellar.service";
-import { NotificationsGateway } from "../../notifications/notifications.gateway";
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, LessThan } from 'typeorm';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { MultiSigTransactionEntity } from '../entities/multi-sig-transaction.entity';
+import { MultiSigTransactionStatus, SignatureStatus, CreateMultiSigPaymentDto, ApproveRejectDto, MultiSigTransactionResponse } from '../interfaces/multi-sig.interface';
+import { StellarService } from './stellar.service';
+import { StellarPaymentService } from './stellar-payment.service';
+import { StellarTransactionQueueService } from './stellar-transaction-queue.service';
+import { NotificationsGateway } from '../../notifications/notifications.gateway';
+
 const THRESHOLD="10000",Q=2,TOTAL=3,TTL=60;
+const EXECUTION_QUYUE = 'multi-sig-execution';
 
 @Injectable()
 export class MultiSigTransactionService {
   private readonly logger = new Logger(MultiSigTransactionService.name);
+
   constructor(
     @InjectRepository(MultiSigTransactionEntity)
     private readonly repo: Repository<MultiSigTransactionEntity>,
     private readonly config: ConfigService,
     private readonly stellarService: StellarService,
+    private readonly paymentService: StellarPaymentService,
+    private readonly queueService: StellarTransactionQueueService,
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
@@ -29,7 +36,7 @@ export class MultiSigTransactionService {
     const expiresAt = new Date(Date.now() + ttlMinutes * 60000);
     const entity = this.repo.create({
       tenantId: dto.tenantId, destination: dto.destination, amount: dto.amount,
-      asset: dto.asset || 'XLM', status: MultiSigTransactionStatus.PENDING_SIGNATURES,
+      asset: dto.asset || 'XLM', status: MultiSigTransactionStatus.PENDING_SIGNATURES.
       threshold: quorumSize, totalSigners: signers.length || TOTAL, ttlMinutes, expiresAt,
       requesterId, signatures: signers.map(s => ({ signerId: s, status: SignatureStatus.PENDING })), memo: dto.memo,
     });
@@ -44,7 +51,7 @@ export class MultiSigTransactionService {
   async approveTransaction(transactionId: string, dto: ApproveRejectDto): Promise<MultiSigTransactionResponse> {
     const entity = await this.repo.findOne({ where: { id: transactionId }, lock: { mode: 'pessimistic_write' } });
     if (!entity) throw new NotFoundException('Not found');
-    if (entity.status !== MultiSigTransactionStatus.PENDING_SIGNATURES) throw new BadRequestException('Already ' + entity.status);
+    if (entity.status !== MultiSigTransactionStatus.PENDING_SIGNATURES) { throw new BadRequestException('Already ' + entity.status); }
     if (new Date() > entity.expiresAt) { entity.status = MultiSigTransactionStatus.EXPIRED; await this.repo.save(entity); throw new BadRequestException('Transaction expired'); }
     const se = entity.signatures?.find(s => s.signerId === dto.signerId);
     if (!se) throw new BadRequestException('Not authorised');
@@ -52,8 +59,15 @@ export class MultiSigTransactionService {
     if (se.status === SignatureStatus.APPROVED) throw new BadRequestException('Already approved');
     se.status = SignatureStatus.APPROVED; se.signedAt = new Date().toISOString();
     const approvals = entity.signatures!.filter(s => s.status === SignatureStatus.APPROVED).length;
-    if (approvals >= entity.threshold) { entity.status = MultiSigTransactionStatus.APPROVED; await this.repo.save(entity); }
-    else { await this.repo.save(entity); }
+    if (approvals >= entity.threshold) {
+      entity.status = MultiSigTransactionStatus.APPROVED;
+      se.signedAt = new Date().toISOString();
+      await this.repo.save(entity);
+      // Enqueue execution
+      await this.enqueueExecution(entity);
+    } else {
+      await this.repo.save(entity);
+    }
     return this.toResponse(entity);
   }
 
@@ -81,10 +95,69 @@ export class MultiSigTransactionService {
     return r.affected ?? 0;
   }
 
+  async sweepApprovedTransactions(): Promise<number> {
+    const txs = await this.repo.find({ where: { status: MultiSigTransactionStatus.APPROVED, stellarTxHash: IsNull() } });
+    let count = 0;
+    for (const tx of txs) {
+      try {
+        await this.enqueueExecution(tx);
+        count++;
+      } catch (error) {
+        this.logger.error(`Failed to enqueue tx ${tx.id}: ${error.message}`);
+      }
+    }
+    return count;
+  }
+
+  async executeApprovedTransaction(transactionId: string): Promise<void> {
+    const entity = await this.repo.findOne({ where: { id: transactionId } });
+    if (!entity) throw new NotFoundException('Transaction not found');
+    if (entity.status !== MultiSigTransactionStatus.APPROVED) {
+      this.logger.warn(`Tx ${transactionId} not in APPROVED status, skipping`);
+      return;
+    }
+
+    try {
+      const hash = await this.paymentService.executePayment(entity);
+      entity.stellarTxHash = hash;
+      entity.status = MultiSigTransactionStatus.EXECUTED;
+      await this.repo.save(entity);
+      this.logger.log(`Transaction ${entity.id} executed with hash ${hash}`);
+    } catch (error) {
+      entity.executionAttempts++;
+      entity.lastError = error.message;
+      if (this.isRetryable(error)) {
+        this.logger.warn(`Tx ${entity.id} failed with retryable error: ${error.message}`);
+        // Keep status ASCENDED for retry
+        entity.status = MultiSigTransactionStatus.APPROVED;
+      } else {
+        entity.status = MultiSigTransactionStatus.EXECUTION_FAILED;
+        this.logger.error(`Tx ${entity.id} failed terminally: ${error.message}`);
+      }
+      await this.repo.save(entity);
+    }
+  }
+
+  private isRetryable(error: any): boolean {
+    // Terminal errors include invalid destination, insufficient funds, invalid asset, etc.
+    const msg = error.message || '';
+    return !(msg.includes('Invalid destination') || msg.includes('insufficient funds') || msg.includes('invalid asset'));
+  }
+
+  private async enqueueExecution(entity: MultiSigTransactionEntity): Promise<void> {
+    try {
+      await this.queueService.enqueue(EXECUTION_QUUE, { transactionId: entity.id });
+    } catch (error) {
+      this.logger.error(`Failed to enqueue tx ${entity.id}: ${error.message}`);
+      // In case of enqueue failure, marks the transaction for sweep recovery
+      throw error;
+    }
+  }
+
   private async findPendingOrThrow(id: string): Promise<MultiSigTransactionEntity> {
     const e = await this.repo.findOne({ where: { id } });
     if (!e) throw new NotFoundException('Not found');
-    if (e.status !== MultiSigTransactionStatus.PENDING_SIGNATURES) throw new BadRequestException('Already ' + e.status);
+    if (e.status !== MultiSigTransactionStatus.PENDING_SIGNATURES) { throw new BadRequestException('Already ' + e.status); }
     return e;
   }
 
