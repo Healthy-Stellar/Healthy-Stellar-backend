@@ -164,16 +164,21 @@ export class ContractWritesProcessor extends WorkerHost {
 
     job.progress(30);
 
-    // Calculate expiration if not provided (default 7 days, in milliseconds)
-    const expiresAtMs =
-      params.expiresAtMs ||
-      BigInt(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    // Calculate expiration if not provided (default 7 days, in milliseconds).
+    // GrantAccessArgs.expiresAt is milliseconds since epoch (Date.now()-style);
+    // encodeGrantAccess converts it to the on-chain seconds-since-epoch unit
+    // Soroban expects (#967) — this call site just needs to hand it a
+    // millisecond value, not do that conversion itself.
+    const expiresAt =
+      params.expiresAt != null
+        ? (typeof params.expiresAt === 'bigint' ? params.expiresAt : BigInt(params.expiresAt))
+        : BigInt(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     const result = await this.stellarContractService.grantAccess({
       patientId: params.patientId,
       granteeId: params.granteeId,
       recordId: params.recordId,
-      expiresAtMs: typeof expiresAtMs === 'bigint' ? expiresAtMs : BigInt(expiresAtMs),
+      expiresAt,
     });
 
     job.progress(90);

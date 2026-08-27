@@ -32,6 +32,33 @@ if (!fs.existsSync(ABI_PATH)) {
 const abi = JSON.parse(fs.readFileSync(ABI_PATH, 'utf8'));
 console.log(`[generate-contract-types] Loaded ABI v${abi.version} with ${abi.methods.length} methods`);
 
+// ── Seconds-since-epoch fields ──────────────────────────────────────────────────
+//
+// Soroban's env.ledger().timestamp() — and every contract field derived from
+// it, such as grant_access's expires_at and verify_access's expires_at
+// return value — is seconds since the Unix epoch, not milliseconds. The ABI
+// itself carries no unit ("u64" alone doesn't say), so this table is the one
+// place that says which (method, field) pairs are on-chain seconds, and
+// every encoder/decoder below converts across that boundary here instead of
+// leaving it for each call site to (mis)remember.
+//
+// The TypeScript-facing API deliberately stays in milliseconds — the
+// native, Date.now()-style unit every other timestamp in this codebase
+// uses — so callers never have to think about the on-chain unit at all.
+//
+// #967: previously nothing did this conversion. encodeGrantAccess wrote a
+// millisecond value straight into a seconds-denominated u64 (~1000x too
+// large), and decodeVerifyAccessResult read a seconds value back as if it
+// were milliseconds (landing on a date ~1970, not the real expiry).
+const SECONDS_SINCE_EPOCH_FIELDS = new Set([
+  'grant_access.expires_at', // arg
+  'verify_access.expires_at', // return field
+]);
+
+function isSecondsSinceEpoch(methodName, fieldName) {
+  return SECONDS_SINCE_EPOCH_FIELDS.has(`${methodName}.${fieldName}`);
+}
+
 // ── Type mapping ──────────────────────────────────────────────────────────────
 
 function abiTypeToTs(abiType) {
@@ -68,7 +95,7 @@ function abiTypeToOnChainTs(abiType) {
 }
 
 function abiTypeToResultTs(method, key, abiType) {
-  if (method.name === 'verify_access' && key === 'expires_at' && abiType === 'u64') {
+  if (isSecondsSinceEpoch(method.name, key) && abiType === 'u64') {
     return 'string | null';
   }
   return abiTypeToTs(abiType);
@@ -106,7 +133,11 @@ for (const method of abi.methods) {
   }
   out += `export interface ${ifaceName} {\n`;
   for (const arg of method.args) {
-    out += `  ${toCamelCase(arg.name)}: ${abiTypeToTs(arg.type)};\n`;
+    const camel = toCamelCase(arg.name);
+    if (isSecondsSinceEpoch(method.name, arg.name) && arg.type === 'u64') {
+      out += `  /** Milliseconds since epoch (Date.now()-style). encode${toPascalCase(method.name)} converts this to on-chain seconds. */\n`;
+    }
+    out += `  ${camel}: ${abiTypeToTs(arg.type)};\n`;
   }
   out += `}\n\n`;
 }
@@ -119,6 +150,9 @@ for (const method of abi.methods) {
   } else if (typeof method.returns === 'object') {
     out += `export interface ${ifaceName} {\n`;
     for (const [k, v] of Object.entries(method.returns)) {
+      if (isSecondsSinceEpoch(method.name, k) && v === 'u64') {
+        out += `  /** ISO 8601, or null. Converted from on-chain seconds by decode${toPascalCase(method.name)}Result. */\n`;
+      }
       out += `  ${toCamelCase(k)}: ${abiTypeToResultTs(method, k, v)};\n`;
     }
     out += `}\n\n`;
@@ -147,8 +181,10 @@ for (const method of abi.methods) {
     let expression = `native?.${key}`;
     if (method.name === 'verify_access' && key === 'has_access') {
       expression = `Boolean(native?.${key})`;
-    } else if (method.name === 'verify_access' && key === 'expires_at' && type === 'u64') {
-      expression = `native?.${key} != null ? new Date(Number(native.${key})).toISOString() : null`;
+    } else if (isSecondsSinceEpoch(method.name, key) && type === 'u64') {
+      // On-chain value is seconds since epoch (#967) — scale to
+      // milliseconds before handing it to Date.
+      expression = `native?.${key} != null ? new Date(Number(native.${key}) * 1000).toISOString() : null`;
     } else {
       expression = `native?.${key} as ${abiTypeToResultTs(method, key, type)}`;
     }
@@ -168,7 +204,14 @@ for (const method of abi.methods) {
     out += `  return [\n`;
     for (const arg of method.args) {
       const camel = toCamelCase(arg.name);
-      out += `    ${abiTypeToScVal(arg.type, `args.${camel}`)},\n`;
+      const varName = `args.${camel}`;
+      if (isSecondsSinceEpoch(method.name, arg.name) && arg.type === 'u64') {
+        // varName is milliseconds (Date.now()-style); the contract stores
+        // seconds since epoch (#967), so convert at the boundary.
+        out += `    StellarSdk.nativeToScVal(${varName} / 1000n, { type: 'u64' }),\n`;
+      } else {
+        out += `    ${abiTypeToScVal(arg.type, varName)},\n`;
+      }
     }
     out += `  ];\n`;
   }

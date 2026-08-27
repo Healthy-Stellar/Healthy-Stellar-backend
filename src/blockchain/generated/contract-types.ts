@@ -17,6 +17,7 @@ export interface GrantAccessArgs {
   patientId: string;
   granteeId: string;
   recordId: string;
+  /** Milliseconds since epoch (Date.now()-style). encodeGrantAccess converts this to on-chain seconds. */
   expiresAt: bigint;
 }
 
@@ -51,6 +52,7 @@ export interface RevokeAccessResult {
 
 export interface VerifyAccessResult {
   hasAccess: boolean;
+  /** ISO 8601, or null. Converted from on-chain seconds by decodeVerifyAccessResult. */
   expiresAt: string | null;
 }
 
@@ -63,7 +65,7 @@ export function decodeVerifyAccessResult(retval: StellarSdk.xdr.ScVal): VerifyAc
   const native = StellarSdk.scValToNative(retval) as Partial<OnChainVerifyAccessResponse>;
   return {
     hasAccess: Boolean(native?.has_access),
-    expiresAt: native?.expires_at != null ? new Date(Number(native.expires_at)).toISOString() : null,
+    expiresAt: native?.expires_at != null ? new Date(Number(native.expires_at) * 1000).toISOString() : null,
   };
 }
 
@@ -79,7 +81,7 @@ export function encodeGrantAccess(args: GrantAccessArgs): StellarSdk.xdr.ScVal[]
     StellarSdk.nativeToScVal(args.patientId, { type: 'string' }),
     StellarSdk.nativeToScVal(args.granteeId, { type: 'string' }),
     StellarSdk.nativeToScVal(args.recordId, { type: 'string' }),
-    StellarSdk.nativeToScVal(args.expiresAt, { type: 'u64' }),
+    StellarSdk.nativeToScVal(args.expiresAt / 1000n, { type: 'u64' }),
   ];
 }
 
