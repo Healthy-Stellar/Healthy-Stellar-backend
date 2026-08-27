@@ -52,12 +52,11 @@ import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
 import { TenantGuard } from './tenant/guards/tenant.guard';
 import { DataResidencyInterceptor } from './common/interceptors/data-residency.interceptor';
 import { JobsModule } from './jobs/jobs.module';
- feat/idempotency-ttl-cleanup
 import { IdempotencyModule } from './idempotency/idempotency.module';
-
 import { DataRetentionModule } from './data-retention/data-retention.module';
 import { DataResidencyModule } from './data-residency/data-residency.module';
-main
+import { ResearchExportModule } from './research-export/research-export.module';
+import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { VersioningModule } from './versioning/versioning.module';
 import { LedgerReconciliationModule } from './ledger-reconciliation/ledger-reconciliation.module';
@@ -74,30 +73,28 @@ import { MetricsModule } from './metrics/metrics.module';
 import { HttpMetricsInterceptor } from './metrics/interceptors/http-metrics.interceptor';
 import { LoggerModule } from './common/logger/logger.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
- main
+import { FeatureFlagModule } from './feature-flags/feature-flag.module';
+import { ProjectionsModule } from './projections/projections.module';
+import { CqrsModule } from '@nestjs/cqrs';
 import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-monitoring.module';
 import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
-
+import { PaginationInterceptor } from './common/interceptors/pagination.interceptor';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { EventStoreModule } from './event-store/event-store.module';
 import { BullBoardAuthMiddleware } from './queues/middleware/bull-board-auth.middleware';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { GovernanceAnalyticsModule } from './governance-analytics/governance-analytics.module';
-import { IdempotencyModule } from './idempotency/idempotency.module';
 import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor';
 import { DlqModule } from './dlq/dlq.module';
-import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
 import { IncidentModule } from './incident/incident.module';
 import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.interceptor';
 import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
 import { MedicalStaffModule } from './medical-staff/medical-staff.module';
-import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-monitoring.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { SurgicalModule } from './surgical-management-system/surgical/Surgical.module';
 import { TelemedicineModule } from './telemedicine-and-remote/src/telemedicine/Telemedicine.module';
 import { User } from './auth/entities/user.entity';
-main
 
 @Module({
   imports: [
@@ -159,11 +156,8 @@ main
     FhirModule,
     AccessControlModule,
     JobsModule,
- feat/idempotency-ttl-cleanup
     IdempotencyModule,
-
     DataRetentionModule,
- main
     StellarModule,
     AuditModule,
     TenantConfigModule,
@@ -173,10 +167,8 @@ main
     ResearchExportModule,
     ReconciliationModule,
     GraphqlModule,
- main
     HealthcareMonitoringModule,
     OperatorRunbookModule,
-
     VersioningModule,
     LedgerReconciliationModule,
     StellarStreamModule,
@@ -200,7 +192,6 @@ main
     SurgicalModule,
     TelemedicineModule,
     EventEmitterModule.forRoot(),
-main
   ],
   controllers: [AppController],
   providers: [
