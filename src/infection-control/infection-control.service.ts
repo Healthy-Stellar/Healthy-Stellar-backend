@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { InfectionCase } from './entities/infection-case.entity';
-import { IsolationPrecaution } from './entities/isolation-precaution.entity';
+import { InjectRepository, InjectEntityManager } from '@nestjs/typeorm';
+import { Repository, EntityManager } from 'typeorm';
+import { InfectionCase, InfectionStatus } from './entities/infection-case.entity';
+import { IsolationPrecaution, PrecautionType } from './entities/isolation-precaution.entity';
 import { AntibioticResistance } from './entities/antibiotic-resistance.entity';
 import { InfectionControlPolicy } from './entities/infection-control-policy.entity';
 import { OutbreakIncident } from './entities/outbreak-incident.entity';
@@ -17,6 +17,7 @@ import { UpdateInfectionControlPolicyDto } from './dto/update-infection-control-
 import { CreateOutbreakIncidentDto } from './dto/create-outbreak-incident.dto';
 import { UpdateOutbreakIncidentDto } from './dto/update-outbreak-incident.dto';
 import { CreateHandHygieneAuditDto } from './dto/create-hand-hygiene-audit.dto';
+import { NotificationsService } from '../notifications/services/notifications.service';
 
 @Injectable()
 export class InfectionControlService {
@@ -33,12 +34,71 @@ export class InfectionControlService {
     private readonly outbreakIncidentRepository: Repository<OutbreakIncident>,
     @InjectRepository(HandHygieneAudit)
     private readonly handHygieneAuditRepository: Repository<HandHygieneAudit>,
+    @InjectEntityManager()
+    private readonly entityManager: EntityManager,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
-  // Infection Cases
+  // ---- Workflow Triggers ----
+
+  private async triggerConfirmedWorkflow(infectionCase: InfectionCase): Promise<void> {
+    // 1. Auto-create draft IsolationPrecaution
+    const existing = await this.isolationPrecautionRepository.findOne({
+      where: { patientId: infectionCase.patientId, isActive: true }
+    });
+
+    if (!existing) {
+      await this.isolationPrecautionRepository.save(
+        this.isolationPrecautionRepository.create({
+          patientId: infectionCase.patientId,
+          precautionType: PrecautionType.CONTACT,
+          startDate: new Date(),
+          isActive: false, // Draft status for staff to review
+          reason: `Auto-drafted due to confirmed ${infectionCase.pathogen} infection`,
+        })
+      );
+    }
+
+    // 2. Find bed and Ward Manager via raw SQL to bypass cross-module dependency limits
+    const beds = await this.entityManager.query(
+      `SELECT b.id as "bedId", w."wardManagerId"
+       FROM beds b
+       JOIN rooms r ON b."roomId" = r.id
+       JOIN wards w ON r."wardId" = w.id
+       WHERE b."patientId" = $1 AND b."isActive" = true LIMIT 1`,
+      [infectionCase.patientId]
+    );
+
+    if (beds.length > 0) {
+      const { bedId, wardManagerId } = beds[0];
+
+      // 3. Flag the patient's current bed by safely appending to the features array
+      await this.entityManager.query(
+        `UPDATE beds SET features = array_append(COALESCE(features, '{}'::text[]), 'ISOLATION_REQUIRED') WHERE id = $1`,
+        [bedId]
+      );
+
+      // 4. Emit notification to Charge Nurse
+      if (wardManagerId) {
+        await this.notificationsService.sendProviderEmailNotification(
+          wardManagerId,
+          `Isolation Alert: Bed Reassignment Needed`,
+          `Patient ${infectionCase.patientId} has a confirmed ${infectionCase.pathogen} infection. Please assign an isolation room.`
+        );
+      }
+    }
+  }
+
+  // ---- Infection Cases ----
+
   async createInfectionCase(dto: CreateInfectionCaseDto): Promise<InfectionCase> {
     const infectionCase = this.infectionCaseRepository.create(dto);
-    return this.infectionCaseRepository.save(infectionCase);
+    const saved = await this.infectionCaseRepository.save(infectionCase);
+    
+    if (saved.status === InfectionStatus.CONFIRMED) {
+      await this.triggerConfirmedWorkflow(saved);
+    }
+    return saved;
   }
 
   async findAllInfectionCases(): Promise<InfectionCase[]> {
@@ -52,8 +112,25 @@ export class InfectionControlService {
   }
 
   async updateInfectionCase(id: string, dto: UpdateInfectionCaseDto): Promise<InfectionCase> {
+    const before = await this.findOneInfectionCase(id);
     await this.infectionCaseRepository.update(id, dto);
-    return this.findOneInfectionCase(id);
+    const after = await this.findOneInfectionCase(id);
+
+    // Trigger workflow only on transition to CONFIRMED
+    if (before.status !== InfectionStatus.CONFIRMED && after.status === InfectionStatus.CONFIRMED) {
+      await this.triggerConfirmedWorkflow(after);
+    }
+    return after;
+  }
+
+  // ---- Dashboard AC ----
+  
+  async getCasesMissingPrecautions(): Promise<InfectionCase[]> {
+    return this.infectionCaseRepository.createQueryBuilder('case')
+      .leftJoin(IsolationPrecaution, 'precaution', 'precaution."patientId" = case."patientId" AND precaution."isActive" = true')
+      .where('case.status = :status', { status: InfectionStatus.CONFIRMED })
+      .andWhere('precaution.id IS NULL')
+      .getMany();
   }
 
   // Isolation Precautions
@@ -66,10 +143,7 @@ export class InfectionControlService {
     return this.isolationPrecautionRepository.find();
   }
 
-  async updateIsolationPrecaution(
-    id: string,
-    dto: UpdateIsolationPrecautionDto,
-  ): Promise<IsolationPrecaution> {
+  async updateIsolationPrecaution(id: string, dto: UpdateIsolationPrecautionDto): Promise<IsolationPrecaution> {
     await this.isolationPrecautionRepository.update(id, dto);
     const precaution = await this.isolationPrecautionRepository.findOne({ where: { id } });
     if (!precaution) throw new NotFoundException(`Isolation precaution with ID ${id} not found`);
@@ -77,9 +151,7 @@ export class InfectionControlService {
   }
 
   // Antibiotic Resistance
-  async createAntibioticResistance(
-    dto: CreateAntibioticResistanceDto,
-  ): Promise<AntibioticResistance> {
+  async createAntibioticResistance(dto: CreateAntibioticResistanceDto): Promise<AntibioticResistance> {
     const resistance = this.antibioticResistanceRepository.create(dto);
     return this.antibioticResistanceRepository.save(resistance);
   }
@@ -98,10 +170,7 @@ export class InfectionControlService {
     return this.policyRepository.find({ where: { isActive: true } });
   }
 
-  async updatePolicy(
-    id: string,
-    dto: UpdateInfectionControlPolicyDto,
-  ): Promise<InfectionControlPolicy> {
+  async updatePolicy(id: string, dto: UpdateInfectionControlPolicyDto): Promise<InfectionControlPolicy> {
     await this.policyRepository.update(id, dto);
     const policy = await this.policyRepository.findOne({ where: { id } });
     if (!policy) throw new NotFoundException(`Policy with ID ${id} not found`);
