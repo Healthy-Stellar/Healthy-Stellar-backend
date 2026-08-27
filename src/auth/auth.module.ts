@@ -8,6 +8,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 // Entities
 import { User } from './entities/user.entity';
 import { MfaEntity } from './entities/mfa.entity';
+import { MfaRecoveryCode } from './entities/mfa-recovery-code.entity';
 import { SessionEntity } from './entities/session.entity';
 import { ApiKey } from './entities/api-key.entity';
 import { ProviderAvailability } from './entities/provider-availability.entity';
@@ -61,7 +62,7 @@ const mailerProvider = buildMailerProvider();
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, MfaEntity, SessionEntity, ApiKey, ProviderAvailability, AuditLogEntity]),
+    TypeOrmModule.forFeature([User, MfaEntity, MfaRecoveryCode, SessionEntity, ApiKey, ProviderAvailability, AuditLogEntity]),
     PassportModule,
     EventEmitterModule.forRoot(),
     JwtModule.registerAsync({
