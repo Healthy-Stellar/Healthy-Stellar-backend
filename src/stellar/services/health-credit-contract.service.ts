@@ -3,6 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as StellarSdk from '@stellar/stellar-sdk';
 
+/**
+ * ContractService for Soroban-based tokenised health credits.
+ * Supports mint, transfer, burn, 
+ * and balance queries against the
+ * health credit token contract deployed on Soroban testnet.
+ */
 export interface HealthCreditTxResult {
   txHash: string;
   ledger: number;
@@ -23,11 +29,7 @@ export enum HealthCreditEventType {
   BURNED = 'health_credit.burned',
 }
 
-/**
- * ContractService for Soroban-based tokenised health credits.
- * Supports mint, transfer, burn, and balance queries against the
- * health credit token contract deployed on Soroban testnet.
- */
+
 @Injectable()
 export class HealthCreditContractService {
   private readonly logger = new Logger(HealthCreditContractService.name);
@@ -110,7 +112,8 @@ export class HealthCreditContractService {
     return result;
   }
 
-  /** Burn health credits from an account (redeem / expire). */
+  /** Burn health credits from an account  */
+  /** (redeem / expire) */
   async burn(fromAccountId: string, amount: bigint): Promise<HealthCreditTxResult> {
     this.logger.log(`[burn] from=${fromAccountId} amount=${amount}`);
     const result = await this.withRetry('burn', () =>
@@ -162,6 +165,7 @@ export class HealthCreditContractService {
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
+  //Helper function to call the contract
   private async invokeContract(method: string, args: StellarSdk.xdr.ScVal[]): Promise<HealthCreditTxResult> {
     const account = await this.horizonServer.loadAccount(this.sourceKeypair.publicKey());
 
