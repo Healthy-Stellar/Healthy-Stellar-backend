@@ -79,6 +79,9 @@ export class StellarContractService {
 
   // ── Public typed API ──────────────────────────────────────────────────────
 
+   /** Anchor a medical record's IPFS CID on-chain. */
+  a/** Grant time-limited access to a medical record. */
+ 
   /** Anchor a medical record's IPFS CID on-chain. */
   async anchorRecord(args: AnchorRecordArgs): Promise<AnchorRecordResult> {
     this.logger.log(`[anchorRecord] patientId=${args.patientId} cid=${args.cid}`);
@@ -118,6 +121,7 @@ export class StellarContractService {
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
+  //Helper function to call contract
   private async invokeContract(
     method: string,
     args: StellarSdk.xdr.ScVal[],
