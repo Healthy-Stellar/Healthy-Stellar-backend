@@ -1,29 +1,14 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThanOrEqual, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
-import { SessionEntity } from '../entities/session.entity';
-
-/**
- * Minimal API-key record shape expected by this service.
- * Replace with your actual ApiKey entity import once it exists.
- */
-export interface ApiKeyRecord {
-  id: string;
-  keyHash: string;
-  isActive: boolean;
-  expiresAt: Date | null;
-}
+import { ApiKey, ApiKeyScope } from '../entities/api-key.entity';
 
 @Injectable()
 export class ApiKeyService {
   constructor(
-    /**
-     * Swap SessionEntity for your real ApiKey entity/repository.
-     * Kept as SessionEntity here so the module compiles without a new entity.
-     */
-    @InjectRepository(SessionEntity)
-    private readonly apiKeyRepo: Repository<ApiKeyRecord>,
+    @InjectRepository(ApiKey)
+    private readonly apiKeyRepo: Repository<ApiKey>,
   ) {}
 
   /**
@@ -32,11 +17,11 @@ export class ApiKeyService {
    *  2. Checking isActive.
    *  3. Checking expiresAt — rejects keys whose expiry has passed.
    */
-  async validateApiKey(rawKey: string): Promise<ApiKeyRecord> {
+  async validateApiKey(rawKey: string): Promise<ApiKey> {
     const keyHash = this.hashKey(rawKey);
 
     const record = await this.apiKeyRepo.findOne({
-      where: { keyHash, isActive: true } as never,
+      where: { keyHash, isActive: true },
     });
 
     if (!record) {
@@ -51,6 +36,23 @@ export class ApiKeyService {
   }
 
   /**
+   * Returns true if the given API key has at least one of the required scopes.
+   */
+  hasAnyScope(apiKey: ApiKey, requiredScopes: ApiKeyScope[]): boolean {
+    return requiredScopes.some((scope) => apiKey.scopes?.includes(scope));
+  }
+
+  /**
+   * Records the IP address that most recently used this API key.
+   */
+  async recordLastUsedIp(id: string, ip: string): Promise<void> {
+    await this.apiKeyRepo.update(id, {
+      lastUsedByIp: ip,
+      lastUsedAt: new Date(),
+    });
+  }
+
+  /**
    * Deactivates all keys whose expiresAt is in the past and isActive is still true.
    * Called by the expiry task on a schedule.
    * Returns the count of deactivated keys.
@@ -59,7 +61,7 @@ export class ApiKeyService {
     const result = await this.apiKeyRepo
       .createQueryBuilder()
       .update()
-      .set({ isActive: false } as never)
+      .set({ isActive: false })
       .where('isActive = :active AND expiresAt IS NOT NULL AND expiresAt <= :now', {
         active: true,
         now: new Date(),
