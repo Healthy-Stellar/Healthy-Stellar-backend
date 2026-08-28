@@ -56,6 +56,21 @@ export class TenantQuotaUsageResponseDto {
   hourlyResetAt: string;
 }
 
+/**
+ * A tenant currently at/over its configurable usage warning threshold
+ * (Issue #954). Recorded by the scheduled quota threshold check.
+ */
+export class TenantNearLimitDto {
+  @ApiProperty({ example: 'tenant-uuid-here' })
+  tenantId: string;
+
+  @ApiProperty({ example: 'records', enum: ['records', 'apiCalls', 'bulkOperations', 'storage'] })
+  quotaType: string;
+
+  @ApiProperty({ example: 87.4, description: 'Percent of the quota limit used' })
+  percentUsed: number;
+}
+
 // ─── Update DTO ───────────────────────────────────────────────────────────────
 
 export class UpdateTenantQuotaDto {

@@ -18,24 +18,46 @@ import {
 } from '@nestjs/swagger';
 
 import {
+  TenantNearLimitDto,
   TenantQuotaUsageResponseDto,
   UpdateTenantQuotaDto,
 } from '../dto/tenant-quota.dto';
 import { TenantQuotaService } from '../services/tenant-quota.service';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { AdminGuard } from '../../auth/guards/admin.guard';
 
 /**
  * Admin-only endpoints for inspecting and managing per-tenant resource quotas.
- *
- * Protect this controller with your platform-admin auth guard
- * (e.g. `@UseGuards(JwtAuthGuard, AdminRoleGuard)`) in addition to the
- * standard JWT guard – the placeholder guard below is illustrative only.
+ * Requires a JWT and the admin role.
  */
 @ApiTags('Admin – Tenant Quotas')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, AdminRoleGuard)
+@UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin/tenants')
 export class TenantQuotaAdminController {
   constructor(private readonly quotaService: TenantQuotaService) {}
+
+  /**
+   * GET /admin/tenants/quota/near-limit
+   *
+   * Lists tenants currently at/over their usage warning threshold,
+   * highest usage first. Populated by the scheduled threshold check.
+   */
+  @Get('quota/near-limit')
+  @ApiOperation({
+    summary: 'List tenants near their quota warning threshold',
+    description:
+      'Returns tenants whose usage crossed a configurable warning threshold, ' +
+      'ordered by usage (highest first).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Tenants at/over their warning threshold',
+    type: [TenantNearLimitDto],
+  })
+  async listNearLimit() {
+    return this.quotaService.listTenantsNearLimit();
+  }
 
   /**
    * GET /admin/tenants/:id/usage
