@@ -7,11 +7,13 @@ import {
   Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import * as speakeasy from 'speakeasy';
 import * as QRCode from 'qrcode';
 import * as argon2 from 'argon2';
+import { randomBytes } from 'crypto';
 import { MfaEntity } from '../entities/mfa.entity';
+import { MfaRecoveryCode } from '../entities/mfa-recovery-code.entity';
 import { User } from '../entities/user.entity';
 import { MAILER_SERVICE } from '../../notifications/services/notifications.service';
 import { DataEncryptionService } from '../../common/services/data-encryption.service';
@@ -28,6 +30,11 @@ export interface MfaVerificationResult {
   backupCodes?: string[];
 }
 
+/** Number of recovery codes issued per generation */
+const RECOVERY_CODE_COUNT = 10;
+/** Each code: 5 bytes → 10 hex chars, formatted as XXXXX-XXXXX */
+const RECOVERY_CODE_BYTES = 5;
+
 @Injectable()
 export class MfaService {
   private readonly logger = new Logger(MfaService.name);
@@ -35,53 +42,40 @@ export class MfaService {
   constructor(
     @InjectRepository(MfaEntity)
     private mfaRepository: Repository<MfaEntity>,
+    @InjectRepository(MfaRecoveryCode)
+    private recoveryCodeRepository: Repository<MfaRecoveryCode>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
     private readonly dataEncryptionService: DataEncryptionService,
     @Optional() @Inject(MAILER_SERVICE) private mailerService?: any,
   ) {}
 
-  /**
-   * Initialize MFA setup for user - generate secret and QR code
-   */
   async setupMfa(userId: string, deviceName?: string): Promise<MfaSetupResponse> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    if (!user) throw new NotFoundException('User not found');
 
     const secret = speakeasy.generateSecret({
       name: `Healthy Stellar (${user.email})`,
       issuer: 'Healthy Stellar',
-      length: 32, // 256-bit entropy
+      length: 32,
     });
 
     const qrCode = await QRCode.toDataURL(secret.otpauth_url);
+    const { plain } = await this.generateRecoveryCodes(RECOVERY_CODE_COUNT);
 
-    // Preview codes shown once during setup; actual hashes stored on verify
-    const { plain } = await this.generateBackupCodes(10);
     user.mfaSecret = this.dataEncryptionService.encrypt(secret.base32);
     await this.userRepository.save(user);
 
-    return {
-      secret: secret.base32,
-      qrCode,
-      backupCodes: plain,
-    };
+    return { secret: secret.base32, qrCode, backupCodes: plain };
   }
 
-  /**
-   * Verify MFA setup and save to database
-   */
   async verifyAndEnableMfa(
     userId: string,
     verificationCode: string,
     deviceName?: string,
   ): Promise<MfaVerificationResult> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    if (!user) throw new NotFoundException('User not found');
 
     if (!user.mfaSecret) {
       throw new BadRequestException('MFA setup has not been initiated. Call setup first.');
@@ -100,22 +94,19 @@ export class MfaService {
       secret,
       encoding: 'base32',
       token: verificationCode,
-      window: 2, // Allow 30 seconds before/after
+      window: 2,
     });
 
-    if (!verified) {
-      throw new BadRequestException('Invalid verification code');
-    }
+    if (!verified) throw new BadRequestException('Invalid verification code');
 
-    // Generate 10 backup codes — store only hashes, return plaintext once
-    const { plain: backupCodes, hashed: hashedBackupCodes } = await this.generateBackupCodes(10);
+    // Generate and persist recovery codes — store only hashes
+    const { plain: backupCodes } = await this.persistRecoveryCodes(userId);
 
     const encryptedSecret = this.dataEncryptionService.encrypt(secret);
-
     const mfaDevice = this.mfaRepository.create({
       userId,
       secret: encryptedSecret,
-      backupCodes: hashedBackupCodes,
+      backupCodes: [], // legacy field kept for schema compat; real codes in mfa_recovery_codes
       isVerified: true,
       verifiedAt: new Date(),
       deviceName: deviceName || 'Primary Device',
@@ -123,33 +114,18 @@ export class MfaService {
     });
 
     await this.mfaRepository.save(mfaDevice);
-
     user.mfaEnabled = true;
     user.mfaSecret = encryptedSecret;
     await this.userRepository.save(user);
 
-    return {
-      success: true,
-      message: 'MFA enabled successfully',
-      backupCodes,
-    };
+    return { success: true, message: 'MFA enabled successfully', backupCodes };
   }
 
-  /**
-   * Verify MFA code during login — tries TOTP first, falls back to backup code
-   */
   async verifyMfaCode(userId: string, code: string): Promise<boolean> {
     const mfaDevice = await this.mfaRepository.findOne({
-      where: {
-        userId,
-        isActive: true,
-        isPrimary: true,
-      },
+      where: { userId, isActive: true, isPrimary: true },
     });
-
-    if (!mfaDevice) {
-      throw new NotFoundException('MFA device not found');
-    }
+    if (!mfaDevice) throw new NotFoundException('MFA device not found');
 
     let decryptedSecret = '';
     try {
@@ -171,12 +147,12 @@ export class MfaService {
       return true;
     }
 
-    return this.verifyBackupCode(mfaDevice, code, userId);
+    return this.consumeRecoveryCode(userId, code);
   }
 
   /**
-   * Verify a backup code exclusively — for the dedicated backup-code recovery flow.
-   * Returns success flag and remaining code count after consumption.
+   * Dedicated recovery-code verification — used by the backup-code endpoint.
+   * Returns success flag and remaining unconsumed code count.
    */
   async verifyBackupCodeOnly(
     userId: string,
@@ -185,132 +161,115 @@ export class MfaService {
     const mfaDevice = await this.mfaRepository.findOne({
       where: { userId, isActive: true, isPrimary: true },
     });
+    if (!mfaDevice) throw new NotFoundException('MFA device not found');
 
-    if (!mfaDevice) {
-      throw new NotFoundException('MFA device not found');
-    }
-
-    const success = await this.verifyBackupCode(mfaDevice, code.toUpperCase(), userId);
-    return { success, remainingCodes: mfaDevice.backupCodes?.length ?? 0 };
+    const success = await this.consumeRecoveryCode(userId, code.toUpperCase());
+    const remainingCodes = await this.recoveryCodeRepository.count({
+      where: { userId, consumedAt: IsNull() },
+    });
+    return { success, remainingCodes };
   }
 
   /**
-   * Generate new backup codes — invalidates the previous set
+   * Regenerate recovery codes — atomically deletes all existing codes (consumed or not)
+   * and issues a fresh set. Requires a valid TOTP code as re-auth.
    */
   async generateNewBackupCodes(userId: string): Promise<string[]> {
     const mfaDevice = await this.mfaRepository.findOne({
-      where: {
-        userId,
-        isPrimary: true,
-      },
+      where: { userId, isPrimary: true },
     });
+    if (!mfaDevice) throw new NotFoundException('MFA device not found');
 
-    if (!mfaDevice) {
-      throw new NotFoundException('MFA device not found');
-    }
-
-    const { plain: newBackupCodes, hashed: hashedNewCodes } = await this.generateBackupCodes(10);
-    mfaDevice.backupCodes = hashedNewCodes;
-    await this.mfaRepository.save(mfaDevice);
+    const { plain } = await this.persistRecoveryCodes(userId);
 
     this.notifyBackupCodesRegenerated(userId).catch((err: any) =>
       this.logger.error(`Backup codes regenerated notification failed: ${err?.message}`),
     );
 
-    return newBackupCodes;
+    return plain;
   }
 
-  /**
-   * Disable MFA
-   */
   async disableMfa(userId: string): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    if (!user) throw new NotFoundException('User not found');
 
     await this.mfaRepository.update({ userId }, { isActive: false });
+    // Invalidate all recovery codes on MFA disable
+    await this.recoveryCodeRepository.delete({ userId });
 
     user.mfaEnabled = false;
     user.mfaSecret = null;
     await this.userRepository.save(user);
   }
 
-  /**
-   * Get MFA devices for user
-   */
   async getMfaDevices(userId: string): Promise<MfaEntity[]> {
-    return this.mfaRepository.find({
-      where: { userId, isActive: true },
-    });
+    return this.mfaRepository.find({ where: { userId, isActive: true } });
   }
 
-  /**
-   * Check if user has MFA enabled
-   */
   async isMfaEnabled(userId: string): Promise<boolean> {
     const mfaDevice = await this.mfaRepository.findOne({
-      where: {
-        userId,
-        isActive: true,
-        isVerified: true,
-      },
+      where: { userId, isActive: true, isVerified: true },
     });
-
     return !!mfaDevice;
   }
 
+  // ── Private helpers ────────────────────────────────────────────────────────
+
   /**
-   * Compare code against stored hashes. On match: removes the consumed code (single-use)
-   * and fires an email security alert. Accepts userId to look up email for the alert.
+   * Delete all existing recovery codes for the user and insert a fresh set.
+   * Returns plaintext codes (shown once) — only hashes are persisted.
    */
-  private async verifyBackupCode(
-    mfaDevice: MfaEntity,
-    code: string,
+  private async persistRecoveryCodes(
     userId: string,
-  ): Promise<boolean> {
-    if (!mfaDevice.backupCodes || mfaDevice.backupCodes.length === 0) {
-      return false;
-    }
+  ): Promise<{ plain: string[] }> {
+    const { plain, hashed } = await this.generateRecoveryCodes(RECOVERY_CODE_COUNT);
 
-    let matchedIndex = -1;
-    for (let i = 0; i < mfaDevice.backupCodes.length; i++) {
-      if (await argon2.verify(mfaDevice.backupCodes[i], code)) {
-        matchedIndex = i;
-        break;
-      }
-    }
+    // Invalidate all previous codes (consumed or not) atomically
+    await this.recoveryCodeRepository.delete({ userId });
 
-    if (matchedIndex === -1) {
-      return false;
-    }
-
-    // Single-use: remove the consumed code immediately
-    mfaDevice.backupCodes = mfaDevice.backupCodes.filter((_, i) => i !== matchedIndex);
-    mfaDevice.lastUsedAt = new Date();
-    await this.mfaRepository.save(mfaDevice);
-
-    this.notifyBackupCodeConsumed(userId).catch((err: any) =>
-      this.logger.error(`Backup code consumed notification failed: ${err?.message}`),
+    const entities = hashed.map((codeHash) =>
+      this.recoveryCodeRepository.create({ userId, codeHash, consumedAt: null }),
     );
+    await this.recoveryCodeRepository.save(entities);
 
-    return true;
+    return { plain };
   }
 
   /**
-   * Generate backup codes — returns plaintext (shown once to user) and argon2 hashes (stored in DB)
+   * Find and consume a matching recovery code.
+   * Iterates only unconsumed codes; marks matched code consumed immediately.
    */
-  private async generateBackupCodes(count: number): Promise<{ plain: string[]; hashed: string[] }> {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const plain: string[] = [];
+  private async consumeRecoveryCode(userId: string, code: string): Promise<boolean> {
+    const activeCodes = await this.recoveryCodeRepository.find({
+      where: { userId, consumedAt: IsNull() },
+    });
 
-    for (let i = 0; i < count; i++) {
-      let code = '';
-      for (let j = 0; j < 8; j++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    for (const record of activeCodes) {
+      if (await argon2.verify(record.codeHash, code)) {
+        record.consumedAt = new Date();
+        await this.recoveryCodeRepository.save(record);
+
+        this.notifyBackupCodeConsumed(userId).catch((err: any) =>
+          this.logger.error(`Backup code consumed notification failed: ${err?.message}`),
+        );
+        return true;
       }
-      plain.push(code);
     }
+    return false;
+  }
+
+  /**
+   * Generate recovery codes using a cryptographically secure source.
+   * Format: XXXXX-XXXXX (10 uppercase hex chars with a dash separator).
+   */
+  private async generateRecoveryCodes(
+    count: number,
+  ): Promise<{ plain: string[]; hashed: string[] }> {
+    const plain: string[] = Array.from({ length: count }, () => {
+      const buf = randomBytes(RECOVERY_CODE_BYTES * 2); // 10 bytes → 20 hex chars
+      const hex = buf.toString('hex').toUpperCase(); // 20 chars
+      return `${hex.slice(0, 5)}-${hex.slice(5, 10)}-${hex.slice(10, 15)}-${hex.slice(15, 20)}`;
+    });
 
     const hashed = await Promise.all(plain.map((c) => argon2.hash(c)));
     return { plain, hashed };
@@ -319,11 +278,10 @@ export class MfaService {
   private async notifyBackupCodeConsumed(userId: string): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) return;
-
     await this.sendEmail(
       user.email,
-      'Security Alert: 2FA Backup Code Used',
-      `A two-factor authentication backup code was used to access your Healthy Stellar account on ${new Date().toUTCString()}. ` +
+      'Security Alert: 2FA Recovery Code Used',
+      `A two-factor authentication recovery code was used to access your Healthy Stellar account on ${new Date().toUTCString()}. ` +
         `If you did not initiate this action, please contact support immediately and change your password.`,
     );
   }
@@ -331,12 +289,11 @@ export class MfaService {
   private async notifyBackupCodesRegenerated(userId: string): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) return;
-
     await this.sendEmail(
       user.email,
-      'Your 2FA Backup Codes Have Been Regenerated',
-      `Your Healthy Stellar two-factor authentication backup codes have been regenerated on ${new Date().toUTCString()}. ` +
-        `Your previous backup codes are no longer valid. If you did not request this, please contact support immediately.`,
+      'Your 2FA Recovery Codes Have Been Regenerated',
+      `Your Healthy Stellar two-factor authentication recovery codes were regenerated on ${new Date().toUTCString()}. ` +
+        `Your previous codes are no longer valid. If you did not request this, contact support immediately.`,
     );
   }
 
