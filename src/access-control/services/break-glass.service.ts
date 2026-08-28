@@ -140,6 +140,7 @@ export class BreakGlassService implements OnModuleInit, OnModuleDestroy {
       return false;
     }
     return true;
+  }
 
   async reviewBreakGlassAccess(
     accessId: string,
@@ -246,5 +247,3 @@ export class BreakGlassService implements OnModuleInit, OnModuleDestroy {
     return saved;
   }
 }
-
-  }
