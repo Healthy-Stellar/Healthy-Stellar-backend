@@ -314,7 +314,12 @@ export class StellarService {
     recordId: string,
     expiresAt: Date,
   ): Promise<StellarTxResult> {
-    const expiresAtMs = expiresAt.getTime();
+    // #967: the contract's expires_at is Soroban seconds-since-epoch
+    // (env.ledger().timestamp()'s unit), not the millisecond epoch Date
+    // uses — encoding expiresAt.getTime() directly wrote a value ~1000x
+    // too large on-chain. Convert here, at the wire boundary, so every
+    // caller of this method keeps working in plain JS Dates.
+    const expiresAtSecs = Math.floor(expiresAt.getTime() / 1000);
     this.logger.log(
       `[grantAccess] patientId=${patientId} granteeId=${granteeId} recordId=${recordId} expiresAt=${expiresAt.toISOString()}`,
     );
@@ -332,7 +337,7 @@ export class StellarService {
           StellarSdk.nativeToScVal(patientId, { type: 'string' }),
           StellarSdk.nativeToScVal(granteeId, { type: 'string' }),
           StellarSdk.nativeToScVal(recordId, { type: 'string' }),
-          StellarSdk.nativeToScVal(expiresAtMs, { type: 'u64' }),
+          StellarSdk.nativeToScVal(expiresAtSecs, { type: 'u64' }),
         ]),
       );
 
@@ -397,6 +402,11 @@ export class StellarService {
 
   async createShareLink(recordId: string, patientId: string): Promise<string> {
     const expiresAtMs = Date.now() + 24 * 60 * 60 * 1000;
+    // #967: same seconds-vs-milliseconds boundary as grantAccess — the
+    // contract's expiry field is Soroban seconds-since-epoch, so the u64
+    // sent on-chain must be seconds, even though expiresAtMs (used for
+    // logging above) stays in the millisecond epoch.
+    const expiresAtSecs = Math.floor(expiresAtMs / 1000);
     this.logger.log(
       `[createShareLink] recordId=${recordId} patientId=${patientId} expiresAt=${new Date(expiresAtMs).toISOString()}`,
     );
@@ -412,7 +422,7 @@ export class StellarService {
         this.invokeContractInternal('create_share_link', [
           StellarSdk.nativeToScVal(recordId, { type: 'string' }),
           StellarSdk.nativeToScVal(patientId, { type: 'string' }),
-          StellarSdk.nativeToScVal(expiresAtMs, { type: 'u64' }),
+          StellarSdk.nativeToScVal(expiresAtSecs, { type: 'u64' }),
         ]),
       );
 
@@ -575,7 +585,10 @@ export class StellarService {
 
     const hasAccess = Boolean(native?.has_access);
     const expiresAtRaw = native?.expires_at;
-    const expiresAt = expiresAtRaw != null ? new Date(Number(expiresAtRaw)).toISOString() : null;
+    // #967: expiresAtRaw is Soroban seconds-since-epoch — scale to
+    // milliseconds before handing it to Date, or every expiry decodes to a
+    // date near the Unix epoch instead of the real grant expiry.
+    const expiresAt = expiresAtRaw != null ? new Date(Number(expiresAtRaw) * 1000).toISOString() : null;
 
     this.logger.log(
       `[verifyAccess] requesterId=${requesterId} recordId=${recordId} hasAccess=${hasAccess}`,
