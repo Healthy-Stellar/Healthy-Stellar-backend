@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -10,6 +12,7 @@ import { Repository } from 'typeorm';
 import { createHmac, randomUUID } from 'crypto';
 import * as QRCode from 'qrcode';
 import { EmergencyMedicalInfo } from '../entities/emergency-medical-info.entity';
+import { EmergencyMedicalInfoService } from './emergency-medical-info.service';
 
 /** Payload embedded in every QR code */
 export interface QrPayload {
@@ -23,6 +26,7 @@ export interface QrPayload {
     emergencyContact: { name: string; relationship: string; phone: string } | null;
     dnrStatus: boolean;
   };
+  metadata: { lastUpdatedBy: string | null };
   sig: string; // HMAC-SHA256 hex
 }
 
@@ -37,6 +41,8 @@ export class EmergencyQrService {
     @InjectRepository(EmergencyMedicalInfo)
     private readonly repo: Repository<EmergencyMedicalInfo>,
     private readonly config: ConfigService,
+    @Inject(forwardRef(() => EmergencyMedicalInfoService))
+    private readonly service: EmergencyMedicalInfoService,
   ) {
     this.hmacSecret = this.config.get<string>('QR_HMAC_SECRET', 'change-me-in-production');
     this.appUrl = this.config.get<string>('APP_URL', 'http://localhost:3000');
@@ -84,13 +90,13 @@ export class EmergencyQrService {
 
     this.enforceRotation(record);
 
-    const payload = this.buildPayload(record);
+    const payload = await this.buildPayload(record);
     const content = JSON.stringify(payload);
     return QRCode.toBuffer(content, { type: 'png', errorCorrectionLevel: 'M' });
   }
 
   /** Public verify endpoint — validates signature and returns decoded data */
-  async verify(token: string): Promise<QrPayload['data'] & { patientId: string }> {
+  async verify(token: string): Promise<QrPayload['data'] & { patientId: string; metadata: { lastUpdatedBy: string | null } }> {
     const record = await this.repo.findOne({ where: { qrToken: token } });
     if (!record || !record.qrOptIn) {
       throw new NotFoundException('QR code not found or patient has opted out');
@@ -98,14 +104,14 @@ export class EmergencyQrService {
 
     this.enforceRotation(record);
 
-    const payload = this.buildPayload(record);
+    const payload = await this.buildPayload(record);
     const { sig, ...unsigned } = payload;
     const expected = this.sign(unsigned);
     if (sig !== expected) {
       throw new UnauthorizedException('QR signature invalid');
     }
 
-    return { patientId: record.patientId, ...payload.data };
+    return { patientId: record.patientId, ...payload.data, metadata: payload.metadata };
   }
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -129,7 +135,8 @@ export class EmergencyQrService {
     }
   }
 
-  private buildPayload(record: EmergencyMedicalInfo): QrPayload {
+  private async buildPayload(record: EmergencyMedicalInfo): Promise<QrPayload> {
+    const lastUpdatedBy = await this.service.getLastUpdater(record.id);
     const unsigned = {
       token: record.qrToken!,
       patientId: record.patientId,
@@ -141,6 +148,7 @@ export class EmergencyQrService {
         emergencyContact: record.emergencyContacts?.[0] ?? null,
         dnrStatus: record.dnrStatus,
       },
+      metadata: { lastUpdatedBy },
     };
     return { ...unsigned, sig: this.sign(unsigned) };
   }
