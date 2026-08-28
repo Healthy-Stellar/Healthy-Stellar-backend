@@ -2,13 +2,14 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EmergencyMedicalInfo } from './entities/emergency-medical-info.entity';
+import { EmergencyMedicalInfoHistory } from './entities/emergency-medical-info-history.entity';
 import { EmergencyMedicalInfoService } from './services/emergency-medical-info.service';
 import { EmergencyQrService } from './services/emergency-qr.service';
 import { EmergencyMedicalInfoController } from './controllers/emergency-medical-info.controller';
 import { EmergencyQrController, EmergencyQrPublicController } from './controllers/emergency-qr.controller';
 
 @Module({
-  imports: [ConfigModule, TypeOrmModule.forFeature([EmergencyMedicalInfo])],
+  imports: [ConfigModule, TypeOrmModule.forFeature([EmergencyMedicalInfo, EmergencyMedicalInfoHistory])],
   controllers: [
     EmergencyMedicalInfoController,
     EmergencyQrController,
