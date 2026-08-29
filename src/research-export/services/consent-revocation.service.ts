@@ -51,7 +51,10 @@ export class ConsentRevocationService {
     });
 
     for (const grant of expiredGrants) {
-      await this.flagExportBatchesForPatient(grant.granteeId, 'consent_expired', 'system');
+      // patientId, not granteeId. The grantee is whoever was given access (a
+      // researcher); the batches that must be flagged are the ones carrying the
+      // patient's data.
+      await this.flagExportBatchesForPatient(grant.patientId, 'consent_expired', 'system');
       grant.status = GrantStatus.REVOKED;
       await this.grantRepo.save(grant);
     }
