@@ -16,22 +16,17 @@ export class CheckpointService {
   }
 
   async advance(projectorName: string, aggregateId: string, version: number): Promise<void> {
-    await this.repo
-      .createQueryBuilder()
-      .insert()
-      .into(ProjectionCheckpoint)
-      .values({
-        projectorName,
-        aggregateId,
-        lastProcessedVersion: version,
-        eventCount: () => '"event_count" + 1',
-        updatedAt: new Date(),
-      })
-      .orUpdate(
-        ['last_processed_version', 'event_count', 'updated_at'],
-        ['projector_name', 'aggregate_id'],
-      )
-      .execute();
+    await this.repo.query(
+      `INSERT INTO "projection_checkpoints"
+         ("projector_name", "aggregate_id", "last_processed_version", "event_count", "updated_at")
+       VALUES ($1, $2, $3, 1, NOW())
+       ON CONFLICT ("projector_name", "aggregate_id")
+       DO UPDATE SET
+         "last_processed_version" = EXCLUDED."last_processed_version",
+         "event_count" = "projection_checkpoints"."event_count" + 1,
+         "updated_at" = EXCLUDED."updated_at"`,
+      [projectorName, aggregateId, version],
+    );
   }
 
   /** Resets every per-aggregate checkpoint tracked for a projector (e.g. before a full replay). */

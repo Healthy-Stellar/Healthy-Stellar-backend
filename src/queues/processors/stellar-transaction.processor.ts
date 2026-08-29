@@ -7,6 +7,7 @@ import Redis from 'ioredis';
 import { QUEUE_NAMES, JOB_TYPES } from '../queue.constants';
 import { StellarTransactionJobDto } from '../dto/stellar-transaction-job.dto';
 import { StellarWithBreakerService } from '../../stellar/services/stellar-with-breaker.service';
+import { StellarContractService } from '../../blockchain/stellar-contract.service';
 import { verifyQueuePayload } from '../queue-payload.util';
 import { DLQ_WORKER_SETTINGS } from '../../dlq/dlq-retry.strategy';
 
@@ -24,6 +25,8 @@ export class StellarTransactionProcessor extends WorkerHost implements OnModuleI
   constructor(
     private readonly stellarService: StellarWithBreakerService,
     private readonly configService: ConfigService,
+    @Inject(StellarContractService)
+    private readonly stellarContractService: StellarContractService,
   ) {
     super();
   }
