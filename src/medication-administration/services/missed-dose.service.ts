@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { EntityManager, Repository, Between } from 'typeorm';
 import { MissedDose, MissedDoseReason, FollowUpStatus } from '../entities/missed-dose.entity';
 import { MedicationAdministrationRecord } from '../entities/medication-administration-record.entity';
 import { AlertService } from './alert.service';
@@ -12,6 +12,39 @@ export class MissedDoseService {
     private missedDoseRepository: Repository<MissedDose>,
     private alertService: AlertService,
   ) {}
+
+  async createMissedDoseWithManager(
+    manager: EntityManager,
+    mar: MedicationAdministrationRecord,
+    nurseId: string,
+    nurseName: string,
+    reason?: MissedDoseReason,
+    reasonDetails?: string,
+  ): Promise<MissedDose> {
+    const missedDose = manager.create(MissedDose, {
+      marId: mar.id,
+      patientId: mar.patientId,
+      medicationName: mar.medicationName,
+      scheduledTime: mar.scheduledTime,
+      missedDate: new Date().toISOString().split('T')[0],
+      reason: reason || MissedDoseReason.OTHER,
+      reasonDetails,
+      nurseId,
+      nurseName,
+      isCriticalMedication: mar.isHighAlert,
+    });
+
+    const savedMissedDose = await manager.save(MissedDose, missedDose);
+
+    await this.alertService.sendMissedDoseChargeNurseAlert(savedMissedDose);
+    await manager.update(MissedDose, savedMissedDose.id, { alertSent: true, alertSentTime: new Date() });
+
+    if (mar.isHighAlert) {
+      await this.alertService.sendCriticalMissedDoseAlert(savedMissedDose);
+    }
+
+    return savedMissedDose;
+  }
 
   async createMissedDose(
     mar: MedicationAdministrationRecord,

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, In } from 'typeorm';
+import { DataSource, Repository, Between, In } from 'typeorm';
 import {
   MedicationAdministrationRecord,
   AdministrationStatus,
@@ -17,6 +17,7 @@ export class MarService {
     private marRepository: Repository<MedicationAdministrationRecord>,
     private missedDoseService: MissedDoseService,
     private alertService: AlertService,
+    private dataSource: DataSource,
   ) {}
 
   async create(createMarDto: CreateMarDto): Promise<MedicationAdministrationRecord> {
@@ -116,58 +117,46 @@ export class MarService {
   async administerMedication(
     dto: AdministerMedicationDto,
   ): Promise<MedicationAdministrationRecord> {
-    const mar = await this.marRepository.findOne({
-      where: { id: dto.marId },
-    });
+    return this.dataSource.transaction(async (manager) => {
+      const mar = await manager.findOne(MedicationAdministrationRecord, {
+        where: { id: dto.marId },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    if (!mar) {
-      throw new NotFoundException('Medication administration record not found');
-    }
+      if (!mar) throw new NotFoundException('Medication administration record not found');
 
-    if (mar.status !== AdministrationStatus.SCHEDULED) {
-      throw new BadRequestException('Medication has already been processed');
-    }
-
-    // Validate all required verifications for high-alert medications
-    if (mar.isHighAlert) {
-      const requiredVerifications = [
-        dto.barcodeVerified,
-        dto.patientVerified,
-        dto.medicationVerified,
-        dto.doseVerified,
-        dto.routeVerified,
-        dto.timeVerified,
-      ];
-
-      if (!requiredVerifications.every((v) => v === true)) {
-        throw new BadRequestException('All verifications required for high-alert medication');
+      if (mar.status !== AdministrationStatus.SCHEDULED) {
+        throw new BadRequestException('Medication has already been processed');
       }
 
-      if (mar.requiresWitness && !dto.witnessId) {
-        throw new BadRequestException('Witness required for this medication');
+      if (mar.isHighAlert) {
+        const requiredVerifications = [
+          dto.barcodeVerified,
+          dto.patientVerified,
+          dto.medicationVerified,
+          dto.doseVerified,
+          dto.routeVerified,
+          dto.timeVerified,
+        ];
+        if (!requiredVerifications.every((v) => v === true))
+          throw new BadRequestException('All verifications required for high-alert medication');
+        if (mar.requiresWitness && !dto.witnessId)
+          throw new BadRequestException('Witness required for this medication');
       }
-    }
 
-    // Update MAR record
-    Object.assign(mar, {
-      ...dto,
-      administrationTime: new Date(dto.administrationTime),
-      updatedAt: new Date(),
+      Object.assign(mar, { ...dto, administrationTime: new Date(dto.administrationTime), updatedAt: new Date() });
+      const updatedMar = await manager.save(MedicationAdministrationRecord, mar);
+
+      if (dto.status === AdministrationStatus.MISSED) {
+        await this.missedDoseService.createMissedDoseWithManager(manager, mar, dto.nurseId, dto.nurseName);
+      }
+
+      if (dto.status === AdministrationStatus.REFUSED && mar.isHighAlert) {
+        await this.alertService.sendHighAlertRefusalAlert(mar);
+      }
+
+      return updatedMar;
     });
-
-    const updatedMar = await this.marRepository.save(mar);
-
-    // Handle missed dose if applicable
-    if (dto.status === AdministrationStatus.MISSED) {
-      await this.missedDoseService.createMissedDose(mar, dto.nurseId, dto.nurseName);
-    }
-
-    // Send alerts for critical situations
-    if (dto.status === AdministrationStatus.REFUSED && mar.isHighAlert) {
-      await this.alertService.sendHighAlertRefusalAlert(mar);
-    }
-
-    return updatedMar;
   }
 
   async findOne(id: string): Promise<MedicationAdministrationRecord> {
