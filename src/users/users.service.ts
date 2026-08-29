@@ -98,7 +98,16 @@ export class UsersService {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    Object.assign(user, updateUserDto);
+    if (updateUserDto.firstName !== undefined) user.firstName = updateUserDto.firstName;
+    if (updateUserDto.lastName !== undefined) user.lastName = updateUserDto.lastName;
+    if (updateUserDto.displayName !== undefined) user.displayName = updateUserDto.displayName;
+    if (updateUserDto.country !== undefined) user.country = updateUserDto.country;
+    if (updateUserDto.isAcceptingPatients !== undefined) user.isAcceptingPatients = updateUserDto.isAcceptingPatients;
+    if (updateUserDto.medicalLicenseNumber !== undefined) user.licenseNumber = updateUserDto.medicalLicenseNumber;
+    if (updateUserDto.licenseExpiryDate !== undefined) user.licenseExpiryDate = new Date(updateUserDto.licenseExpiryDate);
+    if (updateUserDto.specialization !== undefined) user.specialization = updateUserDto.specialization;
+    if (updateUserDto.department !== undefined) user.department = updateUserDto.department;
+
     return this.usersRepository.save(user);
   }
 

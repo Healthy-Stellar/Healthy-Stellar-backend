@@ -17,6 +17,10 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { IsOptional, IsString, Matches } from 'class-validator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../auth/entities/user.entity';
 import { KekRotationService, RotationResult } from '../services/kek-rotation.service';
 
 // ─── DTOs ─────────────────────────────────────────────────────────────────────
@@ -59,8 +63,8 @@ export class RotationResultDto implements RotationResult {
  */
 @ApiTags('Admin – Key Management')
 @ApiBearerAuth()
-// @UseGuards(JwtAuthGuard, RolesGuard)   ← uncomment and wire your guards here
-// @Roles('admin')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN)
 @Controller('admin/tenants')
 export class AdminKekController {
   constructor(private readonly rotationService: KekRotationService) {}
