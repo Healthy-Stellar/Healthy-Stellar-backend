@@ -1,18 +1,44 @@
-import { Body, Controller, Post, Get, UseGuards, Req, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Post,
+  Get,
+  UseGuards,
+  Req,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Query,
+  Res,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { Response } from 'express';
 import { GdprService } from '../services/gdpr.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AuditLog } from '../../common/audit/audit-log.decorator';
 import { ThrottlerBehindProxyGuard } from '../../common/throttler/throttler-behind-proxy.guard';
 import { RateLimit } from '../../common/throttler/throttler.decorator';
 import { CreateErasureRequestDto } from '../dto/create-erasure-request.dto';
+import { GdprRequest } from '../entities/gdpr-request.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { verifySignedUrl } from '../../fhir/utils/signed-url.util';
+import { GdprProcessor } from '../processors/gdpr.processor';
+import * as fs from 'fs';
 
 @ApiTags('GDPR Data Subject Rights')
 @Controller('gdpr')
 @UseGuards(JwtAuthGuard, ThrottlerBehindProxyGuard)
 @ApiBearerAuth()
 export class GdprController {
-  constructor(private readonly gdprService: GdprService) {}
+  constructor(
+    private readonly gdprService: GdprService,
+    @InjectRepository(GdprRequest)
+    private readonly gdprRequestRepository: Repository<GdprRequest>,
+  ) {}
 
   @Post(['data-export-request', 'export-request'])
   @HttpCode(HttpStatus.ACCEPTED)
@@ -56,5 +82,61 @@ export class GdprController {
   async previewErasure(@Req() req) {
     const userId = req.user.id;
     return this.gdprService.previewErasure(userId);
+  }
+
+  @Get('export-files/:requestId/dsar-bundle.json')
+  @ApiOperation({ summary: 'Download a completed GDPR data export bundle' })
+  @ApiResponse({ status: 200, description: 'Export bundle downloaded' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired download URL' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Export not found' })
+  @ApiQuery({ name: 'expires', type: 'string', description: 'URL expiry timestamp' })
+  @ApiQuery({ name: 'sig', type: 'string', description: 'HMAC signature' })
+  async downloadExport(
+    @Param('requestId') requestId: string,
+    @Query('expires') expires: string,
+    @Query('sig') sig: string,
+    @Req() req,
+    @Res() res: Response,
+  ) {
+    const userId = req.user.id;
+
+    const request = await this.gdprRequestRepository.findOne({
+      where: { id: requestId },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Export request not found');
+    }
+
+    if (request.userId !== userId) {
+      throw new ForbiddenException('You do not have access to this export');
+    }
+
+    const url = `/gdpr/export-files/${requestId}/dsar-bundle.json?expires=${expires}&sig=${sig}`;
+    if (!verifySignedUrl(url)) {
+      throw new BadRequestException('Invalid or expired download URL');
+    }
+
+    const filePath = GdprProcessor.getExportFilePath(requestId);
+
+    try {
+      await fs.promises.access(filePath, fs.constants.R_OK);
+    } catch {
+      throw new NotFoundException('Export file no longer available');
+    }
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="gdpr-export-${requestId}.json"`,
+    );
+
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+
+    stream.on('close', () => {
+      GdprProcessor.deleteExportFile(requestId).catch(() => {});
+    });
   }
 }

@@ -377,6 +377,20 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
     return `hash:${createHash('sha256').update(`${seed}:${value}`).digest('hex').slice(0, 16)}`;
   }
 
+  static getExportFilePath(requestId: string): string {
+    const tmpDir = os.tmpdir();
+    return path.join(tmpDir, `gdpr-export-${requestId}.json`);
+  }
+
+  static async deleteExportFile(requestId: string): Promise<void> {
+    const filePath = GdprProcessor.getExportFilePath(requestId);
+    try {
+      await fs.promises.unlink(filePath);
+    } catch (err: any) {
+      if (err.code !== 'ENOENT') throw err;
+    }
+  }
+
   private hashEmail(userId: string, email?: string): string {
     const normalized = email ?? `user-${userId}`;
     return `deleted+${createHash('sha256').update(`${userId}:${normalized}`).digest('hex').slice(0, 16)}@anonymized.local`;
@@ -456,9 +470,7 @@ export class GdprProcessor extends WorkerHost implements OnModuleInit {
         entry,
       };
 
-      const tmpDir = os.tmpdir();
-      const fileName = `gdpr-export-${data.userId}-${Date.now()}.json`;
-      const filePath = path.join(tmpDir, fileName);
+      const filePath = this.getExportFilePath(data.requestId);
 
       fs.writeFileSync(filePath, JSON.stringify(bundle, null, 2));
 
