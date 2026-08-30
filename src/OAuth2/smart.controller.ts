@@ -14,7 +14,7 @@ export class SmartConfigController {
       authorization_endpoint: `${baseUrl}/oauth2/authorize`,
       token_endpoint: `${baseUrl}/oauth2/token`,
       token_endpoint_auth_methods_supported: ['none', 'client_secret_basic'],
-      grant_types_supported: ['authorization_code'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
       response_types_supported: ['code'],
       code_challenge_methods_supported: ['S256'],
       scopes_supported: [
