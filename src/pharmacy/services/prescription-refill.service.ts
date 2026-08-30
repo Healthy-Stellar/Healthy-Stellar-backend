@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PrescriptionRefill } from '../entities/prescription-refill.entity';
 import { Prescription } from '../entities/prescription.entity';
+import { PrescriptionItem } from '../entities/prescription-item.entity';
 import { RefillPrescriptionDto } from '../dto/refill-prescription.dto';
 
 @Injectable()
@@ -12,6 +13,8 @@ export class PrescriptionRefillService {
     private refillRepository: Repository<PrescriptionRefill>,
     @InjectRepository(Prescription)
     private prescriptionRepository: Repository<Prescription>,
+    @InjectRepository(PrescriptionItem)
+    private prescriptionItemRepository: Repository<PrescriptionItem>,
   ) {}
 
   async createRefill(refillDto: RefillPrescriptionDto): Promise<Prescription> {
@@ -63,8 +66,7 @@ export class PrescriptionRefillService {
       daySupply: item.daySupply,
     }));
 
-    // Save items (assuming you have PrescriptionItem repository)
-    // await this.prescriptionItemRepository.save(refillItems);
+    await this.prescriptionItemRepository.save(refillItems);
 
     // Create refill log
     const refillLog = this.refillRepository.create({

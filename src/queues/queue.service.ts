@@ -257,7 +257,7 @@ export class QueueService {
       try {
         const job = await queue.getJob(jobId);
         if (job) {
-          return this.buildJobStatusResponse(job);
+          return await this.buildJobStatusResponse(job);
         }
       } catch (error) {
         this.logger.debug(
@@ -361,7 +361,7 @@ export class QueueService {
         );
 
         if (job) {
-          return this.buildJobStatusResponse(job);
+          return await this.buildJobStatusResponse(job);
         }
       } catch (error) {
         this.logger.debug(
@@ -379,9 +379,9 @@ export class QueueService {
    * Build normalized job status response — params field is intentionally omitted
    * to prevent PHI/sensitive contract data from leaking via the status API.
    */
-  private buildJobStatusResponse(job: Job): any {
-    const state = job._state;
-    const progress = job._progress || 0;
+  private async buildJobStatusResponse(job: Job): Promise<any> {
+    const state = await job.getState();
+    const progress = job.progress || 0;
     const failedReason = job.failedReason;
 
     return {
