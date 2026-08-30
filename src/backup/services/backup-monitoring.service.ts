@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThanOrEqual, Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { BackupLog, BackupStatus } from '../entities/backup-log.entity';
 import { RecoveryTest, RecoveryTestStatus } from '../entities/recovery-test.entity';
@@ -60,7 +60,7 @@ export class BackupMonitoringService {
 
     // Get recent backups
     const recentBackups = await this.backupLogRepository.find({
-      where: { startedAt: { $gte: last7Days } as any },
+      where: { startedAt: MoreThanOrEqual(last7Days) },
       order: { startedAt: 'DESC' },
     });
 
@@ -218,7 +218,7 @@ export class BackupMonitoringService {
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
     const backups = await this.backupLogRepository.find({
-      where: { startedAt: { $gte: cutoffDate } as any },
+      where: { startedAt: MoreThanOrEqual(cutoffDate) },
       order: { startedAt: 'ASC' },
     });
 
