@@ -124,7 +124,8 @@ describe('ConsentRevocationService', () => {
     it('flags export batches for patients with expired grants and marks grants as revoked', async () => {
       const expiredGrant = {
         id: 'grant-1',
-        granteeId: 'patient-2',
+        patientId: 'patient-2',
+        granteeId: 'researcher-9',
         expiresAt: new Date('2020-01-01'),
         status: GrantStatus.ACTIVE,
       };
@@ -137,6 +138,104 @@ describe('ConsentRevocationService', () => {
       expect(grantRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ status: GrantStatus.REVOKED }),
       );
+    });
+
+    // #950 - the loop passed grant.granteeId to a helper that queries by
+    // patientId. The grantee is whoever was given access (a researcher), so an
+    // expired consent flagged the researcher's batches, if any existed at all,
+    // and never the patient's. Nothing in the suite looked at which field was
+    // used, which is why it survived.
+    it('queries export batches by the grant patientId, not the granteeId', async () => {
+      const expiredGrant = {
+        id: 'grant-1',
+        patientId: 'patient-2',
+        granteeId: 'researcher-9',
+        expiresAt: new Date('2020-01-01'),
+        status: GrantStatus.ACTIVE,
+      };
+      grantRepo.find.mockResolvedValue([expiredGrant]);
+      mappingRepo.find.mockResolvedValue([]);
+      grantRepo.save.mockResolvedValue(expiredGrant);
+
+      await service.checkExpiredConsents();
+
+      expect(mappingRepo.find).toHaveBeenCalledWith({
+        where: { patientId: 'patient-2', status: ExportBatchStatus.ACTIVE },
+      });
+    });
+
+    it('never queries by the granteeId', async () => {
+      const expiredGrant = {
+        id: 'grant-1',
+        patientId: 'patient-2',
+        granteeId: 'researcher-9',
+        expiresAt: new Date('2020-01-01'),
+        status: GrantStatus.ACTIVE,
+      };
+      grantRepo.find.mockResolvedValue([expiredGrant]);
+      mappingRepo.find.mockResolvedValue([]);
+      grantRepo.save.mockResolvedValue(expiredGrant);
+
+      await service.checkExpiredConsents();
+
+      const queried = mappingRepo.find.mock.calls.map(([arg]: any) => arg.where.patientId);
+      expect(queried).not.toContain('researcher-9');
+    });
+
+    it('actually flags the patient batches an expired grant covers', async () => {
+      const expiredGrant = {
+        id: 'grant-1',
+        patientId: 'patient-2',
+        granteeId: 'researcher-9',
+        expiresAt: new Date('2020-01-01'),
+        status: GrantStatus.ACTIVE,
+      };
+      const patientMappings = [
+        { id: 'm1', exportId: 'exp-1', patientId: 'patient-2', status: ExportBatchStatus.ACTIVE },
+      ];
+      grantRepo.find.mockResolvedValue([expiredGrant]);
+      mappingRepo.find.mockResolvedValue(patientMappings);
+      mappingRepo.save.mockResolvedValue(patientMappings);
+      grantRepo.save.mockResolvedValue(expiredGrant);
+
+      await service.checkExpiredConsents();
+
+      expect(mappingRepo.save).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            patientId: 'patient-2',
+            status: ExportBatchStatus.FLAGGED,
+            flagReason: 'consent_expired',
+          }),
+        ]),
+      );
+    });
+
+    it('uses each grant own patientId when several expire at once', async () => {
+      const grants = [
+        {
+          id: 'grant-1',
+          patientId: 'patient-a',
+          granteeId: 'researcher-9',
+          expiresAt: new Date('2020-01-01'),
+          status: GrantStatus.ACTIVE,
+        },
+        {
+          id: 'grant-2',
+          patientId: 'patient-b',
+          granteeId: 'researcher-9',
+          expiresAt: new Date('2020-01-02'),
+          status: GrantStatus.ACTIVE,
+        },
+      ];
+      grantRepo.find.mockResolvedValue(grants);
+      mappingRepo.find.mockResolvedValue([]);
+      grantRepo.save.mockResolvedValue(grants[0]);
+
+      await service.checkExpiredConsents();
+
+      const queried = mappingRepo.find.mock.calls.map(([arg]: any) => arg.where.patientId);
+      expect(queried).toEqual(['patient-a', 'patient-b']);
     });
 
     it('does nothing when there are no expired grants', async () => {
