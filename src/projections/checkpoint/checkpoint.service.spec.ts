@@ -19,6 +19,7 @@ describe('CheckpointService', () => {
     findOne: jest.Mock;
     delete: jest.Mock;
     createQueryBuilder: jest.Mock;
+    query: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -37,6 +38,7 @@ describe('CheckpointService', () => {
       findOne: jest.fn(),
       delete: jest.fn(),
       createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+      query: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -88,17 +90,18 @@ describe('CheckpointService', () => {
     it('upserts on the (projector_name, aggregate_id) conflict target', async () => {
       await service.advance('RecordProjector', 'agg-1', 2);
 
-      expect(queryBuilder.values).toHaveBeenCalledWith(
-        expect.objectContaining({
-          projectorName: 'RecordProjector',
-          aggregateId: 'agg-1',
-          lastProcessedVersion: 2,
-        }),
+      expect(mockRepo.query).toHaveBeenCalledWith(
+        expect.stringContaining('ON CONFLICT ("projector_name", "aggregate_id")'),
+        ['RecordProjector', 'agg-1', 2],
       );
-      expect(queryBuilder.orUpdate).toHaveBeenCalledWith(
-        ['last_processed_version', 'event_count', 'updated_at'],
-        ['projector_name', 'aggregate_id'],
-      );
+    });
+
+    it('increments event_count relative to the existing row instead of a bare column reference', async () => {
+      await service.advance('RecordProjector', 'agg-1', 2);
+
+      const [sql] = mockRepo.query.mock.calls[0];
+      expect(sql).toContain('"event_count" = "projection_checkpoints"."event_count" + 1');
+      expect(sql).not.toMatch(/VALUES\s*\([^)]*"event_count"[^)]*\+/);
     });
   });
 

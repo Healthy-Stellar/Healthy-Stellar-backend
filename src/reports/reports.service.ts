@@ -12,6 +12,7 @@ import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { User } from '../auth/entities/user.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
 import { TenantBrandingService } from '../tenant-config/services/tenant-branding.service';
+import { Billing } from '../billing/entities/billing.entity';
 import * as PDFDocument from 'pdfkit';
 import * as ExcelJS from 'exceljs';
 import { create as ipfsHttpClient } from 'ipfs-http-client';
@@ -30,11 +31,8 @@ export class ReportsService {
     private configService: ConfigService,
     private notificationsService: NotificationsService,
     private entityManager: EntityManager,
-feat/tenant-branding
     private tenantBrandingService: TenantBrandingService,
-
     private i18nService: I18nService,
-main
   ) {
     const ipfsUrl = this.configService.get<string>('IPFS_NODE_URL') || 'http://localhost:5001';
     this.ipfs = ipfsHttpClient({ url: ipfsUrl });
@@ -239,7 +237,6 @@ main
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-feat/tenant-branding
       // Branded header
       doc.fillColor(primaryColor).fontSize(20).text(`${orgName} — Patient Activity Report`, { align: 'center' });
       doc.fillColor('black');
@@ -248,21 +245,16 @@ feat/tenant-branding
       const isRtl = this.i18nService.isRtlLocale();
       const textAlign = isRtl ? 'right' : 'left';
 
-      doc.fontSize(20).text('Patient Activity Report', { align: 'center' });
-main
       doc.moveDown();
       doc.fontSize(12).text(`Patient Name: ${patient?.firstName || ''} ${patient?.lastName || ''}`, { align: textAlign });
       doc.text(`Patient ID: ${patient?.id}`, { align: textAlign });
       doc.text(`Generated On: ${this.i18nService.formatDate(new Date())}`, { align: textAlign });
       doc.moveDown(2);
 
-feat/tenant-branding
       // Records
-      doc.fillColor(primaryColor).fontSize(16).text('Medical Records Summary');
+      doc.fillColor(primaryColor).fontSize(16).text('Medical Records Summary', { align: textAlign });
       doc.fillColor('black');
 
-      doc.fontSize(16).text('Medical Records Summary', { align: textAlign });
-main
       doc.moveDown(0.5);
       if (records.length === 0) doc.fontSize(10).text('No recent active records found.');
       records.forEach((record) => {
@@ -278,13 +270,10 @@ main
       });
       doc.moveDown();
 
-feat/tenant-branding
       // Grants
-      doc.fillColor(primaryColor).fontSize(16).text('Access Grants & Consents');
+      doc.fillColor(primaryColor).fontSize(16).text('Access Grants & Consents', { align: textAlign });
       doc.fillColor('black');
 
-      doc.fontSize(16).text('Access Grants & Consents', { align: textAlign });
-main
       doc.moveDown(0.5);
       if (grants.length === 0) doc.fontSize(10).text('No access grants found.');
       grants.forEach((grant) => {
@@ -300,13 +289,10 @@ main
       });
       doc.moveDown();
 
-feat/tenant-branding
       // Logs
-      doc.fillColor(primaryColor).fontSize(16).text('Recent Audit Logs');
+      doc.fillColor(primaryColor).fontSize(16).text('Recent Audit Logs', { align: textAlign });
       doc.fillColor('black');
 
-      doc.fontSize(16).text('Recent Audit Logs', { align: textAlign });
-main
       doc.moveDown(0.5);
       if (logs.length === 0) doc.fontSize(10).text('No audit logs found.');
       logs.forEach((log) => {
