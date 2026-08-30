@@ -25,15 +25,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../auth/services/auth-token.service';
 import { Patient } from '../users/entities/patient.entity';
 import { ApiTags } from '@nestjs/swagger';
+import { RefreshTokenStoreService } from '../auth/services/refresh-token-store.service';
 
-/**
- * OAuth2 authorization server endpoints (Issue #649 — PKCE for public clients).
- *
- * GET  /oauth2/authorize  — requires the caller to already hold a session JWT
- *                           (e.g. SPA has logged in via password / OIDC).
- * POST /oauth2/token      — exchange authorization code for an access token;
- *                           PKCE verifier is enforced when a challenge was stored.
- */
 @ApiTags('oauth2')
 @Controller('oauth2')
 export class OAuth2Controller {
@@ -41,13 +34,11 @@ export class OAuth2Controller {
     private readonly pkce: PkceService,
     private readonly jwt: JwtService,
     private readonly clientRegistry: OAuth2ClientRegistryService,
+    private readonly refreshTokenStore: RefreshTokenStoreService,
     @InjectRepository(Patient)
     private readonly patientRepo: Repository<Patient>,
   ) {}
 
-  // -------------------------------------------------------------------------
-  // GET /oauth2/authorize
-  // -------------------------------------------------------------------------
   @Get('authorize')
   @UseGuards(JwtAuthGuard)
   authorize(
@@ -93,16 +84,19 @@ export class OAuth2Controller {
     return res.redirect(redirect.toString());
   }
 
-  // -------------------------------------------------------------------------
-  // POST /oauth2/token
-  // -------------------------------------------------------------------------
   @Post('token')
   @HttpCode(HttpStatus.OK)
   async token(@Body() dto: OAuth2TokenDto) {
-    if (dto.grant_type !== 'authorization_code') {
+    if (dto.grant_type === 'authorization_code') {
+      return this.handleAuthorizationCodeGrant(dto);
+    } else if (dto.grant_type === 'refresh_token') {
+      return this.handleRefreshTokenGrant(dto);
+    } else {
       throw new BadRequestException('unsupported_grant_type');
     }
+  }
 
+  private async handleAuthorizationCodeGrant(dto: OAuth2TokenDto) {
     if (!dto.code || !dto.client_id || !dto.redirect_uri) {
       throw new BadRequestException(
         'invalid_request: code, client_id and redirect_uri are required',
@@ -120,7 +114,6 @@ export class OAuth2Controller {
       }
     }
 
-    // consumeCode validates PKCE when a challenge was stored for this code
     const entry = this.pkce.consumeCode(
       dto.code,
       dto.client_id,
@@ -128,18 +121,58 @@ export class OAuth2Controller {
       dto.code_verifier,
     );
 
-    const smartScopes = entry.scope
-      .split(/\s+/)
-      .filter((s) => s.startsWith('patient/') || s.startsWith('user/') || s === 'launch/patient' || s === 'openid' || s === 'fhirUser');
+    const smartScopes = this.filterSmartScopes(entry.scope);
+    return this.generateTokenResponse(entry.userId, smartScopes, entry.clientId);
+  }
 
+  private async handleRefreshTokenGrant(dto: OAuth2TokenDto) {
+    if (!dto.refresh_token || !dto.client_id) {
+      throw new BadRequestException('invalid_request: refresh_token and client_id are required');
+    }
+
+    const client = this.clientRegistry.getClient(dto.client_id);
+    if (!client) {
+      throw new BadRequestException('invalid_client: unknown client_id');
+    }
+
+    if (client.clientSecret) {
+      if (!dto.client_secret || !this.isClientSecretValid(dto.client_secret, client.clientSecret)) {
+        throw new UnauthorizedException('invalid_client: client authentication failed');
+      }
+    }
+
+    let decodedToken: any;
+    try {
+      // Decode the JWT to get the user ID, scopes, and original sessionId
+      decodedToken = this.jwt.verify(dto.refresh_token, { ignoreExpiration: true });
+    } catch (err) {
+      throw new UnauthorizedException('invalid_grant: invalid refresh token');
+    }
+
+    const sessionId = decodedToken.sessionId;
+    if (!sessionId) {
+      throw new UnauthorizedException('invalid_grant: malformed refresh token');
+    }
+
+    // This validates rotation and detects reuse via the Redis store
+    await this.refreshTokenStore.consumeAndValidate(sessionId, dto.refresh_token);
+
+    const smartScopes = this.filterSmartScopes(decodedToken.scope);
+    return this.generateTokenResponse(decodedToken.sub, smartScopes, dto.client_id, sessionId);
+  }
+
+  private async generateTokenResponse(userId: string, scopes: string[], clientId: string, existingSessionId?: string) {
+    const sessionId = existingSessionId ?? crypto.randomUUID();
+    
     const tokenPayload: Record<string, any> = {
-      sub: entry.userId,
-      scope: smartScopes.join(' '),
-      client_id: entry.clientId,
+      sub: userId,
+      scope: scopes.join(' '),
+      client_id: clientId,
+      sessionId,
     };
 
-    if (smartScopes.includes('fhirUser')) {
-      tokenPayload.fhirUser = `${process.env.FHIR_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`}/fhir/r4/Patient/${entry.userId}`;
+    if (scopes.includes('fhirUser')) {
+      tokenPayload.fhirUser = `${process.env.FHIR_BASE_URL ?? \`http://localhost:\${process.env.PORT ?? 3000}\`}/fhir/r4/Patient/${userId}`;
     }
 
     const accessToken = this.jwt.sign(tokenPayload);
@@ -148,13 +181,19 @@ export class OAuth2Controller {
       access_token: accessToken,
       token_type: 'Bearer',
       expires_in: 900,
-      scope: smartScopes.join(' '),
+      scope: scopes.join(' '),
     };
 
-    // SMART on FHIR: launch/patient context
-    if (smartScopes.includes('launch/patient')) {
+    // If offline_access was granted, issue a new refresh token
+    if (scopes.includes('offline_access')) {
+      const refreshToken = this.jwt.sign({ ...tokenPayload, type: 'refresh' }, { expiresIn: '7d' });
+      await this.refreshTokenStore.store(sessionId, refreshToken);
+      response.refresh_token = refreshToken;
+    }
+
+    if (scopes.includes('launch/patient')) {
       const patient = await this.patientRepo.findOne({
-        where: { userId: entry.userId },
+        where: { userId },
       });
       if (patient) {
         response.patient = patient.id;
@@ -164,6 +203,12 @@ export class OAuth2Controller {
     }
 
     return response;
+  }
+
+  private filterSmartScopes(scopeString: string): string[] {
+    return scopeString
+      .split(/\s+/)
+      .filter((s) => s.startsWith('patient/') || s.startsWith('user/') || s === 'launch/patient' || s === 'openid' || s === 'fhirUser' || s === 'offline_access');
   }
 
   private isClientSecretValid(provided: string, expected: string): boolean {
