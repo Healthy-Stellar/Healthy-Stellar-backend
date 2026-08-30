@@ -3,7 +3,10 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RunbookService } from './runbook.service';
 import { RunbookMapping } from '../entities/runbook-mapping.entity';
+import { Runbook } from '../entities/runbook.entity';
+import { RunbookExecution } from '../entities/runbook-execution.entity';
 import { IncidentType } from '../../healthcare-monitoring/entities/healthcare-incident.entity';
+import { AuditService } from '../../common/audit/audit.service';
 
 const mockMapping: RunbookMapping = {
   id: 'uuid-1',
@@ -33,6 +36,32 @@ describe('RunbookService', () => {
             create: jest.fn(),
             save: jest.fn(),
             remove: jest.fn(),
+          },
+        },
+        {
+          provide: getRepositoryToken(Runbook),
+          useValue: {
+            findOne: jest.fn(),
+            find: jest.fn(),
+            create: jest.fn(),
+            save: jest.fn(),
+            remove: jest.fn(),
+          },
+        },
+        {
+          provide: getRepositoryToken(RunbookExecution),
+          useValue: {
+            findOne: jest.fn(),
+            find: jest.fn(),
+            create: jest.fn(),
+            save: jest.fn(),
+            remove: jest.fn(),
+          },
+        },
+        {
+          provide: AuditService,
+          useValue: {
+            log: jest.fn(),
           },
         },
       ],
