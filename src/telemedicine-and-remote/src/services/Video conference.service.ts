@@ -304,8 +304,12 @@ export class VideoConferenceService {
     return `room_${crypto.randomBytes(16).toString('hex')}`;
   }
 
-  private generateAccessToken(session: VideoConferenceSession, participantType: string): string {
-    // In production: generate JWT with proper claims for video service
+  private readonly tokenSecret =
+    process.env.TELEMEDICINE_TOKEN_SECRET ||
+    process.env.JWT_SECRET ||
+    'telemedicine-default-secret-key-change-in-production';
+
+  generateAccessToken(session: VideoConferenceSession, participantType: string): string {
     const payload = {
       roomId: session.roomId,
       participantType,
@@ -313,7 +317,59 @@ export class VideoConferenceService {
       exp: Date.now() + 3600000, // 1 hour
     };
 
-    return Buffer.from(JSON.stringify(payload)).toString('base64');
+    const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    const signature = crypto
+      .createHmac('sha256', this.tokenSecret)
+      .update(payloadBase64)
+      .digest('base64url');
+
+    return `${payloadBase64}.${signature}`;
+  }
+
+  verifyAccessToken(token: string): {
+    roomId: string;
+    participantType: string;
+    sessionId: string;
+    exp: number;
+  } {
+    if (!token || typeof token !== 'string') {
+      throw new UnauthorizedException('Token is required');
+    }
+
+    const parts = token.split('.');
+    if (parts.length !== 2) {
+      throw new UnauthorizedException('Invalid token format');
+    }
+
+    const [payloadBase64, signature] = parts;
+    const expectedSignature = crypto
+      .createHmac('sha256', this.tokenSecret)
+      .update(payloadBase64)
+      .digest('base64url');
+
+    const sigBuffer = Buffer.from(signature);
+    const expectedSigBuffer = Buffer.from(expectedSignature);
+
+    if (
+      sigBuffer.length !== expectedSigBuffer.length ||
+      !crypto.timingSafeEqual(sigBuffer, expectedSigBuffer)
+    ) {
+      throw new UnauthorizedException('Invalid token signature');
+    }
+
+    try {
+      const payloadJson = Buffer.from(payloadBase64, 'base64url').toString('utf8');
+      const payload = JSON.parse(payloadJson);
+
+      if (!payload.exp || typeof payload.exp !== 'number' || payload.exp < Date.now()) {
+        throw new UnauthorizedException('Token has expired');
+      }
+
+      return payload;
+    } catch (err: any) {
+      if (err instanceof UnauthorizedException) throw err;
+      throw new UnauthorizedException('Invalid token payload');
+    }
   }
 
   private generateStreamUrl(roomId: string): string {
