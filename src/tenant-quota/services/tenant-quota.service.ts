@@ -5,11 +5,16 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectRedis } from '@nestjs-modules/ioredis'; // adjust to your Redis module
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import Redis from 'ioredis';
 
 import { TenantQuota } from '../entities/tenant-quota.entity';
-import { UpdateTenantQuotaDto } from '../dto/tenant-quota.dto';
+import {
+  TenantNearLimitDto,
+  UpdateTenantQuotaDto,
+} from '../dto/tenant-quota.dto';
 import {
   QUOTA_TIER_DEFAULTS,
   QuotaTierLimits,
@@ -20,6 +25,7 @@ import {
   secondsUntilMonthEnd,
   secondsUntilNextHour,
 } from './quota-redis-keys';
+import { NotificationsService } from '../../notifications/services/notifications.service';
 
 export type QuotaType = 'records' | 'apiCalls' | 'bulkOperations' | 'storage';
 
@@ -29,6 +35,18 @@ export interface QuotaCheckResult {
   limit: number;
   quotaType: QuotaType;
 }
+
+/** Default warning threshold — alert at 80% usage unless overridden per type. */
+const DEFAULT_WARNING_THRESHOLD_PERCENT = 80;
+
+/** Minimum time between alerts for the same tenant + quota type (24h). */
+const DEFAULT_ALERT_COOLDOWN_SECONDS = 24 * 60 * 60;
+
+/** Redis sorted set of tenants currently at/over their warning threshold. */
+const NEAR_LIMIT_KEY = 'tenant-quota:near-limit';
+
+const cooldownKey = (tenantId: string, quotaType: string): string =>
+  `tenant-quota:alert-cooldown:${tenantId}:${quotaType}`;
 
 @Injectable()
 export class TenantQuotaService {
@@ -40,6 +58,10 @@ export class TenantQuotaService {
 
     @InjectRedis()
     private readonly redis: Redis,
+
+    private readonly config: ConfigService,
+
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ─── Public API ────────────────────────────────────────────────────────────
@@ -219,6 +241,96 @@ export class TenantQuotaService {
       monthlyResetAt: nextMonthStart().toISOString(),
       hourlyResetAt: nextHourStart().toISOString(),
     };
+  }
+
+  // ─── Proactive threshold alerts & near-limit registry (Issue #954) ─────────
+
+  /**
+   * Scheduled check for tenants at/over their usage warning threshold.
+   * Detected tenants are stored in a near-limit registry and (subject to a
+   * per-tenant+type cooldown) surface a QUOTA_WARNING notification.
+   *
+   * Thresholds are configurable per quota type (with a global fallback):
+   *   tenant-quota.warningThresholdPercent           (global default)
+   *   tenant-quota.warningThresholdPercent.<quotaType>
+   * The alert cooldown comes from tenant-quota.alertCooldownSeconds.
+   */
+  @Cron(CronExpression.EVERY_10_MINUTES, { name: 'tenant-quota-threshold-check' })
+  async checkUsageThresholds(): Promise<void> {
+    const quotas = await this.quotaRepo.find();
+    this.logger.log(`Running quota threshold check for ${quotas.length} tenants`);
+
+    const checked: Array<[string, string, number]> = [];
+
+    for (const quota of quotas) {
+      const summary = await this.getUsageSummary(quota.tenantId);
+      const candidates: Array<[string, number]> = [
+        ['records', summary.records.percentUsed],
+        ['apiCalls', summary.apiCalls.percentUsed],
+        ['bulkOperations', summary.bulkOperations.percentUsed],
+        ['storage', summary.storage.percentUsed],
+      ];
+
+      for (const [quotaType, percentUsed] of candidates) {
+        await this.evaluateQuotaType(quota.tenantId, quotaType as QuotaType, percentUsed);
+        checked.push([quota.tenantId, quotaType, percentUsed]);
+      }
+    }
+
+    this.logger.log(`Quota threshold check complete (${checked.length} tenant/type combos evaluated)`);
+  }
+
+  private async evaluateQuotaType(
+    tenantId: string,
+    quotaType: QuotaType,
+    percentUsed: number,
+  ): Promise<void> {
+    const threshold =
+      this.config.get<number>(`tenant-quota.warningThresholdPercent.${quotaType}`) ??
+      this.config.get<number>('tenant-quota.warningThresholdPercent') ??
+      DEFAULT_WARNING_THRESHOLD_PERCENT;
+
+    if (percentUsed < threshold) {
+      return;
+    }
+
+    // Record in the near-limit registry (score = percent used).
+    await this.redis.zadd(NEAR_LIMIT_KEY, percentUsed, `${tenantId}:${quotaType}`);
+
+    // Rate-limit notifications per tenant + type.
+    const cdKey = cooldownKey(tenantId, quotaType);
+    const cooldownSeconds =
+      this.config.get<number>('tenant-quota.alertCooldownSeconds') ??
+      DEFAULT_ALERT_COOLDOWN_SECONDS;
+    const cd = await this.redis.set(cdKey, '1', 'EX', cooldownSeconds, 'NX');
+    if (cd !== 'OK') {
+      return; // notification already sent recently
+    }
+
+    this.notificationsService.emitQuotaWarning(tenantId, quotaType, {
+      percentUsed,
+      threshold,
+    });
+    this.logger.log(
+      `Quota warning for tenant ${tenantId}: ${quotaType} at ${percentUsed}% ` +
+        `(threshold ${threshold}%)`,
+    );
+  }
+
+  /**
+   * Tenants currently at/over their warning threshold, highest usage first.
+   */
+  async listTenantsNearLimit(): Promise<TenantNearLimitDto[]> {
+    const rows = await this.redis.zrevrange(NEAR_LIMIT_KEY, 0, -1, 'WITHSCORES');
+    const result: TenantNearLimitDto[] = [];
+
+    for (let i = 0; i < rows.length; i += 2) {
+      const [tenantId, quotaType] = rows[i].split(':');
+      const percentUsed = Number(rows[i + 1] ?? 0);
+      result.push({ tenantId, quotaType, percentUsed });
+    }
+
+    return result;
   }
 
   // ─── Admin CRUD ────────────────────────────────────────────────────────────

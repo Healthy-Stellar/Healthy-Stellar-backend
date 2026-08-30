@@ -8,6 +8,7 @@ export enum NotificationEventType {
   DIAGNOSIS_CREATED = 'diagnosis.created',
   DIAGNOSIS_SEVERITY_ESCALATED = 'diagnosis.severity_escalated',
   DIAGNOSIS_STATUS_CONFIRMED = 'diagnosis.status_confirmed',
+  QUOTA_WARNING = 'quota.warning',
 }
 
 export interface NotificationEvent {
