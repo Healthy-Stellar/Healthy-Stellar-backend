@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { TreatmentPlan } from './entities/treatment-plan.entity';
 import { TreatmentPlanVersion } from './entities/treatment-plan-version.entity';
 import { EventStoreService } from '../event-store/event-store.service';
@@ -16,39 +16,39 @@ export class TreatmentPlanningService {
     @InjectRepository(TreatmentPlanVersion)
     private readonly versionRepo: Repository<TreatmentPlanVersion>,
     private readonly eventStore: EventStoreService,
+    private readonly dataSource: DataSource,
   ) {}
 
-  // Save or update plan, generating a new immutable snapshot row
   async savePlan(planId: string, updateData: any, authorId: string): Promise<TreatmentPlan> {
-    let plan = await this.planRepo.findOne({ where: { id: planId } });
-    
-    if (!plan) {
-      throw new NotFoundException('Treatment Plan not found');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const plan = await manager.findOne(TreatmentPlan, {
+        where: { id: planId },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    // Update root entity fields
-    Object.assign(plan, updateData);
-    const updatedPlan = await this.planRepo.save(plan);
+      if (!plan) throw new NotFoundException('Treatment Plan not found');
 
-    // Calculate next version number
-    const latestVersion = await this.versionRepo.findOne({
-      where: { treatmentPlanId: planId },
-      order: { versionNumber: 'DESC' },
+      Object.assign(plan, updateData);
+      const updatedPlan = await manager.save(TreatmentPlan, plan);
+
+      const latestVersion = await manager.findOne(TreatmentPlanVersion, {
+        where: { treatmentPlanId: planId },
+        order: { versionNumber: 'DESC' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const nextVersionNum = latestVersion ? latestVersion.versionNumber + 1 : 1;
+
+      await manager.save(TreatmentPlanVersion, {
+        treatmentPlanId: planId,
+        versionNumber: nextVersionNum,
+        snapshot: updatedPlan,
+        authorId,
+      });
+
+      await this.eventStore.logEvent('TREATMENT_PLAN_UPDATE', planId, authorId, { version: nextVersionNum });
+
+      return updatedPlan;
     });
-    const nextVersionNum = latestVersion ? latestVersion.versionNumber + 1 : 1;
-
-    // Persist immutable snapshot version
-    await this.versionRepo.save({
-      treatmentPlanId: planId,
-      versionNumber: nextVersionNum,
-      snapshot: updatedPlan,
-      authorId,
-    });
-
-    // Write audit trails
-    await this.eventStore.logEvent('TREATMENT_PLAN_UPDATE', planId, authorId, { version: nextVersionNum });
-
-    return updatedPlan;
   }
 
   // Acceptance Criteria #2: Get List of Versions
@@ -73,46 +73,46 @@ export class TreatmentPlanningService {
     return this.differ.diff(version1.snapshot, version2.snapshot) || {};
   }
 
-  // Acceptance Criteria #4: Revert state back to an old version
   async revertToVersion(planId: string, versionNumber: number, authorId: string): Promise<TreatmentPlan> {
-    const targetVersion = await this.versionRepo.findOne({
-      where: { treatmentPlanId: planId, versionNumber },
+    return this.dataSource.transaction(async (manager) => {
+      const targetVersion = await manager.findOne(TreatmentPlanVersion, {
+        where: { treatmentPlanId: planId, versionNumber },
+      });
+
+      if (!targetVersion) throw new NotFoundException(`Version ${versionNumber} does not exist for this plan.`);
+
+      const plan = await manager.findOne(TreatmentPlan, {
+        where: { id: planId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!plan) throw new NotFoundException('Treatment Plan not found');
+
+      const cleanSnapshot = { ...targetVersion.snapshot };
+      delete cleanSnapshot.id;
+
+      Object.assign(plan, cleanSnapshot);
+      const revertedPlan = await manager.save(TreatmentPlan, plan);
+
+      const latestVersion = await manager.findOne(TreatmentPlanVersion, {
+        where: { treatmentPlanId: planId },
+        order: { versionNumber: 'DESC' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const nextVersionNum = latestVersion ? latestVersion.versionNumber + 1 : 1;
+
+      await manager.save(TreatmentPlanVersion, {
+        treatmentPlanId: planId,
+        versionNumber: nextVersionNum,
+        snapshot: revertedPlan,
+        authorId,
+      });
+
+      await this.eventStore.logEvent('TREATMENT_PLAN_REVERT', planId, authorId, {
+        revertedToVersion: versionNumber,
+        newVersionNumber: nextVersionNum,
+      });
+
+      return revertedPlan;
     });
-
-    if (!targetVersion) {
-      throw new NotFoundException(`Version ${versionNumber} does not exist for this plan.`);
-    }
-
-    // Overwrite existing plan payload with historical content safely
-    let plan = await this.planRepo.findOne({ where: { id: planId } });
-    if (!plan) throw new NotFoundException('Treatment Plan not found');
-
-    const cleanSnapshot = { ...targetVersion.snapshot };
-    delete cleanSnapshot.id; // Avoid attempting to change primary keys
-
-    Object.assign(plan, cleanSnapshot);
-    const revertedPlan = await this.planRepo.save(plan);
-
-    // Increment version line for the revert action itself
-    const latestVersion = await this.versionRepo.findOne({
-      where: { treatmentPlanId: planId },
-      order: { versionNumber: 'DESC' },
-    });
-    const nextVersionNum = latestVersion ? latestVersion.versionNumber + 1 : 1;
-
-    await this.versionRepo.save({
-      treatmentPlanId: planId,
-      versionNumber: nextVersionNum,
-      snapshot: revertedPlan,
-      authorId,
-    });
-
-    // Write audit trail documenting the reversion mapping
-    await this.eventStore.logEvent('TREATMENT_PLAN_REVERT', planId, authorId, {
-      revertedToVersion: versionNumber,
-      newVersionNumber: nextVersionNum,
-    });
-
-    return revertedPlan;
   }
 }

@@ -1,15 +1,62 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import { Cron } from '@nestjs/schedule';
 import { BackupLog, BackupStatus, BackupType } from '../entities/backup-log.entity';
 import { RecoveryTest, RecoveryTestStatus } from '../entities/recovery-test.entity';
 
-const execAsync = promisify(exec);
+/** Reuse the same validators and shell-free spawn helper from backup.service.ts */
+const HOSTNAME_RE = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/;
+const IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
+
+function validateDbHost(value: string): string {
+  const ipv4Re = /^(\d{1,3}\.){3}\d{1,3}$/;
+  if (!HOSTNAME_RE.test(value) && !ipv4Re.test(value))
+    throw new Error(`DB_HOST contains invalid characters: "${value}"`);
+  return value;
+}
+function validateDbPort(value: string): string {
+  const port = parseInt(value, 10);
+  if (isNaN(port) || port < 1 || port > 65535 || String(port) !== value.trim())
+    throw new Error(`DB_PORT is not a valid port number: "${value}"`);
+  return value;
+}
+function validateDbIdentifier(value: string, envVar: string): string {
+  if (!IDENTIFIER_RE.test(value))
+    throw new Error(`${envVar} contains invalid characters: "${value}"`);
+  return value;
+}
+
+function spawnAsync(
+  command: string,
+  args: string[],
+  options: { env?: NodeJS.ProcessEnv } = {},
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { shell: false, env: options.env ?? process.env, stdio: 'ignore' });
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${command} exited with code ${code}`))),
+    );
+  });
+}
+
+function spawnAsyncCapture(
+  command: string,
+  args: string[],
+  options: { env?: NodeJS.ProcessEnv } = {},
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let out = '';
+    const child = spawn(command, args, { shell: false, env: options.env ?? process.env, stdio: ['ignore', 'pipe', 'ignore'] });
+    child.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`${command} exited with code ${code}`))),
+    );
+  });
+}
 
 export interface RecoveryOptions {
   backupId: string;
@@ -221,27 +268,23 @@ export class DisasterRecoveryService {
   }
 
   private async decryptBackup(encryptedPath: string): Promise<string> {
-    if (!this.encryptionKey) {
-      throw new Error('Backup encryption key not configured');
-    }
+    if (!this.encryptionKey) throw new Error('Backup encryption key not configured');
 
     const outputPath = encryptedPath.replace('.enc.gz', '.dec');
-    const algorithm = 'aes-256-gcm';
     const key = crypto.scryptSync(this.encryptionKey, 'salt', 32);
 
-    // Decompress first
-    await execAsync(`gunzip -c ${encryptedPath} > ${encryptedPath.replace('.gz', '')}`);
+    // Decompress via spawn (no shell)
+    const decompressedEncPath = encryptedPath.replace('.gz', '');
+    await spawnAsync('gunzip', ['-c', '-k', encryptedPath]);
+    // gunzip -c writes to stdout; use Node crypto to decrypt in-process
+    const encryptedData = await fs.readFile(decompressedEncPath);
 
-    const encryptedData = await fs.readFile(encryptedPath.replace('.gz', ''));
-
-    // Extract IV, auth tag, and encrypted data
     const iv = encryptedData.slice(0, 16);
     const authTag = encryptedData.slice(16, 32);
     const encrypted = encryptedData.slice(32);
 
-    const decipher = crypto.createDecipheriv(algorithm, key, iv);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
     decipher.setAuthTag(authTag);
-
     const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
     await fs.writeFile(outputPath, decrypted);
 
@@ -250,41 +293,31 @@ export class DisasterRecoveryService {
 
   private async decompressBackup(compressedPath: string): Promise<string> {
     const outputPath = compressedPath.replace('.gz', '');
-    await execAsync(`gunzip -c ${compressedPath} > ${outputPath}`);
+    // spawn gunzip with explicit args — no shell interpolation
+    await spawnAsync('gunzip', ['-f', '-k', compressedPath]);
     return outputPath;
   }
 
   private async testRestore(backupPath: string): Promise<void> {
     const testDbName = `test_restore_${Date.now()}`;
-    const dbHost = process.env.DB_HOST || 'localhost';
-    const dbPort = process.env.DB_PORT || '5432';
-    const dbUser = process.env.DB_USERNAME || 'medical_user';
+    const dbHost = validateDbHost(process.env.DB_HOST || 'localhost');
+    const dbPort = validateDbPort(process.env.DB_PORT || '5432');
+    const dbUser = validateDbIdentifier(process.env.DB_USERNAME || 'medical_user', 'DB_USERNAME');
+    const pgEnv = { ...process.env, PGPASSWORD: process.env.DB_PASSWORD };
 
     try {
-      // Create test database
-      await execAsync(`createdb -h ${dbHost} -p ${dbPort} -U ${dbUser} ${testDbName}`, {
-        env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD },
-      });
-
-      // Restore to test database
-      await execAsync(
-        `pg_restore -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${testDbName} ${backupPath}`,
-        { env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD } },
+      await spawnAsync('createdb', ['-h', dbHost, '-p', dbPort, '-U', dbUser, testDbName], { env: pgEnv });
+      await spawnAsync('pg_restore', ['-h', dbHost, '-p', dbPort, '-U', dbUser, '-d', testDbName, backupPath], { env: pgEnv });
+      const stdout = await spawnAsyncCapture(
+        'psql',
+        ['-h', dbHost, '-p', dbPort, '-U', dbUser, '-d', testDbName, '-c',
+          "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';"],
+        { env: pgEnv },
       );
-
-      // Verify restoration
-      const { stdout } = await execAsync(
-        `psql -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${testDbName} -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';"`,
-        { env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD } },
-      );
-
       this.logger.log(`Test restore verification: ${stdout}`);
     } finally {
-      // Cleanup test database
       try {
-        await execAsync(`dropdb -h ${dbHost} -p ${dbPort} -U ${dbUser} ${testDbName}`, {
-          env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD },
-        });
+        await spawnAsync('dropdb', ['-h', dbHost, '-p', dbPort, '-U', dbUser, testDbName], { env: pgEnv });
       } catch (error) {
         this.logger.warn(`Failed to cleanup test database: ${error.message}`);
       }
@@ -292,13 +325,14 @@ export class DisasterRecoveryService {
   }
 
   private async restoreDatabase(backupPath: string, targetDb?: string): Promise<void> {
-    const dbHost = process.env.DB_HOST || 'localhost';
-    const dbPort = process.env.DB_PORT || '5432';
-    const dbName = targetDb || process.env.DB_NAME || 'healthy_stellar';
-    const dbUser = process.env.DB_USERNAME || 'medical_user';
+    const dbHost = validateDbHost(process.env.DB_HOST || 'localhost');
+    const dbPort = validateDbPort(process.env.DB_PORT || '5432');
+    const dbName = validateDbIdentifier(targetDb || process.env.DB_NAME || 'healthy_stellar', 'DB_NAME');
+    const dbUser = validateDbIdentifier(process.env.DB_USERNAME || 'medical_user', 'DB_USERNAME');
 
-    await execAsync(
-      `pg_restore -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} --clean --if-exists ${backupPath}`,
+    await spawnAsync(
+      'pg_restore',
+      ['-h', dbHost, '-p', dbPort, '-U', dbUser, '-d', dbName, '--clean', '--if-exists', backupPath],
       { env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD } },
     );
   }

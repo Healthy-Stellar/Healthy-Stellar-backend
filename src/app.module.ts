@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { HospitalConfigurationModule } from './hospital-config/src/hospital-configuration/hospital-configuration.module';
 import { ConfigDriftService } from './config/config-drift.service';
 import { envValidationSchema } from './config/env.validation';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
@@ -191,6 +192,7 @@ import { User } from './auth/entities/user.entity';
     AppointmentsModule,
     SurgicalModule,
     TelemedicineModule,
+    HospitalConfigurationModule,
     EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],
