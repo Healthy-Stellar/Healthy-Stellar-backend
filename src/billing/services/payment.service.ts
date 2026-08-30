@@ -154,6 +154,10 @@ export class PaymentService {
         relations: ['lineItems', 'payments'],
       });
 
+      if (billing) {
+        const paymentAmount = Number(payment.amount);
+        const currentBalance = Number(billing.balance);
+
         billing.totalPayments = Number(billing.totalPayments) + paymentAmount;
         billing.balance = currentBalance - paymentAmount;
 
