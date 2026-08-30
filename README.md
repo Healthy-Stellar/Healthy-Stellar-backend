@@ -74,6 +74,11 @@ The backend application uses [BullMQ](https://bullmq.io/) for managing and execu
 
 The worker process is defined in `src/worker.ts` and `src/worker.module.ts`.
 
+> For how `src/blockchain/`, `src/stellar/`, and `src/stellar-stream/` fit
+> together and interact with this worker process — including which parts are
+> fully wired up versus built-but-not-yet-connected — see
+> [`docs/STELLAR_ARCHITECTURE.md`](docs/STELLAR_ARCHITECTURE.md).
+
 ### Key Responsibilities
 The worker processes tasks from several queues:
 - **`contract-writes`**: Schedules and signs write transactions to Stellar Soroban smart contracts.
