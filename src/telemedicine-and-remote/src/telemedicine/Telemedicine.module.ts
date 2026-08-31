@@ -14,6 +14,8 @@ import { TelehealthBillingService } from './services/telehealth-billing.service'
 import { RemotePrescriptionService } from './services/remote-prescription.service';
 import { QualityOutcomeService } from './services/quality-outcome.service';
 import { HipaaComplianceService } from './services/hipaa-compliance.service';
+import { HipaaAuditLogEntity } from '../entity/hipaa-audit-log.entity';
+import { PatientConsentEntity } from '../entity/patient-consent.entity';
 import { VirtualVisit } from './entities/virtual-visit.entity';
 import { RemoteMonitoringData } from './entities/remote-monitoring-data.entity';
 import { TelemedicineDocument } from './entities/telemedicine-document.entity';
@@ -37,6 +39,8 @@ import { VideoConferenceGateway } from '../gateways/Video conference.gateway';
       QualityOutcome,
       VideoConferenceSession,
       SessionRecording,
+      HipaaAuditLogEntity,
+      PatientConsentEntity,
     ]),
   ],
   controllers: [

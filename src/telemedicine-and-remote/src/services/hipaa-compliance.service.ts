@@ -1,5 +1,15 @@
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import * as crypto from 'crypto';
+import { HipaaAuditLogEntity } from '../entity/hipaa-audit-log.entity';
+import { PatientConsentEntity } from '../entity/patient-consent.entity';
+
+/** Envelope layout for encrypted PHI: salt | iv | tag | ciphertext, base64. */
+const SALT_LEN = 16;
+const IV_LEN = 12;
+const TAG_LEN = 16;
+const KEY_LEN = 32;
 
 export interface HipaaAuditLog {
   resourceType: string;
@@ -21,83 +31,178 @@ export interface PatientConsent {
 
 @Injectable()
 export class HipaaComplianceService {
-  private encryptionKey = process.env.ENCRYPTION_KEY || 'default-key-change-in-production';
-  private auditLogs: HipaaAuditLog[] = []; // In production: use database
-  private patientConsents: Map<string, PatientConsent[]> = new Map();
+  private readonly encryptionKey: string;
 
-  // Encryption/Decryption for PHI
+  constructor(
+    @InjectRepository(HipaaAuditLogEntity)
+    private readonly auditLogRepository: Repository<HipaaAuditLogEntity>,
+    @InjectRepository(PatientConsentEntity)
+    private readonly consentRepository: Repository<PatientConsentEntity>,
+  ) {
+    // Refusing to boot without a key is the point. The previous default,
+    // 'default-key-change-in-production', was published in this repository, so
+    // a deployment that forgot the variable encrypted PHI under a key any
+    // reader of the source already had — and did so silently, which is the
+    // part that made it dangerous rather than merely wrong.
+    const key = process.env.ENCRYPTION_KEY;
+    if (!key) {
+      throw new Error(
+        'ENCRYPTION_KEY must be set: HipaaComplianceService will not start without it',
+      );
+    }
+    this.encryptionKey = key;
+  }
+
+  /**
+   * Encrypts PHI under a key derived freshly for this record.
+   *
+   * The salt is random per call rather than the literal string 'salt' it used
+   * to be. A constant salt makes scrypt's work factor a one-time cost for an
+   * attacker: derive the key once and every record in every deployment of this
+   * service opens. Sixteen random bytes stored beside the ciphertext restores
+   * the property the KDF is there for.
+   *
+   * AES-256-GCM replaces AES-256-CBC so the ciphertext carries an
+   * authentication tag. Under CBC a tampered record decrypted to garbage and
+   * `JSON.parse` threw somewhere far away; now `decryptPHI` rejects it at the
+   * point of tampering.
+   *
+   * This is the same envelope `src/common/transformers/phi-gcm.transformer.ts`
+   * already writes, deliberately, so both PHI paths stay readable by one set
+   * of eyes.
+   */
   encryptPHI(data: any): string {
-    const algorithm = 'aes-256-cbc';
-    const key = crypto.scryptSync(this.encryptionKey, 'salt', 32);
-    const iv = crypto.randomBytes(16);
+    const salt = crypto.randomBytes(SALT_LEN);
+    const iv = crypto.randomBytes(IV_LEN);
+    const key = crypto.scryptSync(this.encryptionKey, salt, KEY_LEN);
 
-    const cipher = crypto.createCipheriv(algorithm, key, iv);
-    let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'hex');
-    encrypted += cipher.final('hex');
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const ciphertext = Buffer.concat([
+      cipher.update(JSON.stringify(data), 'utf8'),
+      cipher.final(),
+    ]);
+    const tag = cipher.getAuthTag();
 
-    return `${iv.toString('hex')}:${encrypted}`;
+    return Buffer.concat([salt, iv, tag, ciphertext]).toString('base64');
   }
 
+  /**
+   * Reverses encryptPHI.
+   *
+   * Throws when the envelope is truncated or the tag does not verify. It does
+   * not fall back to a null or an empty object: a caller that cannot tell
+   * "no PHI" from "PHI that failed authentication" will eventually treat the
+   * second as the first.
+   */
   decryptPHI(encryptedData: string): any {
-    const algorithm = 'aes-256-cbc';
-    const key = crypto.scryptSync(this.encryptionKey, 'salt', 32);
+    const buf = Buffer.from(encryptedData, 'base64');
+    if (buf.length <= SALT_LEN + IV_LEN + TAG_LEN) {
+      throw new Error('Encrypted PHI payload is truncated or malformed');
+    }
 
-    const [ivHex, encrypted] = encryptedData.split(':');
-    const iv = Buffer.from(ivHex, 'hex');
+    const salt = buf.subarray(0, SALT_LEN);
+    const iv = buf.subarray(SALT_LEN, SALT_LEN + IV_LEN);
+    const tag = buf.subarray(SALT_LEN + IV_LEN, SALT_LEN + IV_LEN + TAG_LEN);
+    const ciphertext = buf.subarray(SALT_LEN + IV_LEN + TAG_LEN);
 
-    const decipher = crypto.createDecipheriv(algorithm, key, iv);
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
+    const key = crypto.scryptSync(this.encryptionKey, salt, KEY_LEN);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
 
-    return JSON.parse(decrypted);
+    const plaintext = Buffer.concat([
+      decipher.update(ciphertext),
+      decipher.final(),
+    ]).toString('utf8');
+
+    return JSON.parse(plaintext);
   }
 
-  // Audit Logging
+  /**
+   * Records one PHI access.
+   *
+   * Previously this pushed onto an in-process array, so the trail HIPAA asks
+   * for was discarded on every restart and was never shared between replicas —
+   * two instances each held half an answer and neither knew it.
+   *
+   * The caller's `timestamp` is honoured rather than overwritten with `new
+   * Date()`. An access queued during an outage and flushed later belongs at the
+   * time it happened; `createdAt` records when the row was written, so the two
+   * remain distinguishable.
+   */
   async logAccess(log: HipaaAuditLog): Promise<void> {
-    this.auditLogs.push({
-      ...log,
-      timestamp: new Date(),
-    });
-
-    // In production: Store in secure audit log database
-    // await this.auditLogRepository.save(log);
-
-    // Log to secure external service for tamper-proof audit trail
-    // await this.externalAuditService.log(log);
+    await this.auditLogRepository.save(
+      this.auditLogRepository.create({
+        resourceType: log.resourceType,
+        resourceId: log.resourceId,
+        action: log.action,
+        userId: log.userId,
+        timestamp: log.timestamp ?? new Date(),
+        ipAddress: log.ipAddress ?? null,
+        userAgent: log.userAgent ?? null,
+      }),
+    );
   }
 
+  /**
+   * Reads the audit trail, filtered on whichever arguments are supplied.
+   *
+   * The date bounds are pushed into the query rather than applied to a fetched
+   * array. Filtering in memory means loading every audit row a deployment has
+   * ever written in order to return a week of them, which is the one table
+   * guaranteed to grow without limit.
+   */
   async getAuditLogs(
     resourceType?: string,
     resourceId?: string,
     startDate?: Date,
     endDate?: Date,
   ): Promise<HipaaAuditLog[]> {
-    let logs = [...this.auditLogs];
+    const where: Record<string, unknown> = {};
 
-    if (resourceType) {
-      logs = logs.filter((log) => log.resourceType === resourceType);
+    if (resourceType) where.resourceType = resourceType;
+    if (resourceId) where.resourceId = resourceId;
+
+    if (startDate && endDate) {
+      where.timestamp = Between(startDate, endDate);
+    } else if (startDate) {
+      where.timestamp = MoreThanOrEqual(startDate);
+    } else if (endDate) {
+      where.timestamp = LessThanOrEqual(endDate);
     }
 
-    if (resourceId) {
-      logs = logs.filter((log) => log.resourceId === resourceId);
-    }
+    const rows = await this.auditLogRepository.find({
+      where,
+      order: { timestamp: 'ASC' },
+    });
 
-    if (startDate) {
-      logs = logs.filter((log) => log.timestamp >= startDate);
-    }
-
-    if (endDate) {
-      logs = logs.filter((log) => log.timestamp <= endDate);
-    }
-
-    return logs;
+    return rows.map((row) => ({
+      resourceType: row.resourceType,
+      resourceId: row.resourceId,
+      action: row.action,
+      userId: row.userId,
+      timestamp: row.timestamp,
+      ipAddress: row.ipAddress ?? undefined,
+      userAgent: row.userAgent ?? undefined,
+    }));
   }
 
-  // Patient Consent Management
+  /**
+   * Stores a consent record and audits the fact that it was stored.
+   *
+   * Consents accumulate rather than replace: an earlier record for the same
+   * patient and type stays, so a later withdrawal does not erase the evidence
+   * that consent once existed.
+   */
   async recordPatientConsent(consent: PatientConsent): Promise<void> {
-    const consents = this.patientConsents.get(consent.patientId) || [];
-    consents.push(consent);
-    this.patientConsents.set(consent.patientId, consents);
+    await this.consentRepository.save(
+      this.consentRepository.create({
+        patientId: consent.patientId,
+        consentType: consent.consentType,
+        consentGiven: consent.consentGiven,
+        consentDate: consent.consentDate ?? new Date(),
+        expirationDate: consent.expirationDate ?? null,
+      }),
+    );
 
     await this.logAccess({
       resourceType: 'PatientConsent',
@@ -108,20 +213,27 @@ export class HipaaComplianceService {
     });
   }
 
+  /**
+   * Answers whether a patient currently permits a category of use.
+   *
+   * The newest record for the patient and type decides, so a withdrawal
+   * recorded after a grant wins. An expiry in the past means no consent; a
+   * null expiry means it does not lapse.
+   */
   async verifyPatientConsent(
     patientId: string,
     consentType: string = 'telemedicine',
   ): Promise<boolean> {
-    const consents = this.patientConsents.get(patientId) || [];
+    const latest = await this.consentRepository.findOne({
+      where: { patientId, consentType },
+      order: { consentDate: 'DESC' },
+    });
 
-    const validConsent = consents.find(
-      (consent) =>
-        consent.consentType === consentType &&
-        consent.consentGiven === true &&
-        (!consent.expirationDate || consent.expirationDate > new Date()),
-    );
+    if (!latest || !latest.consentGiven) {
+      return false;
+    }
 
-    return !!validConsent;
+    return !latest.expirationDate || latest.expirationDate > new Date();
   }
 
   // Minimum Necessary Rule
