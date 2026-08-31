@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { InjectRepository, InjectEntityManager } from '@nestjs/typeorm';
+import { Repository, LessThan, EntityManager } from 'typeorm';
 import { PharmacyInventory } from '../entities/pharmacy-inventory.entity';
 import { UpdateInventoryDto } from '../dto/update-inventory.dto';
 
@@ -9,6 +9,8 @@ export class PharmacyInventoryService {
   constructor(
     @InjectRepository(PharmacyInventory)
     private inventoryRepository: Repository<PharmacyInventory>,
+    @InjectEntityManager()
+    private entityManager: EntityManager,
   ) {}
 
   async getInventoryByDrug(drugId: string): Promise<PharmacyInventory[]> {
@@ -64,32 +66,70 @@ export class PharmacyInventoryService {
   }
 
   async deductInventory(drugId: string, quantity: number): Promise<void> {
-    // Use FIFO (First Expired First Out) - get earliest expiring available inventory
-    const inventories = await this.inventoryRepository.find({
-      where: {
-        drugId,
-        status: 'available',
-      },
-      order: { expirationDate: 'ASC' },
+    return this.entityManager.transaction(async (transactionalEntityManager) => {
+      // Get earliest expiring available inventory with pessimistic write lock
+      const inventories = await transactionalEntityManager
+        .createQueryBuilder(PharmacyInventory, "inventory")
+        .where("inventory.drugId = :drugId", { drugId })
+        .andWhere("inventory.status = :status", { status: "available" })
+        .orderBy("inventory.expirationDate", "ASC")
+        .setLock("pessimistic_write")
+        .getMany();
+
+      let remainingQuantity = quantity;
+
+      for (const inventory of inventories) {
+        if (remainingQuantity <= 0) break;
+
+        const deduction = Math.min(inventory.quantity, remainingQuantity);
+        inventory.quantity -= deduction;
+        remainingQuantity -= deduction;
+
+        // Auto-update status based on quantity
+        if (inventory.quantity <= 0) {
+          inventory.status = "out-of-stock";
+        } else if (inventory.quantity <= inventory.reorderLevel) {
+          inventory.status = "low-stock";
+        } else {
+          inventory.status = "available";
+        }
+
+  async deductInventoryItem(inventoryId: string, quantity: number): Promise<PharmacyInventory> {
+    if (quantity <= 0) {
+      throw new BadRequestException("Quantity must be greater than zero.");
+    }
+
+    return this.entityManager.transaction(async (transactionalEntityManager) => {
+      // Lock the inventory row for update
+      const inventory = await transactionalEntityManager
+        .createQueryBuilder(PharmacyInventory, "inventory")
+        .where("inventory.id = :id", { id: inventoryId })
+        .setLock("pessimistic_write")
+        .getOne();
+
+      if (!inventory) {
+        throw new NotFoundException(`Inventory item ${inventoryId} not found`);
+      }
+
+      if (inventory.quantity < quantity) {
+        throw new BadRequestException(
+          `Insufficient inventory for item ${inventoryId}. Available ${inventory.quantity}, requested ${quantity}.`,
+        );
+      }
+
+      inventory.quantity -= quantity;
+
+      // Auto-update status based on quantity
+      if (inventory.quantity <= 0) {
+        inventory.status = "out-of-stock";
+      } else if (inventory.quantity <= inventory.reorderLevel) {
+        inventory.status = "low-stock";
+      } else {
+        inventory.status = "available";
+      }
+
+      return transactionalEntityManager.save(inventory);
     });
-
-    let remainingQuantity = quantity;
-
-    for (const inventory of inventories) {
-      if (remainingQuantity <= 0) break;
-
-      const deduction = Math.min(inventory.quantity, remainingQuantity);
-      inventory.quantity -= deduction;
-      remainingQuantity -= deduction;
-
-      await this.updateInventory(inventory.id, { quantity: inventory.quantity });
-    }
-
-    if (remainingQuantity > 0) {
-      throw new BadRequestException(
-        `Insufficient inventory for drug ${drugId}. Short by ${remainingQuantity} units.`,
-      );
-    }
   }
 
   async deductInventoryItem(inventoryId: string, quantity: number): Promise<PharmacyInventory> {
