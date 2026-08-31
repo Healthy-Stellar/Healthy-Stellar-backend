@@ -38,6 +38,21 @@ describe('DataRetentionService', () => {
     service = module.get(DataRetentionService);
   });
 
+  describe('scheduling — no @Cron decorator', () => {
+    it('does not carry a @Cron decorator on enforceRetentionPolicy (RetentionEnforcementJob owns the schedule)', () => {
+      // NestJS stores cron metadata on the method via the SCHEDULE_CRON_OPTIONS metadata key.
+      // If the decorator is present, Reflect.getMetadata returns a non-empty array.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { SCHEDULE_CRON_OPTIONS } = require('@nestjs/schedule/dist/schedule.constants');
+      const meta = Reflect.getMetadata(
+        SCHEDULE_CRON_OPTIONS,
+        service.enforceRetentionPolicy,
+      );
+      // The metadata key should be absent or empty — no cron is registered on this method.
+      expect(meta == null || (Array.isArray(meta) && meta.length === 0)).toBe(true);
+    });
+  });
+
   describe('getRetentionCutoff', () => {
     it('returns a date 7 years in the past by default', () => {
       const cutoff = service.getRetentionCutoff();
@@ -140,6 +155,36 @@ describe('DataRetentionService', () => {
         service.getEffectivePolicy('eu-tenant', 'medical_records'),
       );
       expect(cutoff.getFullYear()).toBe(new Date().getFullYear() - 10);
+    });
+
+    it('emits a logger.warn for registered tenant passes (no tenantId column on Record)', async () => {
+      const warnSpy = jest.spyOn((service as any).logger, 'warn');
+      recordRepo.find.mockResolvedValue([]);
+
+      service.setTenantPolicy({
+        tenantId: 'eu-tenant',
+        categories: { medical_records: { retentionYears: 10, action: 'anonymize' } },
+      });
+
+      await service.enforceRetentionPolicy(false);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('skipping per-tenant DB pass for tenant=eu-tenant'),
+      );
+    });
+
+    it('does not query the DB for the tenant pass — only queries once for the global (null) pass', async () => {
+      recordRepo.find.mockResolvedValue([]);
+
+      service.setTenantPolicy({
+        tenantId: 'eu-tenant',
+        categories: { medical_records: { retentionYears: 10, action: 'anonymize' } },
+      });
+
+      await service.enforceRetentionPolicy(false);
+
+      // One call for the global (tenantId=null) pass; zero for the tenant pass
+      expect(recordRepo.find).toHaveBeenCalledTimes(1);
     });
   });
 });
