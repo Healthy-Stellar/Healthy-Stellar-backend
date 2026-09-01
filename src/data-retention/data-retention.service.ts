@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -90,10 +89,16 @@ export class DataRetentionService {
   }
 
   /**
-   * Nightly scheduled job.
-   * Iterates all configured tenant policies plus the global default.
+   * Applies retention policies across all configured tenants plus the global
+   * default. This method is called by RetentionEnforcementJob (which owns the
+   * nightly cron schedule). It can also be invoked directly for ad-hoc runs or
+   * in tests.
+   *
+   * NOTE: Do NOT add a @Cron decorator here. RetentionEnforcementJob is the
+   * single scheduled entry-point for all nightly enforcement. Adding a second
+   * cron here would cause both jobs to run concurrently on the same tables with
+   * conflicting actions (anonymize/soft-delete vs. archive-then-hard-delete).
    */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async enforceRetentionPolicy(dryRun = false): Promise<RetentionRunResult> {
     this.logger.log(
       `DataRetentionService: starting nightly retention run (dryRun=${dryRun})`,
@@ -131,13 +136,21 @@ export class DataRetentionService {
       const policy = this.getEffectivePolicy(tenantId, category);
       const cutoff = this.getCutoff(policy);
 
-      const whereClause: any = { createdAt: LessThan(cutoff) };
       if (tenantId) {
-        // When per-tenant repos are wired, filter by tenantId here.
-        // For now we process global records only on the null pass to avoid duplication.
+        // The Record entity does not yet carry a tenantId column, so we cannot
+        // issue an isolated per-tenant query.  Skipping the DB pass prevents
+        // double-processing the same global rows under every registered tenant
+        // override.  When a tenantId column is added, replace this guard with a
+        // { tenantId } filter in whereClause and remove the continue.
+        this.logger.warn(
+          `DataRetentionService: skipping per-tenant DB pass for tenant=${tenantId} ` +
+            `(Record entity has no tenantId column; override is registered but cannot be ` +
+            `applied at the row level until the column is added)`,
+        );
         continue;
       }
 
+      const whereClause: any = { createdAt: LessThan(cutoff) };
       const expired = await this.recordRepo.find({ where: whereClause });
 
       for (const record of expired) {
