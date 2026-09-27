@@ -31,6 +31,25 @@ export const PLAN_MULTIPLIERS: Record<TenantSubscriptionPlan, number> = {
 };
 
 /**
+ * Resolve the subscription-plan multiplier from trusted server-side state only.
+ *
+ * The plan is derived exclusively from the authenticated user's `tenantPlan`
+ * claim (populated by the JWT strategy). Client-supplied headers such as
+ * `x-tenant-plan` are never trusted, since they are attacker-controlled and
+ * would allow callers to inflate their rate-limit multiplier (e.g. requesting
+ * `enterprise` for a 5x allowance). When the claim is absent or the request is
+ * unauthenticated, the safest default (`starter`, 1x) is used.
+ */
+export function resolvePlanMultiplier(
+  tenantPlan: TenantSubscriptionPlan | undefined | null,
+): number {
+  if (tenantPlan && tenantPlan in PLAN_MULTIPLIERS) {
+    return PLAN_MULTIPLIERS[tenantPlan];
+  }
+  return PLAN_MULTIPLIERS.starter;
+}
+
+/**
  * Route-pattern × actor-type rate limit matrix.
  *
  * Key format: `<routePattern>:<actorType>`
