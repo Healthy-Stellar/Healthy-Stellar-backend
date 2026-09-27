@@ -234,62 +234,98 @@ export class RecordAttachmentUploadService {
         details: {
           algorithm: verificationResult.algorithm,
           signedAt: verificationResult.signedAt,
-          hasCertificate: !!verificationResult.signerCertificate,
+          signerCertificate: verificationResult.signerCertificate,
           metadata: verificationResult.metadata,
         },
       };
     } catch (error) {
+      this.logger.error(
+        `Failed to verify signature for attachment ${attachmentId}: ${error.message}`,
+      );
       return {
         status: SignatureStatus.INVALID,
-        details: { error: (error as Error).message },
+        details: { reason: `Verification failed: ${error.message}` },
       };
     }
   }
 
   /**
-   * List attachments for a record
+   * Build the encrypted envelope for IPFS storage.
+   *
+   * Format (must match RecordDownloadService.unpackEnvelope):
+   *   [verLen:2 LE][dekVersion:verLen bytes UTF-8]
+   *   [ivLen:2 LE][iv:ivLen bytes]
+   *   [authTagLen:2 LE][authTag:authTagLen bytes]
+   *   [ciphertextLen:4 LE][ciphertext:ciphertextLen bytes]
    */
-  async listAttachments(
-    recordId: string,
-  ): Promise<RecordAttachment[]> {
-    return this.attachmentRepository.find({
-      where: { recordId, isDeleted: false },
-      order: { uploadedAt: 'DESC' },
-    });
+  private buildEncryptedEnvelope(encryptedRecord: {
+    ciphertext: Buffer;
+    iv: Buffer;
+    authTag: Buffer;
+    dekVersion: string;
+  }): Buffer {
+    const dekVersionBuf = Buffer.from(encryptedRecord.dekVersion, 'utf8');
+    const ivBuf = Buffer.from(encryptedRecord.iv);
+    const authTagBuf = Buffer.from(encryptedRecord.authTag);
+    const ciphertextBuf = Buffer.from(encryptedRecord.ciphertext);
+
+    const verLenBuf = Buffer.allocUnsafe(2);
+    verLenBuf.writeUInt16LE(dekVersionBuf.length, 0);
+
+    const ivLenBuf = Buffer.allocUnsafe(2);
+    ivLenBuf.writeUInt16LE(ivBuf.length, 0);
+
+    const authTagLenBuf = Buffer.allocUnsafe(2);
+    authTagLenBuf.writeUInt16LE(authTagBuf.length, 0);
+
+    const ciphertextLenBuf = Buffer.allocUnsafe(4);
+    ciphertextLenBuf.writeUInt32LE(ciphertextBuf.length, 0);
+
+    return Buffer.concat([
+      verLenBuf,
+      dekVersionBuf,
+      ivLenBuf,
+      ivBuf,
+      authTagLenBuf,
+      authTagBuf,
+      ciphertextLenBuf,
+      ciphertextBuf,
+    ]);
   }
 
   /**
-   * Soft delete an attachment
+   * Validate file MIME type and size
    */
-  async deleteAttachment(attachmentId: string, deletedBy: string): Promise<void> {
-    const attachment = await this.attachmentRepository.findOne({
-      where: { id: attachmentId },
-    });
-
-    if (!attachment) {
-      throw new NotFoundException(`Attachment with ID ${attachmentId} not found`);
+  private validateFile(file: Express.Multer.File): void {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('No file provided');
     }
 
-    attachment.isDeleted = true;
-    await this.attachmentRepository.save(attachment);
+    if (file.size > MAX_FILE_SIZE) {
+      throw new UnprocessableEntityException(
+        `File size exceeds maximum allowed size of ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+      );
+    }
 
-    // Log audit entry
-    await this.auditLogService.log({
-      userId: deletedBy,
-      action: 'ATTACHMENT_DELETE',
-      resourceType: 'RecordAttachment',
-      resourceId: attachmentId,
-      metadata: {
-        recordId: attachment.recordId,
-        originalFilename: attachment.originalFilename,
-      },
-    });
+    if (!ALLOWED_MIME_TYPES.includes(file.mimetype as AttachmentMimeType)) {
+      throw new UnprocessableEntityException(
+        `Unsupported file type: ${file.mimetype}. Allowed types: ${ALLOWED_MIME_TYPES.join(', ')}`,
+      );
+    }
+
+    // Verify magic bytes match declared MIME type
+    const detectedMimeType = this.detectMimeType(file.buffer);
+    if (detectedMimeType && detectedMimeType !== file.mimetype) {
+      throw new UnprocessableEntityException(
+        `File content does not match declared MIME type ${file.mimetype}`,
+      );
+    }
   }
 
   /**
-   * Detect file type from magic bytes
+   * Detect MIME type from magic bytes
    */
-  private detectFileType(buffer: Buffer): string | null {
+  private detectMimeType(buffer: Buffer): string | null {
     for (const [mimeType, signatures] of Object.entries(MAGIC_BYTES)) {
       for (const { signature } of signatures) {
         if (buffer.length >= signature.length && buffer.subarray(0, signature.length).equals(signature)) {
@@ -301,129 +337,33 @@ export class RecordAttachmentUploadService {
   }
 
   /**
-   * Extract and verify digital signature from uploaded file.
-   * Only processes PDF files; other formats are marked as unsigned.
-   *
-   * On upload, we extract signature metadata and validate the PKCS#7
-   * structure. Full cryptographic verification happens on retrieval
-   * when the stored public key is available.
+   * Extract and verify digital signature from file buffer
    */
   private extractAndVerifySignature(
     buffer: Buffer,
-    mimetype: string,
+    mimeType: string,
   ): SignatureVerificationResult {
-    if (mimetype !== AttachmentMimeType.PDF) {
+    if (mimeType !== AttachmentMimeType.PDF) {
       return {
         status: SignatureStatus.UNSIGNED,
+        algorithm: null,
+        signerCertificate: null,
+        signedAt: null,
+        metadata: null,
       };
     }
 
-    const hasSignature = this.digitalSignatureService.hasPdfSignature(buffer);
-    if (!hasSignature) {
+    try {
+      return this.digitalSignatureService.verifyPdfSignature(buffer, '');
+    } catch (error) {
+      this.logger.warn(`Signature extraction failed: ${error.message}`);
       return {
         status: SignatureStatus.UNSIGNED,
+        algorithm: null,
+        signerCertificate: null,
+        signedAt: null,
+        metadata: null,
       };
     }
-
-    const extracted = this.digitalSignatureService.extractPdfSignature(buffer);
-    if (!extracted) {
-      return {
-        status: SignatureStatus.INVALID,
-        metadata: { reason: 'Failed to parse PKCS#7 signature structure' },
-      };
-    }
-
-    const isValidStructure = this.digitalSignatureService.isValidPdfSignatureStructure(buffer);
-    if (!isValidStructure) {
-      return {
-        status: SignatureStatus.INVALID,
-        algorithm: extracted.algorithm,
-        signerCertificate: extracted.signerCert?.toString('base64'),
-        signedAt: extracted.signingTime ?? undefined,
-        metadata: { reason: 'PKCS#7 structure validation failed' },
-      };
-    }
-
-    return {
-      status: SignatureStatus.VALID,
-      algorithm: extracted.algorithm,
-      signerCertificate: extracted.signerCert?.toString('base64'),
-      signedAt: extracted.signingTime ?? undefined,
-      metadata: {
-        byteRange: extracted.byteRange,
-        hasCertificate: !!extracted.signerCert,
-      },
-    };
-  }
-
-  /**
-   * Validate file before encryption
-   */
-  private validateFile(file: Express.Multer.File): void {
-    if (!file) {
-      throw new BadRequestException('No file provided');
-    }
-
-    // Check MIME type
-    if (!ALLOWED_MIME_TYPES.includes(file.mimetype as AttachmentMimeType)) {
-      throw new BadRequestException(
-        `Invalid MIME type: ${file.mimetype}. Allowed: ${ALLOWED_MIME_TYPES.join(', ')}`,
-      );
-    }
-
-    // Check file size
-    if (file.size > MAX_FILE_SIZE) {
-      throw new BadRequestException(
-        `File size ${file.size} exceeds maximum of ${MAX_FILE_SIZE} bytes`,
-      );
-    }
-
-    if (file.size === 0) {
-      throw new BadRequestException('File is empty');
-    }
-
-    // Magic bytes content inspection
-    const detectedType = this.detectFileType(file.buffer);
-    if (detectedType && detectedType !== file.mimetype) {
-      this.logger.warn('File type mismatch detected', {
-        declaredType: file.mimetype,
-        detectedType,
-        filename: file.originalname,
-        fileSize: file.size,
-      });
-
-      throw new UnprocessableEntityException(
-        `File content does not match declared type. Declared: ${file.mimetype}, Detected: ${detectedType}`,
-      );
-    }
-  }
-
-  /**
-   * Build encrypted envelope from encryption result
-   * Format: iv(12) | authTag(16) | dekLen(4) | encryptedDek(N) | dekVersion(2) | ciphertext(rest)
-   */
-  private buildEncryptedEnvelope(encryptedRecord: any): Buffer {
-    const iv = encryptedRecord.iv;
-    const authTag = encryptedRecord.authTag;
-    const encryptedDek = encryptedRecord.encryptedDek;
-    const dekVersion = encryptedRecord.dekVersion;
-    const ciphertext = encryptedRecord.ciphertext;
-
-    // Calculate total size
-    const dekLen = Buffer.allocUnsafe(4);
-    dekLen.writeUInt32BE(encryptedDek.length, 0);
-
-    const dekVersionBuf = Buffer.allocUnsafe(2);
-    dekVersionBuf.writeUInt16BE(dekVersion, 0);
-
-    // Concatenate in order
-    return Buffer.concat([
-      iv,
-      authTag,
-      dekLen,
-      encryptedDek,
-      dekVersionBuf,
-      ciphertext,
-    ]);
   }
 }
