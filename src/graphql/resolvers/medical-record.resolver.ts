@@ -9,6 +9,8 @@ import {
   Parent,
 } from '@nestjs/graphql';
 import { UseGuards, ForbiddenException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { MedicalRecord } from '../types/medical-record.type';
 import { Patient } from '../types/patient.type';
 import { GqlAuthGuard } from '../guards/gql-auth.guard';
@@ -16,6 +18,7 @@ import { DataloaderService } from '../dataloader.service';
 import { MedicalRecordsService } from '../../medical-records/services/medical-records.service';
 import { AddRecordInput } from '../types/inputs';
 import { TenantContext } from '../../tenant/context/tenant.context';
+import { MedicalRecordEntity } from '../../medical-records/entities/medical-record.entity';
 import DataLoader from 'dataloader';
 
 interface RecordService {
@@ -30,8 +33,8 @@ export class MedicalRecordResolver {
   constructor(
     private readonly medicalRecordsService: MedicalRecordsService,
     private readonly dataloaderService: DataloaderService,
-    @InjectRepository(RecordEntity)
-    private readonly recordRepo: Repository<RecordEntity>,
+    @InjectRepository(MedicalRecordEntity)
+    private readonly recordRepo: Repository<MedicalRecordEntity>,
   ) {}
 
   @Query(() => MedicalRecord, { nullable: true })
@@ -117,7 +120,7 @@ export class MedicalRecordResolver {
     return loader.load(record.patientId);
   }
 
-  private toGqlType(r: RecordEntity, uploadedBy: string): MedicalRecord {
+  private toGqlType(r: MedicalRecordEntity, uploadedBy: string): MedicalRecord {
     return {
       id: r.id,
       patientId: r.patientId,
