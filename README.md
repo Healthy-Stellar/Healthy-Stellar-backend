@@ -547,3 +547,6 @@ MIT
 
 <!-- handsoff-issue-1064 -->
 - #1064: [High] `SurgicalService.updateSurgicalCase()` reschedule path bypasses the advisory lock, allowing double-booking on reschedule
+
+<!-- handsoff-issue-1045 -->
+- #1045: [High] `PrescriptionService.checkInteractionsForDispense()` — drug-interaction check at dispense time ignores the patient's already-dispensed/filled medications
