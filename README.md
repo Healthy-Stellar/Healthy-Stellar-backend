@@ -547,3 +547,6 @@ MIT
 
 <!-- handsoff-issue-1064 -->
 - #1064: [High] `SurgicalService.updateSurgicalCase()` reschedule path bypasses the advisory lock, allowing double-booking on reschedule
+
+<!-- handsoff-issue-1023 -->
+- #1023: [Critical] `EhrImportProcessor.process()` — uploads imported HL7/CCD/CSV records to IPFS without encryption
