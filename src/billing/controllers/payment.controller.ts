@@ -8,12 +8,21 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
+  Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 import { PaymentService } from '../services/payment.service';
 import { CreatePaymentDto, RefundPaymentDto, BatchPaymentDto } from '../dto/payment.dto';
 
-@ApiTags('Payment Processing')\n@ApiBearerAuth('medical-auth')
+@ApiTags('Payment Processing')
+@ApiBearerAuth('medical-auth')
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('payments')
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
@@ -39,16 +48,20 @@ export class PaymentController {
     }
   })
   @ApiResponse({ status: 400, description: 'Invalid payment data or insufficient funds' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async create(@Body() createDto: CreatePaymentDto) {
     return this.paymentService.create(createDto);
   }
 
   @Post('batch')
+  @Roles(UserRole.BILLING_STAFF, UserRole.ADMIN)
   @ApiOperation({
     summary: 'Process batch payments',
     description: 'Process multiple payments in a single transaction for efficiency'
   })
   @ApiResponse({ status: 201, description: 'Batch payments processed successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden — BILLING_STAFF or ADMIN role required' })
   async processBatch(@Body() batchDto: BatchPaymentDto) {
     return this.paymentService.processBatch(batchDto);
   }
@@ -60,6 +73,7 @@ export class PaymentController {
   })
   @ApiParam({ name: 'id', description: 'Payment UUID' })
   @ApiResponse({ status: 200, description: 'Payment details retrieved' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Payment not found' })
   async findById(@Param('id') id: string) {
     return this.paymentService.findById(id);
@@ -72,8 +86,9 @@ export class PaymentController {
   })
   @ApiParam({ name: 'billingId', description: 'Billing UUID' })
   @ApiResponse({ status: 200, description: 'Payment history retrieved' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async findByBillingId(@Param('billingId') billingId: string) {
-    return this.paymentService.findByBillingId(billingId);
+    return this.paymentService.getPaymentsByBilling(billingId);
   }
 
   @Get('patient/:patientId')
@@ -85,37 +100,53 @@ export class PaymentController {
   @ApiQuery({ name: 'startDate', required: false, description: 'Filter from date' })
   @ApiQuery({ name: 'endDate', required: false, description: 'Filter to date' })
   @ApiResponse({ status: 200, description: 'Patient payment history retrieved' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden — patients may only access their own records' })
   async findByPatientId(
     @Param('patientId') patientId: string,
+    @Request() req: any,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    return this.paymentService.findByPatientId(patientId, { startDate, endDate });
+    if (req.user.role === UserRole.PATIENT && req.user.userId !== patientId) {
+      throw new ForbiddenException('Patients can only access their own payment history');
+    }
+    return this.paymentService.getPaymentsByPatient(patientId, {
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+    });
   }
 
   @Post(':id/refund')
+  @Roles(UserRole.BILLING_STAFF, UserRole.ADMIN)
   @ApiOperation({
     summary: 'Process payment refund',
     description: 'Issue full or partial refund for a payment transaction'
   })
   @ApiParam({ name: 'id', description: 'Payment UUID' })
   @ApiResponse({ status: 200, description: 'Refund processed successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden — BILLING_STAFF or ADMIN role required' })
   async refund(@Param('id') id: string, @Body() refundDto: RefundPaymentDto) {
-    return this.paymentService.refund(id, refundDto);
+    return this.paymentService.refund({ ...refundDto, paymentId: id });
   }
 
   @Put(':id/void')
+  @Roles(UserRole.BILLING_STAFF, UserRole.ADMIN)
   @ApiOperation({
     summary: 'Void payment transaction',
     description: 'Cancel a payment transaction before settlement'
   })
   @ApiParam({ name: 'id', description: 'Payment UUID' })
   @ApiResponse({ status: 200, description: 'Payment voided successfully' })
-  async void(@Param('id') id: string) {
-    return this.paymentService.void(id);
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden — BILLING_STAFF or ADMIN role required' })
+  async void(@Param('id') id: string, @Request() req: any) {
+    return this.paymentService.voidPayment(id, req.user.userId);
   }
 
   @Get('reports/daily')
+  @Roles(UserRole.ADMIN, UserRole.BILLING_STAFF)
   @ApiOperation({
     summary: 'Daily payment report',
     description: 'Generate daily payment collection report for financial reconciliation'
@@ -137,11 +168,14 @@ export class PaymentController {
       }
     }
   })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden — ADMIN or BILLING_STAFF role required' })
   async getDailyReport(@Query('date') date?: string) {
-    return this.paymentService.getDailyReport(date);
+    return this.paymentService.getDailyPaymentSummary(date ? new Date(date) : new Date());
   }
 
   @Get('reports/reconciliation')
+  @Roles(UserRole.ADMIN, UserRole.BILLING_STAFF)
   @ApiOperation({
     summary: 'Payment reconciliation report',
     description: 'Generate payment reconciliation report for accounting'
@@ -149,6 +183,8 @@ export class PaymentController {
   @ApiQuery({ name: 'startDate', required: true, description: 'Start date' })
   @ApiQuery({ name: 'endDate', required: true, description: 'End date' })
   @ApiResponse({ status: 200, description: 'Reconciliation report generated' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden — ADMIN or BILLING_STAFF role required' })
   async getReconciliationReport(
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,

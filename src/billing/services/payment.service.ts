@@ -424,4 +424,36 @@ export class PaymentService {
       insurancePayments: { count: insuranceCount, amount: insuranceAmount },
     };
   }
+
+  async voidPayment(id: string, actorId: string): Promise<Payment> {
+    const payment = await this.findById(id);
+
+    if (payment.status === PaymentStatus.COMPLETED) {
+      throw new BadRequestException('Completed payments cannot be voided; issue a refund instead');
+    }
+
+    if (payment.status === PaymentStatus.REFUNDED || payment.status === PaymentStatus.PARTIALLY_REFUNDED) {
+      throw new BadRequestException(`Cannot void a payment with status: ${payment.status}`);
+    }
+
+    payment.status = PaymentStatus.FAILED;
+    payment.notes = `${payment.notes ? payment.notes + '\n' : ''}Voided by ${actorId} at ${new Date().toISOString()}`;
+    return this.paymentRepository.save(payment);
+  }
+
+  async processBatch(batchDto: any): Promise<Payment[]> {
+    const payments: Payment[] = [];
+    for (const createDto of batchDto.payments ?? []) {
+      const payment = await this.create(createDto);
+      payments.push(payment);
+    }
+    return payments;
+  }
+
+  async getReconciliationReport(startDate: string, endDate: string): Promise<Payment[]> {
+    return this.paymentRepository.find({
+      where: { paymentDate: Between(new Date(startDate), new Date(endDate)) },
+      order: { paymentDate: 'DESC' },
+    });
+  }
 }
