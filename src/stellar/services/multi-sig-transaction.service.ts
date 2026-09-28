@@ -36,7 +36,7 @@ export class MultiSigTransactionService {
     const expiresAt = new Date(Date.now() + ttlMinutes * 60000);
     const entity = this.repo.create({
       tenantId: dto.tenantId, destination: dto.destination, amount: dto.amount,
-      asset: dto.asset || 'XLM', status: MultiSigTransactionStatus.PENDING_SIGNATURES.
+      asset: dto.asset || 'XLM', status: MultiSigTransactionStatus.PENDING_SIGNATURES,
       threshold: quorumSize, totalSigners: signers.length || TOTAL, ttlMinutes, expiresAt,
       requesterId, signatures: signers.map(s => ({ signerId: s, status: SignatureStatus.PENDING })), memo: dto.memo,
     });

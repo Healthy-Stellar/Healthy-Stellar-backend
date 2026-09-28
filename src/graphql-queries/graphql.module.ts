@@ -12,25 +12,25 @@ import {
   MedicalRecordFieldResolver,
   AccessGrantFieldResolver,
   AuditLogFieldResolver,
-} from './resolvers/query.resolver';
-import { MutationResolver } from './resolvers/mutation.resolver';
+} from '../graphql/resolvers/query.resolver';
+import { MutationResolver } from '../graphql/resolvers/mutation.resolver';
 
 // DataLoaders
-import { UserDataLoader } from './dataloaders/user.dataloader';
-import { RecordDataLoader } from './dataloaders/record.dataloader';
+import { UserDataLoader } from '../graphql/dataloaders/user.dataloader';
+import { RecordDataLoader } from '../graphql/dataloaders/record.dataloader';
 
 // Services
-import { IdempotencyService } from './services/idempotency.service';
+import { IdempotencyService } from '../graphql/services/idempotency.service';
 
 // Plugins (reuse the single canonical implementation from src/graphql/ —
 // this module previously pointed at a non-existent local ./plugins path)
 import { ComplexityPlugin } from '../graphql/plugins/complexity.plugin';
 
 // Guards
-import { GqlAuthGuard, GqlRolesGuard } from './guards/gql-auth.guard';
+import { GqlAuthGuard, GqlRolesGuard } from '../graphql/guards/gql-auth.guard';
 
 // Entities
-import { IdempotencyEntity } from './entities/idempotency.entity';
+import { IdempotencyEntity } from '../graphql/entities/idempotency.entity';
 
 // Domain modules
 import { RecordsModule } from '../records/records.module';
