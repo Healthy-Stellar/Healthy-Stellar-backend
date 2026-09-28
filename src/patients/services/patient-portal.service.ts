@@ -22,7 +22,15 @@ export class PatientPortalService {
     private correctionRequestRepository: Repository<CorrectionRequest>,
   ) {}
 
-  async getOwnCorrectionRequests(patientId: string): Promise<CorrectionRequest[]> {
+  async getOwnCorrectionRequests(
+    patientId: string,
+    actorId: string,
+    role: 'patient' | 'provider',
+  ): Promise<CorrectionRequest[]> {
+    if (role === 'patient' && patientId !== actorId) {
+      throw new ForbiddenException('You can only view your own correction requests');
+    }
+
     return this.correctionRequestRepository.find({
       where: { patientId },
       order: { createdAt: 'DESC' },
@@ -32,7 +40,13 @@ export class PatientPortalService {
   async submitCorrectionRequest(
     patientId: string,
     dto: CreateCorrectionRequestDto,
+    actorId: string,
+    role: 'patient' | 'provider',
   ): Promise<CorrectionRequest> {
+    if (role === 'patient' && patientId !== actorId) {
+      throw new ForbiddenException('You can only file correction requests for yourself');
+    }
+
     const request = this.correctionRequestRepository.create({
       patientId,
       recordId: dto.recordId,
@@ -45,7 +59,7 @@ export class PatientPortalService {
       auditTrail: [
         {
           action: 'submitted',
-          actorId: patientId,
+          actorId,
           timestamp: new Date().toISOString(),
           notes: 'Correction request submitted by patient',
         },

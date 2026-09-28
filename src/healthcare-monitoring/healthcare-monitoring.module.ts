@@ -29,7 +29,6 @@ import { ClinicalAlert } from './entities/clinical-alert.entity';
 import { EquipmentStatus } from './entities/equipment-status.entity';
 import { ComplianceCheck } from './entities/compliance-check.entity';
 import { HealthcareIncident } from './entities/healthcare-incident.entity';
-main
 import { OperatorRunbookModule } from '../operator-runbook/operator-runbook.module';
 
 import { PatientVital } from './entities/patient-vital.entity';
@@ -39,7 +38,6 @@ import { AlertRule } from './entities/alert-rule.entity';
 import { WsJwtMiddleware } from '../notifications/middleware/ws-jwt.middleware';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
- main
 
 @Module({
   imports: [
@@ -53,12 +51,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
       AlertRule,
     ]),
     ScheduleModule.forRoot(),
-main
     OperatorRunbookModule,
-
     AuthModule,
     NotificationsModule,
-main
   ],
   controllers: [
     HealthcareMonitoringController,

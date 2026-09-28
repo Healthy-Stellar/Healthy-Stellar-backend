@@ -14,9 +14,37 @@ import {
 import { ClaimStatus, ClaimType } from '../../common/enums';
 import { v4 as uuidv4 } from 'uuid';
 
+/**
+ * Result returned by a clearinghouse/payer integration adapter after
+ * submitting an EDI 837 payload for adjudication.
+ */
+export interface ClearinghouseSubmissionResult {
+  accepted: boolean;
+  clearinghouseClaimId?: string;
+  rejectionCode?: string;
+  rejectionReason?: string;
+  rawResponse?: string;
+}
+
+/**
+ * Configurable adapter contract for a real clearinghouse/payer integration.
+ * Implementations post the EDI 837 payload and return the accept/reject
+ * decision. The default adapter is selected via the CLEARINGHOUSE_ENDPOINT
+ * environment variable; when unset, submissions are left PENDING for
+ * asynchronous adjudication (e.g. via processERA/handleAdjudicationWebhook)
+ * rather than being fabricated by a timer.
+ */
+export interface ClearinghouseAdapter {
+  submitClaim(
+    edi837: string,
+    claim: InsuranceClaim,
+  ): Promise<ClearinghouseSubmissionResult>;
+}
+
 @Injectable()
 export class ClaimService {
   private logger = new Logger(ClaimService.name);
+  private readonly clearinghouseAdapter: ClearinghouseAdapter;
 
   constructor(
     @InjectRepository(InsuranceClaim)
@@ -25,7 +53,72 @@ export class ClaimService {
     private readonly insuranceRepository: Repository<Insurance>,
     @InjectRepository(Billing)
     private readonly billingRepository: Repository<Billing>,
-  ) {}
+  ) {
+    this.clearinghouseAdapter = this.createClearinghouseAdapter();
+  }
+
+  /**
+   * Builds the clearinghouse adapter from configuration. When no endpoint is
+   * configured, returns a no-op adapter that leaves the claim PENDING so the
+   * real adjudication outcome can arrive asynchronously and be persisted.
+   */
+  private createClearinghouseAdapter(): ClearinghouseAdapter {
+    const endpoint = process.env.CLEARINGHOUSE_ENDPOINT;
+    const apiKey = process.env.CLEARINGHOUSE_API_KEY;
+
+    if (!endpoint) {
+      this.logger.warn(
+        'CLEARINGHOUSE_ENDPOINT not configured; claims will remain PENDING until adjudication is received',
+      );
+      return {
+        submitClaim: async () => ({ accepted: false }),
+      };
+    }
+
+    return {
+      submitClaim: async (edi837: string, claim: InsuranceClaim) => {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/edi-x12',
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: edi837,
+        });
+
+        const rawResponse = await response.text();
+
+        if (!response.ok) {
+          return {
+            accepted: false,
+            rejectionCode: `HTTP_${response.status}`,
+            rejectionReason: rawResponse || `Clearinghouse returned ${response.status}`,
+            rawResponse,
+          };
+        }
+
+        let parsed: any = {};
+        try {
+          parsed = rawResponse ? JSON.parse(rawResponse) : {};
+        } catch {
+          parsed = {};
+        }
+
+        const accepted =
+          typeof parsed.accepted === 'boolean'
+            ? parsed.accepted
+            : response.ok;
+
+        return {
+          accepted,
+          clearinghouseClaimId: parsed.clearinghouseClaimId,
+          rejectionCode: parsed.rejectionCode,
+          rejectionReason: parsed.rejectionReason,
+          rawResponse,
+        };
+      },
+    };
+  }
 
   async create(createDto: CreateClaimDto): Promise<InsuranceClaim> {
     const insurance = await this.insuranceRepository.findOne({
@@ -211,23 +304,62 @@ export class ClaimService {
       },
     ];
 
+    // Persist the PENDING submission durably before contacting the
+    // clearinghouse so a process restart mid-flight leaves a recoverable
+    // record rather than an in-memory-only timer.
     await this.claimRepository.save(claim);
 
-    setTimeout(async () => {
-      claim.status = ClaimStatus.ACCEPTED;
-      claim.acceptedAt = new Date();
-      claim.submissionHistory = [
-        ...(claim.submissionHistory || []),
+    let result: ClearinghouseSubmissionResult;
+    try {
+      result = await this.clearinghouseAdapter.submitClaim(edi837, claim);
+    } catch (error) {
+      this.logger.error(
+        `Clearinghouse submission failed for claim ${claim.claimNumber}: ${error.message}`,
+      );
+      result = {
+        accepted: false,
+        rejectionCode: 'SUBMISSION_ERROR',
+        rejectionReason: error.message,
+      };
+    }
+
+    // Reload to avoid clobbering concurrent updates, then persist the real
+    // adjudication outcome durably.
+    const persisted = await this.claimRepository.findOne({ where: { id: claim.id } });
+    const target = persisted || claim;
+
+    if (result.clearinghouseClaimId) {
+      target.clearinghouseClaimId = result.clearinghouseClaimId;
+    }
+
+    if (result.accepted) {
+      target.status = ClaimStatus.ACCEPTED;
+      target.acceptedAt = new Date();
+      target.submissionHistory = [
+        ...(target.submissionHistory || []),
         {
           date: new Date().toISOString(),
           status: 'accepted',
           message: 'Claim accepted by payer',
         },
       ];
-      await this.claimRepository.save(claim);
-    }, 2000);
+    } else if (result.rejectionCode || result.rejectionReason) {
+      target.status = ClaimStatus.REJECTED;
+      target.rejectedAt = new Date();
+      target.rejectionReason = result.rejectionReason || result.rejectionCode;
+      target.submissionHistory = [
+        ...(target.submissionHistory || []),
+        {
+          date: new Date().toISOString(),
+          status: 'rejected',
+          message: result.rejectionReason || result.rejectionCode || 'Claim rejected by payer',
+        },
+      ];
+    }
+    // Otherwise the claim remains PENDING awaiting asynchronous adjudication
+    // (processERA / handleAdjudicationWebhook), which persists the outcome.
 
-    return claim;
+    return this.claimRepository.save(target);
   }
 
   async resubmit(id: string, submitDto: SubmitClaimDto): Promise<InsuranceClaim> {
