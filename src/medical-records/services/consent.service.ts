@@ -98,6 +98,25 @@ export class ConsentService {
     return !!consent;
   }
 
+  /**
+   * Returns true when the given user holds any active (granted, non-expired)
+   * consent for the specified medical record. Used by access-control checks
+   * on direct record reads so the consent model is enforced, not decorative.
+   */
+  async hasActiveConsentForRecord(recordId: string, userId: string): Promise<boolean> {
+    const now = new Date();
+    const consent = await this.consentRepository.findOne({
+      where: {
+        medicalRecordId: recordId,
+        sharedWithUserId: userId,
+        status: ConsentStatus.GRANTED,
+        expiresAt: MoreThan(now),
+      },
+    });
+
+    return !!consent;
+  }
+
   async revoke(id: string, revokedBy: string, reason?: string): Promise<MedicalRecordConsent> {
     const consent = await this.findOne(id);
 

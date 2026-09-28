@@ -5,13 +5,11 @@ import { PatientsController } from './patients.controller';
 import { PatientsService } from './patients.service';
 import { PatientTimelineService } from './services/patient-timeline.service';
 import { Patient } from './entities/patient.entity';
-feat/tenant-branding
 import { PatientGuardian } from './entities/patient-guardian.entity';
 
 import { CorrectionRequest } from './entities/correction-request.entity';
 import { MedicalHistory } from '../medical-records/entities/medical-history.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
- main
 import { PatientPrivacyGuard } from './guards/patient-privacy.guard';
 import { GeoRestrictionGuard } from './guards/geo-restriction.guard';
 import { GuardianAccessGuard } from './guards/guardian-access.guard';
@@ -29,39 +27,32 @@ import { MedicalValidationModule } from '../data-validation-integrity/medical-va
 
 @Module({
   imports: [
-feat/tenant-branding
     TypeOrmModule.forFeature([Patient, PatientGuardian]),
     ScheduleModule.forRoot(),
 
     TypeOrmModule.forFeature([Patient, MedicalHistory, AccessGrant, CorrectionRequest]),
-main
     AuthModule,
     CommonModule,
     StellarModule,
     MedicalValidationModule,
   ],
- feat/tenant-branding
-  controllers: [PatientsController, GuardianController],
-  providers: [
-    PatientsService,
-    PatientPrivacyGuard,
-    GeoRestrictionGuard,
-    GuardianService,
-    GuardianAccessGuard,
-    GuardianAgeOutTask,
+  controllers: [
+    PatientsController,
+    GuardianController,
+    PatientProvidersController,
+    PatientPortalController,
   ],
-  exports: [PatientsService, GeoRestrictionGuard, GuardianService, GuardianAccessGuard],
-
-  controllers: [PatientsController, PatientProvidersController, PatientPortalController],
   providers: [
     PatientsService,
+    PatientTimelineService,
     PatientPrivacyGuard,
     GeoRestrictionGuard,
     GuardianService,
     GuardianAccessGuard,
     GuardianAgeOutTask,
+    PatientProvidersService,
+    PatientPortalService,
   ],
   exports: [PatientsService, PatientTimelineService, GeoRestrictionGuard, PatientPortalService],
- main
 })
 export class PatientModule {}
