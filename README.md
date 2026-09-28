@@ -547,3 +547,6 @@ MIT
 
 <!-- handsoff-issue-1064 -->
 - #1064: [High] `SurgicalService.updateSurgicalCase()` reschedule path bypasses the advisory lock, allowing double-booking on reschedule
+
+<!-- handsoff-issue-1074 -->
+- #1074: [Medium] `IncidentTrackingService.generateIncidentNumber()` — non-atomic count-then-format allows duplicate incident numbers under concurrency
