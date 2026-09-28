@@ -78,9 +78,12 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     const categoryLimits  = CATEGORY_LIMITS[category] ?? CATEGORY_LIMITS.default;
     const baseLimit       = isAuthenticated ? categoryLimits.authenticated : categoryLimits.unauthenticated;
 
-    const plan: TenantSubscriptionPlan = ((request as any).user?.tenantPlan as TenantSubscriptionPlan)
-      ?? ((request.headers as any)['x-tenant-plan'] as TenantSubscriptionPlan)
-      ?? 'starter';
+    // Resolve the plan only from trusted server-side state (the authenticated
+    // user's JWT claim). Never trust client-supplied headers such as
+    // `x-tenant-plan`, which a caller could forge to inflate the multiplier.
+    const plan: TenantSubscriptionPlan = isAuthenticated
+      ? (((request as any).user?.tenantPlan as TenantSubscriptionPlan) ?? 'starter')
+      : 'starter';
     const multiplier = PLAN_MULTIPLIERS[plan] ?? 1;
 
     // 3. Build tenant-aware, per-endpoint Redis key

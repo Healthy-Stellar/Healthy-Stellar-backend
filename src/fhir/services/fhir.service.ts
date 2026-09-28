@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { FhirMapperService } from '../mappers/fhir-mapper.service';
 import { FhirValidatorService } from './fhir-validator.service';
 import { v4 as uuidv4 } from 'uuid';
@@ -88,6 +88,84 @@ export class FhirService {
       default:
         throw new Error(`Unsupported resource type: ${resource.resourceType}`);
     }
+  }
+
+  // ── Read operations ───────────────────────────────────────────────────────
+
+  /**
+   * Read a Patient resource by id.
+   * Returns the mapped FHIR R4 Patient with real demographic data.
+   */
+  async getPatient(id: string): Promise<any> {
+    const entity = await this.fetchEntity('Patient', id);
+    if (!entity) {
+      throw new NotFoundException(`Patient/${id} not found`);
+    }
+    return this.convertToFhir('Patient', entity);
+  }
+
+  /**
+   * Read all DocumentReference resources belonging to a Patient.
+   */
+  async getPatientDocuments(id: string): Promise<any[]> {
+    const entities = await this.fetchEntities('DocumentReference', { patientId: id });
+    return entities.map((entity) => this.convertToFhir('DocumentReference', entity));
+  }
+
+  /**
+   * Read a DocumentReference resource by id.
+   */
+  async getDocumentReference(id: string): Promise<any> {
+    const entity = await this.fetchEntity('DocumentReference', id);
+    if (!entity) {
+      throw new NotFoundException(`DocumentReference/${id} not found`);
+    }
+    return this.convertToFhir('DocumentReference', entity);
+  }
+
+  /**
+   * Read a Consent resource by id.
+   */
+  async getConsent(id: string): Promise<any> {
+    const entity = await this.fetchEntity('Consent', id);
+    if (!entity) {
+      throw new NotFoundException(`Consent/${id} not found`);
+    }
+    return this.convertToFhir('Consent', entity);
+  }
+
+  /**
+   * Read Provenance resources for a given target reference.
+   */
+  async getProvenance(target: string): Promise<any[]> {
+    const entities = await this.fetchEntities('Provenance', { target });
+    return entities.map((entity) => this.convertToFhir('Provenance', entity));
+  }
+
+  /**
+   * Fetch a single entity for a FHIR resource type from the database.
+   * Delegates to the mapper service's repository accessors so the read
+   * endpoints return real record data instead of hardcoded stubs.
+   */
+  private async fetchEntity(resourceType: string, id: string): Promise<any | null> {
+    const repository = this.mapperService.getRepository(resourceType);
+    if (!repository) {
+      this.logger.warn(`No repository registered for FHIR resource type ${resourceType}`);
+      return null;
+    }
+    return repository.findOne({ where: { id } });
+  }
+
+  /**
+   * Fetch multiple entities for a FHIR resource type matching the given criteria.
+   */
+  private async fetchEntities(resourceType: string, criteria: Record<string, any>): Promise<any[]> {
+    const repository = this.mapperService.getRepository(resourceType);
+    if (!repository) {
+      this.logger.warn(`No repository registered for FHIR resource type ${resourceType}`);
+      return [];
+    }
+    return repository.find({ where: criteria });
   }
 
   // ── Helper methods ────────────────────────────────────────────────────────
@@ -250,7 +328,7 @@ export class FhirService {
     resource.meta.lastUpdated = new Date().toISOString();
 
     this.logger.log(
-      `Updated DocumentReference ${id} from version ${oldVersion} to ${newVersion}`,
+      `Updated DocumentReference ${id} from version ${oldVersion} to ${newVersion} by user ${userId}`,
     );
 
     return resource;
@@ -293,46 +371,10 @@ export class FhirService {
     resource.meta.versionId = newVersion;
     resource.meta.lastUpdated = new Date().toISOString();
 
-    this.logger.log(`Updated Consent ${id} from version ${oldVersion} to ${newVersion}`);
+    this.logger.log(
+      `Updated Consent ${id} from version ${oldVersion} to ${newVersion} by user ${userId}`,
+    );
 
     return resource;
-  }
-
-  // ── Read operations ───────────────────────────────────────────────────────
-
-  getCapabilityStatement(): any {
-    return {
-      resourceType: 'CapabilityStatement',
-      status: 'active',
-      version: '4.0.1',
-      fhirVersion: '4.0.1',
-      kind: 'instance',
-      description: 'Healthy-Stellar FHIR R4 Server',
-    };
-  }
-
-  getPatient(id: string): any {
-    // TODO: Fetch from database
-    return { resourceType: 'Patient', id };
-  }
-
-  getPatientDocuments(id: string): any[] {
-    // TODO: Fetch from database
-    return [];
-  }
-
-  getDocumentReference(id: string): any {
-    // TODO: Fetch from database
-    return { resourceType: 'DocumentReference', id };
-  }
-
-  getConsent(id: string): any {
-    // TODO: Fetch from database
-    return { resourceType: 'Consent', id };
-  }
-
-  getProvenance(target?: string): any[] {
-    // TODO: Fetch from database
-    return [];
   }
 }
