@@ -548,8 +548,5 @@ MIT
 <!-- handsoff-issue-1064 -->
 - #1064: [High] `SurgicalService.updateSurgicalCase()` reschedule path bypasses the advisory lock, allowing double-booking on reschedule
 
-<!-- handsoff-issue-1074 -->
-- #1074: [Medium] `IncidentTrackingService.generateIncidentNumber()` — non-atomic count-then-format allows duplicate incident numbers under concurrency
-
-<!-- handsoff-issue-1075 -->
-- #1075: Patients: remove or reconcile the duplicate, unregistered patient module in `src/modules/patient`
+<!-- handsoff-issue-1078 -->
+- #1078: Analytics: remove the dead, tenant-unscoped duplicate admin-analytics module
