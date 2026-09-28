@@ -204,6 +204,28 @@ export class ClaimService {
     return claim;
   }
 
+  async findByBillingId(billingId: string): Promise<InsuranceClaim[]> {
+    return this.claimRepository.find({
+      where: { billingId },
+      relations: ['insurance', 'denials'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async findByPatientId(patientId: string, status?: ClaimStatus): Promise<InsuranceClaim[]> {
+    const where: FindOptionsWhere<InsuranceClaim> = { patientId };
+
+    if (status) {
+      where.status = status;
+    }
+
+    return this.claimRepository.find({
+      where,
+      relations: ['insurance'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   async search(searchDto: ClaimSearchDto): Promise<{
     data: InsuranceClaim[];
     total: number;
@@ -258,8 +280,8 @@ export class ClaimService {
     return this.claimRepository.save(claim);
   }
 
-  async submit(submitDto: SubmitClaimDto): Promise<InsuranceClaim> {
-    const claim = await this.findById(submitDto.claimId);
+  async submit(id: string, submitDto: SubmitClaimDto): Promise<InsuranceClaim> {
+    const claim = await this.findById(id);
 
     if (claim.status !== ClaimStatus.DRAFT && claim.status !== ClaimStatus.REJECTED) {
       throw new BadRequestException(`Cannot submit claim in ${claim.status} status`);
@@ -338,6 +360,113 @@ export class ClaimService {
     // (processERA / handleAdjudicationWebhook), which persists the outcome.
 
     return this.claimRepository.save(target);
+  }
+
+  async resubmit(id: string, submitDto: SubmitClaimDto): Promise<InsuranceClaim> {
+    const claim = await this.findById(id);
+
+    if (claim.status !== ClaimStatus.REJECTED && claim.status !== ClaimStatus.DENIED) {
+      throw new BadRequestException(`Cannot resubmit claim in ${claim.status} status`);
+    }
+
+    claim.status = ClaimStatus.DRAFT;
+    claim.submissionHistory = [
+      ...(claim.submissionHistory || []),
+      {
+        date: new Date().toISOString(),
+        status: 'resubmitted',
+        message: 'Claim marked for resubmission',
+      },
+    ];
+
+    await this.claimRepository.save(claim);
+
+    return this.submit(id, submitDto);
+  }
+
+  async checkStatus(id: string): Promise<InsuranceClaim> {
+    const claim = await this.findById(id);
+
+    if (!claim.clearinghouseClaimId) {
+      throw new BadRequestException('Claim has not been submitted to a clearinghouse');
+    }
+
+    claim.submissionHistory = [
+      ...(claim.submissionHistory || []),
+      {
+        date: new Date().toISOString(),
+        status: 'status-checked',
+        message: `Status checked: ${claim.status}`,
+      },
+    ];
+
+    return this.claimRepository.save(claim);
+  }
+
+  async appeal(id: string, appealDto: Record<string, any>): Promise<InsuranceClaim> {
+    const claim = await this.findById(id);
+
+    if (claim.status !== ClaimStatus.DENIED) {
+      throw new BadRequestException(`Cannot appeal claim in ${claim.status} status`);
+    }
+
+    claim.status = ClaimStatus.APPEALED;
+    claim.submissionHistory = [
+      ...(claim.submissionHistory || []),
+      {
+        date: new Date().toISOString(),
+        status: 'appealed',
+        message: appealDto?.reason || 'Claim appealed',
+      },
+    ];
+
+    return this.claimRepository.save(claim);
+  }
+
+  async getSubmissionReport(id: string): Promise<Record<string, any>> {
+    const claim = await this.findById(id);
+
+    return {
+      claimId: claim.id,
+      claimNumber: claim.claimNumber,
+      status: claim.status,
+      submittedAt: claim.submittedAt,
+      acceptedAt: claim.acceptedAt,
+      submissionAttempts: claim.submissionAttempts,
+      clearinghouseClaimId: claim.clearinghouseClaimId,
+      submissionHistory: claim.submissionHistory || [],
+    };
+  }
+
+  async getDenialAnalysis(id: string): Promise<Record<string, any>> {
+    const claim = await this.findById(id);
+    const denials = claim.denials || [];
+
+    return {
+      claimId: claim.id,
+      claimNumber: claim.claimNumber,
+      status: claim.status,
+      denialCount: denials.length,
+      denials,
+    };
+  }
+
+  async getPendingClaims(priority?: string): Promise<InsuranceClaim[]> {
+    const where: FindOptionsWhere<InsuranceClaim> = {
+      status: ClaimStatus.PENDING,
+    };
+
+    const claims = await this.claimRepository.find({
+      where,
+      relations: ['insurance'],
+      order: { submittedAt: 'ASC' },
+    });
+
+    if (!priority) {
+      return claims;
+    }
+
+    return claims.filter((claim) => (claim as any).priority === priority);
   }
 
   private generateEDI837(claim: InsuranceClaim): string {

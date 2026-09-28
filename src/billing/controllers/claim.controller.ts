@@ -52,7 +52,7 @@ export class ClaimController {
   @ApiResponse({ status: 200, description: 'Claim submitted successfully to payer' })
   @ApiResponse({ status: 400, description: 'Claim validation failed' })
   async submit(@Param('id') id: string, @Body() submitDto: SubmitClaimDto) {
-    return this.claimService.submit(id, submitDto);
+    return this.claimService.submit({ ...submitDto, id });
   }
 
   @Get(':id')
@@ -222,6 +222,6 @@ export class ClaimController {
   @ApiQuery({ name: 'priority', required: false, description: 'Filter by priority level' })
   @ApiResponse({ status: 200, description: 'Pending claims retrieved' })
   async getPendingClaims(@Query('priority') priority?: string) {
-    return this.claimService.getPendingClaims(priority);
+    return this.claimService.getPendingClaims();
   }
 }
