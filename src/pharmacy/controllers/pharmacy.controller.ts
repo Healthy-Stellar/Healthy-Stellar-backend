@@ -1,15 +1,29 @@
-import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Param,
+  Query,
+  Req,
+  NotImplementedException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { CreateDrugDto, FillPrescriptionDto } from '../dto/pharmacy.dto';
 import { CreatePrescriptionDto } from '../dto/create-prescription.dto';
 import { DispensePrescriptionRequestDto } from '../dto/dispense-prescription-request.dto';
 import { PrescriptionService } from '../services/prescription.service';
+import { PharmacyInventoryService } from '../services/pharmacy-inventory.service';
 
 @ApiTags('Pharmacy Management')
 @ApiBearerAuth('medical-auth')
 @Controller('pharmacy')
 export class PharmacyController {
-  constructor(private readonly prescriptionService: PrescriptionService) {}
+  constructor(
+    private readonly prescriptionService: PrescriptionService,
+    private readonly inventoryService: PharmacyInventoryService,
+  ) {}
 
   @Post('drugs')
   @ApiOperation({
@@ -48,7 +62,7 @@ export class PharmacyController {
   })
   @ApiResponse({ status: 200, description: 'Stock updated' })
   async updateStock(@Param('id') id: string, @Body() body: { quantity: number; type: string }) {
-    return { id, newQuantity: body.quantity };
+    return this.inventoryService.adjustStock(id, body.quantity, body.type);
   }
 
   @Post('prescriptions')
@@ -113,7 +127,7 @@ export class PharmacyController {
   })
   @ApiResponse({ status: 200, description: 'Prescription filled' })
   async fillPrescription(@Param('id') id: string, @Body() dto: FillPrescriptionDto) {
-    return { id, status: 'filled', filledBy: dto.pharmacistId };
+    return this.prescriptionService.fillPrescription(id, dto);
   }
 
   @Post('prescriptions/:id/verify')
@@ -122,8 +136,8 @@ export class PharmacyController {
     description: 'Pharmacist verification before dispensing',
   })
   @ApiResponse({ status: 200, description: 'Prescription verified' })
-  async verifyPrescription(@Param('id') id: string, @Body() body: { pharmacistId: string }) {
-    return { id, status: 'verified', verifiedBy: body.pharmacistId };
+  async verifyPrescription(@Param('id') id: string, @Req() req: any) {
+    return this.prescriptionService.verifyPrescription(id, req.user);
   }
 
   @Post('safety-check')
