@@ -11,9 +11,11 @@ import {
   UseInterceptors,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { MedicalRecordsService } from '../services/medical-records.service';
+import { ConsentService } from '../services/consent.service';
 import { CreateMedicalRecordDto } from '../dto/create-medical-record.dto';
 import { UpdateMedicalRecordDto } from '../dto/update-medical-record1.dto';
 import { SearchMedicalRecordsDto } from '../dto/search-medical-records.dto';
@@ -32,7 +34,10 @@ import { TenantGuard } from '@/tenant';
 @UseInterceptors(AuditInterceptor, PhiAuditInterceptor)
 @Controller('medical-records')
 export class MedicalRecordsController {
-  constructor(private readonly medicalRecordsService: MedicalRecordsService) {}
+  constructor(
+    private readonly medicalRecordsService: MedicalRecordsService,
+    private readonly consentService: ConsentService,
+  ) {}
 
   @Post()
   @AuditLog('WRITE', 'MedicalRecord')
@@ -97,6 +102,7 @@ export class MedicalRecordsController {
   @ApiOperation({ summary: 'Get a medical record by ID' })
   @ApiResponse({ status: 200, description: 'Medical record retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Medical record not found' })
+  @ApiResponse({ status: 403, description: 'Access denied - no consent or access grant for this record' })
   async findOne(
     @Param('id') id: string,
     @CurrentTenant('tenantId') tenantId: string,
@@ -105,12 +111,47 @@ export class MedicalRecordsController {
   ) {
     const record = await this.medicalRecordsService.findOne(id, patientId, tenantId);
 
-    if (patientId) {
-      const userId = user?.id || '00000000-0000-0000-0000-000000000000';
-      await this.medicalRecordsService.recordView(id, patientId, userId, user?.email);
+    const userId = user?.id || '00000000-0000-0000-0000-000000000000';
+    const recordPatientId = patientId || record?.patientId;
+
+    await this.assertRecordAccess(id, recordPatientId, userId, tenantId);
+
+    if (recordPatientId) {
+      await this.medicalRecordsService.recordView(id, recordPatientId, userId, user?.email);
     }
 
     return record;
+  }
+
+  /**
+   * Enforces access control for direct medical record reads.
+   * Access is granted when the requester is the patient who owns the record,
+   * a provider holding an active access grant, or when valid consent exists
+   * for the specific record (reusing ConsentService.checkConsent()).
+   */
+  private async assertRecordAccess(
+    recordId: string,
+    patientId: string | undefined,
+    userId: string,
+    tenantId: string,
+  ): Promise<void> {
+    if (!patientId) {
+      throw new ForbiddenException('Access denied: unable to determine record ownership');
+    }
+
+    // The patient who owns the record may always read it.
+    if (userId === patientId) {
+      return;
+    }
+
+    // Reuse the existing consent model: an active consent or access grant
+    // for this specific record authorizes the read.
+    const consent = await this.consentService.checkConsent(patientId, userId, recordId, tenantId);
+    if (consent?.hasConsent) {
+      return;
+    }
+
+    throw new ForbiddenException('Access denied: no consent or access grant for this record');
   }
 
   @Get(':id/versions')
