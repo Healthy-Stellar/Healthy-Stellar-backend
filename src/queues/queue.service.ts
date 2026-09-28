@@ -31,6 +31,7 @@ export class QueueService {
     private eventIndexingQueue: Queue,
     @InjectQueue(QUEUE_NAMES.EMAIL_NOTIFICATIONS)
     private emailQueue: Queue,
+    @InjectQueue(QUEUE_NAMES.REPORTS)
     private reportsQueue: Queue,
     private readonly tracingService: TracingService,
     private readonly eventEmitter: EventEmitter2,
