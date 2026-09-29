@@ -1,13 +1,18 @@
 import { Controller, Get, Post, Body, Patch, Param, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 import { LabResultsService } from '../services/lab-results.service';
 import { CriticalAlertsService } from '../services/critical-alerts.service';
 import { CreateLabResultDto } from '../dto/create-lab-result.dto';
 
 @ApiTags('Laboratory - Results')
+@ApiBearerAuth('medical-auth')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.PHYSICIAN, UserRole.NURSE)
 @Controller('laboratory/results')
-// @UseGuards(JwtAuthGuard, RolesGuard)
-// @ApiBearerAuth()
 export class LabResultsController {
   constructor(
     private readonly labResultsService: LabResultsService,
