@@ -10,7 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { createHmac, randomUUID } from 'crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import * as QRCode from 'qrcode';
 import { EmergencyMedicalInfo } from '../entities/emergency-medical-info.entity';
 import { EmergencyMedicalInfoService } from './emergency-medical-info.service';
@@ -45,7 +45,11 @@ export class EmergencyQrService {
     @Inject(forwardRef(() => EmergencyMedicalInfoService))
     private readonly service: EmergencyMedicalInfoService,
   ) {
-    this.hmacSecret = this.config.get<string>('QR_HMAC_SECRET', 'change-me-in-production');
+    const configuredSecret = this.config.get<string>('QR_HMAC_SECRET');
+    if (!configuredSecret && process.env.NODE_ENV !== 'development') {
+      throw new Error('QR_HMAC_SECRET must be configured in non-development environments');
+    }
+    this.hmacSecret = configuredSecret ?? 'development-only-qr-secret';
     this.appUrl = this.config.get<string>('APP_URL', 'http://localhost:3000');
   }
 
@@ -101,7 +105,39 @@ export class EmergencyQrService {
 
   /** Public verify endpoint — validates signature and returns decoded data */
   async verify(token: string): Promise<QrPayload['data'] & { patientId: string; metadata: { lastUpdatedBy: string | null } }> {
-    const record = await this.repo.findOne({ where: { qrToken: token } });
+    const input = token?.trim();
+
+    if (input.startsWith('{')) {
+      let payload: Partial<QrPayload>;
+      try {
+        payload = JSON.parse(input) as Partial<QrPayload>;
+      } catch {
+        throw new UnauthorizedException('QR signature invalid');
+      }
+
+      if (!payload.token || !payload.sig || !payload.data || !payload.metadata) {
+        throw new UnauthorizedException('QR signature invalid');
+      }
+
+      const unsigned = {
+        token: payload.token,
+        patientId: payload.patientId,
+        issuedAt: payload.issuedAt,
+        data: payload.data,
+        metadata: payload.metadata,
+      };
+      const expected = this.sign(unsigned);
+      const actual = Buffer.from(payload.sig, 'hex');
+      const expectedBuffer = Buffer.from(expected, 'hex');
+
+      if (actual.length !== expectedBuffer.length || !timingSafeEqual(actual, expectedBuffer)) {
+        throw new UnauthorizedException('QR signature invalid');
+      }
+
+      return { patientId: payload.patientId!, ...payload.data, metadata: payload.metadata };
+    }
+
+    const record = await this.repo.findOne({ where: { qrToken: input } });
     if (!record || !record.qrOptIn) {
       throw new NotFoundException('QR code not found or patient has opted out');
     }
@@ -109,12 +145,6 @@ export class EmergencyQrService {
     this.enforceRotation(record);
 
     const payload = await this.buildPayload(record);
-    const { sig, ...unsigned } = payload;
-    const expected = this.sign(unsigned);
-    if (sig !== expected) {
-      throw new UnauthorizedException('QR signature invalid');
-    }
-
     return { patientId: record.patientId, ...payload.data, metadata: payload.metadata };
   }
 

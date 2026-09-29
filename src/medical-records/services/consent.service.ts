@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
+import { Repository, MoreThan, IsNull, LessThanOrEqual } from 'typeorm';
 import {
   MedicalRecordConsent,
   ConsentStatus,
@@ -86,13 +86,22 @@ export class ConsentService {
   async checkConsent(recordId: string, userId: string, consentType: ConsentType): Promise<boolean> {
     const now = new Date();
     const consent = await this.consentRepository.findOne({
-      where: {
-        medicalRecordId: recordId,
-        sharedWithUserId: userId,
-        consentType,
-        status: ConsentStatus.GRANTED,
-        expiresAt: MoreThan(now),
-      },
+      where: [
+        {
+          medicalRecordId: recordId,
+          sharedWithUserId: userId,
+          consentType,
+          status: ConsentStatus.GRANTED,
+          expiresAt: IsNull(),
+        },
+        {
+          medicalRecordId: recordId,
+          sharedWithUserId: userId,
+          consentType,
+          status: ConsentStatus.GRANTED,
+          expiresAt: MoreThan(now),
+        },
+      ],
     });
 
     return !!consent;
@@ -106,12 +115,20 @@ export class ConsentService {
   async hasActiveConsentForRecord(recordId: string, userId: string): Promise<boolean> {
     const now = new Date();
     const consent = await this.consentRepository.findOne({
-      where: {
-        medicalRecordId: recordId,
-        sharedWithUserId: userId,
-        status: ConsentStatus.GRANTED,
-        expiresAt: MoreThan(now),
-      },
+      where: [
+        {
+          medicalRecordId: recordId,
+          sharedWithUserId: userId,
+          status: ConsentStatus.GRANTED,
+          expiresAt: IsNull(),
+        },
+        {
+          medicalRecordId: recordId,
+          sharedWithUserId: userId,
+          status: ConsentStatus.GRANTED,
+          expiresAt: MoreThan(now),
+        },
+      ],
     });
 
     return !!consent;
@@ -150,7 +167,7 @@ export class ConsentService {
     const expired = await this.consentRepository.find({
       where: {
         status: ConsentStatus.GRANTED,
-        expiresAt: MoreThan(now),
+        expiresAt: LessThanOrEqual(now),
       },
     });
 

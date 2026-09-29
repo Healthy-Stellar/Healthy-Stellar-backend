@@ -28,6 +28,21 @@ export enum PayerType {
 @Entity('telehealth_billing')
 @Index(['patientId', 'serviceDate'])
 @Index(['virtualVisitId'])
+const decimalTransformer = {
+  to(value: number | string | null | undefined): string | null | undefined {
+    if (value === null || value === undefined) {
+      return value;
+    }
+    return String(value);
+  },
+  from(value: string | number | null | undefined): number | null | undefined {
+    if (value === null || value === undefined) {
+      return value;
+    }
+    return typeof value === 'number' ? value : Number.parseFloat(value);
+  },
+};
+
 export class TelehealthBilling {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -76,22 +91,22 @@ export class TelehealthBilling {
     isPrimary: boolean;
   }[];
 
-  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, transformer: decimalTransformer })
   totalCharges: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, transformer: decimalTransformer })
   insurancePayment: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, transformer: decimalTransformer })
   patientResponsibility: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, transformer: decimalTransformer })
   adjustments: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, transformer: decimalTransformer })
   amountPaid: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, transformer: decimalTransformer })
   balanceDue: number;
 
   @Column({

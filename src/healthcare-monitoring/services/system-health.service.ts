@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, LessThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import * as os from 'os';
 import { SystemMetric, MetricType, MetricSeverity } from '../entities/system-metric.entity';
 import { ClinicalAlertService } from './clinical-alert.service';
 
@@ -18,12 +19,12 @@ export class SystemHealthService {
   @Cron(CronExpression.EVERY_MINUTE)
   async collectSystemMetrics(): Promise<void> {
     try {
+      await this.cleanupOldMetrics();
       await Promise.all([
         this.collectCpuMetrics(),
         this.collectMemoryMetrics(),
         this.collectDatabaseMetrics(),
         this.collectApiMetrics(),
-        this.collectPatientQueueMetrics(),
       ]);
     } catch (error) {
       this.logger.error('Failed to collect system metrics', error);
@@ -114,17 +115,15 @@ export class SystemHealthService {
     });
   }
 
-  private async collectPatientQueueMetrics(): Promise<void> {
-    const queueLength = await this.getPatientQueueLength();
-    const severity = queueLength > 50 ? MetricSeverity.WARNING : MetricSeverity.NORMAL;
+  private async cleanupOldMetrics(): Promise<void> {
+    const retentionDays = Number(process.env.SYSTEM_METRIC_RETENTION_DAYS ?? 30);
+    if (!Number.isFinite(retentionDays) || retentionDays <= 0) {
+      return;
+    }
 
-    await this.recordMetric({
-      metricType: MetricType.PATIENT_QUEUE_LENGTH,
-      value: queueLength,
-      unit: 'count',
-      severity,
-      source: 'queue-monitor',
-      description: 'Current patient queue length',
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    await this.systemMetricRepository.delete({
+      timestamp: LessThan(cutoff),
     });
   }
 
@@ -181,24 +180,49 @@ export class SystemHealthService {
     return healthStatus;
   }
 
-  // Mock implementations - replace with actual system monitoring
   private async getCpuUsage(): Promise<number> {
-    return Math.random() * 100;
+    const loadAvg = os.loadavg()[0] ?? 0;
+    const cores = os.cpus().length || 1;
+    return Math.min(100, (loadAvg / cores) * 100);
   }
 
   private async getMemoryUsage(): Promise<number> {
-    return Math.random() * 100;
+    const total = os.totalmem();
+    const free = os.freemem();
+    return ((total - free) / total) * 100;
   }
 
   private async getDatabaseConnections(): Promise<number> {
-    return Math.floor(Math.random() * 100);
+    try {
+      const result = await this.systemMetricRepository.query(
+        'SELECT COUNT(*)::int AS count FROM pg_stat_activity',
+      );
+      return Number(result?.[0]?.count ?? 0);
+    } catch {
+      return 0;
+    }
   }
 
   private async getAverageApiResponseTime(): Promise<number> {
-    return Math.random() * 3000;
+    try {
+      const result = await this.systemMetricRepository.query(
+        "SELECT COALESCE(AVG(duration), 0) AS avg_ms FROM pg_stat_statements WHERE query NOT LIKE 'EXPLAIN%'",
+      );
+      return Number(result?.[0]?.avg_ms ?? 0);
+    } catch {
+      return 0;
+    }
   }
 
   private async getPatientQueueLength(): Promise<number> {
-    return Math.floor(Math.random() * 30);
+    try {
+      const result = await this.systemMetricRepository.query(
+        'SELECT COUNT(*)::int AS count FROM appointments WHERE status = $1',
+        ['queued'],
+      );
+      return Number(result?.[0]?.count ?? 0);
+    } catch {
+      return 0;
+    }
   }
 }

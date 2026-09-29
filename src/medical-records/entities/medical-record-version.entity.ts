@@ -7,7 +7,6 @@ import {
   JoinColumn,
   Index,
 } from 'typeorm';
-import { MedicalRecord } from './medical-record.entity';
 
 @Entity('medical_record_versions')
 @Index(['medicalRecordId', 'versionNumber'])
@@ -19,11 +18,11 @@ export class MedicalRecordVersion {
   @Index()
   medicalRecordId: string;
 
-  @ManyToOne(() => MedicalRecord, (record) => record.versions, {
+  @ManyToOne('MedicalRecord', 'versions', {
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'medicalRecordId' })
-  medicalRecord: MedicalRecord;
+  medicalRecord: any;
 
   @Column({ type: 'int' })
   versionNumber: number;

@@ -4,6 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { EmergencyQrService } from './emergency-qr.service';
 import { EmergencyMedicalInfo, BloodType } from '../entities/emergency-medical-info.entity';
+import { EmergencyMedicalInfoService } from './emergency-medical-info.service';
 
 const MOCK_TOKEN = '11111111-1111-1111-1111-111111111111';
 
@@ -34,13 +35,24 @@ function buildModule(record: EmergencyMedicalInfo | null = makeRecord()) {
     save: jest.fn().mockImplementation(async (r) => r),
   };
 
-  const config = { get: jest.fn().mockImplementation((key: string, def: string) => def) };
+  const config = {
+    get: jest.fn().mockImplementation((key: string, def?: string) => {
+      if (key === 'QR_HMAC_SECRET') return 'test-qr-secret';
+      if (key === 'APP_URL') return 'http://localhost:3000';
+      return def ?? '';
+    }),
+  };
+
+  const service = {
+    getLastUpdater: jest.fn().mockResolvedValue(null),
+  };
 
   return Test.createTestingModule({
     providers: [
       EmergencyQrService,
       { provide: getRepositoryToken(EmergencyMedicalInfo), useValue: repo },
       { provide: ConfigService, useValue: config },
+      { provide: EmergencyMedicalInfoService, useValue: service },
     ],
   }).compile();
 }
@@ -51,7 +63,7 @@ describe('EmergencyQrService', () => {
       const module: TestingModule = await buildModule();
       const svc = module.get(EmergencyQrService);
 
-      const result = await svc.generateOptIn('patient-1');
+      const result = await svc.generateOptIn('patient-1', 'patient-1');
 
       expect(result.verifyUrl).toContain('/emergency-medical-info/qr/verify/');
       expect(result.issuedAt).toBeDefined();
@@ -67,7 +79,7 @@ describe('EmergencyQrService', () => {
       const svc = module.get(EmergencyQrService);
       const repo = module.get(getRepositoryToken(EmergencyMedicalInfo));
 
-      await svc.generateOptIn('patient-1');
+      await svc.generateOptIn('patient-1', 'patient-1');
 
       const saved = (repo.save as jest.Mock).mock.calls[0][0];
       expect(saved.qrToken).toBe(MOCK_TOKEN);
@@ -80,7 +92,7 @@ describe('EmergencyQrService', () => {
       const svc = module.get(EmergencyQrService);
       const repo = module.get(getRepositoryToken(EmergencyMedicalInfo));
 
-      await svc.generateOptIn('patient-1');
+      await svc.generateOptIn('patient-1', 'patient-1');
 
       const saved = (repo.save as jest.Mock).mock.calls[0][0];
       expect(saved.qrToken).not.toBe(MOCK_TOKEN);
@@ -89,7 +101,7 @@ describe('EmergencyQrService', () => {
     it('throws NotFoundException when record not found', async () => {
       const module = await buildModule(null);
       const svc = module.get(EmergencyQrService);
-      await expect(svc.generateOptIn('unknown')).rejects.toThrow(NotFoundException);
+      await expect(svc.generateOptIn('unknown', 'unknown')).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -100,7 +112,7 @@ describe('EmergencyQrService', () => {
       const svc = module.get(EmergencyQrService);
       const repo = module.get(getRepositoryToken(EmergencyMedicalInfo));
 
-      await svc.revokeOptIn('patient-1');
+      await svc.revokeOptIn('patient-1', 'patient-1');
 
       const saved = (repo.save as jest.Mock).mock.calls[0][0];
       expect(saved.qrOptIn).toBe(false);
@@ -114,7 +126,7 @@ describe('EmergencyQrService', () => {
       const module = await buildModule(record);
       const svc = module.get(EmergencyQrService);
 
-      const buf = await svc.downloadPng('patient-1');
+      const buf = await svc.downloadPng('patient-1', 'patient-1');
       expect(Buffer.isBuffer(buf)).toBe(true);
       expect(buf.length).toBeGreaterThan(0);
     });
@@ -122,7 +134,7 @@ describe('EmergencyQrService', () => {
     it('throws BadRequestException when not opted in', async () => {
       const module = await buildModule(makeRecord({ qrOptIn: false }));
       const svc = module.get(EmergencyQrService);
-      await expect(svc.downloadPng('patient-1')).rejects.toThrow(BadRequestException);
+      await expect(svc.downloadPng('patient-1', 'patient-1')).rejects.toThrow(BadRequestException);
     });
 
     it('throws BadRequestException when token is expired', async () => {
@@ -130,7 +142,7 @@ describe('EmergencyQrService', () => {
       const record = makeRecord({ qrOptIn: true, qrToken: MOCK_TOKEN, qrIssuedAt: oldDate });
       const module = await buildModule(record);
       const svc = module.get(EmergencyQrService);
-      await expect(svc.downloadPng('patient-1')).rejects.toThrow(BadRequestException);
+      await expect(svc.downloadPng('patient-1', 'patient-1')).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -142,12 +154,19 @@ describe('EmergencyQrService', () => {
         findOne: jest.fn().mockResolvedValue(record),
         save: jest.fn().mockImplementation(async (r) => r),
       };
-      const config = { get: jest.fn().mockImplementation((_k: string, def: string) => def) };
+      const config = {
+        get: jest.fn().mockImplementation((key: string, def?: string) => {
+          if (key === 'QR_HMAC_SECRET') return 'test-qr-secret';
+          if (key === 'APP_URL') return 'http://localhost:3000';
+          return def ?? '';
+        }),
+      };
       const mod = await Test.createTestingModule({
         providers: [
           EmergencyQrService,
           { provide: getRepositoryToken(EmergencyMedicalInfo), useValue: repo },
           { provide: ConfigService, useValue: config },
+          { provide: EmergencyMedicalInfoService, useValue: { getLastUpdater: jest.fn().mockResolvedValue(null) } },
         ],
       }).compile();
       const svc = mod.get(EmergencyQrService);
@@ -162,16 +181,57 @@ describe('EmergencyQrService', () => {
 
     it('throws NotFoundException when token not found', async () => {
       const repo = { findOne: jest.fn().mockResolvedValue(null) };
-      const config = { get: jest.fn().mockImplementation((_k: string, def: string) => def) };
+      const config = {
+        get: jest.fn().mockImplementation((key: string, def?: string) => {
+          if (key === 'QR_HMAC_SECRET') return 'test-qr-secret';
+          if (key === 'APP_URL') return 'http://localhost:3000';
+          return def ?? '';
+        }),
+      };
       const mod = await Test.createTestingModule({
         providers: [
           EmergencyQrService,
           { provide: getRepositoryToken(EmergencyMedicalInfo), useValue: repo },
           { provide: ConfigService, useValue: config },
+          { provide: EmergencyMedicalInfoService, useValue: { getLastUpdater: jest.fn().mockResolvedValue(null) } },
         ],
       }).compile();
       const svc = mod.get(EmergencyQrService);
       await expect(svc.verify('bad-token')).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects a tampered signed payload', async () => {
+      const record = makeRecord({ qrOptIn: true, qrToken: MOCK_TOKEN, qrIssuedAt: new Date() });
+      const repo = {
+        findOne: jest.fn().mockImplementation(({ where }) => {
+          if (where && where.qrToken === MOCK_TOKEN) {
+            return record;
+          }
+          return null;
+        }),
+        save: jest.fn().mockImplementation(async (r) => r),
+      };
+      const config = {
+        get: jest.fn().mockImplementation((key: string, def?: string) => {
+          if (key === 'QR_HMAC_SECRET') return 'test-qr-secret';
+          if (key === 'APP_URL') return 'http://localhost:3000';
+          return def ?? '';
+        }),
+      };
+      const mod = await Test.createTestingModule({
+        providers: [
+          EmergencyQrService,
+          { provide: getRepositoryToken(EmergencyMedicalInfo), useValue: repo },
+          { provide: ConfigService, useValue: config },
+          { provide: EmergencyMedicalInfoService, useValue: { getLastUpdater: jest.fn().mockResolvedValue(null) } },
+        ],
+      }).compile();
+      const svc = mod.get(EmergencyQrService);
+
+      const payload = await (svc as any).buildPayload(record);
+      const tampered = JSON.stringify({ ...payload, data: { ...payload.data, allergies: ['banana'] } });
+
+      await expect(svc.verify(tampered)).rejects.toThrow('QR signature invalid');
     });
   });
 });
