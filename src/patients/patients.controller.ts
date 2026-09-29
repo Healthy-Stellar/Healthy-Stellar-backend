@@ -156,7 +156,7 @@ export class PatientsController {
    * Patient and admin access only
    */
   @Get(':address/timeline')
-  @UseGuards(PatientPrivacyGuard, AdminGuard)
+  @UseGuards(PatientPrivacyGuard)
   @ApiOperation({ summary: 'Get patient timeline (chronological events)' })
   @ApiParam({ name: 'address', description: 'Patient Stellar address' })
   @ApiResponse({ status: 200, description: 'Timeline retrieved successfully', type: PatientTimelineResponse })

@@ -84,7 +84,19 @@ export class PatientsService {
   }
 
   async findById(id: string): Promise<Patient> {
-    const patient = await this.patientRepo.findOne({ where: { id } });
+    let patient: Patient | null = null;
+    try {
+      patient = await this.patientRepo.findOne({ where: { id } });
+    } catch {
+      patient = null;
+    }
+    if (!patient) {
+      try {
+        patient = await this.patientRepo.findOne({ where: { stellarAddress: id } });
+      } catch {
+        patient = null;
+      }
+    }
     if (!patient) throw new NotFoundException('Patient not found');
     return patient;
   }

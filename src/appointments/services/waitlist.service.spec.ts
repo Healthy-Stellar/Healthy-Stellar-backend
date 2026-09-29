@@ -28,17 +28,20 @@ const makeAppointment = (overrides: Partial<Appointment> = {}): Appointment =>
 describe('WaitlistService', () => {
   let service: WaitlistService;
   let repo: ReturnType<typeof mockRepo>;
+  let appointmentRepo: ReturnType<typeof mockRepo>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WaitlistService,
         { provide: getRepositoryToken(AppointmentWaitlist), useFactory: mockRepo },
+        { provide: getRepositoryToken(Appointment), useFactory: mockRepo },
       ],
     }).compile();
 
     service = module.get(WaitlistService);
     repo = module.get(getRepositoryToken(AppointmentWaitlist));
+    appointmentRepo = module.get(getRepositoryToken(Appointment));
   });
 
   describe('join', () => {
@@ -133,6 +136,75 @@ describe('WaitlistService', () => {
 
       expect(repo.save).toHaveBeenCalledWith(
         expect.arrayContaining([expect.objectContaining({ status: WaitlistStatus.EXPIRED })]),
+      );
+    });
+  });
+
+  describe('acceptOffer', () => {
+    it('accepts offer, books the appointment for the freed slot, and returns the updated entry', async () => {
+      const waitlistEntry: Partial<AppointmentWaitlist> = {
+        id: 'wl-1',
+        patientId: 'patient-1',
+        doctorId: 'doc-1',
+        status: WaitlistStatus.NOTIFIED,
+        offeredAppointmentId: 'appt-cancelled-1',
+        notifiedAt: new Date(),
+        responseWindowMinutes: 30,
+        preferredDateStart: new Date('2026-08-10T09:00:00Z'),
+      };
+
+      const cancelledAppointment = makeAppointment({
+        id: 'appt-cancelled-1',
+        tenantId: 'tenant-1',
+        doctorId: 'doc-1',
+        appointmentDate: new Date('2026-08-10T09:00:00Z'),
+        startTime: new Date('2026-08-10T09:00:00Z'),
+        endTime: new Date('2026-08-10T09:30:00Z'),
+        duration: 30,
+      });
+
+      repo.findOne.mockResolvedValue(waitlistEntry);
+      repo.save.mockImplementation(async (entity) => entity);
+
+      appointmentRepo.findOne.mockResolvedValue(cancelledAppointment);
+      appointmentRepo.create.mockImplementation((dto) => ({ id: 'new-appt-1', ...dto }));
+      appointmentRepo.save.mockImplementation(async (entity) => entity);
+
+      const result = await service.acceptOffer('patient-1', 'wl-1');
+
+      expect(result.status).toBe(WaitlistStatus.ACCEPTED);
+      expect(appointmentRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          patientId: 'patient-1',
+          doctorId: 'doc-1',
+          status: AppointmentStatus.SCHEDULED,
+        }),
+      );
+      expect(appointmentRepo.save).toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when no active notified offer exists', async () => {
+      repo.findOne.mockResolvedValue(null);
+
+      await expect(service.acceptOffer('patient-1', 'wl-missing')).rejects.toThrow(NotFoundException);
+    });
+
+    it('marks offer as EXPIRED and throws NotFoundException when response window passed', async () => {
+      const expiredEntry: Partial<AppointmentWaitlist> = {
+        id: 'wl-expired',
+        patientId: 'patient-1',
+        doctorId: 'doc-1',
+        status: WaitlistStatus.NOTIFIED,
+        notifiedAt: new Date(Date.now() - 45 * 60_000),
+        responseWindowMinutes: 30,
+      };
+
+      repo.findOne.mockResolvedValue(expiredEntry);
+      repo.save.mockImplementation(async (entity) => entity);
+
+      await expect(service.acceptOffer('patient-1', 'wl-expired')).rejects.toThrow(NotFoundException);
+      expect(repo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: WaitlistStatus.EXPIRED }),
       );
     });
   });
