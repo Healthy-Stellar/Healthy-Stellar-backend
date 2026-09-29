@@ -8,6 +8,8 @@ import {
   Query,
   Req,
   NotImplementedException,
+  UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { CreateDrugDto, FillPrescriptionDto } from '../dto/pharmacy.dto';
@@ -15,9 +17,14 @@ import { CreatePrescriptionDto } from '../dto/create-prescription.dto';
 import { DispensePrescriptionRequestDto } from '../dto/dispense-prescription-request.dto';
 import { PrescriptionService } from '../services/prescription.service';
 import { PharmacyInventoryService } from '../services/pharmacy-inventory.service';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @ApiTags('Pharmacy Management')
 @ApiBearerAuth('medical-auth')
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('pharmacy')
 export class PharmacyController {
   constructor(
@@ -66,6 +73,7 @@ export class PharmacyController {
   }
 
   @Post('prescriptions')
+  @Roles(UserRole.PHYSICIAN, UserRole.SURGEON, UserRole.ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Create prescription',
     description:
@@ -77,7 +85,8 @@ export class PharmacyController {
   @ApiResponse({ status: 201, description: 'Prescription created' })
   @ApiResponse({ status: 403, description: "Prescribing doctor's license is not active" })
   @ApiResponse({ status: 422, description: 'Blocked by a critical drug interaction' })
-  async createPrescription(@Body() dto: CreatePrescriptionDto) {
+  async createPrescription(@Body() dto: CreatePrescriptionDto, @Req() req: any) {
+    dto.prescriberId = req.user.id;
     return this.prescriptionService.create(dto);
   }
 
@@ -87,7 +96,10 @@ export class PharmacyController {
     description: 'Retrieve all prescriptions for a patient',
   })
   @ApiResponse({ status: 200, description: 'Prescriptions retrieved' })
-  async getPatientPrescriptions(@Param('patientId') patientId: string) {
+  async getPatientPrescriptions(@Param('patientId') patientId: string, @Req() req: any) {
+    if (req.user.role === UserRole.PATIENT && req.user.id !== patientId) {
+      throw new ForbiddenException('Patients may only access their own prescriptions');
+    }
     return this.prescriptionService.getPatientPrescriptions(patientId);
   }
 
@@ -103,6 +115,7 @@ export class PharmacyController {
   }
 
   @Post('prescriptions/:id/dispense')
+  @Roles(UserRole.MEDICAL_RECORDS, UserRole.NURSE, UserRole.PHYSICIAN, UserRole.ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Dispense prescription',
     description:
@@ -116,7 +129,9 @@ export class PharmacyController {
   async dispensePrescription(
     @Param('id') id: string,
     @Body() dto: DispensePrescriptionRequestDto,
+    @Req() req: any,
   ) {
+    dto.pharmacistId = req.user.id;
     return this.prescriptionService.dispensePrescription(id, dto);
   }
 
