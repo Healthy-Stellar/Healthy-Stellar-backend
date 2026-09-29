@@ -1,9 +1,15 @@
-import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { CreateLabOrderDto, CreateLabResultDto, CreateSpecimenDto } from '../dto/laboratory.dto';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
+import { CreateLabOrderDto, CreateSpecimenDto } from '../dto/laboratory.dto';
 
 @ApiTags('Laboratory Management')
 @ApiBearerAuth('medical-auth')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.PHYSICIAN, UserRole.NURSE)
 @Controller('laboratory')
 export class LaboratoryController {
   @Get('tests')
@@ -78,43 +84,6 @@ export class LaboratoryController {
     @Body() body: { status: string; location: string },
   ) {
     return { id, status: body.status, location: body.location };
-  }
-
-  @Post('results')
-  @ApiOperation({ summary: 'Enter lab result', description: 'Record laboratory test result' })
-  @ApiResponse({ status: 201, description: 'Result recorded' })
-  async createResult(@Body() dto: CreateLabResultDto) {
-    return { id: 'result-uuid', status: 'preliminary' };
-  }
-
-  @Get('results/order/:orderId')
-  @ApiOperation({
-    summary: 'Get order results',
-    description: 'Retrieve all results for a lab order',
-  })
-  @ApiResponse({ status: 200, description: 'Results retrieved' })
-  async getOrderResults(@Param('orderId') orderId: string) {
-    return [];
-  }
-
-  @Post('results/:id/verify')
-  @ApiOperation({ summary: 'Verify lab result', description: 'Pathologist verification of result' })
-  @ApiResponse({ status: 200, description: 'Result verified' })
-  async verifyResult(@Param('id') id: string, @Body() body: { verifiedBy: string }) {
-    return { id, status: 'final', verifiedBy: body.verifiedBy };
-  }
-
-  @Get('results/patient/:patientId')
-  @ApiOperation({
-    summary: 'Get patient results',
-    description: 'Retrieve all lab results for patient',
-  })
-  @ApiResponse({ status: 200, description: 'Patient results retrieved' })
-  async getPatientResults(
-    @Param('patientId') patientId: string,
-    @Query('startDate') startDate?: string,
-  ) {
-    return [];
   }
 
   @Get('workflow/pending')
