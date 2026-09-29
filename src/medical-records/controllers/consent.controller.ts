@@ -1,12 +1,28 @@
-import { Controller, Get, Post, Put, Body, Param, Query, Req } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Param,
+  Query,
+  Req,
+  UseGuards,
+  ForbiddenException,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ConsentService } from '../services/consent.service';
 import { MedicalRecordsService } from '../services/medical-records.service';
 import { CreateConsentDto } from '../dto/create-consent.dto';
 import { ConsentType } from '../entities/medical-record-consent.entity';
 import { TenantContext } from '../../tenant/context/tenant.context';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @ApiTags('Consent Management')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('consents')
 export class ConsentController {
   constructor(
@@ -18,12 +34,18 @@ export class ConsentController {
   @ApiOperation({ summary: 'Create a new consent' })
   @ApiResponse({ status: 201, description: 'Consent created successfully' })
   async create(@Body() createDto: CreateConsentDto, @Req() req: any) {
-    // Get patientId from the medical record
     const organizationId = TenantContext.getTenantId();
     const record = await this.medicalRecordsService.findOne(createDto.recordId, undefined, organizationId);
     const patientId = record.patientId;
-    const grantedBy = req.user?.id || '00000000-0000-0000-0000-000000000000';
-    return this.consentService.create(createDto, patientId, grantedBy);
+    const callerId: string = req.user.id;
+    if (
+      req.user.role !== UserRole.ADMIN &&
+      req.user.role !== UserRole.SUPER_ADMIN &&
+      callerId !== patientId
+    ) {
+      throw new ForbiddenException('You may only grant consent for your own records');
+    }
+    return this.consentService.create(createDto, patientId, callerId);
   }
 
   @Get('record/:recordId')
@@ -41,14 +63,14 @@ export class ConsentController {
   }
 
   @Get('check')
-  @ApiOperation({ summary: 'Check if consent exists for a record' })
+  @ApiOperation({ summary: 'Check consent for the authenticated caller' })
   @ApiResponse({ status: 200, description: 'Consent check result' })
   async checkConsent(
     @Query('recordId') recordId: string,
-    @Query('userId') userId: string,
     @Query('consentType') consentType: ConsentType,
+    @Req() req: any,
   ) {
-    const hasConsent = await this.consentService.checkConsent(recordId, userId, consentType);
+    const hasConsent = await this.consentService.checkConsent(recordId, req.user.id, consentType);
     return { hasConsent };
   }
 
@@ -64,7 +86,15 @@ export class ConsentController {
   @ApiOperation({ summary: 'Revoke a consent' })
   @ApiResponse({ status: 200, description: 'Consent revoked successfully' })
   async revoke(@Param('id') id: string, @Body('reason') reason: string, @Req() req: any) {
-    const revokedBy = req.user?.id || '00000000-0000-0000-0000-000000000000';
-    return this.consentService.revoke(id, revokedBy, reason);
+    const callerId: string = req.user.id;
+    const consent = await this.consentService.findOne(id);
+    if (
+      req.user.role !== UserRole.ADMIN &&
+      req.user.role !== UserRole.SUPER_ADMIN &&
+      consent.patientId !== callerId
+    ) {
+      throw new ForbiddenException('You may only revoke consent for your own records');
+    }
+    return this.consentService.revoke(id, callerId, reason);
   }
 }
