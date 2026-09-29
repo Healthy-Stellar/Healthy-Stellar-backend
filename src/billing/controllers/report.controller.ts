@@ -6,11 +6,19 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 import { ReportService } from '../services/report.service';
 
-@ApiTags('Financial Reporting & Analytics')\n@ApiBearerAuth('medical-auth')
+@ApiTags('Financial Reporting & Analytics')
+@ApiBearerAuth('medical-auth')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.BILLING_STAFF, UserRole.COMPLIANCE_OFFICER)
 @Controller('financial-reports')
 export class ReportController {
   constructor(private readonly reportService: ReportService) {}
@@ -254,6 +262,7 @@ export class ReportController {
   }
 
   @Get('compliance/audit-trail')
+  @Roles(UserRole.COMPLIANCE_OFFICER, UserRole.ADMIN)
   @ApiOperation({
     summary: 'Financial audit trail',
     description: 'Generate audit trail for compliance and regulatory reporting'
