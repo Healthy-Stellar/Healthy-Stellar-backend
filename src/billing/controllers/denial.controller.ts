@@ -1,5 +1,9 @@
-import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 import { DenialService } from '../services/denial.service';
 import {
   CreateDenialDto,
@@ -11,6 +15,9 @@ import {
 } from '../dto/denial.dto';
 
 @ApiTags('denials')
+@ApiBearerAuth('medical-auth')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.BILLING_STAFF)
 @Controller('denials')
 export class DenialController {
   constructor(private readonly denialService: DenialService) {}
@@ -84,6 +91,9 @@ export class DenialController {
 }
 
 @ApiTags('appeals')
+@ApiBearerAuth('medical-auth')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.BILLING_STAFF)
 @Controller('appeals')
 export class AppealController {
   constructor(private readonly denialService: DenialService) {}
@@ -128,6 +138,7 @@ export class AppealController {
   }
 
   @Post(':id/decision')
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Process appeal decision from payer' })
   @ApiParam({ name: 'id', description: 'Appeal ID' })
   @ApiResponse({ status: 200, description: 'Decision processed successfully' })
