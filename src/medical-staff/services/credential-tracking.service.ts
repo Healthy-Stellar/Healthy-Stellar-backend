@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, Between } from 'typeorm';
+import { Repository, LessThan, Between, In } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   StaffCredential,
@@ -65,6 +65,7 @@ export class CredentialTrackingService {
       issuedAt: new Date(dto.issuedAt),
       expiresAt,
       status,
+      verifiedBy: dto.verifiedBy ?? 'system',
       notes: dto.notes,
     });
 
@@ -85,10 +86,16 @@ export class CredentialTrackingService {
     const cutoff = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
     return this.credentialRepository.find({
-      where: {
-        expiresAt: Between(now, cutoff),
-        status: CredentialStatus.ACTIVE,
-      },
+      where: [
+        {
+          expiresAt: Between(now, cutoff),
+          status: CredentialStatus.ACTIVE,
+        },
+        {
+          expiresAt: Between(now, cutoff),
+          status: CredentialStatus.EXPIRING_SOON,
+        },
+      ],
       order: { expiresAt: 'ASC' },
     });
   }
@@ -117,9 +124,13 @@ export class CredentialTrackingService {
       );
     }
 
-    if (credential.status === CredentialStatus.EXPIRED) {
+    if (
+      credential.status === CredentialStatus.EXPIRED ||
+      credential.status === CredentialStatus.REVOKED ||
+      credential.expiresAt < new Date()
+    ) {
       throw new BadRequestException(
-        `Staff member ${staffId} has an expired ${requiredType} credential (expired ${credential.expiresAt.toISOString().split('T')[0]}). Renewal required before proceeding.`,
+        `Staff member ${staffId} has an expired or invalid ${requiredType} credential (expired ${credential.expiresAt.toISOString().split('T')[0]}). Renewal required before proceeding.`,
       );
     }
   }
@@ -130,11 +141,18 @@ export class CredentialTrackingService {
     const warnCutoff = new Date(now.getTime() + EXPIRY_WARN_DAYS * 24 * 60 * 60 * 1000);
 
     const expiringSoon = await this.credentialRepository.find({
-      where: {
-        expiresAt: Between(now, warnCutoff),
-        status: CredentialStatus.ACTIVE,
-        reminderSent: false,
-      },
+      where: [
+        {
+          expiresAt: Between(now, warnCutoff),
+          status: CredentialStatus.ACTIVE,
+          reminderSent: false,
+        },
+        {
+          expiresAt: Between(now, warnCutoff),
+          status: CredentialStatus.EXPIRING_SOON,
+          reminderSent: false,
+        },
+      ],
     });
 
     for (const cred of expiringSoon) {
@@ -161,7 +179,7 @@ export class CredentialTrackingService {
     const expired = await this.credentialRepository.find({
       where: {
         expiresAt: LessThan(now),
-        status: CredentialStatus.ACTIVE,
+        status: In([CredentialStatus.ACTIVE, CredentialStatus.EXPIRING_SOON]),
       },
     });
 

@@ -212,5 +212,41 @@ describe('CredentialTrackingService', () => {
         expect.objectContaining({ type: 'credential_expired' }),
       );
     });
+
+    it('advances a credential from EXPIRING_SOON to EXPIRED when the grace window ends', async () => {
+      const credential = {
+        id: 'cred-grace',
+        staffId: 'doc-1',
+        type: CredentialType.MEDICAL_LICENSE,
+        status: CredentialStatus.EXPIRING_SOON,
+        expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      };
+
+      credentialRepo.find
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([credential]);
+
+      const doctor = {
+        id: 'doc-1',
+        status: StaffStatus.ACTIVE,
+        licenseStatus: LicenseStatus.ACTIVE,
+      };
+      doctorRepo.findOne.mockResolvedValue(doctor);
+
+      await service.checkCredentialExpirations();
+
+      expect(credentialRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: CredentialStatus.EXPIRED,
+          staffId: 'doc-1',
+        }),
+      );
+      expect(doctorRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: StaffStatus.SUSPENDED,
+          licenseStatus: LicenseStatus.EXPIRED,
+        }),
+      );
+    });
   });
 });

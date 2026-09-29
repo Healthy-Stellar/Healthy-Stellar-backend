@@ -86,7 +86,7 @@ export class ComplianceMonitoringService {
         complianceType: ComplianceType.HIPAA,
         checkName: check.name,
         description: check.description,
-        status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+        status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
         severity: result.severity || ComplianceSeverity.MEDIUM,
         findings: result.findings,
         recommendations: result.recommendations,
@@ -119,7 +119,7 @@ export class ComplianceMonitoringService {
         complianceType: ComplianceType.HITECH,
         checkName: check.name,
         description: check.description,
-        status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+        status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
         severity: result.severity || ComplianceSeverity.HIGH,
         findings: result.findings,
         recommendations: result.recommendations,
@@ -134,7 +134,7 @@ export class ComplianceMonitoringService {
       complianceType: ComplianceType.INTERNAL_POLICIES,
       checkName: 'Role-Based Access Control',
       description: 'Verify users have appropriate access levels',
-      status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+      status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
       severity: result.severity || ComplianceSeverity.HIGH,
       findings: result.findings,
       recommendations: result.recommendations,
@@ -148,7 +148,7 @@ export class ComplianceMonitoringService {
       complianceType: ComplianceType.HIPAA,
       checkName: 'Audit Log Retention',
       description: 'Verify audit logs are retained for required period',
-      status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+      status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
       severity: result.severity || ComplianceSeverity.MEDIUM,
       findings: result.findings,
       recommendations: result.recommendations,
@@ -176,7 +176,7 @@ export class ComplianceMonitoringService {
         complianceType: ComplianceType.JOINT_COMMISSION,
         checkName: check.name,
         description: check.description,
-        status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+        status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
         severity: result.severity || ComplianceSeverity.HIGH,
         findings: result.findings,
         recommendations: result.recommendations,
@@ -190,7 +190,7 @@ export class ComplianceMonitoringService {
       complianceType: ComplianceType.FDA,
       checkName: 'Medical Device Compliance',
       description: 'Verify medical devices meet FDA requirements',
-      status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+      status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
       severity: result.severity || ComplianceSeverity.HIGH,
       findings: result.findings,
       recommendations: result.recommendations,
@@ -204,7 +204,7 @@ export class ComplianceMonitoringService {
       complianceType: ComplianceType.OSHA,
       checkName: 'Workplace Safety Standards',
       description: 'Verify compliance with OSHA safety standards',
-      status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+      status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
       severity: result.severity || ComplianceSeverity.MEDIUM,
       findings: result.findings,
       recommendations: result.recommendations,
@@ -304,50 +304,112 @@ export class ComplianceMonitoringService {
   }
 
   private async verifyDataEncryption(): Promise<any> {
-    return { compliant: true, findings: 'Data encryption verified', recommendations: [] };
+    return this.pendingReviewResult(
+      'Data encryption',
+      'Encryption settings are not yet validated automatically; confirm key management and storage configuration before reporting compliance.',
+      ComplianceSeverity.MEDIUM,
+    );
   }
 
   private async verifyAccessControls(): Promise<any> {
-    return { compliant: true, findings: 'Access controls verified', recommendations: [] };
+    return this.pendingReviewResult(
+      'Access controls',
+      'Access-control review is pending manual validation and cannot be treated as an automated compliance finding.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifyAuditLogs(): Promise<any> {
-    return { compliant: true, findings: 'Audit logs verified', recommendations: [] };
+    return this.pendingReviewResult(
+      'Audit log integrity',
+      'Audit-log hash-chain verification is not yet automated; log integrity cannot be claimed without manual review.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifyPasswordPolicies(): Promise<any> {
-    return { compliant: true, findings: 'Password policies verified', recommendations: [] };
+    return this.pendingReviewResult(
+      'Password policy compliance',
+      'Password-policy enforcement is pending a manual security review.',
+      ComplianceSeverity.MEDIUM,
+    );
   }
 
   private async verifyMfaCompliance(): Promise<any> {
-    return { compliant: true, findings: 'MFA compliance verified', recommendations: [] };
+    return this.pendingReviewResult(
+      'MFA compliance',
+      'MFA coverage is pending review; no automated coverage decision should be saved as evidence.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifySessionSecurity(): Promise<any> {
-    return { compliant: true, findings: 'Session security verified', recommendations: [] };
+    return this.pendingReviewResult(
+      'Session security',
+      'Session hardening review is pending and should not be stored as a verified compliance result.',
+      ComplianceSeverity.MEDIUM,
+    );
   }
 
   private async verifyRoleBasedAccess(): Promise<any> {
-    return { compliant: true, findings: 'Role-based access verified', recommendations: [] };
+    return this.pendingReviewResult(
+      'Role-based access control',
+      'RBAC verification is pending review; the system cannot claim automated access-control compliance.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifyAuditLogRetention(): Promise<any> {
-    return { compliant: true, findings: 'Audit log retention verified', recommendations: [] };
+    return this.pendingReviewResult(
+      'Audit log retention',
+      'Retention verification is pending manual review and is not yet backed by evidence.',
+      ComplianceSeverity.MEDIUM,
+    );
   }
 
   private async verifyPatientSafetyGoals(): Promise<any> {
-    return { compliant: true, findings: 'Patient safety goals verified', recommendations: [] };
+    return this.pendingReviewResult(
+      'Patient safety goals',
+      'The patient-safety goal check is not yet implemented and remains pending review.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifyMedicationManagement(): Promise<any> {
-    return { compliant: true, findings: 'Medication management verified', recommendations: [] };
+    return this.pendingReviewResult(
+      'Medication management',
+      'Medication management compliance is pending review and cannot be relied upon as a validated result.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifyMedicalDeviceCompliance(): Promise<any> {
-    return { compliant: true, findings: 'Medical device compliance verified', recommendations: [] };
+    return this.pendingReviewResult(
+      'Medical device compliance',
+      'Medical-device compliance is not automated here and requires a manual assessment before being recorded.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifyWorkplaceSafety(): Promise<any> {
-    return { compliant: true, findings: 'Workplace safety verified', recommendations: [] };
+    return this.pendingReviewResult(
+      'Workplace safety',
+      'Occupational safety review is not yet automated and remains pending manual validation.',
+      ComplianceSeverity.MEDIUM,
+    );
+  }
+
+  private pendingReviewResult(
+    checkName: string,
+    detail: string,
+    severity: ComplianceSeverity = ComplianceSeverity.MEDIUM,
+  ) {
+    return {
+      compliant: false,
+      status: ComplianceStatus.PENDING_REVIEW,
+      severity,
+      findings: `${checkName}: pending review - ${detail}`,
+      recommendations: ['Manual compliance review required before this control can be treated as verified.'],
+    };
   }
 }

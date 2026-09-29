@@ -46,6 +46,11 @@ export class CreateStaffCredentialDto {
   @IsDateString()
   expiresAt: string;
 
+  @ApiPropertyOptional({ description: 'UUID of the admin who verified the credential' })
+  @IsUUID()
+  @IsOptional()
+  verifiedBy?: string;
+
   @ApiPropertyOptional({ description: 'Optional notes' })
   @IsString()
   @IsOptional()

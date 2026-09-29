@@ -60,6 +60,9 @@ export class StaffCredential {
   })
   status: CredentialStatus;
 
+  @Column({ type: 'uuid', nullable: true })
+  verifiedBy: string;
+
   @Column({ default: false })
   reminderSent: boolean;
 
