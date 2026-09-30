@@ -550,3 +550,6 @@ MIT
 
 <!-- handsoff-issue-1023 -->
 - #1023: [Critical] `EhrImportProcessor.process()` — uploads imported HL7/CCD/CSV records to IPFS without encryption
+
+<!-- handsoff-issue-1039 -->
+- #1039: [Critical] `OnboardingService.activate()` persists the newly generated tenant Stellar secret key in plaintext

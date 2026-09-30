@@ -32,12 +32,10 @@ export class ConsultationService {
     };
 
     if (context?.role === UserRole.PATIENT) {
-      // In ConsultationNote, patientId isn't directly present, but we can scope by appointment.patientId
-      // However, for simplicity and performance, we might want to add patientId to ConsultationNote
-      // or just join the appointment. For now, we'll use the appointment relation if available.
-      // If we need strict filtering here without joining, we'd need patientId on the entity.
-      // Given the urgency, let's assume we can join or that patients shouldn't directly list consultation notes
-      // but rather see them via appointments.
+      // Scope consultation reads to the authenticated patient's own records.
+      // ConsultationNote has no direct patientId, so we filter through the
+      // appointment relation to prevent cross-patient PHI disclosure (IDOR).
+      scopedWhere.appointment = { patientId: context.userId };
     } else if (context?.role === UserRole.PHYSICIAN) {
       scopedWhere.doctorId = context.userId;
     }
@@ -65,6 +63,7 @@ export class ConsultationService {
   async findByAppointment(appointmentId: string): Promise<ConsultationNote[]> {
     return this.consultationRepository.find({
       where: this.getScopedWhere({ appointmentId }),
+      relations: ['appointment'],
       order: { createdAt: 'DESC' },
     });
   }
