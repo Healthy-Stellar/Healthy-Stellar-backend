@@ -5,13 +5,21 @@ import {
   Body,
   Param,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 import { InsuranceService } from '../services/insurance.service';
 import { VerifyEligibilityDto, CreateInsuranceDto } from '../dto/insurance.dto';
 
-@ApiTags('Insurance Verification')\n@ApiBearerAuth('medical-auth')
+@ApiTags('Insurance Verification')
+@ApiBearerAuth('medical-auth')
 @Controller('insurance')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.BILLING_STAFF)
 export class InsuranceController {
   constructor(private readonly insuranceService: InsuranceService) {}
 
