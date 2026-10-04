@@ -149,6 +149,22 @@ export class UsersService {
     return this.usersRepository.findOne({ where: { email } });
   }
 
+  async findByStellarAddress(stellarAddress: string): Promise<User | null> {
+    if (!stellarAddress) return null;
+    return this.usersRepository.findOne({ where: { stellarAddress } });
+  }
+
+  async resolveUserIdsByStellarAddresses(stellarAddresses: string[]): Promise<string[]> {
+    if (!stellarAddresses || stellarAddresses.length === 0) return [];
+
+    const users = await this.usersRepository
+      .createQueryBuilder('user')
+      .where('user.stellarAddress IN (:...stellarAddresses)', { stellarAddresses })
+      .getMany();
+
+    return users.map((user) => user.id);
+  }
+
   private async generateUniqueMRN(): Promise<string> {
     const prefix = 'MRN';
     const timestamp = Date.now().toString().slice(-8);
