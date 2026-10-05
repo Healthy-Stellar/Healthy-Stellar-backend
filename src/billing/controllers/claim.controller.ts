@@ -8,14 +8,21 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 import { ClaimService } from '../services/claim.service';
 import { CreateClaimDto, UpdateClaimDto, SubmitClaimDto } from '../dto/claim.dto';
 
 @ApiTags('Insurance Claims')
 @ApiBearerAuth('medical-auth')
 @Controller('claims')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.BILLING_STAFF)
 export class ClaimController {
   constructor(private readonly claimService: ClaimService) {}
 
