@@ -23,6 +23,7 @@ import {
   CreateIncidentDto,
   IncidentManagementQueryDto,
   IncidentSlaReportQueryDto,
+  ReopenIncidentDto,
   ResolveIncidentManagementDto,
 } from '../dto/incident-management.dto';
 
@@ -60,6 +61,7 @@ export class IncidentManagementController {
 
   @Patch(':id/acknowledge')
   @ApiOperation({ summary: 'Acknowledge an incident (sets firstResponseAt)' })
+  @ApiResponse({ status: 409, description: 'Invalid state transition' })
   acknowledge(
     @Param('id') id: string,
     @Body() dto: AcknowledgeIncidentDto,
@@ -71,6 +73,7 @@ export class IncidentManagementController {
 
   @Patch(':id/resolve')
   @ApiOperation({ summary: 'Resolve an incident' })
+  @ApiResponse({ status: 409, description: 'Invalid state transition' })
   resolve(
     @Param('id') id: string,
     @Body() dto: ResolveIncidentManagementDto,
@@ -78,5 +81,17 @@ export class IncidentManagementController {
   ) {
     const responderId = (req.user as any)?.id ?? 'unknown';
     return this.service.resolve(id, dto, responderId);
+  }
+
+  @Patch(':id/reopen')
+  @ApiOperation({ summary: 'Reopen a resolved incident (RESOLVED → OPEN)' })
+  @ApiResponse({ status: 409, description: 'Invalid state transition' })
+  reopen(
+    @Param('id') id: string,
+    @Body() dto: ReopenIncidentDto,
+    @Req() req: Request,
+  ) {
+    const responderId = (req.user as any)?.id ?? 'unknown';
+    return this.service.reopen(id, dto, responderId);
   }
 }
