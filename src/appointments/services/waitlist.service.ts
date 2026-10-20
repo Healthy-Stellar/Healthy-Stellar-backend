@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { AppointmentWaitlist, WaitlistStatus } from '../entities/appointment-waitlist.entity';
@@ -10,6 +10,8 @@ const DEFAULT_RESPONSE_WINDOW_MINUTES = 30;
 
 @Injectable()
 export class WaitlistService {
+  private readonly logger = new Logger(WaitlistService.name);
+
   constructor(
     @InjectRepository(AppointmentWaitlist)
     private readonly waitlistRepo: Repository<AppointmentWaitlist>,
@@ -86,6 +88,44 @@ export class WaitlistService {
     return this.waitlistRepo.save(next);
   }
 
+  /**
+   * Scheduled job entry point. Expires stale offers and re-offers each freed
+   * slot to the next WAITING candidate, cascading until a candidate accepts
+   * or the slot time passes. Skips slots that have been booked by other means.
+   */
+  async processExpiredOffers(): Promise<void> {
+    const expired = await this.expireStaleOffers();
+    for (const entry of expired) {
+      if (!entry.offeredAppointmentId) continue;
+      try {
+        await this.reofferSlot(entry.offeredAppointmentId);
+      } catch (err) {
+        this.logger.error(
+          `Failed to re-offer slot ${entry.offeredAppointmentId}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Re-offers a freed slot to the next eligible candidate. Skips the slot if
+   * it has already been booked by other means or its time has passed.
+   */
+  private async reofferSlot(appointmentId: string): Promise<AppointmentWaitlist | null> {
+    const slot = await this.appointmentRepo.findOne({
+      where: this.getScopedWhere({ id: appointmentId }),
+    });
+    if (!slot) return null;
+
+    // Slot already booked by other means — nothing to re-offer.
+    if (slot.status !== AppointmentStatus.CANCELLED) return null;
+
+    // Slot time has passed — stop cascading.
+    if (new Date(slot.appointmentDate).getTime() <= Date.now()) return null;
+
+    return this.notifyNextEligible(slot);
+  }
+
   async acceptOffer(patientId: string, waitlistId: string): Promise<AppointmentWaitlist> {
     const entry = await this.waitlistRepo.findOne({
       where: this.getScopedWhere({
@@ -147,7 +187,11 @@ export class WaitlistService {
     return savedEntry;
   }
 
-  private async expireStaleOffers(): Promise<void> {
+  /**
+   * Marks NOTIFIED entries whose response window has passed as EXPIRED and
+   * returns them so callers can re-offer the freed slots.
+   */
+  private async expireStaleOffers(): Promise<AppointmentWaitlist[]> {
     const notified = await this.waitlistRepo.find({
       where: this.getScopedWhere({ status: WaitlistStatus.NOTIFIED }),
     });
@@ -156,8 +200,10 @@ export class WaitlistService {
       if (!e.notifiedAt) return false;
       return now - e.notifiedAt.getTime() > e.responseWindowMinutes * 60_000;
     });
-    if (stale.length > 0) {
-      await this.waitlistRepo.save(stale.map((e) => ({ ...e, status: WaitlistStatus.EXPIRED })));
-    }
+    if (stale.length === 0) return [];
+
+    const expired = stale.map((e) => ({ ...e, status: WaitlistStatus.EXPIRED }));
+    await this.waitlistRepo.save(expired);
+    return expired as AppointmentWaitlist[];
   }
 }

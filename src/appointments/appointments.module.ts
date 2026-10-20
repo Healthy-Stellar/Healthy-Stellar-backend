@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
+import { ScheduleModule } from '@nestjs/schedule';
 
 // Entities
 import { Appointment } from './entities/appointment.entity';
@@ -38,6 +39,7 @@ import { AuditModule } from '../common/audit/audit.module';
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: '15m' },
     }),
+    ScheduleModule.forRoot(),
     AuditModule,
   ],
   controllers: [AppointmentController, ConsultationController, DoctorAvailabilityController, WaitlistController],

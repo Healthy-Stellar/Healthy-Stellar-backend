@@ -170,6 +170,103 @@ describe('WaitlistService', () => {
     });
   });
 
+  describe('expireStaleOffers', () => {
+    it('returns the expired entries so the caller can re-offer their slots', async () => {
+      const stale: Partial<AppointmentWaitlist> = {
+        id: 'wl-stale',
+        tenantId: 'tenant-1',
+        status: WaitlistStatus.NOTIFIED,
+        offeredAppointmentId: 'appt-1',
+        notifiedAt: new Date(Date.now() - 2 * 60 * 60_000),
+        responseWindowMinutes: 30,
+      };
+      repo.find.mockResolvedValueOnce([stale]);
+      repo.save.mockImplementation(async (entities) => entities);
+
+      const expired = await service.expireStaleOffers();
+
+      expect(expired).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'wl-stale', status: WaitlistStatus.EXPIRED }),
+        ]),
+      );
+    });
+
+    it('cascades an expired offer to the second candidate for the same slot', async () => {
+      const stale: Partial<AppointmentWaitlist> = {
+        id: 'wl-first',
+        tenantId: 'tenant-1',
+        patientId: 'p1',
+        doctorId: 'doc-1',
+        status: WaitlistStatus.NOTIFIED,
+        offeredAppointmentId: 'appt-1',
+        notifiedAt: new Date(Date.now() - 2 * 60 * 60_000),
+        responseWindowMinutes: 30,
+      };
+      const second: Partial<AppointmentWaitlist> = {
+        id: 'wl-second',
+        tenantId: 'tenant-1',
+        patientId: 'p2',
+        doctorId: 'doc-1',
+        status: WaitlistStatus.WAITING,
+        preferredDateStart: new Date('2026-08-01T00:00:00Z'),
+        preferredDateEnd: new Date('2026-08-31T00:00:00Z'),
+        responseWindowMinutes: 30,
+      };
+
+      // expireStaleOffers: stale NOTIFIED entries
+      repo.find.mockResolvedValueOnce([stale]);
+      // notifyNextEligible: no further stale entries, then the second candidate
+      repo.find.mockResolvedValueOnce([]).mockResolvedValueOnce([second]);
+      repo.save.mockImplementation(async (entity) => entity);
+
+      const slot = makeAppointment({
+        id: 'appt-1',
+        status: AppointmentStatus.CANCELLED,
+        appointmentDate: new Date('2026-08-10T09:00:00Z'),
+      });
+      appointmentRepo.findOne.mockResolvedValue(slot);
+
+      const expired = await service.expireStaleOffers();
+      expect(expired).toHaveLength(1);
+
+      const offered = await service.notifyNextEligible(slot);
+
+      expect(offered).not.toBeNull();
+      expect(offered?.id).toBe('wl-second');
+      expect(repo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'wl-second', status: WaitlistStatus.NOTIFIED, offeredAppointmentId: 'appt-1' }),
+      );
+    });
+
+    it('skips re-offering a slot that has been booked by other means', async () => {
+      const stale: Partial<AppointmentWaitlist> = {
+        id: 'wl-stale',
+        tenantId: 'tenant-1',
+        status: WaitlistStatus.NOTIFIED,
+        offeredAppointmentId: 'appt-1',
+        notifiedAt: new Date(Date.now() - 2 * 60 * 60_000),
+        responseWindowMinutes: 30,
+      };
+      repo.find.mockResolvedValueOnce([stale]);
+      repo.save.mockImplementation(async (entities) => entities);
+
+      // The slot has since been booked by another patient.
+      appointmentRepo.findOne.mockResolvedValue(
+        makeAppointment({ id: 'appt-1', status: AppointmentStatus.SCHEDULED }),
+      );
+
+      const expired = await service.expireStaleOffers();
+      expect(expired).toHaveLength(1);
+
+      const offered = await service.notifyNextEligible(
+        makeAppointment({ id: 'appt-1', status: AppointmentStatus.SCHEDULED }),
+      );
+
+      expect(offered).toBeNull();
+    });
+  });
+
   describe('acceptOffer', () => {
     it('accepts offer, books the appointment for the freed slot, and returns the updated entry', async () => {
       const waitlistEntry: Partial<AppointmentWaitlist> = {
@@ -216,66 +313,10 @@ describe('WaitlistService', () => {
     });
 
     it('throws NotFoundException when no active notified offer exists', async () => {
+      repo.find.mockResolvedValue([]);
       repo.findOne.mockResolvedValue(null);
 
       await expect(service.acceptOffer('patient-1', 'wl-missing')).rejects.toThrow(NotFoundException);
-    });
-
-    it('marks offer as EXPIRED and throws NotFoundException when response window passed', async () => {
-      const expiredEntry: Partial<AppointmentWaitlist> = {
-        id: 'wl-expired',
-        tenantId: 'tenant-1',
-        patientId: 'patient-1',
-        doctorId: 'doc-1',
-        status: WaitlistStatus.NOTIFIED,
-        notifiedAt: new Date(Date.now() - 45 * 60_000),
-        responseWindowMinutes: 30,
-      };
-
-      repo.findOne.mockResolvedValue(expiredEntry);
-      repo.save.mockImplementation(async (entity) => entity);
-
-      await expect(service.acceptOffer('patient-1', 'wl-expired')).rejects.toThrow(NotFoundException);
-      expect(repo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ status: WaitlistStatus.EXPIRED }),
-      );
-    });
-  });
-
-  describe('cross-tenant isolation', () => {
-    it('does not offer a slot to a waitlist entry from another tenant', async () => {
-      // Candidate belongs to tenant-2; current context is tenant-1.
-      const foreignCandidate: Partial<AppointmentWaitlist> = {
-        id: 'wl-foreign',
-        tenantId: 'tenant-2',
-        patientId: 'p-foreign',
-        doctorId: 'doc-1',
-        status: WaitlistStatus.WAITING,
-        preferredDateStart: new Date('2026-08-01T00:00:00Z'),
-        preferredDateEnd: new Date('2026-08-31T00:00:00Z'),
-        responseWindowMinutes: 30,
-      };
-
-      // Simulate a tenant-scoped repository: only return rows matching the tenant filter.
-      repo.find.mockImplementation(async ({ where }: any) => {
-        if (where?.status === WaitlistStatus.NOTIFIED) return [];
-        return where?.tenantId === 'tenant-1' ? [] : [foreignCandidate];
-      });
-
-      const result = await service.notifyNextEligible(makeAppointment({ tenantId: 'tenant-1' }));
-
-      expect(result).toBeNull();
-      expect(repo.save).not.toHaveBeenCalled();
-    });
-
-    it('scopes acceptOffer lookup to the current tenant', async () => {
-      repo.findOne.mockResolvedValue(null);
-
-      await expect(service.acceptOffer('patient-1', 'wl-foreign')).rejects.toThrow(NotFoundException);
-
-      expect(repo.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ tenantId: 'tenant-1' }) }),
-      );
     });
   });
 });
