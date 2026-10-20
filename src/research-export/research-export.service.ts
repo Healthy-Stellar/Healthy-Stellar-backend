@@ -2,6 +2,7 @@ import {
   Injectable,
   ForbiddenException,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
@@ -13,6 +14,8 @@ import { MedicalRecord } from '../medical-records/entities/medical-record.entity
 import { Patient } from '../patients/entities/patient.entity';
 import { AccessGrant, GrantStatus } from '../access-control/entities/access-grant.entity';
 import { AuditService } from '../common/audit/audit.service';
+
+const RESEARCH_K_MIN_FLOOR = 5;
 import {
   ResearchExportFiltersDto,
   AnonymizedRecord,
@@ -119,6 +122,7 @@ export class ResearchExportService {
   ): Promise<AnonymizedExport> {
     await this.assertValidGrant(researcherId);
 
+    this.exportSalt = uuidv4();
     const records = await this.fetchRecords(filters);
     const patientIds = [...new Set(records.map((r) => r.patientId))];
 
@@ -205,24 +209,54 @@ export class ResearchExportService {
 
   // ─── De-identification Pipeline ────────────────────────────────────────────
 
+  private getKAnonymityThreshold(): number {
+    const configured = this.config.get<number | string>('RESEARCH_K_ANONYMITY');
+    let k = 3;
+    if (configured !== undefined && configured !== null) {
+      const parsed = typeof configured === 'string' ? parseInt(configured, 10) : configured;
+      if (!isNaN(parsed)) {
+        k = parsed;
+      }
+    }
+    if (k < RESEARCH_K_MIN_FLOOR) {
+      k = RESEARCH_K_MIN_FLOOR;
+    }
+    return k;
+  }
+
   private anonymizeAndSuppress(
     records: MedicalRecord[],
     patientMap: Map<string, Patient>,
   ): AnonymizedRecord[] {
-    const byPatient = new Map<string, MedicalRecord[]>();
-    for (const r of records) {
-      const list = byPatient.get(r.patientId) ?? [];
-      list.push(r);
-      byPatient.set(r.patientId, list);
+    // First de-identify all records
+    const deIdentified = records.map((record) => {
+      const patient = patientMap.get(record.patientId);
+      return {
+        record,
+        patientId: record.patientId,
+        anon: this.deIdentifyRecord(record, patient),
+      };
+    });
+
+    // Group by quasi-identifier
+    const k = this.getKAnonymityThreshold();
+    const groups = new Map<string, typeof deIdentified>();
+    for (const item of deIdentified) {
+      const key = `${item.anon.ageBracket}|${item.anon.region}|${item.anon.recordType}|${item.anon.yearOfRecord}`;
+      const list = groups.get(key) ?? [];
+      list.push(item);
+      groups.set(key, list);
     }
 
+    // Suppress groups where number of distinct patients < k
     const suppressed: AnonymizedRecord[] = [];
-    for (const [patientId, patientRecords] of byPatient) {
-      if (patientRecords.length < 3) continue; // k-anonymity floor
-
-      const patient = patientMap.get(patientId);
-      for (const record of patientRecords) {
-        suppressed.push(this.deIdentifyRecord(record, patient));
+    for (const [, group] of groups) {
+      const distinctPatients = new Set(group.map((g) => g.patientId));
+      if (distinctPatients.size < k) {
+        continue;
+      }
+      for (const item of group) {
+        suppressed.push(item.anon);
       }
     }
 
@@ -243,9 +277,19 @@ export class ResearchExportService {
 
   // ─── HIPAA Safe Harbor Helpers ─────────────────────────────────────────────
 
-  pseudonymize(patientId: string): string {
-    const salt = this.config.get<string>('ANONYMIZATION_SALT', 'default-salt');
-    return createHash('sha256').update(`${salt}:${patientId}`).digest('hex').slice(0, 16);
+  private exportSalt?: string;
+
+  private getExportSalt(): string {
+    if (!this.exportSalt) {
+      this.exportSalt = uuidv4();
+    }
+    return this.exportSalt;
+  }
+
+  pseudonymize(patientId: string, salt?: string): string {
+    const baseSalt = salt ?? this.config.get<string>('ANONYMIZATION_SALT', 'default-salt');
+    const exportSalt = this.exportSalt ? `${baseSalt}:${this.exportSalt}` : baseSalt;
+    return createHash('sha256').update(`${exportSalt}:${patientId}`).digest('hex').slice(0, 16);
   }
 
   toAgeBracket(dateOfBirth: string): string {
