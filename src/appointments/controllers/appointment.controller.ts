@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Patch,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { AppointmentService } from '../services/appointment.service';
 import { CreateAppointmentDto } from '../dto/create-appointment.dto';
@@ -63,8 +73,16 @@ export class AppointmentController {
   @Patch(':id/status')
   @ApiOperation({ summary: 'Update appointment status' })
   @ApiResponse({ status: 200, description: 'Appointment status updated successfully' })
-  updateStatus(@Param('id') id: string, @Body('status') status: AppointmentStatus) {
-    return this.appointmentService.updateStatus(id, status);
+  @ApiResponse({
+    status: 409,
+    description: 'Invalid appointment status transition',
+  })
+  updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: AppointmentStatus,
+    @Req() req: any,
+  ) {
+    return this.appointmentService.updateStatus(id, status, req.user.id);
   }
 
   @Get(':id/telemedicine-token')

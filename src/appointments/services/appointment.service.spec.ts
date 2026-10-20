@@ -2,7 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { AppointmentService } from './appointment.service';
 import { Appointment, AppointmentStatus, AppointmentType, MedicalPriority } from '../entities/appointment.entity';
 import { DoctorAvailability } from '../entities/doctor-availability.entity';
@@ -10,6 +15,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { TenantContext } from '../../tenant/context/tenant.context';
 import { getRequestContext } from '../../common/middleware/request-context.middleware';
 import { UserRole } from '../../auth/entities/user.entity';
+import { WaitlistService } from './waitlist.service';
 
 const PATIENT_ID = 'patient-1';
 const DOCTOR_ID = 'doctor-1';
@@ -51,6 +57,7 @@ describe('AppointmentService – telemedicine security', () => {
   let jwtService: { sign: jest.Mock };
   let configService: { get: jest.Mock };
   let auditService: { log: jest.Mock };
+  let waitlistService: { notifyNextEligible: jest.Mock };
 
   beforeEach(async () => {
     const qb = {
@@ -93,6 +100,7 @@ describe('AppointmentService – telemedicine security', () => {
       }),
     };
     auditService = { log: jest.fn().mockResolvedValue(undefined) };
+    waitlistService = { notifyNextEligible: jest.fn().mockResolvedValue(null) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -102,13 +110,14 @@ describe('AppointmentService – telemedicine security', () => {
         { provide: JwtService, useValue: jwtService },
         { provide: ConfigService, useValue: configService },
         { provide: AuditService, useValue: auditService },
+        { provide: WaitlistService, useValue: waitlistService },
       ],
     }).compile();
 
     service = module.get<AppointmentService>(AppointmentService);
 
     // Tenant + availability mock that the booking-conflict path requires.
-    TenantContext.setTenantId(TENANT_ID);
+    jest.spyOn(TenantContext, 'getTenantId').mockReturnValue(TENANT_ID);
     availabilityRepo.findOne.mockResolvedValue({
       doctorId: DOCTOR_ID,
       dayOfWeek: new Date().getDay() || 7,
@@ -121,6 +130,57 @@ describe('AppointmentService – telemedicine security', () => {
 
   afterEach(() => {
     TenantContext.clear();
+    jest.restoreAllMocks();
+  });
+
+  describe('updateStatus', () => {
+    const actorId = 'staff-1';
+
+    it('records the authenticated actor and offers a newly cancelled slot', async () => {
+      const appointment = makeAppointment();
+      appointmentRepo.findOne.mockResolvedValue(appointment);
+      appointmentRepo.save.mockImplementation(async (updated) => updated);
+
+      const updated = await service.updateStatus(
+        APPOINTMENT_ID,
+        AppointmentStatus.CANCELLED,
+        actorId,
+      );
+
+      expect(updated.status).toBe(AppointmentStatus.CANCELLED);
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ actorId, action: 'APPOINTMENT_CANCELLED' }),
+      );
+      expect(waitlistService.notifyNextEligible).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not repeat side effects when the appointment is already cancelled', async () => {
+      const appointment = makeAppointment({ status: AppointmentStatus.CANCELLED });
+      appointmentRepo.findOne.mockResolvedValue(appointment);
+
+      await expect(
+        service.updateStatus(APPOINTMENT_ID, AppointmentStatus.CANCELLED, actorId),
+      ).resolves.toBe(appointment);
+
+      expect(appointmentRepo.save).not.toHaveBeenCalled();
+      expect(auditService.log).not.toHaveBeenCalled();
+      expect(waitlistService.notifyNextEligible).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED],
+      [AppointmentStatus.CANCELLED, AppointmentStatus.SCHEDULED],
+    ])('rejects transition from %s to %s', async (currentStatus, nextStatus) => {
+      appointmentRepo.findOne.mockResolvedValue(makeAppointment({ status: currentStatus }));
+
+      await expect(
+        service.updateStatus(APPOINTMENT_ID, nextStatus, actorId),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(appointmentRepo.save).not.toHaveBeenCalled();
+      expect(auditService.log).not.toHaveBeenCalled();
+      expect(waitlistService.notifyNextEligible).not.toHaveBeenCalled();
+    });
   });
 
   describe('create – room ID generation (security)', () => {
@@ -344,7 +404,7 @@ describe('AppointmentService – booking conflict prevention', () => {
    * doctor/patient-portal admin routes as well.
    */
   const installTenantContext = () => {
-    TenantContext.setTenantId(TENANT_ID);
+    jest.spyOn(TenantContext, 'getTenantId').mockReturnValue(TENANT_ID);
   };
 
   beforeEach(async () => {
@@ -403,6 +463,10 @@ describe('AppointmentService – booking conflict prevention', () => {
         { provide: JwtService, useValue: jwtService },
         { provide: ConfigService, useValue: configService },
         { provide: AuditService, useValue: auditService },
+        {
+          provide: WaitlistService,
+          useValue: { notifyNextEligible: jest.fn().mockResolvedValue(null) },
+        },
       ],
     }).compile();
 

@@ -47,6 +47,28 @@ const TOKEN_VALID_BEFORE_MINUTES = 15;
  */
 const DEFAULT_APPOINTMENT_BUFFER_MINUTES = 15;
 
+const APPOINTMENT_STATUS_TRANSITIONS: Record<
+  AppointmentStatus,
+  readonly AppointmentStatus[]
+> = {
+  [AppointmentStatus.SCHEDULED]: [
+    AppointmentStatus.CONFIRMED,
+    AppointmentStatus.CANCELLED,
+    AppointmentStatus.RESCHEDULED,
+  ],
+  [AppointmentStatus.CONFIRMED]: [
+    AppointmentStatus.IN_PROGRESS,
+    AppointmentStatus.CANCELLED,
+    AppointmentStatus.NO_SHOW,
+    AppointmentStatus.RESCHEDULED,
+  ],
+  [AppointmentStatus.IN_PROGRESS]: [AppointmentStatus.COMPLETED],
+  [AppointmentStatus.COMPLETED]: [],
+  [AppointmentStatus.CANCELLED]: [],
+  [AppointmentStatus.NO_SHOW]: [],
+  [AppointmentStatus.RESCHEDULED]: [],
+};
+
 /** Lock-namespace prefix for transactional advisory locks. */
 const ADVISORY_LOCK_NAMESPACE = 'appt';
 
@@ -426,12 +448,27 @@ export class AppointmentService {
     });
   }
 
-  async updateStatus(id: string, status: AppointmentStatus): Promise<Appointment> {
+  async updateStatus(
+    id: string,
+    status: AppointmentStatus,
+    actorId: string,
+  ): Promise<Appointment> {
     const appointment = await this.appointmentRepository.findOne({ 
       where: this.getScopedWhere({ id }) 
     });
     if (!appointment) {
       throw new NotFoundException(`Appointment with ID ${id} not found`);
+    }
+
+    const previousStatus = appointment.status;
+    if (previousStatus === status) {
+      return appointment;
+    }
+
+    if (!APPOINTMENT_STATUS_TRANSITIONS[previousStatus]?.includes(status)) {
+      throw new ConflictException(
+        `Cannot transition appointment from ${previousStatus} to ${status}`,
+      );
     }
 
     appointment.status = status;
@@ -444,7 +481,7 @@ export class AppointmentService {
         : 'APPOINTMENT_UPDATED';
 
     await this.auditService.log({
-      actorId: appointment.patientId,
+      actorId,
       action: auditAction,
       resourceId: id,
       resourceType: 'Appointment',
@@ -454,7 +491,7 @@ export class AppointmentService {
       console.error(`Failed to log appointment status change audit event: ${err.message}`);
     });
 
-    if (status === AppointmentStatus.CANCELLED) {
+    if (status === AppointmentStatus.CANCELLED && previousStatus !== status) {
       this.waitlistService.notifyNextEligible(updated).catch((err) => {
         this.logger.error(`Waitlist notification failed for appointment ${id}: ${err.message}`);
       });
