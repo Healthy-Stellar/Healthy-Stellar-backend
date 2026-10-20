@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BedOccupancyService } from './bed-occupancy.service';
@@ -32,12 +32,20 @@ function buildModule(
   bedRecord: Bed | null = makeBed(),
   roomRecord: Room | null = makeRoom(),
   wardRecord: Ward | null = makeWard(),
+  occupiedBedRecord: Bed | null = null,
 ) {
   const bedRepo = {
     create: jest.fn().mockImplementation((d) => d),
     save: jest.fn().mockImplementation(async (r) => r),
     find: jest.fn().mockResolvedValue(bedRecord ? [bedRecord] : []),
-    findOne: jest.fn().mockResolvedValue(bedRecord),
+    findOne: jest
+      .fn()
+      .mockImplementation(async (opts?: any) => {
+        if (opts?.where?.patientId) {
+          return occupiedBedRecord;
+        }
+        return bedRecord;
+      }),
     createQueryBuilder: jest.fn().mockReturnValue({
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
@@ -141,6 +149,19 @@ describe('BedOccupancyService', () => {
       const svc = mod.get(BedOccupancyService);
       await expect(svc.assignBed({ bedId: 'b1', patientId: 'p1' })).rejects.toThrow(
         NotFoundException,
+      );
+    });
+
+    it('throws ConflictException when the patient already occupies another bed', async () => {
+      const mod = await buildModule(
+        makeBed(),
+        makeRoom(),
+        makeWard(),
+        makeBed({ id: 'b2', status: BedStatus.OCCUPIED, patientId: 'p1' }),
+      );
+      const svc = mod.get(BedOccupancyService);
+      await expect(svc.assignBed({ bedId: 'b1', patientId: 'p1' })).rejects.toThrow(
+        ConflictException,
       );
     });
   });
