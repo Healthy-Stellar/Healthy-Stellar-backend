@@ -4,6 +4,7 @@ import { NotFoundException } from '@nestjs/common';
 import { WaitlistService } from './waitlist.service';
 import { AppointmentWaitlist, WaitlistStatus } from '../entities/appointment-waitlist.entity';
 import { Appointment, AppointmentStatus, AppointmentType, MedicalPriority } from '../entities/appointment.entity';
+import { TenantContext } from '../../common/context/tenant.context';
 
 const mockRepo = () => ({
   create: jest.fn(),
@@ -15,6 +16,7 @@ const mockRepo = () => ({
 const makeAppointment = (overrides: Partial<Appointment> = {}): Appointment =>
   ({
     id: 'appt-1',
+    tenantId: 'tenant-1',
     doctorId: 'doc-1',
     patientId: 'patient-1',
     appointmentDate: new Date('2026-08-10T09:00:00Z'),
@@ -42,12 +44,19 @@ describe('WaitlistService', () => {
     service = module.get(WaitlistService);
     repo = module.get(getRepositoryToken(AppointmentWaitlist));
     appointmentRepo = module.get(getRepositoryToken(Appointment));
+
+    jest.spyOn(TenantContext, 'getTenantId').mockReturnValue('tenant-1');
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   describe('join', () => {
-    it('creates a WAITING entry', async () => {
+    it('creates a WAITING entry scoped to the current tenant', async () => {
       const entry: Partial<AppointmentWaitlist> = {
         id: 'wl-1',
+        tenantId: 'tenant-1',
         patientId: 'p1',
         doctorId: 'doc-1',
         status: WaitlistStatus.WAITING,
@@ -63,7 +72,12 @@ describe('WaitlistService', () => {
       });
 
       expect(repo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ patientId: 'p1', doctorId: 'doc-1', status: WaitlistStatus.WAITING }),
+        expect.objectContaining({
+          tenantId: 'tenant-1',
+          patientId: 'p1',
+          doctorId: 'doc-1',
+          status: WaitlistStatus.WAITING,
+        }),
       );
       expect(result.status).toBe(WaitlistStatus.WAITING);
     });
@@ -71,12 +85,15 @@ describe('WaitlistService', () => {
 
   describe('leave', () => {
     it('sets status to CANCELLED', async () => {
-      const entry = { id: 'wl-1', patientId: 'p1', status: WaitlistStatus.WAITING };
+      const entry = { id: 'wl-1', tenantId: 'tenant-1', patientId: 'p1', status: WaitlistStatus.WAITING };
       repo.findOne.mockResolvedValue(entry);
       repo.save.mockResolvedValue({ ...entry, status: WaitlistStatus.CANCELLED });
 
       await service.leave('p1', 'wl-1');
 
+      expect(repo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ tenantId: 'tenant-1' }) }),
+      );
       expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ status: WaitlistStatus.CANCELLED }));
     });
 
@@ -90,6 +107,7 @@ describe('WaitlistService', () => {
     it('notifies the earliest waiting patient and returns the entry', async () => {
       const candidate: Partial<AppointmentWaitlist> = {
         id: 'wl-2',
+        tenantId: 'tenant-1',
         patientId: 'p2',
         doctorId: 'doc-1',
         status: WaitlistStatus.WAITING,
@@ -111,6 +129,17 @@ describe('WaitlistService', () => {
       );
     });
 
+    it('scopes candidate lookup to the appointment tenant', async () => {
+      repo.find.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+      await service.notifyNextEligible(makeAppointment({ tenantId: 'tenant-1' }));
+
+      // Both the stale-offer scan and the candidate lookup must be tenant-scoped.
+      expect(repo.find).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ tenantId: 'tenant-1' }) }),
+      );
+    });
+
     it('returns null when no candidates are waiting', async () => {
       repo.find
         .mockResolvedValueOnce([]) // stale check
@@ -123,6 +152,7 @@ describe('WaitlistService', () => {
     it('expires stale NOTIFIED entries before searching candidates', async () => {
       const stale: Partial<AppointmentWaitlist> = {
         id: 'wl-stale',
+        tenantId: 'tenant-1',
         status: WaitlistStatus.NOTIFIED,
         notifiedAt: new Date(Date.now() - 2 * 60 * 60_000), // 2 hours ago
         responseWindowMinutes: 30,
@@ -144,6 +174,7 @@ describe('WaitlistService', () => {
     it('accepts offer, books the appointment for the freed slot, and returns the updated entry', async () => {
       const waitlistEntry: Partial<AppointmentWaitlist> = {
         id: 'wl-1',
+        tenantId: 'tenant-1',
         patientId: 'patient-1',
         doctorId: 'doc-1',
         status: WaitlistStatus.NOTIFIED,
@@ -175,6 +206,7 @@ describe('WaitlistService', () => {
       expect(result.status).toBe(WaitlistStatus.ACCEPTED);
       expect(appointmentRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          tenantId: 'tenant-1',
           patientId: 'patient-1',
           doctorId: 'doc-1',
           status: AppointmentStatus.SCHEDULED,
@@ -192,6 +224,7 @@ describe('WaitlistService', () => {
     it('marks offer as EXPIRED and throws NotFoundException when response window passed', async () => {
       const expiredEntry: Partial<AppointmentWaitlist> = {
         id: 'wl-expired',
+        tenantId: 'tenant-1',
         patientId: 'patient-1',
         doctorId: 'doc-1',
         status: WaitlistStatus.NOTIFIED,
@@ -205,6 +238,43 @@ describe('WaitlistService', () => {
       await expect(service.acceptOffer('patient-1', 'wl-expired')).rejects.toThrow(NotFoundException);
       expect(repo.save).toHaveBeenCalledWith(
         expect.objectContaining({ status: WaitlistStatus.EXPIRED }),
+      );
+    });
+  });
+
+  describe('cross-tenant isolation', () => {
+    it('does not offer a slot to a waitlist entry from another tenant', async () => {
+      // Candidate belongs to tenant-2; current context is tenant-1.
+      const foreignCandidate: Partial<AppointmentWaitlist> = {
+        id: 'wl-foreign',
+        tenantId: 'tenant-2',
+        patientId: 'p-foreign',
+        doctorId: 'doc-1',
+        status: WaitlistStatus.WAITING,
+        preferredDateStart: new Date('2026-08-01T00:00:00Z'),
+        preferredDateEnd: new Date('2026-08-31T00:00:00Z'),
+        responseWindowMinutes: 30,
+      };
+
+      // Simulate a tenant-scoped repository: only return rows matching the tenant filter.
+      repo.find.mockImplementation(async ({ where }: any) => {
+        if (where?.status === WaitlistStatus.NOTIFIED) return [];
+        return where?.tenantId === 'tenant-1' ? [] : [foreignCandidate];
+      });
+
+      const result = await service.notifyNextEligible(makeAppointment({ tenantId: 'tenant-1' }));
+
+      expect(result).toBeNull();
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('scopes acceptOffer lookup to the current tenant', async () => {
+      repo.findOne.mockResolvedValue(null);
+
+      await expect(service.acceptOffer('patient-1', 'wl-foreign')).rejects.toThrow(NotFoundException);
+
+      expect(repo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ tenantId: 'tenant-1' }) }),
       );
     });
   });

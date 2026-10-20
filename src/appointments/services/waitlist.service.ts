@@ -17,8 +17,19 @@ export class WaitlistService {
     private readonly appointmentRepo: Repository<Appointment>,
   ) {}
 
+  private getScopedWhere(where: Record<string, any> = {}): Record<string, any> {
+    const tenantId = TenantContext.getTenantId();
+    return tenantId ? { ...where, tenantId } : where;
+  }
+
   async join(patientId: string, dto: JoinWaitlistDto): Promise<AppointmentWaitlist> {
+    const tenantId = TenantContext.getTenantId();
+    if (!tenantId) {
+      throw new NotFoundException('Tenant context is required to join the waitlist');
+    }
+
     const entry = this.waitlistRepo.create({
+      tenantId,
       patientId,
       doctorId: dto.doctorId,
       preferredDateStart: new Date(dto.preferredDateStart),
@@ -30,14 +41,18 @@ export class WaitlistService {
   }
 
   async leave(patientId: string, waitlistId: string): Promise<void> {
-    const entry = await this.waitlistRepo.findOne({ where: { id: waitlistId, patientId } });
+    const entry = await this.waitlistRepo.findOne({
+      where: this.getScopedWhere({ id: waitlistId, patientId }),
+    });
     if (!entry) throw new NotFoundException(`Waitlist entry ${waitlistId} not found`);
     entry.status = WaitlistStatus.CANCELLED;
     await this.waitlistRepo.save(entry);
   }
 
   async listForPatient(patientId: string): Promise<AppointmentWaitlist[]> {
-    return this.waitlistRepo.find({ where: { patientId, status: WaitlistStatus.WAITING } });
+    return this.waitlistRepo.find({
+      where: this.getScopedWhere({ patientId, status: WaitlistStatus.WAITING }),
+    });
   }
 
   /**
@@ -53,12 +68,12 @@ export class WaitlistService {
     await this.expireStaleOffers();
 
     const candidates = await this.waitlistRepo.find({
-      where: {
+      where: this.getScopedWhere({
         doctorId: cancelledAppointment.doctorId,
         status: WaitlistStatus.WAITING,
         preferredDateStart: LessThanOrEqual(slotDate),
         preferredDateEnd: MoreThanOrEqual(slotDate),
-      },
+      }),
       order: { createdAt: 'ASC' },
     });
 
@@ -73,7 +88,11 @@ export class WaitlistService {
 
   async acceptOffer(patientId: string, waitlistId: string): Promise<AppointmentWaitlist> {
     const entry = await this.waitlistRepo.findOne({
-      where: { id: waitlistId, patientId, status: WaitlistStatus.NOTIFIED },
+      where: this.getScopedWhere({
+        id: waitlistId,
+        patientId,
+        status: WaitlistStatus.NOTIFIED,
+      }),
     });
     if (!entry) {
       throw new NotFoundException(`No active offer found for waitlist entry ${waitlistId}`);
@@ -92,7 +111,7 @@ export class WaitlistService {
     let offeredAppointment: Appointment | null = null;
     if (entry.offeredAppointmentId) {
       offeredAppointment = await this.appointmentRepo.findOne({
-        where: { id: entry.offeredAppointmentId },
+        where: this.getScopedWhere({ id: entry.offeredAppointmentId }),
       });
     }
 
@@ -101,10 +120,10 @@ export class WaitlistService {
     const startTime = offeredAppointment?.startTime ?? appointmentDate;
     const endTime =
       offeredAppointment?.endTime ?? new Date(new Date(startTime).getTime() + duration * 60_000);
-    const tenantId = offeredAppointment?.tenantId || TenantContext.getTenantId();
+    const tenantId = entry.tenantId;
 
     const appointment = this.appointmentRepo.create({
-      tenantId: tenantId ?? '00000000-0000-0000-0000-000000000000',
+      tenantId,
       patientId: entry.patientId,
       doctorId: entry.doctorId,
       appointmentDate,
@@ -129,7 +148,9 @@ export class WaitlistService {
   }
 
   private async expireStaleOffers(): Promise<void> {
-    const notified = await this.waitlistRepo.find({ where: { status: WaitlistStatus.NOTIFIED } });
+    const notified = await this.waitlistRepo.find({
+      where: this.getScopedWhere({ status: WaitlistStatus.NOTIFIED }),
+    });
     const now = Date.now();
     const stale = notified.filter((e) => {
       if (!e.notifiedAt) return false;
