@@ -296,4 +296,53 @@ describe('ResearchExportService', () => {
       expect(s3SendSpy).not.toHaveBeenCalled();
     });
   });
+  // ── Organization isolation (no shared mutable state) ──────────────────────
+  describe('organization scoping', () => {
+    it('concurrent exports by researchers from different orgs only query their own org', async () => {
+      grantRepo.findOne.mockImplementation(async ({ where }: any) => ({
+        status: GrantStatus.ACTIVE,
+        expiresAt: null,
+        organizationId: where.granteeId === 'researcher-a' ? 'org-a' : 'org-b',
+      }));
+
+      const queriedOrgs: Record<string, string> = {};
+      recordRepo.createQueryBuilder.mockImplementation(() => {
+        const qb: any = {
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn((clause: string, params: any) => {
+            if (clause.includes('organizationId')) queriedOrgs[params.orgId] = params.orgId;
+            return qb;
+          }),
+          getMany: jest.fn(async () => {
+            await new Promise((r) => setImmediate(r));
+            return [];
+          }),
+        };
+        return qb;
+      });
+      patientRepo.find.mockResolvedValue([]);
+
+      const orgsSeen: string[] = [];
+      const spy = jest.spyOn(service as any, 'fetchRecords');
+      await Promise.all([
+        service.exportAnonymizedDataset('researcher-a', { dryRun: true }),
+        service.exportAnonymizedDataset('researcher-b', { dryRun: true }),
+      ]);
+      spy.mock.calls.forEach((c) => orgsSeen.push(c[1] as string));
+
+      expect(orgsSeen.sort()).toEqual(['org-a', 'org-b']);
+      expect(Object.keys(queriedOrgs).sort()).toEqual(['org-a', 'org-b']);
+    });
+
+    it('fetchRecordsAndPatients filters on the organization it is given', async () => {
+      const qb: any = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+      recordRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.fetchRecordsAndPatients({}, 'org-x');
+      expect(qb.andWhere).toHaveBeenCalledWith('r.organizationId = :orgId', { orgId: 'org-x' });
+    });
+  });
 });
