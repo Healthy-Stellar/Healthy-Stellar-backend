@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, Between, In } from 'typeorm';
 import {
@@ -9,6 +14,16 @@ import { CreateMarDto } from '../dto/create-mar.dto';
 import { AdministerMedicationDto } from '../dto/administer-medication.dto';
 import { MissedDoseService } from './missed-dose.service';
 import { AlertService } from './alert.service';
+import { User } from '../../users/entities/user.entity';
+
+/** Roles permitted to act as the second-person witness for a medication administration. */
+const WITNESS_ALLOWED_ROLES = ['NURSE', 'PHARMACIST'];
+
+/** Identity of the authenticated nurse performing the administration, derived from req.user. */
+export interface AdministeringNurse {
+  nurseId: string;
+  nurseName: string;
+}
 
 @Injectable()
 export class MarService {
@@ -18,6 +33,8 @@ export class MarService {
     private missedDoseService: MissedDoseService,
     private alertService: AlertService,
     private dataSource: DataSource,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
   ) {}
 
   async create(createMarDto: CreateMarDto): Promise<MedicationAdministrationRecord> {
@@ -62,8 +79,9 @@ export class MarService {
   async administerDoseById(
     marId: string,
     dto: Omit<AdministerMedicationDto, 'marId'>,
+    nurse: AdministeringNurse,
   ): Promise<MedicationAdministrationRecord> {
-    return this.administerMedication({ ...dto, marId });
+    return this.administerMedication({ ...dto, marId }, nurse);
   }
 
   async findByPatientAndDate(
@@ -116,7 +134,12 @@ export class MarService {
 
   async administerMedication(
     dto: AdministerMedicationDto,
+    nurse: AdministeringNurse,
   ): Promise<MedicationAdministrationRecord> {
+    if (!nurse?.nurseId) {
+      throw new ForbiddenException('Authenticated nurse identity is required');
+    }
+
     return this.dataSource.transaction(async (manager) => {
       const mar = await manager.findOne(MedicationAdministrationRecord, {
         where: { id: dto.marId },
@@ -140,15 +163,30 @@ export class MarService {
         ];
         if (!requiredVerifications.every((v) => v === true))
           throw new BadRequestException('All verifications required for high-alert medication');
-        if (mar.requiresWitness && !dto.witnessId)
-          throw new BadRequestException('Witness required for this medication');
       }
 
-      Object.assign(mar, { ...dto, administrationTime: new Date(dto.administrationTime), updatedAt: new Date() });
+      if (mar.requiresWitness) {
+        await this.validateWitness(dto.witnessId, nurse.nurseId);
+      }
+
+      // Nurse identity is always taken from the authenticated principal, never from the request body.
+      const { nurseId: _ignoredNurseId, nurseName: _ignoredNurseName, ...dtoWithoutNurse } = dto;
+      Object.assign(mar, {
+        ...dtoWithoutNurse,
+        nurseId: nurse.nurseId,
+        nurseName: nurse.nurseName,
+        administrationTime: new Date(dto.administrationTime),
+        updatedAt: new Date(),
+      });
       const updatedMar = await manager.save(MedicationAdministrationRecord, mar);
 
       if (dto.status === AdministrationStatus.MISSED) {
-        await this.missedDoseService.createMissedDoseWithManager(manager, mar, dto.nurseId, dto.nurseName);
+        await this.missedDoseService.createMissedDoseWithManager(
+          manager,
+          mar,
+          nurse.nurseId,
+          nurse.nurseName,
+        );
       }
 
       if (dto.status === AdministrationStatus.REFUSED && mar.isHighAlert) {
@@ -157,6 +195,32 @@ export class MarService {
 
       return updatedMar;
     });
+  }
+
+  /**
+   * Validates the second-person witness for a dose requiring dual verification:
+   * the witness must be supplied, must be a different person from the administering
+   * nurse, must exist, and must hold an allowed clinical role.
+   */
+  private async validateWitness(witnessId: string | undefined, nurseId: string): Promise<void> {
+    if (!witnessId) {
+      throw new BadRequestException('Witness required for this medication');
+    }
+
+    if (witnessId === nurseId) {
+      throw new BadRequestException('Witness must be a different person from the administering nurse');
+    }
+
+    const witness = await this.userRepository.findOne({ where: { id: witnessId } });
+    if (!witness) {
+      throw new BadRequestException('Witness user not found');
+    }
+
+    const role = (witness as any).role;
+    const roleName = typeof role === 'string' ? role : role?.name;
+    if (!roleName || !WITNESS_ALLOWED_ROLES.includes(String(roleName).toUpperCase())) {
+      throw new ForbiddenException('Witness must be a nurse or pharmacist');
+    }
   }
 
   async findOne(id: string): Promise<MedicationAdministrationRecord> {
