@@ -1,3 +1,9 @@
+jest.mock('jsondiffpatch', () => ({
+  create: () => ({
+    diff: () => ({}),
+  }),
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { TreatmentPlanningController } from './treatment-planning.controller';
 import { TreatmentPlanningService } from './treatment-planning.service';
@@ -46,52 +52,51 @@ describe('TreatmentPlanningController', () => {
     it('should extract userId from req.user and pass as authorId to service', async () => {
       const mockReq = {
         user: {
-          userId: 'doctor-uuid-456',
-          email: 'doctor@hospital.org',
+          id: 'user-uuid-123',
+          role: 'doctor',
         },
       };
+      const planId = 'plan-uuid-abc';
+      const updateDto = { notes: 'Updated notes' } as any;
 
-      const result = await controller.updatePlan(
-        'plan-001',
-        { title: 'Cardiology Care Plan', diagnosis: 'Hypertension' },
-        mockReq,
-      );
+      const result = await controller.updatePlan(planId, updateDto, mockReq as any);
 
-      expect(service.savePlan).toHaveBeenCalledWith(
-        'plan-001',
-        { title: 'Cardiology Care Plan', diagnosis: 'Hypertension' },
-        'doctor-uuid-456',
-      );
-      expect((result as any).authorId).toBe('doctor-uuid-456');
+      expect(service.savePlan).toHaveBeenCalledWith(planId, updateDto, 'user-uuid-123');
+      expect(result).toHaveProperty('authorId', 'user-uuid-123');
     });
 
-    it('should fall back to req.user.id or system-user if userId is not directly present', async () => {
-      const mockReqWithId = {
+    it('should fallback to sub if id is missing in req.user', async () => {
+      const mockReq = {
         user: {
-          id: 'user-id-fallback',
+          sub: 'sub-uuid-456',
+          role: 'doctor',
         },
       };
+      const planId = 'plan-uuid-abc';
+      const updateDto = { notes: 'Updated notes' } as any;
 
-      await controller.updatePlan('plan-002', { title: 'Follow-up' }, mockReqWithId);
-      expect(service.savePlan).toHaveBeenCalledWith('plan-002', { title: 'Follow-up' }, 'user-id-fallback');
+      const result = await controller.updatePlan(planId, updateDto, mockReq as any);
 
-      const mockReqAnonymous = {};
-      await controller.updatePlan('plan-003', { title: 'System Plan' }, mockReqAnonymous);
-      expect(service.savePlan).toHaveBeenCalledWith('plan-003', { title: 'System Plan' }, 'system-user');
+      expect(service.savePlan).toHaveBeenCalledWith(planId, updateDto, 'sub-uuid-456');
+      expect(result).toHaveProperty('authorId', 'sub-uuid-456');
     });
   });
 
   describe('revertToVersion', () => {
-    it('should call revertToVersion with parsed authorId', async () => {
+    it('should extract userId from req.user and pass as authorId to service', async () => {
       const mockReq = {
         user: {
-          userId: 'doc-789',
+          id: 'reverter-uuid-789',
+          role: 'doctor',
         },
       };
+      const planId = 'plan-uuid-abc';
+      const version = 2;
 
-      const result = await controller.revertToVersion('plan-001', 2, mockReq);
-      expect(service.revertToVersion).toHaveBeenCalledWith('plan-001', 2, 'doc-789');
-      expect((result as any).authorId).toBe('doc-789');
+      const result = await controller.revertToVersion(planId, version, mockReq as any);
+
+      expect(service.revertToVersion).toHaveBeenCalledWith(planId, version, 'reverter-uuid-789');
+      expect(result).toHaveProperty('authorId', 'reverter-uuid-789');
     });
   });
 });
