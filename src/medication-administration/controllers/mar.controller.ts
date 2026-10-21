@@ -12,6 +12,8 @@ import {
 import { MarService } from '../services/mar.service';
 import { CreateMarDto } from '../dto/create-mar.dto';
 import { AdministerMedicationDto } from '../dto/administer-medication.dto';
+import { UpdateMarDto } from '../dto/update-mar.dto';
+import { VoidMarDto } from '../dto/void-mar.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -114,13 +116,19 @@ export class MarController {
 
   @Patch(':id')
   @Roles(UserRole.NURSE, UserRole.PHYSICIAN)
-  update(@Param('id') id: string, @Body() updateData: any) {
+  update(@Param('id') id: string, @Body() updateData: UpdateMarDto) {
     return this.marService.update(id, updateData);
+  }
+
+  @Post(':id/void')
+  @Roles(UserRole.PHYSICIAN, UserRole.ADMIN)
+  voidRecord(@Param('id') id: string, @Body() voidDto: VoidMarDto) {
+    return this.marService.voidRecord(id, voidDto);
   }
 
   @Delete(':id')
   @Roles(UserRole.PHYSICIAN, UserRole.ADMIN)
-  remove(@Param('id') id: string) {
-    return this.marService.remove(id);
+  remove(@Param('id') id: string, @Body() voidDto: VoidMarDto) {
+    return this.marService.voidRecord(id, voidDto);
   }
 }
