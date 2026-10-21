@@ -20,6 +20,7 @@ import { TenantContext } from '../../tenant/context/tenant.context';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { UserRole } from '../../auth/entities/user.entity';
+import { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 
 @ApiTags('Consent Management')
 @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
@@ -38,7 +39,7 @@ export class ConsentController {
     const organizationId = TenantContext.getTenantId();
     const record = await this.medicalRecordsService.findOne(createDto.recordId, undefined, organizationId);
     const patientId = record.patientId;
-    const callerId: string = req.user.id;
+    const callerId: string = (req.user as JwtPayload).userId;
     if (
       req.user.role !== UserRole.ADMIN &&
       req.user.role !== UserRole.SUPER_ADMIN &&
@@ -52,14 +53,31 @@ export class ConsentController {
   @Get('record/:recordId')
   @ApiOperation({ summary: 'Get all consents for a medical record' })
   @ApiResponse({ status: 200, description: 'Consents retrieved successfully' })
-  async findByRecord(@Param('recordId') recordId: string) {
+  async findByRecord(@Param('recordId') recordId: string, @Req() req: any) {
+    const callerId: string = (req.user as JwtPayload).userId;
+    const organizationId = TenantContext.getTenantId();
+    const record = await this.medicalRecordsService.findOne(recordId, undefined, organizationId);
+    const isAdmin =
+      req.user.role === UserRole.ADMIN || req.user.role === UserRole.SUPER_ADMIN;
+    if (!isAdmin && record.patientId !== callerId) {
+      const hasGrant = await this.consentService.hasActiveConsentForRecord(recordId, callerId);
+      if (!hasGrant) {
+        throw new ForbiddenException('You do not have access to this record');
+      }
+    }
     return this.consentService.findByRecord(recordId);
   }
 
   @Get('patient/:patientId')
   @ApiOperation({ summary: 'Get all consents for a patient' })
   @ApiResponse({ status: 200, description: 'Consents retrieved successfully' })
-  async findByPatient(@Param('patientId') patientId: string) {
+  async findByPatient(@Param('patientId') patientId: string, @Req() req: any) {
+    const callerId: string = (req.user as JwtPayload).userId;
+    const isAdmin =
+      req.user.role === UserRole.ADMIN || req.user.role === UserRole.SUPER_ADMIN;
+    if (!isAdmin && patientId !== callerId) {
+      throw new ForbiddenException('You may only view your own consents');
+    }
     return this.consentService.findByPatient(patientId);
   }
 
@@ -71,7 +89,11 @@ export class ConsentController {
     @Query('consentType') consentType: ConsentType,
     @Req() req: any,
   ) {
-    const hasConsent = await this.consentService.checkConsent(recordId, req.user.id, consentType);
+    const hasConsent = await this.consentService.checkConsent(
+      recordId,
+      (req.user as JwtPayload).userId,
+      consentType,
+    );
     return { hasConsent };
   }
 
@@ -79,15 +101,28 @@ export class ConsentController {
   @ApiOperation({ summary: 'Get a consent by ID' })
   @ApiResponse({ status: 200, description: 'Consent retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Consent not found' })
-  async findOne(@Param('id') id: string) {
-    return this.consentService.findOne(id);
+  async findOne(@Param('id') id: string, @Req() req: any) {
+    const callerId: string = (req.user as JwtPayload).userId;
+    const consent = await this.consentService.findOne(id);
+    const isAdmin =
+      req.user.role === UserRole.ADMIN || req.user.role === UserRole.SUPER_ADMIN;
+    if (!isAdmin && consent.patientId !== callerId) {
+      const hasGrant = await this.consentService.hasActiveConsentForRecord(
+        consent.recordId,
+        callerId,
+      );
+      if (!hasGrant) {
+        throw new ForbiddenException('You do not have access to this consent');
+      }
+    }
+    return consent;
   }
 
   @Put(':id/revoke')
   @ApiOperation({ summary: 'Revoke a consent' })
   @ApiResponse({ status: 200, description: 'Consent revoked successfully' })
   async revoke(@Param('id') id: string, @Body('reason') reason: string, @Req() req: any) {
-    const callerId: string = req.user.id;
+    const callerId: string = (req.user as JwtPayload).userId;
     const consent = await this.consentService.findOne(id);
     if (
       req.user.role !== UserRole.ADMIN &&

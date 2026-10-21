@@ -124,6 +124,14 @@ export class AppointmentService {
       throw new ForbiddenException('Tenant context missing');
     }
 
+    // Ownership check: patients may only book for themselves. Staff roles
+    // (admins, physicians, etc.) may book on behalf of any patient in the
+    // tenant.
+    const context = getRequestContext();
+    if (context?.role === UserRole.PATIENT && createAppointmentDto.patientId !== context.userId) {
+      throw new ForbiddenException('Patients can only book appointments for themselves');
+    }
+
     const appointmentDate = new Date(createAppointmentDto.appointmentDate);
     const duration = createAppointmentDto.duration;
     const startTime = new Date(appointmentDate);
@@ -258,10 +266,11 @@ export class AppointmentService {
 
         const saved = await transactionalEntityManager.save(Appointment, appointment);
 
-        // Audit log: APPOINTMENT_CREATED (non-blocking).
+        // Audit log: APPOINTMENT_CREATED (non-blocking). Attribute the action
+        // to the real caller when known, falling back to the patient id.
         await this.auditService
           .log({
-            actorId: createAppointmentDto.patientId,
+            actorId: context?.userId ?? createAppointmentDto.patientId,
             action: 'APPOINTMENT_CREATED',
             resourceId: saved.id,
             resourceType: 'Appointment',
@@ -444,17 +453,25 @@ export class AppointmentService {
       throw new NotFoundException(`Appointment with ID ${id} not found`);
     }
 
+    // Ownership check: patients may only change the status of their own
+    // appointments. Staff roles may change any appointment in the tenant.
+    const context = getRequestContext();
+    if (context?.role === UserRole.PATIENT && appointment.patientId !== context.userId) {
+      throw new ForbiddenException('Patients can only modify their own appointments');
+    }
+
     appointment.status = status;
     const updated = await this.appointmentRepository.save(appointment);
 
-    // Audit log appropriate action based on status change
+    // Audit log appropriate action based on status change. Attribute the
+    // action to the real caller when known, falling back to the patient id.
     const auditAction =
       status === AppointmentStatus.CANCELLED
         ? 'APPOINTMENT_CANCELLED'
         : 'APPOINTMENT_UPDATED';
 
     await this.auditService.log({
-      actorId: appointment.patientId,
+      actorId: context?.userId ?? appointment.patientId,
       action: auditAction,
       resourceId: id,
       resourceType: 'Appointment',

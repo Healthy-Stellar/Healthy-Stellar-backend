@@ -14,6 +14,7 @@ We welcome contributions from developers of all skill levels. To maintain code q
 - [Development Workflow & Branching Strategy](#development-workflow--branching-strategy)
 - [Commit Message Format](#commit-message-format)
 - [Code Quality & Safety Checks](#code-quality--safety-checks)
+- [New Controller Security Checklist](#new-controller-security-checklist)
 - [Working with `@medchain/sdk`](#working-with-medchainsdk)
 - [Testing Guidelines](#testing-guidelines)
 - [Pull Request Process](#pull-request-process)
@@ -169,6 +170,20 @@ npm run test:i18n
 
 ---
 
+## New Controller Security Checklist
+
+There is **no global authentication guard** in this application. Every controller is responsible for opting in to authentication and authorization. Before opening a PR that adds or modifies a controller, confirm each item below. For the full auth model (token issuance/refresh, principal shape, guard catalogue, roles, `@Public()`, API keys, MFA, SMART scopes), see [`docs/auth.md`](docs/auth.md).
+
+- [ ] **Opt in to guards**: Decorate the controller (or each handler) with `@UseGuards(JwtAuthGuard, RolesGuard)`. `RolesGuard` alone does **not** authenticate the request, and `AdminGuard`, `PatientPrivacyGuard` and `MedicalRbacGuard` do not authenticate on their own either — always pair them with `JwtAuthGuard`.
+- [ ] **Declare explicit roles**: Add `@Roles(...)` (or `@HipaaRoles(...)` / `@RequireAdmin()`) to every guarded handler. `RolesGuard` with no `@Roles` metadata allows **any authenticated user** through. Use only valid `UserRole` enum values.
+- [ ] **Use the correct principal fields**: The JWT principal is `{ userId, email, role, mfaEnabled, sessionId, organizationId }`. Read `req.user.userId` — there is no `id`, `sub` or `tenantId` on the principal.
+- [ ] **Enforce ownership**: For patient-scoped resources, verify the authenticated user owns (or is authorized for) the resource — do not rely on the route parameter alone. Return `403`/`404` rather than leaking existence.
+- [ ] **Mark public routes**: Any route that must be reachable without a token (login, refresh, health checks, webhooks) must be explicitly decorated with `@Public()`. Never leave a route unguarded by accident.
+- [ ] **Document roles in Swagger**: Annotate handlers with `@ApiBearerAuth()` and describe the required roles in the operation summary/description so the generated OpenAPI spec and SDK reflect the access requirements.
+- [ ] **Add e2e IDOR tests**: Include `.e2e-spec.ts` coverage proving that a user without the required role or ownership is rejected (401/403), and that cross-tenant/cross-patient access is blocked.
+
+---
+
 ## Working with `@medchain/sdk`
 
 The TypeScript SDK lives under `packages/sdk` and is built automatically from the backend OpenAPI/Swagger schema.
@@ -240,7 +255,7 @@ When adding new service logic or API endpoints, include accompanying `.spec.ts` 
    ```
 2. **Update CHANGELOG.md**: Document your additions, fixes, or breaking changes in the `[Unreleased]` section of `CHANGELOG.md`.
 3. **Submit PR**: Open a Pull Request targeting `main`.
-4. **Fill out PR Template**: Include clear summary details, linked issues (e.g., `Closes #123`), and verification steps.
+4. **Fill out PR Template**: Include clear summary details, linked issues (e.g., `Closes #123`), and verification steps. If your PR touches a controller, confirm the [New Controller Security Checklist](#new-controller-security-checklist) in the PR template.
 5. **Address Code Review**: Resolve feedback from maintainers. Once approved and CI passes, your branch will be squash-merged into `main`.
 
 Thank you for helping build a secure, decentralized healthcare ecosystem! 🚀
