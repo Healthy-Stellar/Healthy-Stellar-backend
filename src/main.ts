@@ -14,6 +14,30 @@ import { applySecurityHeaders } from './security/http-security.config';
 import { ApiVersionLifecycleInterceptor } from './versioning/api-version-lifecycle.interceptor';
 import { API_BEARER_AUTH_SCHEME } from './common/constants/swagger.constants';
 
+/**
+ * Parse a comma-separated list of `Name|URL` (or bare `URL`) entries into
+ * Swagger server definitions. Falls back to a relative server so that
+ * "Try it out" always targets the host serving the docs.
+ */
+function parseSwaggerServers(raw?: string): Array<{ url: string; description: string }> {
+  const entries = (raw ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (entries.length === 0) {
+    return [{ url: '/', description: 'Current server' }];
+  }
+
+  return entries.map((entry) => {
+    const [first, second] = entry.split('|').map((part) => part.trim());
+    if (second) {
+      return { url: second, description: first };
+    }
+    return { url: first, description: first };
+  });
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
@@ -145,25 +169,40 @@ async function bootstrap() {
   );
 
   // Medical-Grade API Documentation
-  const config = new DocumentBuilder()
+  const swaggerServers = parseSwaggerServers(process.env.SWAGGER_SERVER_URLS);
+  const contactName = process.env.SWAGGER_CONTACT_NAME;
+  const contactEmail = process.env.SWAGGER_CONTACT_EMAIL;
+  const contactUrl = process.env.SWAGGER_CONTACT_URL;
+  const licenseName = process.env.SWAGGER_LICENSE_NAME;
+  const licenseUrl = process.env.SWAGGER_LICENSE_URL;
+
+  const builder = new DocumentBuilder()
     .setTitle('Medical Records Management API')
     .setDescription(
       `
       **HIPAA-Compliant Healthcare Management System**
       
       ⚠️ **MEDICAL DATA PRIVACY NOTICE**
-      This API handles Protected Health Information (PHI). All data is encrypted and access is logged for compliance.
+      This API handles Protected Health Information (PHI). Access is authenticated and audited for compliance.
       
       **HL7 FHIR R4 Compatible**
       - Supports FHIR resource types
       - Implements medical coding standards (ICD-10, SNOMED CT)
       - Maintains audit trails per HIPAA requirements
       
-      **Security & Compliance**
-      - All endpoints require authentication
-      - Medical data is anonymized in examples
-      - Audit logging for all operations
-      - End-to-end encryption
+      **Authentication Model**
+      - Most endpoints require a bearer JWT (\`Authorization: Bearer <token>\`) issued by the identity service.
+      - Service-to-service integrations may authenticate with an API key header.
+      - Routes marked \`@Public\` are intentionally unauthenticated, e.g. health checks,
+        CDS discovery (\`/cds-services\`), and unsubscribe links. Do not send credentials to them.
+      - Role- and consent-based authorization is enforced per resource; a valid token does not
+        imply access to every patient record.
+      
+      **Data Protection**
+      - PHI columns are protected with envelope encryption at rest (per-record data keys wrapped
+        by a KMS-managed master key). This is encryption at rest, not end-to-end encryption.
+      - Example payloads use synthetic data only; never submit real PHI to the documentation UI.
+      - Audit logging is recorded for all operations.
       
       ---
       
@@ -204,8 +243,6 @@ async function bootstrap() {
     `,
     )
     .setVersion('1.0.0')
-    .setContact('Medical IT Team', 'https://medical-system.com', 'medical-it@hospital.com')
-    .setLicense('Medical License', 'https://medical-system.com/license')
     .addBearerAuth(
       {
         type: 'http',
@@ -214,6 +251,15 @@ async function bootstrap() {
         description: 'Medical staff authentication token',
       },
       API_BEARER_AUTH_SCHEME,
+    )
+    .addApiKey(
+      {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-API-Key',
+        description: 'API key for service-to-service integrations',
+      },
+      'api-key',
     )
     .addTag('Medical Records', 'Patient medical record management')
     .addTag('Clinical Templates', 'Standardized clinical documentation')
@@ -227,10 +273,42 @@ async function bootstrap() {
     .addTag('Financial Reporting & Analytics', 'Revenue cycle and financial analytics')
     .addTag('Pharmacy Management', 'Drug inventory and prescription management')
     .addTag('Laboratory Management', 'Lab test ordering and result management')
-    .addTag('Error Responses', 'Standard error response format and error codes')
-    .addServer('https://api.medical-system.com', 'Production Server')
-    .addServer('https://staging-api.medical-system.com', 'Staging Server')
-    .build();
+    .addTag('Patients', 'Patient demographics and registration')
+    .addTag('Appointments', 'Scheduling and appointment management')
+    .addTag('Prescriptions', 'Prescription lifecycle management')
+    .addTag('Allergies', 'Allergy and intolerance records')
+    .addTag('Immunizations', 'Vaccination records')
+    .addTag('Diagnoses', 'Diagnosis and problem list management')
+    .addTag('Vitals', 'Vital signs capture and history')
+    .addTag('Documents', 'Clinical document management')
+    .addTag('Audit', 'Audit trail and access logs')
+    .addTag('Authentication', 'Login, token issuance and session management')
+    .addTag('Users & Roles', 'User accounts and role administration')
+    .addTag('Notifications', 'Alerts and notification delivery')
+    .addTag('Messaging', 'Secure patient and provider messaging')
+    .addTag('Telemedicine', 'Virtual visit sessions')
+    .addTag('Scheduling', 'Resource and calendar scheduling')
+    .addTag('Inventory', 'Medical supply and stock management')
+    .addTag('Integrations', 'External system integrations and HL7/FHIR exchange')
+    .addTag('FHIR', 'HL7 FHIR R4 resource endpoints')
+    .addTag('CDS Hooks', 'Clinical decision support discovery and services')
+    .addTag('Health', 'Liveness and readiness probes (public)')
+    .addTag('Subscriptions', 'Webhook and event subscriptions')
+    .addTag('Unsubscribe', 'Public unsubscribe links')
+    .addTag('Admin', 'Administrative and maintenance operations')
+    .addTag('Error Responses', 'Standard error response format and error codes');
+
+  if (contactName || contactEmail || contactUrl) {
+    builder.setContact(contactName ?? '', contactUrl ?? '', contactEmail ?? '');
+  }
+  if (licenseName) {
+    builder.setLicense(licenseName, licenseUrl);
+  }
+  for (const server of swaggerServers) {
+    builder.addServer(server.url, server.description);
+  }
+
+  const config = builder.build();
 
   const document = SwaggerModule.createDocument(app, config);
 

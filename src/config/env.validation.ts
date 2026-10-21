@@ -52,4 +52,12 @@ export const envValidationSchema = Joi.object({
   // Rate limiting
   RATE_LIMIT_TTL: Joi.number().integer().default(60),
   RATE_LIMIT_MAX: Joi.number().integer().default(100),
+
+  // Swagger / OpenAPI metadata
+  SWAGGER_SERVER_URLS: Joi.string().default('http://localhost:3000'),
+  SWAGGER_CONTACT_NAME: Joi.string().default('API Support'),
+  SWAGGER_CONTACT_EMAIL: Joi.string().email().default('api-support@example.com'),
+  SWAGGER_CONTACT_URL: Joi.string().uri().default('https://example.com/support'),
+  SWAGGER_LICENSE_NAME: Joi.string().default('UNLICENSED'),
+  SWAGGER_LICENSE_URL: Joi.string().uri().allow('').default(''),
 }).options({ allowUnknown: true, abortEarly: false });

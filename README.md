@@ -15,6 +15,7 @@ NestJS backend for a decentralized healthcare system built on Stellar Soroban sm
 - [Webhooks](#webhooks)
 - [Postman Collection](#postman-collection)
 - [Database Schema](#database-schema)
+- [Multi-Tenancy](#multi-tenancy)
 - [Error Handling](#error-handling)
 - [Testing](#testing)
 - [Deployment](#deployment)
@@ -461,6 +462,16 @@ Import [`docs/postman/MedChain.postman_collection.json`](docs/postman/MedChain.p
 
 The authoritative database schema is defined by the [TypeORM migrations](src/migrations/)
 and corresponding entity definitions in `src/`.
+
+## Multi-Tenancy
+
+How the current tenant is resolved, how schema/region routing and Row-Level
+Security work, when a new entity needs a `tenantId`/`organizationId` column, and
+how cron and queue jobs must establish tenant context is documented in
+**[docs/multi-tenancy.md](docs/multi-tenancy.md)**.
+
+> Never trust the `x-tenant-id` request header for authenticated requests — the
+> tenant always comes from the verified JWT. See the doc for details.
 
 ## Error Handling
 
