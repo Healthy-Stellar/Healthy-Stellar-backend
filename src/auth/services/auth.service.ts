@@ -4,18 +4,19 @@ import {
   UnauthorizedException,
   ConflictException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from '../entities/user.entity';
 import { PasswordValidationService } from './password-validation.service';
-import { AuthTokenService } from './auth-token.service';
+import { AuthTokenService, JwtPayload } from './auth-token.service';
 import { MfaService } from './mfa.service';
 import { SessionManagementService } from './session-management.service';
 import { RefreshTokenStoreService } from './refresh-token-store.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
-import { RegisterDto, LoginDto, ChangePasswordDto } from '../dto/auth.dto';
+import { RegisterDto, RegisterStaffDto, LoginDto, ChangePasswordDto } from '../dto/auth.dto';
 
 export interface AuthResponse {
   user: {
@@ -56,6 +57,48 @@ export class AuthService {
     ipAddress: string,
     userAgent: string,
   ): Promise<AuthResponse> {
+    const savedUser = await this.createUser(registerDto, role, ipAddress);
+
+    // For healthcare staff, require MFA setup
+    if (role !== UserRole.PATIENT) {
+      savedUser.requiresPasswordChange = false; // Password was just set
+      await this.userRepository.save(savedUser);
+    }
+
+    // Create session
+    const sessionId = this.generateSessionId();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    const refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+    const tokens = this.authTokenService.generateTokenPair(savedUser, sessionId);
+
+    await this.sessionManagementService.createSession(
+      savedUser.id,
+      tokens.accessToken,
+      tokens.refreshToken,
+      expiresAt,
+      refreshTokenExpiresAt,
+      ipAddress,
+      userAgent,
+    );
+    await this.refreshTokenStore.store(sessionId, tokens.refreshToken);
+
+    return {
+      user: this.formatUser(savedUser),
+      tokens: {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+      },
+    };
+  }
+
+  private async createUser(
+    registerDto: RegisterDto,
+    role: UserRole,
+    ipAddress: string,
+    organizationId?: string,
+  ): Promise<User> {
     // Validate email uniqueness
     const existingUser = await this.userRepository.findOne({
       where: { email: registerDto.email },
@@ -96,6 +139,7 @@ export class AuthService {
       lastPasswordChangeAt: new Date(),
       mfaEnabled: false,
       requiresPasswordChange: false,
+      ...(organizationId ? { organizationId } : {}),
     });
 
     const savedUser = await this.userRepository.save(user);
@@ -109,38 +153,30 @@ export class AuthService {
       metadata: { email: savedUser.email, role: savedUser.role, success: true },
     });
 
-    // For healthcare staff, require MFA setup
-    if (role !== UserRole.PATIENT) {
-      savedUser.requiresPasswordChange = false; // Password was just set
-      await this.userRepository.save(savedUser);
+    return savedUser;
+  }
+
+  /**
+   * Admin-created staff account. Role assignment is checked against the caller's
+   * role and the new user inherits the caller's organization. No session or tokens
+   * are issued for the new account.
+   */
+  async registerStaff(
+    dto: RegisterStaffDto,
+    caller: JwtPayload,
+    ipAddress: string,
+  ): Promise<{ user: AuthResponse['user'] }> {
+    if (dto.role === UserRole.PATIENT) {
+      throw new BadRequestException('Use /register endpoint for patient registration');
     }
 
-    // Create session
-    const sessionId = this.generateSessionId();
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-    const refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const privilegedRoles = [UserRole.ADMIN, UserRole.SUPER_ADMIN];
+    if (caller.role !== UserRole.SUPER_ADMIN && privilegedRoles.includes(dto.role)) {
+      throw new ForbiddenException('Only a super admin can create admin accounts');
+    }
 
-    const tokens = this.authTokenService.generateTokenPair(user, sessionId);
-
-    await this.sessionManagementService.createSession(
-      savedUser.id,
-      tokens.accessToken,
-      tokens.refreshToken,
-      expiresAt,
-      refreshTokenExpiresAt,
-      ipAddress,
-      userAgent,
-    );
-    await this.refreshTokenStore.store(sessionId, tokens.refreshToken);
-
-    return {
-      user: this.formatUser(savedUser),
-      tokens: {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresIn: tokens.expiresIn,
-      },
-    };
+    const savedUser = await this.createUser(dto, dto.role, ipAddress, caller.organizationId ?? undefined);
+    return { user: this.formatUser(savedUser) };
   }
 
   /**
