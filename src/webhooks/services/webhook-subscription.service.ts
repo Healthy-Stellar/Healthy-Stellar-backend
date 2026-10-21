@@ -8,17 +8,20 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomBytes, createHmac } from 'crypto';
-import axios from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { WebhookSubscription } from '../entities/webhook-subscription.entity';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { UserRole } from '../../auth/entities/user.entity';
+import { assertSafeOutboundUrl, safePost } from '../../common/utils/safe-outbound-url';
 import {
   CreateWebhookSubscriptionDto,
   UpdateWebhookSubscriptionDto,
 } from '../dto/webhook-subscription.dto';
 
 const DEFAULT_MAX_PER_TENANT = 25;
+
+const GENERIC_ENDPOINT_ERROR =
+  'Endpoint validation failed: the URL did not respond with a 2xx status to a ping';
 
 // Event namespaces that carry PHI. Only SUPER_ADMIN may subscribe to these.
 const PHI_EVENT_PREFIXES = ['patient.', 'prescription.', 'lab.'];
@@ -114,7 +117,10 @@ export class WebhookSubscriptionService {
   ): Promise<WebhookSubscription> {
     const sub = await this.findOwnedSubscription(tenantId, id);
 
-    if (dto.url !== undefined) sub.url = dto.url;
+    if (dto.url !== undefined && dto.url !== sub.url) {
+      await this.pingEndpoint(dto.url, sub.secret);
+      sub.url = dto.url;
+    }
     if (dto.events !== undefined) sub.events = dto.events;
     if (dto.isActive !== undefined) sub.isActive = dto.isActive;
     if (dto.maxRetries !== undefined) sub.maxRetries = dto.maxRetries;
@@ -168,11 +174,14 @@ export class WebhookSubscriptionService {
   }
 
   async pingEndpoint(url: string, secret: string): Promise<void> {
+    await assertSafeOutboundUrl(url);
+
     const payload = JSON.stringify({ type: 'ping', timestamp: new Date().toISOString() });
     const signature = createHmac('sha256', secret).update(payload).digest('hex');
 
+    let status: number;
     try {
-      const response = await axios.post(url, JSON.parse(payload), {
+      const response = await safePost(url, JSON.parse(payload), {
         headers: {
           'Content-Type': 'application/json',
           'X-Webhook-Event': 'ping',
@@ -181,15 +190,15 @@ export class WebhookSubscriptionService {
         timeout: 10_000,
         validateStatus: () => true,
       });
-
-      if (response.status < 200 || response.status >= 300) {
-        throw new BadRequestException(
-          `Endpoint validation failed: target responded with HTTP ${response.status}`,
-        );
-      }
+      status = response.status;
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
-      throw new BadRequestException(`Endpoint validation failed: ${(err as Error).message}`);
+      this.logger.warn(`Webhook endpoint ping failed: ${(err as Error).message}`);
+      throw new BadRequestException(GENERIC_ENDPOINT_ERROR);
+    }
+
+    if (status < 200 || status >= 300) {
+      throw new BadRequestException(GENERIC_ENDPOINT_ERROR);
     }
   }
 

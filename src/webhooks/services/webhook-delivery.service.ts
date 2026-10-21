@@ -5,6 +5,7 @@ import { Queue, Job } from 'bullmq';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { safePost } from '../../common/utils/safe-outbound-url';
 import { createHmac } from 'crypto';
 import { WebhookDelivery, WebhookDeliveryStatus } from '../entities/webhook-delivery.entity';
 import { WebhookSubscription } from '../entities/webhook-subscription.entity';
@@ -178,7 +179,7 @@ export class WebhookDeliveryService {
 
       // Perform HTTP POST to subscriber endpoint
       const startTime = Date.now();
-      const response = await axios.post(data.subscriptionUrl, data.eventPayload, {
+      const response = await safePost(data.subscriptionUrl, data.eventPayload, {
         headers,
         timeout: 30000, // 30 second timeout
         validateStatus: (status) => status < 500, // Don't throw on 4xx

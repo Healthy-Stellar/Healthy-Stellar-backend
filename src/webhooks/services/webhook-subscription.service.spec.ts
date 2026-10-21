@@ -8,6 +8,10 @@ import { WebhookSubscriptionService } from './webhook-subscription.service';
 import { WebhookSubscription } from '../entities/webhook-subscription.entity';
 import { AuditLogService } from '../../common/services/audit-log.service';
 
+jest.mock('dns', () => ({
+  ...jest.requireActual('dns'),
+  promises: { lookup: jest.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]) },
+}));
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
@@ -107,6 +111,63 @@ describe('WebhookSubscriptionService', () => {
           events: ['patient.created'],
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ── SSRF protection ────────────────────────────────────────────────────────
+
+  describe('SSRF protection', () => {
+    const dto = { events: ['appointment.created'] };
+
+    it.each(['http://169.254.169.254/latest/meta-data/', 'http://10.0.0.5:6379'])(
+      'rejects internal IP literal %s on create without sending a request',
+      async (url) => {
+        repo.count.mockResolvedValue(0);
+        await expect(
+          service.createSubscription('tenant-1', 'user-1', { ...dto, url }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockedAxios.post).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects a hostname that resolves to 127.0.0.1', async () => {
+      (require('dns').promises.lookup as jest.Mock).mockResolvedValueOnce([
+        { address: '127.0.0.1', family: 4 },
+      ]);
+      repo.count.mockResolvedValue(0);
+      await expect(
+        service.createSubscription('tenant-1', 'user-1', { ...dto, url: 'https://rebind.example.com' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('treats a redirect response as a failed ping and never follows it', async () => {
+      repo.count.mockResolvedValue(0);
+      mockedAxios.post.mockResolvedValue({
+        status: 302,
+        headers: { location: 'http://10.0.0.5/' },
+        data: {},
+      } as any);
+      await expect(
+        service.createSubscription('tenant-1', 'user-1', { ...dto, url: 'https://example.com/r' }),
+      ).rejects.toThrow(BadRequestException);
+      expect((mockedAxios.post.mock.calls[0][2] as any).maxRedirects).toBe(0);
+    });
+
+    it('does not leak the raw network error', async () => {
+      repo.count.mockResolvedValue(0);
+      mockedAxios.post.mockRejectedValue(new Error('connect ECONNREFUSED 10.0.0.5:5432'));
+      await expect(
+        service.createSubscription('tenant-1', 'user-1', { ...dto, url: 'https://example.com/x' }),
+      ).rejects.toThrow(/did not respond with a 2xx/);
+    });
+
+    it('validates the new URL on update', async () => {
+      repo.findOne.mockResolvedValue({ id: 'sub-1', tenantId: 'tenant-1', url: 'https://example.com', secret: 's' });
+      await expect(
+        service.updateSubscription('tenant-1', 'sub-1', 'user-1', { url: 'http://169.254.169.254/' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(repo.save).not.toHaveBeenCalled();
     });
   });
 
