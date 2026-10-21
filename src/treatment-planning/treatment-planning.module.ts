@@ -15,6 +15,7 @@ import { CarePlanTemplateService } from './services/care-plan-template.service';
 import { TreatmentOutcomeService } from './services/treatment-outcome.service';
 import { DecisionSupportService } from './services/decision-support.service';
 import { EventStoreModule } from '../event-store/event-store.module';
+import { AuthModule } from '../auth/auth.module';
 import {
   TreatmentPlanController,
   MedicalProcedureController,
@@ -37,6 +38,7 @@ import { TreatmentPlanningController } from './treatment-planning.controller';
       Diagnosis,
     ]),
     EventStoreModule,
+    AuthModule,
   ],
   controllers: [
     TreatmentPlanController,
