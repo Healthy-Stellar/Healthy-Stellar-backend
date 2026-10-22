@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { AuthController } from './auth.controller';
+import { ConfigService } from '@nestjs/config';
+import { MAILER_SERVICE } from '../../notifications/services/notifications.service';
 import { AuthService } from '../services/auth.service';
 import { AuthTokenService } from '../services/auth-token.service';
 import { SessionManagementService } from '../services/session-management.service';
@@ -62,7 +64,7 @@ function buildMocks() {
 
   const mfaService = { isMfaEnabled: jest.fn().mockResolvedValue(false) };
 
-  return { authService, authTokenService, sessionManagementService, refreshTokenStore, mfaService };
+  return { authService, authTokenService, sessionManagementService, refreshTokenStore, mfaService, configService, mailerService };
 }
 
 async function buildController(overrides: Partial<ReturnType<typeof buildMocks>> = {}) {
@@ -256,5 +258,71 @@ describe('POST /auth/sessions/:sessionId/revoke', () => {
     expect(mocks.sessionManagementService.revokeSession).toHaveBeenCalledWith('session-1');
     expect(mocks.refreshTokenStore.revokeSession).toHaveBeenCalledWith('session-1');
     expect(result).toEqual({ message: 'Session revoked' });
+  });
+});
+
+
+describe('POST /auth/forgot-password (#1277)', () => {
+  it('sends reset email with link built from FRONTEND_URL and does not leak raw token in response', async () => {
+    const { controller, mocks } = await buildController();
+    mocks.authService.forgotPassword.mockResolvedValue({ token: 'raw-secret-token-123' });
+
+    const response = await controller.forgotPassword({ email: 'user@example.com' });
+
+    expect(response).toEqual({
+      message: 'If that email is registered, a reset link has been sent',
+    });
+    // Response must NEVER contain the raw token
+    expect((response as any).token).toBeUndefined();
+
+    expect(mocks.mailerService.sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'user@example.com',
+        subject: 'Password Reset Request',
+        text: expect.stringContaining('https://healthystellar.org/reset-password?token=raw-secret-token-123'),
+      }),
+    );
+  });
+
+  it('handles unknown email silently without sending email or leaking user non-existence', async () => {
+    const { controller, mocks } = await buildController();
+    mocks.authService.forgotPassword.mockResolvedValue(null);
+
+    const response = await controller.forgotPassword({ email: 'nonexistent@example.com' });
+
+    expect(response).toEqual({
+      message: 'If that email is registered, a reset link has been sent',
+    });
+    expect(mocks.mailerService.sendMail).not.toHaveBeenCalled();
+  });
+
+  it('handles mailer error gracefully without throwing error to client', async () => {
+    const { controller, mocks } = await buildController();
+    mocks.authService.forgotPassword.mockResolvedValue({ token: 'raw-secret-token-123' });
+    mocks.mailerService.sendMail.mockRejectedValue(new Error('SMTP connection timed out'));
+
+    const response = await controller.forgotPassword({ email: 'user@example.com' });
+
+    expect(response).toEqual({
+      message: 'If that email is registered, a reset link has been sent',
+    });
+  });
+});
+
+describe('POST /auth/reset-password (#1277)', () => {
+  it('delegates to authService.resetPassword with token and new password', async () => {
+    const { controller, mocks } = await buildController();
+    mocks.authService.resetPassword.mockResolvedValue(undefined);
+
+    const response = await controller.resetPassword({
+      token: 'valid-raw-token',
+      newPassword: 'NewValidPassword123!',
+    });
+
+    expect(response).toEqual({ message: 'Password reset successfully' });
+    expect(mocks.authService.resetPassword).toHaveBeenCalledWith(
+      'valid-raw-token',
+      'NewValidPassword123!',
+    );
   });
 });

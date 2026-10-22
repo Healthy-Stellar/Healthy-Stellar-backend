@@ -5,7 +5,7 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from '../entities/user.entity';
@@ -415,13 +415,18 @@ export class AuthService {
    */
   async forgotPassword(email: string): Promise<{ token: string } | null> {
     const user = await this.userRepository.findOne({ where: { email } });
-    if (!user) return null;
-
     const token = randomBytes(32).toString('hex');
+    const hashedToken = createHash('sha256').update(token).digest('hex');
+
+    if (!user) {
+      // Perform comparable work to protect against timing attacks that leak account existence
+      return null;
+    }
+
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     await this.userRepository.update(user.id, {
-      passwordResetToken: token,
+      passwordResetToken: hashedToken,
       passwordResetTokenExpiresAt: expiresAt,
     });
 
@@ -438,13 +443,23 @@ export class AuthService {
    * Consume a reset token and set a new password. Token is invalidated atomically on use.
    */
   async resetPassword(token: string, newPassword: string): Promise<void> {
+    const hashedToken = createHash('sha256').update(token).digest('hex');
     const user = await this.userRepository
       .createQueryBuilder('user')
       .addSelect('user.passwordResetToken')
-      .where('user.passwordResetToken = :token', { token })
+      .where('user.passwordResetToken = :token', { token: hashedToken })
       .getOne();
 
     if (!user || !user.passwordResetToken) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    const dbTokenBuf = Buffer.from(user.passwordResetToken, 'hex');
+    const providedTokenBuf = Buffer.from(hashedToken, 'hex');
+    if (
+      dbTokenBuf.length !== providedTokenBuf.length ||
+      !timingSafeEqual(dbTokenBuf, providedTokenBuf)
+    ) {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
