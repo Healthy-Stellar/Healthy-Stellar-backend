@@ -26,6 +26,7 @@ import { AuditService } from '../common/audit/audit.service';
 
 // Strategies
 import { ApiKeyStrategy } from './strategies/api-key.strategy';
+import { JwtStrategy } from './strategies/jwt.strategy';
 
 // Controllers
 import { AuthController } from './controllers/auth.controller';
@@ -91,6 +92,7 @@ const mailerProvider = buildMailerProvider();
     RefreshTokenStoreService,
     SessionRevocationService,
     ApiKeyStrategy,
+    JwtStrategy,
     JwtAuthGuard,
     OptionalJwtAuthGuard,
     RolesGuard,
@@ -118,6 +120,7 @@ const mailerProvider = buildMailerProvider();
     RolesGuard,
     MfaVerifiedGuard,
     ApiKeyGuard,
+    JwtStrategy,
   ],
 })
 export class AuthModule { }
