@@ -7,18 +7,7 @@ import {
   AvailabilityStatus,
 } from '../entities/doctor-availability.entity';
 import { TenantContext } from '../../tenant/context/tenant.context';
-
-export class CreateDoctorAvailabilityDto {
-  doctorId: string;
-  dayOfWeek: DayOfWeek;
-  startTime: string;
-  endTime: string;
-  slotDuration?: number;
-  maxAppointmentsPerDay?: number;
-  specialties?: string[];
-  effectiveFrom: Date;
-  effectiveTo?: Date;
-}
+import { CreateDoctorAvailabilityDto } from '../dto/create-doctor-availability.dto';
 
 @Injectable()
 export class DoctorAvailabilityService {

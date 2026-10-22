@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -83,7 +84,12 @@ export class TransferService {
     return saved;
   }
 
-  async acceptTransfer(transferId: string, dto: AcceptTransferDto): Promise<PatientTransfer> {
+  async acceptTransfer(
+    transferId: string,
+    dto: AcceptTransferDto,
+    actorHospitalId: string,
+    actorId: string,
+  ): Promise<PatientTransfer> {
     const transfer = await this.transferRepo.findOne({
       where: { id: transferId },
       relations: ['fromHospital', 'toHospital'],
@@ -93,13 +99,15 @@ export class TransferService {
       throw new NotFoundException('Transfer not found');
     }
 
+    this.assertHospitalAccess(transfer, actorHospitalId, 'toHospitalId');
+
     if (transfer.status !== TransferStatus.PENDING) {
       throw new BadRequestException('Transfer is not in pending status');
     }
 
     transfer.status = TransferStatus.ACCEPTED;
     transfer.acceptedAt = new Date();
-    transfer.acceptedBy = dto.acceptedBy;
+    transfer.acceptedBy = actorId;
 
     let saved: PatientTransfer;
     try {
@@ -153,7 +161,12 @@ export class TransferService {
     return transfer;
   }
 
-  async rejectTransfer(transferId: string, dto: RejectTransferDto): Promise<PatientTransfer> {
+  async rejectTransfer(
+    transferId: string,
+    dto: RejectTransferDto,
+    actorHospitalId: string,
+    actorId: string,
+  ): Promise<PatientTransfer> {
     const transfer = await this.transferRepo.findOne({
       where: { id: transferId },
       relations: ['fromHospital', 'toHospital'],
@@ -163,13 +176,15 @@ export class TransferService {
       throw new NotFoundException('Transfer not found');
     }
 
+    this.assertHospitalAccess(transfer, actorHospitalId, 'toHospitalId');
+
     if (transfer.status !== TransferStatus.PENDING) {
       throw new BadRequestException('Transfer is not in pending status');
     }
 
     transfer.status = TransferStatus.REJECTED;
     transfer.rejectedAt = new Date();
-    transfer.rejectedBy = dto.rejectedBy;
+    transfer.rejectedBy = actorId;
     transfer.rejectionReason = dto.reason;
 
     const saved = await this.transferRepo.save(transfer);
@@ -180,11 +195,16 @@ export class TransferService {
       this.logger.warn('Failed to send rejection notification: ' + (err instanceof Error ? err.message : String(err)));
     }
 
-    this.logger.log('Transfer ' + transferId + ' rejected by ' + dto.rejectedBy);
+    this.logger.log('Transfer ' + transferId + ' rejected by ' + actorId);
     return saved;
   }
 
-  async cancelTransfer(transferId: string, dto: CancelTransferDto): Promise<PatientTransfer> {
+  async cancelTransfer(
+    transferId: string,
+    dto: CancelTransferDto,
+    actorHospitalId: string,
+    actorId: string,
+  ): Promise<PatientTransfer> {
     const transfer = await this.transferRepo.findOne({
       where: { id: transferId },
       relations: ['fromHospital', 'toHospital'],
@@ -194,13 +214,15 @@ export class TransferService {
       throw new NotFoundException('Transfer not found');
     }
 
+    this.assertHospitalAccess(transfer, actorHospitalId, 'fromHospitalId');
+
     if (transfer.status !== TransferStatus.PENDING) {
       throw new BadRequestException('Transfer is not in pending status');
     }
 
     transfer.status = TransferStatus.CANCELLED;
     transfer.cancelledAt = new Date();
-    transfer.cancelledBy = dto.cancelledBy;
+    transfer.cancelledBy = actorId;
     transfer.cancellationReason = dto.reason;
 
     const saved = await this.transferRepo.save(transfer);
@@ -211,21 +233,55 @@ export class TransferService {
       this.logger.warn('Failed to send cancellation notification: ' + (err instanceof Error ? err.message : String(err)));
     }
 
-    this.logger.log('Transfer ' + transferId + ' cancelled by ' + dto.cancelledBy);
+    this.logger.log('Transfer ' + transferId + ' cancelled by ' + actorId);
     return saved;
   }
 
-  async listTransfers(filters?: {
-    patientId?: string;
-    fromHospitalId?: string;
-    toHospitalId?: string;
-    status?: TransferStatus;
-  }): Promise<PatientTransfer[]> {
-    return this.transferRepo.find({
-      where: filters ?? {},
+  async listTransfers(
+    tenantHospitalId: string,
+    filters?: {
+      patientId?: string;
+      fromHospitalId?: string;
+      toHospitalId?: string;
+      status?: TransferStatus;
+    },
+  ): Promise<PatientTransfer[]> {
+    if (!tenantHospitalId) {
+      throw new ForbiddenException('Caller is not associated with a hospital');
+    }
+
+    const base = filters ?? {};
+
+    // Tenant scope: the caller's hospital must be either the source or the
+    // destination of every transfer returned.
+    const scoped = await this.transferRepo.find({
+      where: [
+        { ...base, fromHospitalId: tenantHospitalId },
+        { ...base, toHospitalId: tenantHospitalId },
+      ],
       relations: ['fromHospital', 'toHospital'],
       order: { createdAt: 'DESC' },
     });
+
+    // De-duplicate in case a transfer somehow matches both branches.
+    const seen = new Set<string>();
+    return scoped.filter((t) => {
+      if (seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
+    });
+  }
+
+  private assertHospitalAccess(
+    transfer: PatientTransfer,
+    actorHospitalId: string,
+    requiredSide: 'fromHospitalId' | 'toHospitalId',
+  ): void {
+    if (!actorHospitalId || transfer[requiredSide] !== actorHospitalId) {
+      throw new ForbiddenException(
+        'Caller is not authorized to act on this transfer',
+      );
+    }
   }
 
   private async writeStellarTransferReceipt(transfer: PatientTransfer): Promise<string> {
