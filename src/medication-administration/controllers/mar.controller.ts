@@ -7,11 +7,14 @@ import {
   Param,
   Delete,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { MarService } from '../services/mar.service';
 import { CreateMarDto } from '../dto/create-mar.dto';
 import { AdministerMedicationDto } from '../dto/administer-medication.dto';
+import { UpdateMarDto } from '../dto/update-mar.dto';
+import { VoidMarDto } from '../dto/void-mar.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -102,25 +105,39 @@ export class MarController {
 
   @Post('administer')
   @Roles(UserRole.NURSE)
-  administerMedication(@Body() administerDto: AdministerMedicationDto) {
-    return this.marService.administerMedication(administerDto);
+  administerMedication(@Body() administerDto: AdministerMedicationDto, @Req() req: any) {
+    const nurseId = req.user?.id ?? req.user?.userId;
+    const nurseName = req.user?.name ?? req.user?.fullName ?? req.user?.username;
+    return this.marService.administerMedication(administerDto, nurseId, nurseName);
   }
 
   @Post('doses/:id/administer')
   @Roles(UserRole.NURSE)
-  administerDose(@Param('id') id: string, @Body() administerDto: Omit<AdministerMedicationDto, 'marId'>) {
-    return this.marService.administerDoseById(id, administerDto);
+  administerDose(
+    @Param('id') id: string,
+    @Body() administerDto: Omit<AdministerMedicationDto, 'marId'>,
+    @Req() req: any,
+  ) {
+    const nurseId = req.user?.id ?? req.user?.userId;
+    const nurseName = req.user?.name ?? req.user?.fullName ?? req.user?.username;
+    return this.marService.administerDoseById(id, administerDto, nurseId, nurseName);
   }
 
   @Patch(':id')
   @Roles(UserRole.NURSE, UserRole.PHYSICIAN)
-  update(@Param('id') id: string, @Body() updateData: any) {
+  update(@Param('id') id: string, @Body() updateData: UpdateMarDto) {
     return this.marService.update(id, updateData);
+  }
+
+  @Post(':id/void')
+  @Roles(UserRole.PHYSICIAN, UserRole.ADMIN)
+  voidRecord(@Param('id') id: string, @Body() voidDto: VoidMarDto) {
+    return this.marService.voidRecord(id, voidDto);
   }
 
   @Delete(':id')
   @Roles(UserRole.PHYSICIAN, UserRole.ADMIN)
-  remove(@Param('id') id: string) {
-    return this.marService.remove(id);
+  remove(@Param('id') id: string, @Body() voidDto: VoidMarDto) {
+    return this.marService.voidRecord(id, voidDto);
   }
 }

@@ -1,3 +1,4 @@
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -37,7 +38,7 @@ function buildModule(
   bedRecord: Bed | null = makeBed(),
   roomRecord: Room | null = makeRoom(),
   wardRecord: Ward | null = makeWard(),
-  options: BuildModuleOptions = {},
+  occupiedBedRecord: Bed | null = null,
 ) {
   let currentBed = bedRecord ? { ...bedRecord } : null;
 
@@ -70,9 +71,26 @@ function buildModule(
 
   const bedRepo = {
     create: jest.fn().mockImplementation((d) => d),
-    save: jest.fn().mockImplementation(async (r) => {
-      currentBed = { ...r };
-      return r;
+    save: jest.fn().mockImplementation(async (r) => r),
+    find: jest.fn().mockResolvedValue(bedRecord ? [bedRecord] : []),
+    findOne: jest
+      .fn()
+      .mockImplementation(async (opts?: any) => {
+        if (opts?.where?.patientId) {
+          return occupiedBedRecord;
+        }
+        return bedRecord;
+      }),
+    createQueryBuilder: jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([
+        { status: BedStatus.AVAILABLE, count: '5' },
+        { status: BedStatus.OCCUPIED, count: '3' },
+      ]),
     }),
     find: jest.fn().mockImplementation(async () => (currentBed ? [{ ...currentBed }] : [])),
     findOne: jest.fn().mockImplementation(async () => (currentBed ? { ...currentBed } : null)),
@@ -188,12 +206,13 @@ describe('BedOccupancyService', () => {
       );
     });
 
-    it('throws ConflictException when bed advisory lock is busy in postgres', async () => {
-      const { compile } = buildModule(makeBed(), makeRoom(), makeWard(), {
-        dbType: 'postgres',
-        lockAcquired: false,
-      });
-      const mod = await compile();
+    it('throws ConflictException when the patient already occupies another bed', async () => {
+      const mod = await buildModule(
+        makeBed(),
+        makeRoom(),
+        makeWard(),
+        makeBed({ id: 'b2', status: BedStatus.OCCUPIED, patientId: 'p1' }),
+      );
       const svc = mod.get(BedOccupancyService);
       await expect(svc.assignBed({ bedId: 'b1', patientId: 'p1' })).rejects.toThrow(
         ConflictException,

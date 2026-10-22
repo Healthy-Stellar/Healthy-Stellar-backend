@@ -12,6 +12,12 @@ import { PaymentService } from '../billing/services/payment.service';
 import { v4 as uuidv4 } from 'uuid';
 import { RedisLockService } from '../common/utils/redis-lock.service';
 
+export type PaymentChargeOutcome = 'success' | 'declined' | 'unavailable';
+
+export interface PaymentGateway {
+  charge(payment: Payment, subscription: PatientSubscription): Promise<PaymentChargeOutcome>;
+}
+
 @Injectable()
 export class SubscriptionRenewalTask {
   private readonly logger = new Logger(SubscriptionRenewalTask.name);
@@ -156,10 +162,10 @@ export class SubscriptionRenewalTask {
 
       await queryRunner.manager.save(Payment, payment);
 
-      // Attempt to process payment (simulate payment gateway)
-      const paymentSuccess = await this.simulatePaymentProcessing(payment, subscription);
+      // Attempt to process payment via the configured gateway
+      const outcome = await this.simulatePaymentProcessing(payment, subscription);
 
-      if (paymentSuccess) {
+      if (outcome === 'success') {
         // Update billing
         savedBilling.totalPayments = subscription.currentPrice;
         savedBilling.balance = 0;
@@ -174,11 +180,17 @@ export class SubscriptionRenewalTask {
 
         await queryRunner.commitTransaction();
         this.logger.log(`Successfully renewed subscription ${subscription.id}`);
-      } else {
+      } else if (outcome === 'declined') {
         await queryRunner.rollbackTransaction();
 
         // Handle failed payment
         await this.handleFailedPayment(subscription, payment);
+      } else {
+        // No gateway configured: leave payment PENDING, do not suspend or dunning
+        await queryRunner.commitTransaction();
+        this.logger.warn(
+          `Payment gateway unavailable; subscription ${subscription.id} renewal left PENDING (no charge attempted)`,
+        );
       }
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -191,53 +203,40 @@ export class SubscriptionRenewalTask {
   private async simulatePaymentProcessing(
     payment: Payment,
     subscription: PatientSubscription,
-  ): Promise<boolean> {
-    // In a real implementation, this would call a payment gateway (Stripe, PayPal, etc.)
-    // For now, we'll simulate a 90% success rate
-    const successRate = 0.9;
-    const random = Math.random();
+  ): Promise<PaymentChargeOutcome> {
+    const gateway = this.getPaymentGateway();
+    if (!gateway) {
+      this.logger.warn(
+        `No payment gateway configured; leaving payment ${payment.paymentNumber} PENDING`,
+      );
+      return 'unavailable';
+    }
 
-    if (random < successRate) {
+    const outcome = await gateway.charge(payment, subscription);
+
+    if (outcome === 'success') {
       payment.status = PaymentStatus.COMPLETED;
       payment.postedDate = new Date();
       await this.paymentRepo.save(payment);
-      return true;
+    } else if (outcome === 'declined') {
+      payment.status = PaymentStatus.FAILED;
+      await this.paymentRepo.save(payment);
     }
 
-    payment.status = PaymentStatus.FAILED;
-    await this.paymentRepo.save(payment);
-    return false;
+    return outcome;
   }
 
-  private async handleFailedPayment(
-    subscription: PatientSubscription,
-    payment: Payment,
-  ): Promise<void> {
-    this.logger.warn(`Payment failed for subscription ${subscription.id}`);
-
-    // Increment failed payment count
-    await this.subscriptionService.incrementFailedPaymentCount(subscription.id);
-
-    // Check if we should suspend the subscription
-    const updatedSubscription = await this.subscriptionRepo.findOne({
-      where: { id: subscription.id },
-    });
-
-    if (updatedSubscription && updatedSubscription.failedPaymentCount >= 3) {
-      await this.subscriptionService.suspendSubscription(
-        subscription.id,
-        'Multiple failed payment attempts',
-      );
-      this.logger.warn(`Subscription ${subscription.id} suspended due to failed payments`);
+  /**
+   * Returns the configured payment gateway, or null when renewal charging is
+   * disabled. Renewal charging is gated behind a feature flag that defaults to
+   * off so no real charges occur unless explicitly configured.
+   */
+  private getPaymentGateway(): PaymentGateway | null {
+    const enabled = process.env.SUBSCRIPTION_RENEWAL_CHARGING_ENABLED === 'true';
+    if (!enabled) {
+      return null;
     }
-  }
 
-  private async handleNonRenewingSubscription(subscription: PatientSubscription): Promise<void> {
-    // Check if subscription has expired
-    const now = new Date();
-    if (subscription.endDate && subscription.endDate < now) {
-      await this.subscriptionService.expireSubscription(subscription.id);
-      this.logger.log(`Subscription ${subscription.id} expired`);
-    }
+    const gateway = (this as unknown as { paymentGateway?: PaymentGateway }).paymentGateway;
+    return gateway ?? null;
   }
-}

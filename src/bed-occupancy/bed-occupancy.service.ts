@@ -106,12 +106,39 @@ export class BedOccupancyService {
     }
   }
 
+  private async acquirePatientLock(
+    transactionalEntityManager: EntityManager,
+    patientId: string,
+  ): Promise<void> {
+    const dbType = (transactionalEntityManager.connection.options as { type?: string }).type;
+    if (dbType !== 'postgres') {
+      // Other engines rely on database-level write locks
+      return;
+    }
+
+    const lockKey = `${ADVISORY_LOCK_NAMESPACE}:patient:${patientId}`;
+    const lockResult = await transactionalEntityManager.query(
+      `SELECT pg_try_advisory_xact_lock(hashtext($1)) AS acquired`,
+      [lockKey],
+    );
+
+    const acquired = Array.isArray(lockResult) && lockResult[0]?.acquired === true;
+    if (!acquired) {
+      throw new ConflictException({
+        message: 'Another assignment is currently being processed for this patient. Please retry in a moment.',
+        code: 'PATIENT_ASSIGNMENT_LOCK_BUSY',
+      });
+    }
+  }
+
   async assignBed(dto: AssignBedDto): Promise<Bed> {
     // Wrap in transaction with advisory locking to prevent concurrent double-booking
     return this.bedRepo.manager.transaction(
       async (transactionalEntityManager: EntityManager): Promise<Bed> => {
         // Acquire advisory lock to serialize concurrent assignments for this bed
         await this.acquireBedLock(transactionalEntityManager, dto.bedId);
+        // Acquire advisory lock to serialize concurrent assignments for this patient
+        await this.acquirePatientLock(transactionalEntityManager, dto.patientId);
 
         // Load bed within transaction with pessimistic lock
         const bed: Bed | null = await transactionalEntityManager
@@ -126,6 +153,22 @@ export class BedOccupancyService {
 
         if (bed.status !== BedStatus.AVAILABLE) {
           throw new BadRequestException(`Bed ${dto.bedId} is not available`);
+        }
+
+        // Reject if the patient already occupies another bed
+        const existingBed = await transactionalEntityManager
+          .createQueryBuilder(Bed, 'bed')
+          .useLock('pessimistic_write')
+          .where('bed.patientId = :patientId', { patientId: dto.patientId })
+          .andWhere('bed.status = :status', { status: BedStatus.OCCUPIED })
+          .andWhere('bed.id != :bedId', { bedId: dto.bedId })
+          .getOne();
+
+        if (existingBed) {
+          throw new ConflictException({
+            message: `Patient ${dto.patientId} is already assigned to bed ${existingBed.id}. Release that bed before assigning a new one.`,
+            code: 'PATIENT_ALREADY_ASSIGNED',
+          });
         }
 
         bed.patientId = dto.patientId;

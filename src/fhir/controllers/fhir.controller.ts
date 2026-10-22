@@ -23,6 +23,7 @@ import { FhirService } from '../services/fhir.service';
 import { BulkExportService } from '../services/bulk-export.service';
 import { FhirExceptionFilter } from '../filters/fhir-exception.filter';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { FhirAuthorizationGuard } from '../guards/fhir-authorization.guard';
 import { BulkExportQueryDto } from '../dto/bulk-export.dto';
 import { FhirOperationOutcome } from '../dto/fhir-resources.dto';
 import { ExportScope } from '../entities/bulk-export-job.entity';
@@ -31,7 +32,7 @@ import { ExportScope } from '../entities/bulk-export-job.entity';
 @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 @Controller('fhir/r4')
 @UseFilters(FhirExceptionFilter)
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, FhirAuthorizationGuard)
 export class FhirController {
   constructor(
     private readonly fhirService: FhirService,
@@ -62,12 +63,14 @@ export class FhirController {
     @Res() res: Response,
   ) {
     const jobId = await this.bulkExportService.initiateExport(
-      req.user.id,
+      req.user.userId,
       req.user.role,
       query._type,
       query._since,
       query._outputFormat,
       ExportScope.PATIENT,
+      undefined,
+      req.user.tenantId,
     );
 
     res
@@ -79,9 +82,10 @@ export class FhirController {
   @Get('Patient/:id')
   @ApiOperation({ summary: 'Get a patient resource' })
   @ApiResponse({ status: 200, description: 'Patient resource' })
+  @ApiResponse({ status: 403, description: 'Forbidden - not in patient compartment' })
   @ApiResponse({ status: 404, description: 'Patient not found' })
-  getPatient(@Param('id') id: string) {
-    return this.fhirService.getPatient(id);
+  getPatient(@Param('id') id: string, @Req() req: any) {
+    return this.fhirService.getPatient(id, req.user);
   }
 
   @Put('Patient/:id')
@@ -97,7 +101,7 @@ export class FhirController {
     @Headers('if-match') ifMatch?: string,
     @Req() req?: any,
   ) {
-    return this.fhirService.updatePatient(id, resource, ifMatch, req?.user?.id);
+    return this.fhirService.updatePatient(id, resource, ifMatch, req?.user?.userId, req?.user);
   }
 
   @Patch('Patient/:id')
@@ -112,13 +116,14 @@ export class FhirController {
     @Headers('if-match') ifMatch?: string,
     @Req() req?: any,
   ) {
-    return this.fhirService.patchPatient(id, patches, ifMatch, req?.user?.id);
+    return this.fhirService.patchPatient(id, patches, ifMatch, req?.user?.userId, req?.user);
   }
 
   @Get('Patient/:id/DocumentReference')
   @ApiOperation({ summary: 'Get patient documents' })
-  getPatientDocuments(@Param('id') id: string) {
-    return this.fhirService.getPatientDocuments(id);
+  @ApiResponse({ status: 403, description: 'Forbidden - not in patient compartment' })
+  getPatientDocuments(@Param('id') id: string, @Req() req: any) {
+    return this.fhirService.getPatientDocuments(id, req.user);
   }
 
   // ── DocumentReference Resource ────────────────────────────────────────────
@@ -126,9 +131,10 @@ export class FhirController {
   @Get('DocumentReference/:id')
   @ApiOperation({ summary: 'Get a document reference' })
   @ApiResponse({ status: 200, description: 'DocumentReference resource' })
+  @ApiResponse({ status: 403, description: 'Forbidden - not in patient compartment' })
   @ApiResponse({ status: 404, description: 'DocumentReference not found' })
-  getDocumentReference(@Param('id') id: string) {
-    return this.fhirService.getDocumentReference(id);
+  getDocumentReference(@Param('id') id: string, @Req() req: any) {
+    return this.fhirService.getDocumentReference(id, req.user);
   }
 
   @Put('DocumentReference/:id')
@@ -142,15 +148,16 @@ export class FhirController {
     @Headers('if-match') ifMatch?: string,
     @Req() req?: any,
   ) {
-    return this.fhirService.updateDocumentReference(id, resource, ifMatch, req?.user?.id);
+    return this.fhirService.updateDocumentReference(id, resource, ifMatch, req?.user?.userId, req?.user);
   }
 
   // ── Consent Resource ──────────────────────────────────────────────────────
 
   @Get('Consent/:id')
   @ApiOperation({ summary: 'Get a consent resource' })
-  getConsent(@Param('id') id: string) {
-    return this.fhirService.getConsent(id);
+  @ApiResponse({ status: 403, description: 'Forbidden - not in patient compartment' })
+  getConsent(@Param('id') id: string, @Req() req: any) {
+    return this.fhirService.getConsent(id, req.user);
   }
 
   @Put('Consent/:id')
@@ -162,15 +169,16 @@ export class FhirController {
     @Headers('if-match') ifMatch?: string,
     @Req() req?: any,
   ) {
-    return this.fhirService.updateConsent(id, resource, ifMatch, req?.user?.id);
+    return this.fhirService.updateConsent(id, resource, ifMatch, req?.user?.userId, req?.user);
   }
 
   // ── Provenance Resource ───────────────────────────────────────────────────
 
   @Get('Provenance')
   @ApiOperation({ summary: 'Get provenance records' })
-  getProvenance(@Query('target') target?: string) {
-    return this.fhirService.getProvenance(target || '');
+  @ApiResponse({ status: 403, description: 'Forbidden - not in patient compartment' })
+  getProvenance(@Query('target') target: string | undefined, @Req() req: any) {
+    return this.fhirService.getProvenance(target || '', req.user);
   }
 
   // ── Bulk Export (Async Operation) ─────────────────────────────────────────
@@ -188,12 +196,14 @@ export class FhirController {
     @Res() res: Response,
   ) {
     const jobId = await this.bulkExportService.initiateExport(
-      req.user.id,
+      req.user.userId,
       req.user.role,
       query._type,
       query._since,
       query._outputFormat,
       ExportScope.SYSTEM,
+      undefined,
+      req.user.tenantId,
     );
 
     res
@@ -216,13 +226,14 @@ export class FhirController {
     @Res() res: Response,
   ) {
     const jobId = await this.bulkExportService.initiateExport(
-      req.user.id,
+      req.user.userId,
       req.user.role,
       query._type,
       query._since,
       query._outputFormat,
       ExportScope.GROUP,
       groupId,
+      req.user.tenantId,
     );
 
     res
@@ -234,7 +245,12 @@ export class FhirController {
   @Get('$export-status/:jobId')
   @ApiOperation({ summary: 'Get bulk export job status' })
   async getExportStatus(@Param('jobId') jobId: string, @Req() req: any) {
-    return this.bulkExportService.getJobStatus(jobId, req.user.id, req.user.role);
+    return this.bulkExportService.getJobStatus(
+      jobId,
+      req.user.userId,
+      req.user.role,
+      req.user.tenantId,
+    );
   }
 
   @Delete('$export-status/:jobId')
@@ -244,7 +260,12 @@ export class FhirController {
     @Req() req: any,
     @Res() res: Response,
   ) {
-    await this.bulkExportService.cancelJob(jobId, req.user.id, req.user.role);
+    await this.bulkExportService.cancelJob(
+      jobId,
+      req.user.userId,
+      req.user.role,
+      req.user.tenantId,
+    );
     res.status(HttpStatus.NO_CONTENT).send();
   }
 

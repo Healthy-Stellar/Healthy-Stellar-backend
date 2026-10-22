@@ -5,19 +5,9 @@ export class AdministerMedicationDto {
   @IsUUID()
   marId: string;
 
-  @IsUUID()
-  nurseId: string;
-
-  @IsString()
-  nurseName: string;
-
   @IsOptional()
   @IsUUID()
   witnessId?: string;
-
-  @IsOptional()
-  @IsString()
-  witnessName?: string;
 
   @IsDateString()
   administrationTime: string;

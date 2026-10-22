@@ -20,6 +20,7 @@ already have access to the production environment.
 | [Dead-Letter Queue Inspection and Replay](./dead-letter-queue.md) | Inspect jobs that exhausted retries, decide whether to replay, and replay them safely. |
 | [Projection Rebuild](./projection-rebuild.md) | Rebuild an event-sourced read model with `npm run projection:rebuild`. |
 | [Backup and Restore](./backup-and-restore.md) | Verify backups, run restore drills, and perform a database restore. |
+| [Data Retention](./data-retention.md) | Pause, resume, and dry-run the nightly retention enforcement job; apply tenant overrides and legal holds. |
 
 ## Conventions used in these runbooks
 

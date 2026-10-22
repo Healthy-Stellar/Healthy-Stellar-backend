@@ -1,7 +1,8 @@
-# Healthy-Stellar-backend
+# Handsoff
 
-NestJS backend for a decentralized healthcare system built on Stellar Soroban smart contracts.
+Handsoff is a NestJS backend for clinical operations: patient records, appointments, pharmacy, laboratory, analytics, and integrations.
 
+## Getting started
 ## Table of Contents
 
 - [Project Structure](#project-structure)
@@ -10,11 +11,13 @@ NestJS backend for a decentralized healthcare system built on Stellar Soroban sm
 - [Getting Started](#getting-started)
 - [Configuration](#configuration)
 - [Scripts Reference](#scripts-reference)
+- [Authentication & Authorization](#authentication--authorization)
 - [Security Headers](#security-headers)
 - [API Endpoints](#api-endpoints)
 - [Webhooks](#webhooks)
 - [Postman Collection](#postman-collection)
 - [Database Schema](#database-schema)
+- [Multi-Tenancy](#multi-tenancy)
 - [Error Handling](#error-handling)
 - [Testing](#testing)
 - [Deployment](#deployment)
@@ -280,7 +283,7 @@ cp .env.example .env
 | Database (primary) | `DATABASE_URL` / `DB_HOST` … `DB_POOL_MAX` |
 | Database (read replica) | `DB_REPLICA_HOST` … `DB_REPLICA_POOL_MAX` |
 | Redis | `REDIS_URL` / `REDIS_HOST` … `REDIS_DB` |
-| JWT & Auth | `JWT_SECRET`, `JWT_EXPIRATION`, `REFRESH_TOKEN_SECRET` |
+| JWT & Auth | `JWT_SECRET`, `JWT_EXPIRATION`, `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRATION` |
 | Encryption / KMS | `ENCRYPTION_MASTER_KEY`, `MASTER_KEY`, `KMS_ENABLED`, `AWS_*` |
 | Stellar / Soroban | `STELLAR_SECRET_KEY`, `STELLAR_CONTRACT_ID`, `SOROBAN_RPC_URL` |
 | IPFS | `IPFS_NODE_URL`, `IPFS_GATEWAY`, `IPFS_FALLBACK_GATEWAY` |
@@ -291,6 +294,30 @@ cp .env.example .env
 | GraphQL subscriptions | `SUBSCRIPTIONS_IDLE_TIMEOUT_MS`, `SUBSCRIPTIONS_MAX_PER_CONNECTION` |
 | Ops / alerting | `OPS_SLACK_WEBHOOK_URL`, `QUEUE_DEPTH_THRESHOLD` |
 | Migrations | `MIGRATION_EXECUTOR`, `CONFIRM_PRODUCTION_MIGRATION` |
+
+## Security Headers
+
+The API applies the shared Helmet configuration once through `applySecurityHeaders()` in `src/security/http-security.config.ts`.
+
+**Prerequisites:** Node.js v18+, PostgreSQL v12+
+
+1. Install dependencies:
+   `npm install`
+2. Set up environment variables:
+   `cp .env.example .env`
+3. Run database migrations:
+   `npm run migration:run`
+4. **Seed the database with test data:**
+   `npm run seed`
+   _(Why added: This generates fake users, medical records, and access grants via `src/database/seeder.ts` so you can log in and test the application)._
+5. Start the development server:
+   `npm run start:dev`
+6. Start the background job worker process:
+   `npm run start:worker:dev`
+
+## Configuration
+
+Copy `.env.example` to `.env`. Key sections:
 
 ### Data residency and multi-region routing
 
@@ -381,22 +408,57 @@ Tenant data residency policy prohibits access outside the configured region.
 
 For local development, the routing service initializes SQLite-backed regional datasources so tests and simulations can verify region selection without a full multi-database deployment.
 
+| Section            | Variables                                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Core               | `NODE_ENV`, `PORT`, `APP_URL`, `APP_DOMAIN`                                                                               |
+| Database           | `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_NAME`                                                             |
+| Encryption / PHI   | `ENCRYPTION_KEY`, `PHI_ENCRYPTION_KEY`                                                                                    |
+| JWT & Auth         | `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRATION`, `SESSION_SECRET` |
+| CORS & Security    | `ALLOWED_ORIGINS`, `CORS_ORIGIN`, `ADMIN_IP_ALLOWLIST`                                                                    |
+| Redis              | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`                                                                              |
+| Email              | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`                                                                    |
+| Stellar Blockchain | `STELLAR_NETWORK`, `STELLAR_SECRET_KEY`, `STELLAR_CONTRACT_ID`                                                            |
+| Data Residency     | `DEFAULT_REGION`, `DB_TYPE_*`, `DB_HOST_*`, `DB_PORT_*`, `DB_NAME_*`, `*_DB_URL`, `STELLAR_HORIZON_*_URL`, `IPFS_NODES_*` |
+| IPFS               | `IPFS_HOST`, `IPFS_PORT`, `IPFS_URL`                                                                                      |
+| Webhooks           | `IPFS_WEBHOOK_SECRET`, `STELLAR_WEBHOOK_SECRET`, `QUEUE_HMAC_SECRET`                                                      |
+| OIDC / SSO         | `OIDC_PROVIDERS`, `OIDC_{PROVIDER}_CLIENT_ID`, …                                                                          |
+| Logging            | `LOG_LEVEL`, `LOKI_HOST`                                                                                                  |
+| Metrics & Tracing  | `METRICS_TOKEN`, `OTEL_EXPORTER_OTLP_ENDPOINT`                                                                            |
+| Backup             | `BACKUP_DIR`, `BACKUP_ENCRYPTION_KEY`, `BACKUP_RETENTION_DAYS`                                                            |
+| Feature Flags      | `TELEMEDICINE_ENABLED`, `SURGICAL_MANAGEMENT_ENABLED`                                                                     |
+
 Generate secrets with:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
+## Authentication & Authorization
+
+**There is no global auth guard.** Every controller that must be protected has to opt in explicitly with `@UseGuards(JwtAuthGuard, ...)`; anything without a guard is public. Guards such as `RolesGuard`, `AdminGuard`, `PatientPrivacyGuard` and `MedicalRbacGuard` do **not** authenticate on their own, and decorators like `@RequireAdmin()` and `@HipaaRoles()` only attach metadata — they do nothing unless the matching guard runs.
+
+The authenticated principal attached to the request is:
+
+```ts
+{ userId, email, role, mfaEnabled, sessionId, organizationId }
+```
+
+There is no `id`, `sub` or `tenantId` field — use `userId` and `organizationId`. `role` is one of the `UserRole` enum values.
+
+The full guide — token issuance and refresh, the guard catalogue (what each guard checks and what it depends on), the valid role list, `@Public()`, API keys, MFA, and SMART scopes — is in **[docs/auth.md](docs/auth.md)**.
+
+Before opening a PR that adds or changes a controller, work through the **new controller security checklist** in [CONTRIBUTING.md](CONTRIBUTING.md#new-controller-security-checklist).
+
 ## Security Headers
 
-Configured via `helmet()` in `src/main.ts` using `src/security/http-security.config.ts`:
+The API applies the shared Helmet configuration once through `applySecurityHeaders()` in `src/security/http-security.config.ts`:
 
-- `Content-Security-Policy` — restricts script/style/asset sources to prevent XSS
-- `X-Frame-Options: DENY` — blocks clickjacking via iframes
-- `X-Content-Type-Options: nosniff` — prevents MIME-type sniffing
-- `Strict-Transport-Security` — enforces HTTPS
-- `Referrer-Policy: no-referrer` — suppresses referrer leakage
-- `X-XSS-Protection: 0` — disables legacy browser XSS filter in favour of CSP
+- `Content-Security-Policy` — defaults to same-origin resources, blocks object embedding and framing, and uses a per-request nonce for scripts. Development additionally allows the Swagger CDN.
+- `X-Frame-Options: DENY` — blocks clickjacking through iframes.
+- `X-Content-Type-Options: nosniff` — prevents MIME-type sniffing.
+- `Strict-Transport-Security` — enables HTTPS-only access with a one-year max age, subdomains, and preload.
+- `Referrer-Policy: no-referrer` — suppresses referrer information.
+- `X-XSS-Protection: 0` — disables the legacy browser filter; CSP provides the script policy.
 
 ## API Endpoints
 
@@ -462,6 +524,16 @@ Import [`docs/postman/MedChain.postman_collection.json`](docs/postman/MedChain.p
 The authoritative database schema is defined by the [TypeORM migrations](src/migrations/)
 and corresponding entity definitions in `src/`.
 
+## Multi-Tenancy
+
+How the current tenant is resolved, how schema/region routing and Row-Level
+Security work, when a new entity needs a `tenantId`/`organizationId` column, and
+how cron and queue jobs must establish tenant context is documented in
+**[docs/multi-tenancy.md](docs/multi-tenancy.md)**.
+
+> Never trust the `x-tenant-id` request header for authenticated requests — the
+> tenant always comes from the verified JWT. See the doc for details.
+
 ## Error Handling
 
 All non-FHIR errors return a consistent envelope (`statusCode`, `error`, `message`, `code`, `traceId`, `timestamp`, `path`, `details`). Clients should branch on the machine-readable `code` — one of the `AppErrorCode` values — rather than on `message` or the HTTP status. `GlobalExceptionFilter` is the effective handler: it maps errors to codes, logs them with a `traceId`, and withholds internal details (stack traces) from responses. Routes under `/fhir` return an HL7 FHIR `OperationOutcome` instead.
@@ -483,17 +555,27 @@ npm run test:compliance  # HIPAA/GDPR compliance tests
 ## Deployment
 
 ```bash
-npm run build
-npm run start:prod
+npm install
+npm run start:dev
 ```
 
-Set `NODE_ENV=production`, configure DB credentials, CORS, HTTPS, and logging before deploying.
+The API is served under the global prefix `/api`. Swagger docs are available at `/api/docs`.
 
-For operational procedures used during deployment, recovery, and maintenance — key
-rotation, migration safety, break-glass review, reconciliation, dead-letter queue
-replay, projection rebuilds, and backup/restore — see the
-[operator runbooks](docs/runbooks/README.md).
+## Route overview
 
-## License
+Routes are grouped by module. Only routes registered in a module's `controllers` array are served; any controller not listed there is not exposed.
 
-MIT
+- `/auth` — authentication and session management
+- `/users` — user accounts and roles
+- `/patients` — patient records
+- `/appointments` — scheduling
+- `/pharmacy` — prescriptions, dispensing, and inventory
+- `/laboratory` — lab orders and results
+- `/analytics` — reporting and dashboards
+- `/integrations` — external system integrations
+
+## Contributing
+
+- Keep controllers registered in a module and protected by `JwtAuthGuard` + `RolesGuard`.
+- Derive actor ids from `req.user`, never from request bodies.
+- Update this route list whenever a module's registered controllers change.

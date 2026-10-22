@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, FindOptionsWhere } from 'typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { UserRole } from '../../users/entities/user.entity';
 import { BulkExportJob, ExportJobStatus, ExportScope } from '../entities/bulk-export-job.entity';
 import { generateSignedUrl } from '../utils/signed-url.util';
 import { Patient } from '../../patients/entities/patient.entity';
@@ -28,18 +29,27 @@ export class BulkExportService {
   async initiateExport(
     requesterId: string,
     requesterRole: string,
+    tenantId: string,
     resourceTypes?: string[],
     since?: string,
     outputFormat?: string,
     exportScope?: ExportScope,
     groupId?: string,
   ): Promise<string> {
+    if (!requesterId) {
+      throw new BadRequestException('Requester id is required to initiate an export');
+    }
+    if (!tenantId) {
+      throw new BadRequestException('Tenant id is required to initiate an export');
+    }
+
     const types = resourceTypes || ['Patient', 'DocumentReference', 'Consent', 'Provenance'];
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const job = this.jobRepo.create({
       requesterId,
       requesterRole,
+      tenantId,
       resourceTypes: types,
       status: ExportJobStatus.PENDING,
       expiresAt,
@@ -55,11 +65,11 @@ export class BulkExportService {
     return job.id;
   }
 
-  async getJobStatus(jobId: string, requesterId: string, requesterRole: string) {
-    const job = await this.jobRepo.findOne({ where: { id: jobId } });
+  async getJobStatus(jobId: string, requesterId: string, requesterRole: string, tenantId: string) {
+    const job = await this.jobRepo.findOne({ where: { id: jobId, tenantId } });
     if (!job) throw new NotFoundException('Export job not found');
 
-    if (job.requesterId !== requesterId && requesterRole !== 'ADMIN') {
+    if (!requesterId || (job.requesterId !== requesterId && requesterRole !== UserRole.ADMIN)) {
       throw new ForbiddenException('Access denied');
     }
 
@@ -75,11 +85,11 @@ export class BulkExportService {
     return { status: job.status, progress: job.progress, totalResources: job.totalResources };
   }
 
-  async cancelJob(jobId: string, requesterId: string, requesterRole: string): Promise<void> {
-    const job = await this.jobRepo.findOne({ where: { id: jobId } });
+  async cancelJob(jobId: string, requesterId: string, requesterRole: string, tenantId: string): Promise<void> {
+    const job = await this.jobRepo.findOne({ where: { id: jobId, tenantId } });
     if (!job) throw new NotFoundException('Export job not found');
 
-    if (job.requesterId !== requesterId && requesterRole !== 'ADMIN') {
+    if (!requesterId || (job.requesterId !== requesterId && requesterRole !== UserRole.ADMIN)) {
       throw new ForbiddenException('Access denied');
     }
 
@@ -98,7 +108,7 @@ export class BulkExportService {
 
     try {
       const outputFiles = [];
-      const isAdmin = job.requesterRole === 'ADMIN' || job.exportScope === ExportScope.SYSTEM;
+      const isAdmin = job.requesterRole === UserRole.ADMIN || job.exportScope === ExportScope.SYSTEM;
 
       for (const type of job.resourceTypes) {
         const { url, count } = await this.exportResourceType(type, job.requesterId, isAdmin, job);
