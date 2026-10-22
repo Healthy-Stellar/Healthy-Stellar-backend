@@ -1,0 +1,18 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "fix/issue-1280-high-authcontroller-and-notificationscontroller",
+    "main",
+    "origin"
+  ],
+  "parent": {
+    "fix/issue-1280-high-authcontroller-and-notificationscontroller": "main",
+    "main": null,
+    "origin": "main"
+  },
+  "order": [
+    "main",
+    "fix/issue-1280-high-authcontroller-and-notificationscontroller",
+    "origin"
+  ]
+}

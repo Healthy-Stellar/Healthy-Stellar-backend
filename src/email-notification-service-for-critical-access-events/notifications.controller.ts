@@ -11,6 +11,7 @@ import {
 import { NotificationsService } from './notifications.service';
 import { IsString, IsNotEmpty } from 'class-validator';
 import { ApiTags } from '@nestjs/swagger';
+import { I18nContext } from 'nestjs-i18n';
 
 export class UnsubscribeDto {
   @IsString()

@@ -24,6 +24,7 @@ import { RegisterDto, LoginDto, ChangePasswordDto, ResetPasswordDto, ResetPasswo
 import { RefreshTokenDto } from '../dto/session.dto';
 import { User, UserRole } from '../entities/user.entity';
 import { AuthRateLimit } from '../../common/throttler/throttler.decorator';
+import { I18nContext } from 'nestjs-i18n';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -304,7 +305,7 @@ export class AuthController {
       this.sessionManagementService.revokeSession(sessionId),
       this.refreshTokenStore.revokeSession(sessionId),
     ]);
-    return { message: 'Session revoked' };
+    return { message: 'Session reoked' };
   }
 
   /**
@@ -331,6 +332,10 @@ export class AuthController {
   }
 
   private getIpAddress(req: Request): string {
-    return (req.ip || req.socket.remoteAddress || 'unknown').toString();
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.length > 0) {
+      return forwarded.split(',')[0].trim();
+    }
+    return req.ip || req.socket.remoteAddress || 'unknown';
   }
 }
