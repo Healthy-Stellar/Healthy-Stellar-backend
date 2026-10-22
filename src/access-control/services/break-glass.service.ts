@@ -41,10 +41,12 @@ export class BreakGlassService implements OnModuleInit, OnModuleDestroy {
     private readonly auditLogService: AuditLogService,
     private readonly notificationsService: NotificationsService,
   ) {
-    this.ttlMs =
-      this.configService.get<number>('BREAK_GLASS_TTL_MS') ?? DEFAULT_BREAK_GLASS_TTL_MS;
-    this.reviewSlaMs =
-      this.configService.get<number>('BREAK_GLASS_REVIEW_SLA_MS') ?? DEFAULT_REVIEW_SLA_MS;
+    this.ttlMs = Number(
+      this.configService.get<string | number>('BREAK_GLASS_TTL_MS') ?? DEFAULT_BREAK_GLASS_TTL_MS,
+    );
+    this.reviewSlaMs = Number(
+      this.configService.get<string | number>('BREAK_GLASS_REVIEW_SLA_MS') ?? DEFAULT_REVIEW_SLA_MS,
+    );
   }
 
   onModuleInit(): void {
