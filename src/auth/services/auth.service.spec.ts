@@ -1,5 +1,6 @@
+import { createHash } from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, BadRequestException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AuthService } from './auth.service';
 import { AuthTokenService } from './auth-token.service';
@@ -190,5 +191,126 @@ describe('AuthService.logout', () => {
 
     expect(mocks.sessionManagementService.revokeSession).not.toHaveBeenCalled();
     expect(mocks.refreshTokenStore.revokeSession).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('AuthService.forgotPassword (#1277)', () => {
+  it('stores only sha256(token) in database and returns raw token for email delivery', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(mockUser);
+
+    const result = await service.forgotPassword('test@example.com');
+
+    expect(result).not.toBeNull();
+    expect(result?.token).toBeDefined();
+    const rawToken = result!.token;
+    expect(rawToken).toHaveLength(64); // 32 bytes in hex
+
+    expect(mocks.userRepo.update).toHaveBeenCalledWith(
+      mockUser.id,
+      expect.objectContaining({
+        passwordResetToken: createHash('sha256').update(rawToken).digest('hex'),
+        passwordResetTokenExpiresAt: expect.any(Date),
+      }),
+    );
+
+    // Stored hash must never be equal to raw token
+    const updateCall = mocks.userRepo.update.mock.calls[0][1];
+    expect(updateCall.passwordResetToken).not.toEqual(rawToken);
+  });
+
+  it('returns null for non-existent user without throwing', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(null);
+
+    const result = await service.forgotPassword('unknown@example.com');
+
+    expect(result).toBeNull();
+    expect(mocks.userRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('requesting a new reset generates a distinct token and overwrites previous token', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(mockUser);
+
+    const res1 = await service.forgotPassword('test@example.com');
+    const res2 = await service.forgotPassword('test@example.com');
+
+    expect(res1?.token).not.toEqual(res2?.token);
+    const hash1 = mocks.userRepo.update.mock.calls[0][1].passwordResetToken;
+    const hash2 = mocks.userRepo.update.mock.calls[1][1].passwordResetToken;
+    expect(hash1).not.toEqual(hash2);
+  });
+});
+
+describe('AuthService.resetPassword (#1277)', () => {
+  it('successfully resets password with valid hashed token and clears reset fields', async () => {
+    const { service, mocks } = await buildService();
+    const rawToken = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const hashedToken = createHash('sha256').update(rawToken).digest('hex');
+
+    const queryBuilder = {
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({
+        ...mockUser,
+        passwordResetToken: hashedToken,
+        passwordResetTokenExpiresAt: new Date(Date.now() + 60000),
+      }),
+    };
+    mocks.userRepo.createQueryBuilder.mockReturnValue(queryBuilder);
+
+    await service.resetPassword(rawToken, 'NewStrongP@ss123');
+
+    expect(queryBuilder.where).toHaveBeenCalledWith(
+      'user.passwordResetToken = :token',
+      { token: hashedToken },
+    );
+    expect(mocks.userRepo.update).toHaveBeenCalledWith(
+      mockUser.id,
+      expect.objectContaining({
+        passwordHash: 'hashed',
+        passwordResetToken: null,
+        passwordResetTokenExpiresAt: null,
+      }),
+    );
+  });
+
+  it('rejects invalid or unknown token with BadRequestException', async () => {
+    const { service, mocks } = await buildService();
+    const queryBuilder = {
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(null),
+    };
+    mocks.userRepo.createQueryBuilder.mockReturnValue(queryBuilder);
+
+    await expect(service.resetPassword('invalid-token', 'NewStrongP@ss123')).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(mocks.userRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects expired token with BadRequestException', async () => {
+    const { service, mocks } = await buildService();
+    const rawToken = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const hashedToken = createHash('sha256').update(rawToken).digest('hex');
+
+    const queryBuilder = {
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({
+        ...mockUser,
+        passwordResetToken: hashedToken,
+        passwordResetTokenExpiresAt: new Date(Date.now() - 5000), // expired
+      }),
+    };
+    mocks.userRepo.createQueryBuilder.mockReturnValue(queryBuilder);
+
+    await expect(service.resetPassword(rawToken, 'NewStrongP@ss123')).rejects.toThrow(
+      'Reset token has expired',
+    );
+    expect(mocks.userRepo.update).not.toHaveBeenCalled();
   });
 });
