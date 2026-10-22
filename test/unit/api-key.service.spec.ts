@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ApiKeyService } from '../../../src/auth/services/api-key.service';
-import { ApiKey, ApiKeyScope } from '../../../src/auth/entities/api-key.entity';
-import { User } from '../../../src/auth/entities/user.entity';
-import { AuditService } from '../../../src/common/audit/audit.service';
+import { ApiKeyService } from '../../src/auth/services/api-key.service';
+import { ApiKey, ApiKeyScope } from '../../src/auth/entities/api-key.entity';
+import { User } from '../../src/auth/entities/user.entity';
+import { AuditService } from '../../src/common/audit/audit.service';
 
 describe('ApiKeyService', () => {
   let service: ApiKeyService;
