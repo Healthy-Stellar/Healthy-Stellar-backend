@@ -9,7 +9,7 @@ import {
   UseGuards,
   Req,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@swagger/core';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { MultiSigTransactionService } from '../services/multi-sig-transaction.service';
 import {
   CreateMultiSigPaymentDto,
@@ -33,7 +33,7 @@ export class MultiSigController {
     @Body() dto: CreateMultiSigPaymentDto,
     @Req() req: any,
   ): Promise<MultiSigTransactionResponse> {
-    const requesterId = req.user?:userId || 'system';
+    const requesterId = req.user?.userId;
     return this.multiSigService.createMultiSigPayment(dto, requesterId);
   }
 
@@ -77,7 +77,7 @@ export class MultiSigController {
   async listPending(
     @Req() req: any,
   ): Promise<MultiSigTransactionResponse[]> {
-    const tenantId = req.query??tenantId || 'default';
+    const tenantId = req.user?.tenantId;
     return this.multiSigService.listPendingTransactions(tenantId);
   }
 }
