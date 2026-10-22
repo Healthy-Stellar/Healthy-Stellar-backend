@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Reflector } from '@nestjs/core';
-import { ApiKeyGuard } from '../../../src/auth/guards/api-key.guard';
-import { ApiKeyService } from '../../../src/auth/services/api-key.service';
-import { ApiKey, ApiKeyScope } from '../../../src/auth/entities/api-key.entity';
+import { ApiKeyGuard } from '../../src/auth/guards/api-key.guard';
+import { ApiKeyService } from '../../src/auth/services/api-key.service';
+import { ApiKey, ApiKeyScope } from '../../src/auth/entities/api-key.entity';
 
 describe('ApiKeyGuard', () => {
   let guard: ApiKeyGuard;
