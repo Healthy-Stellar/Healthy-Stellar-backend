@@ -180,6 +180,28 @@ export class SystemHealthService {
     return healthStatus;
   }
 
+  /**
+   * Returns the latest recorded value for a metric type within the recent window,
+   * or null when no real sample has been collected yet. Callers must treat null
+   * as "not available" rather than substituting a fabricated figure.
+   */
+  async getLatestMetricValue(metricType: MetricType): Promise<number | null> {
+    const latest = await this.systemMetricRepository.findOne({
+      where: {
+        metricType,
+        timestamp: MoreThanOrEqual(new Date(Date.now() - 5 * 60 * 1000)),
+      },
+      order: { timestamp: 'DESC' },
+    });
+
+    if (!latest || latest.value === null || latest.value === undefined) {
+      return null;
+    }
+
+    const value = Number(latest.value);
+    return Number.isFinite(value) ? value : null;
+  }
+
   private async getCpuUsage(): Promise<number> {
     const loadAvg = os.loadavg()[0] ?? 0;
     const cores = os.cpus().length || 1;

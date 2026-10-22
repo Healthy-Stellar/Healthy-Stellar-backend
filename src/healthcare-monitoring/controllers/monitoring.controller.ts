@@ -8,9 +8,13 @@ import {
   Post,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
 import { AlertRuleService } from '../services/alert-rule.service';
 import { ClinicalAlertService } from '../services/clinical-alert.service';
 import { CreateAlertRuleDto } from '../dto/create-alert-rule.dto';
@@ -18,6 +22,8 @@ import { UpdateAlertDto } from '../dto/update-alert.dto';
 import { AlertStatus } from '../entities/clinical-alert.entity';
 
 @ApiTags('monitoring')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('monitoring')
 export class MonitoringController {
   constructor(
@@ -27,26 +33,28 @@ export class MonitoringController {
 
   /** Create a configurable threshold rule for a patient metric. */
   @Post('alert-rules')
+  @Roles('admin', 'clinical')
   @ApiOperation({ summary: 'Create a per-patient metric alert rule' })
   async createAlertRule(
     @Body() dto: CreateAlertRuleDto,
     @Req() req: Request,
   ) {
     const user = (req as any).user;
-    const createdBy: string = user?.userId ?? user?.sub ?? 'system';
-    const tenantId: string | undefined = user?.tenantId;
+    const createdBy: string = user?.userId ?? user?.sub;
+    const tenantId: string = user?.tenantId;
     return this.alertRuleService.create(dto, createdBy, tenantId);
   }
 
   /** List all alert rules, optionally filtered by patient. */
   @Get('alert-rules')
+  @Roles('admin', 'clinical')
   @ApiOperation({ summary: 'List alert rules' })
   async getAlertRules(
-    @Query('patientId') patientId?: string,
-    @Req() req?: Request,
+    @Query('patientId') patientId: string | undefined,
+    @Req() req: Request,
   ) {
-    const user = (req as any)?.user;
-    const tenantId: string | undefined = user?.tenantId;
+    const user = (req as any).user;
+    const tenantId: string = user?.tenantId;
     return this.alertRuleService.findAll(patientId, tenantId);
   }
 
@@ -55,6 +63,7 @@ export class MonitoringController {
    * Accepts status = 'acknowledged' | 'resolved'.
    */
   @Patch('alerts/:id')
+  @Roles('admin', 'clinical')
   @ApiOperation({ summary: 'Acknowledge or resolve an alert' })
   async updateAlert(
     @Param('id') alertId: string,
@@ -62,7 +71,7 @@ export class MonitoringController {
     @Req() req: Request,
   ) {
     const user = (req as any).user;
-    const userId: string = user?.userId ?? user?.sub ?? 'system';
+    const userId: string = user?.userId ?? user?.sub;
 
     if (dto.status === AlertStatus.ACKNOWLEDGED) {
       return this.clinicalAlertService.acknowledgeAlert(alertId, userId);

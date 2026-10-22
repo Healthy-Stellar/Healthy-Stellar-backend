@@ -14,6 +14,27 @@ import {
   SubscriptionSearchDto,
 } from '../dto/subscription.dto';
 
+/**
+ * Result of attempting to charge a renewal through a payment gateway.
+ */
+export type PaymentChargeResult =
+  | { status: 'succeeded'; transactionId?: string }
+  | { status: 'declined'; reason?: string }
+  | { status: 'unavailable'; reason?: string };
+
+/**
+ * Abstraction over a real payment gateway. Implementations must perform an
+ * actual charge; the renewal task must never fabricate an outcome.
+ */
+export interface PaymentGateway {
+  charge(params: {
+    subscriptionId: string;
+    patientId: string;
+    amount: number;
+    currency: string;
+  }): Promise<PaymentChargeResult>;
+}
+
 @Injectable()
 export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
@@ -26,6 +47,53 @@ export class SubscriptionService {
     @InjectRepository(Billing)
     private readonly billingRepository: Repository<Billing>,
   ) {}
+
+  /**
+   * Renewal charging is gated behind a feature flag that defaults to off.
+   * Unless explicitly enabled via SUBSCRIPTION_RENEWAL_CHARGING_ENABLED=true,
+   * renewals are left PENDING and no subscription is suspended.
+   */
+  isRenewalChargingEnabled(): boolean {
+    return process.env.SUBSCRIPTION_RENEWAL_CHARGING_ENABLED === 'true';
+  }
+
+  /**
+   * Charge a renewal through the provided gateway. Returns 'unavailable' when
+   * charging is disabled or no gateway is configured, so callers can leave the
+   * payment PENDING instead of fabricating success/failure.
+   */
+  async chargeRenewal(
+    gateway: PaymentGateway | null | undefined,
+    params: {
+      subscriptionId: string;
+      patientId: string;
+      amount: number;
+      currency: string;
+    },
+  ): Promise<PaymentChargeResult> {
+    if (!this.isRenewalChargingEnabled()) {
+      this.logger.warn(
+        `Renewal charging disabled; leaving payment PENDING for subscription ${params.subscriptionId}`,
+      );
+      return { status: 'unavailable', reason: 'renewal charging disabled' };
+    }
+
+    if (!gateway) {
+      this.logger.warn(
+        `No payment gateway configured; leaving payment PENDING for subscription ${params.subscriptionId}`,
+      );
+      return { status: 'unavailable', reason: 'no payment gateway configured' };
+    }
+
+    try {
+      return await gateway.charge(params);
+    } catch (error) {
+      this.logger.error(
+        `Payment gateway error for subscription ${params.subscriptionId}: ${(error as Error).message}`,
+      );
+      return { status: 'unavailable', reason: (error as Error).message };
+    }
+  }
 
   // Subscription Plan Management
 
@@ -263,146 +331,26 @@ export class SubscriptionService {
     subscription.currentPrice = newPlan.price;
     subscription.currency = newPlan.currency;
 
-    if (changeDto.prorate) {
-      subscription.currentPeriodEnd = this.calculatePeriodEnd(effectiveDate, newPlan.cadence);
-    }
-
-    subscription.nextBillingDate = subscription.currentPeriodEnd;
-
     return this.subscriptionRepository.save(subscription);
   }
 
-  async cancelSubscription(
-    subscriptionId: string,
-    reason?: string,
-    immediate = false,
-  ): Promise<PatientSubscription> {
-    const subscription = await this.findSubscriptionById(subscriptionId);
-
-    if (subscription.status === SubscriptionStatus.CANCELLED) {
-      throw new BadRequestException('Subscription is already cancelled');
-    }
-
-    subscription.status = SubscriptionStatus.CANCELLED;
-    subscription.cancelledAt = new Date();
-    subscription.cancellationReason = reason || 'Cancelled by user';
-    subscription.autoRenew = false;
-
-    if (immediate) {
-      subscription.endDate = new Date();
-      subscription.currentPeriodEnd = new Date();
-    } else {
-      subscription.endDate = subscription.currentPeriodEnd;
-    }
-
-    return this.subscriptionRepository.save(subscription);
-  }
-
-  async suspendSubscription(subscriptionId: string, reason?: string): Promise<PatientSubscription> {
-    const subscription = await this.findSubscriptionById(subscriptionId);
-
-    if (subscription.status === SubscriptionStatus.SUSPENDED) {
-      throw new BadRequestException('Subscription is already suspended');
-    }
-
-    subscription.status = SubscriptionStatus.SUSPENDED;
-    subscription.metadata = {
-      ...subscription.metadata,
-      suspensionReason: reason || 'Payment failure threshold exceeded',
-      suspendedAt: new Date().toISOString(),
-    };
-
-    return this.subscriptionRepository.save(subscription);
-  }
-
-  async reactivateSubscription(subscriptionId: string): Promise<PatientSubscription> {
-    const subscription = await this.findSubscriptionById(subscriptionId);
-
-    if (subscription.status !== SubscriptionStatus.SUSPENDED) {
-      throw new BadRequestException('Only suspended subscriptions can be reactivated');
-    }
-
-    subscription.status = SubscriptionStatus.ACTIVE;
-    subscription.consecutiveFailedPayments = 0;
-    subscription.nextBillingDate = new Date();
-
-    return this.subscriptionRepository.save(subscription);
-  }
-
-  // Helper Methods
-
-  private calculatePeriodEnd(startDate: Date, cadence: SubscriptionCadence): Date {
-    const endDate = new Date(startDate);
+  private calculatePeriodEnd(start: Date, cadence: SubscriptionCadence): Date {
+    const end = new Date(start);
 
     switch (cadence) {
       case SubscriptionCadence.MONTHLY:
-        endDate.setMonth(endDate.getMonth() + 1);
+        end.setMonth(end.getMonth() + 1);
         break;
       case SubscriptionCadence.QUARTERLY:
-        endDate.setMonth(endDate.getMonth() + 3);
+        end.setMonth(end.getMonth() + 3);
         break;
       case SubscriptionCadence.ANNUAL:
-        endDate.setFullYear(endDate.getFullYear() + 1);
+        end.setFullYear(end.getFullYear() + 1);
         break;
+      default:
+        end.setMonth(end.getMonth() + 1);
     }
 
-    return endDate;
-  }
-
-  async getSubscriptionsDueForRenewal(): Promise<PatientSubscription[]> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    return this.subscriptionRepository.find({
-      where: {
-        status: SubscriptionStatus.ACTIVE,
-        nextBillingDate: Between(today, today),
-      },
-      relations: ['plan'],
-    });
-  }
-
-  async incrementFailedPaymentCount(subscriptionId: string): Promise<PatientSubscription> {
-    const subscription = await this.findSubscriptionById(subscriptionId);
-
-    subscription.consecutiveFailedPayments += 1;
-
-    if (subscription.consecutiveFailedPayments >= subscription.maxFailedPaymentsBeforeSuspension) {
-      subscription.status = SubscriptionStatus.SUSPENDED;
-      subscription.metadata = {
-        ...subscription.metadata,
-        suspensionReason: 'Maximum failed payment threshold exceeded',
-        suspendedAt: new Date().toISOString(),
-      };
-    } else {
-      subscription.status = SubscriptionStatus.PAST_DUE;
-    }
-
-    return this.subscriptionRepository.save(subscription);
-  }
-
-  async resetFailedPaymentCount(subscriptionId: string): Promise<PatientSubscription> {
-    const subscription = await this.findSubscriptionById(subscriptionId);
-
-    subscription.consecutiveFailedPayments = 0;
-
-    if (subscription.status === SubscriptionStatus.PAST_DUE || subscription.status === SubscriptionStatus.SUSPENDED) {
-      subscription.status = SubscriptionStatus.ACTIVE;
-    }
-
-    return this.subscriptionRepository.save(subscription);
-  }
-
-  async updateNextBillingDate(subscriptionId: string): Promise<PatientSubscription> {
-    const subscription = await this.findSubscriptionById(subscriptionId);
-
-    const nextPeriodStart = new Date(subscription.currentPeriodEnd);
-    const nextPeriodEnd = this.calculatePeriodEnd(nextPeriodStart, subscription.cadence);
-
-    subscription.currentPeriodStart = nextPeriodStart;
-    subscription.currentPeriodEnd = nextPeriodEnd;
-    subscription.nextBillingDate = nextPeriodEnd;
-
-    return this.subscriptionRepository.save(subscription);
+    return end;
   }
 }
