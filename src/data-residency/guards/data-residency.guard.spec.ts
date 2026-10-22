@@ -1,8 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataResidencyGuard } from '../guards/data-residency.guard';
 import { DataResidencyService } from '../services/data-residency.service';
-import { TenantService } from '../../tenant/tenant.service';
+import { TenantService } from '../../tenant/services/tenant.service';
 import { DataResidencyRegion } from '../../enums/data-residency.enum';
 
 describe('DataResidencyGuard', () => {
@@ -43,6 +44,14 @@ describe('DataResidencyGuard', () => {
           provide: TenantService,
           useValue: {
             findById: jest.fn(),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            // Trust the loopback direct connection so proxy headers are honored
+            // in the getClientIp tests.
+            get: jest.fn().mockReturnValue('127.0.0.1'),
           },
         },
       ],
@@ -164,6 +173,59 @@ describe('DataResidencyGuard', () => {
 
       await guard.canActivate(context);
       expect((mockRequest as any).dataRegion).toBe(DataResidencyRegion.EU);
+    });
+
+    it('should resolve the tenant from the organizationId claim (issue #1189)', async () => {
+      jest.spyOn(tenantService, 'findById').mockResolvedValue(mockTenant);
+      jest
+        .spyOn(dataResidencyService, 'isIpAllowedForRegion')
+        .mockReturnValue(true);
+
+      const contextWithOrg = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            // JWT payloads carry `organizationId`, not `tenantId`
+            user: { organizationId: 'tenant-123' },
+            headers: { 'x-forwarded-for': '10.10.10.10' },
+            socket: { remoteAddress: '127.0.0.1' },
+          }),
+        }),
+      } as any;
+
+      const result = await guard.canActivate(contextWithOrg);
+      expect(result).toBe(true);
+      expect(tenantService.findById).toHaveBeenCalledWith('tenant-123');
+    });
+
+    it('should fail closed when an authenticated request has no resolvable tenant (issue #1189)', async () => {
+      const contextNoTenant = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            user: { id: 'user-1' },
+            headers: {},
+            socket: { remoteAddress: '127.0.0.1' },
+          }),
+        }),
+      } as any;
+
+      await expect(guard.canActivate(contextNoTenant)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('should still pass through public (unauthenticated) requests', async () => {
+      const contextWithoutUser = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            user: undefined,
+            headers: {},
+            socket: { remoteAddress: '127.0.0.1' },
+          }),
+        }),
+      } as any;
+
+      const result = await guard.canActivate(contextWithoutUser);
+      expect(result).toBe(true);
     });
   });
 
