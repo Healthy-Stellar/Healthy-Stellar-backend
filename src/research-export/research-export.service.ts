@@ -97,7 +97,6 @@ export class ResearchExportService {
   private readonly logger = new Logger(ResearchExportService.name);
   private readonly s3: S3Client;
   private readonly bucket: string;
-  private grantedOrganizationId: string;
 
   constructor(
     @InjectRepository(MedicalRecord)
@@ -123,7 +122,6 @@ export class ResearchExportService {
     options: { approvedBy?: string } = {},
   ): Promise<AnonymizedExport> {
     const grant = await this.assertValidGrant(researcherId);
-    this.grantedOrganizationId = grant.organizationId;
 
     // Real (non-dryRun) exports must be approved by an administrator before
     // the job is dispatched — researchers cannot self-authorise a dispatch.
@@ -131,8 +129,7 @@ export class ResearchExportService {
       throw new ForbiddenException('Research export requires admin approval before dispatch');
     }
 
-    this.exportSalt = uuidv4();
-    const records = await this.fetchRecords(filters);
+    const records = await this.fetchRecords(filters, grant.organizationId);
     const patientIds = [...new Set(records.map((r) => r.patientId))];
 
     // Fix: findByIds removed in TypeORM 0.3.x — use find + In() operator
@@ -190,7 +187,7 @@ export class ResearchExportService {
 
   // ─── Grant Validation ──────────────────────────────────────────────────────
 
-  private async assertValidGrant(researcherId: string): Promise<AccessGrant> {
+  async assertValidGrant(researcherId: string): Promise<AccessGrant> {
     const grant = await this.grantRepo.findOne({
       where: { granteeId: researcherId, status: GrantStatus.ACTIVE },
       order: { createdAt: 'DESC' },
@@ -217,8 +214,9 @@ export class ResearchExportService {
    */
   async fetchRecordsAndPatients(
     filters: ResearchExportFiltersDto,
+    organizationId: string,
   ): Promise<{ records: MedicalRecord[]; patientMap: Map<string, Patient> }> {
-    const records = await this.fetchRecords(filters);
+    const records = await this.fetchRecords(filters, organizationId);
     const patientIds = [...new Set(records.map((r) => r.patientId))];
 
     const patients = patientIds.length
@@ -228,10 +226,13 @@ export class ResearchExportService {
     return { records, patientMap: new Map(patients.map((p) => [p.id, p])) };
   }
 
-  private async fetchRecords(filters: ResearchExportFiltersDto): Promise<MedicalRecord[]> {
+  private async fetchRecords(
+    filters: ResearchExportFiltersDto,
+    organizationId: string,
+  ): Promise<MedicalRecord[]> {
     const qb = this.recordRepo.createQueryBuilder('r')
       .where('r.status = :status', { status: 'active' })
-      .andWhere('r.organizationId = :orgId', { orgId: this.grantedOrganizationId });
+      .andWhere('r.organizationId = :orgId', { orgId: organizationId });
 
     if (filters.recordType) {
       qb.andWhere('r.recordType = :type', { type: filters.recordType });

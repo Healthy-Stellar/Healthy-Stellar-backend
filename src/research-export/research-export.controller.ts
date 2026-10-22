@@ -34,7 +34,7 @@ export class ResearchExportController {
       'would leave zero exportable records, the request fails rather than returning unsafe partial data.',
   })
   @ApiResponse({ status: 200, description: 'NDJSON stream of anonymized records' })
-  @ApiResponse({ status: 403, description: 'Missing RESEARCH_EXPORT permission' })
+  @ApiResponse({ status: 403, description: 'Missing RESEARCH_EXPORT permission or no active research grant' })
   @ApiResponse({
     status: 422,
     description: 'k-anonymity constraint (k>=5) could not be satisfied for this filter',
@@ -57,8 +57,11 @@ export class ResearchExportController {
       { filters, endpoint: 'POST /research-export/anonymized' },
     );
 
+    const grant = await this.researchExportService.assertValidGrant(user.id);
+
     const { records, patientMap } = await this.researchExportService.fetchRecordsAndPatients(
       filters,
+      grant.organizationId,
     );
 
     const anonymizedRows = records.map((record) =>
