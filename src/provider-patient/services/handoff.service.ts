@@ -13,10 +13,16 @@ import {
 import { CreateHandoffDto, HandoffQueryDto } from '../dto/handoff.dto';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 
-export interface HandoffActor {
-  userId: string;
-  tenantId: string;
-}
+/**
+ * Resolves the escalation target for a handoff's tenant/department.
+ * Implementations should look up the department head or charge nurse for the
+ * given tenant/department and return their provider id, or null if none is
+ * configured.
+ */
+export type EscalationTargetResolver = (
+  tenantId: string | null | undefined,
+  departmentId: string | null | undefined,
+) => Promise<string | null>;
 
 @Injectable()
 export class HandoffService {
@@ -121,8 +127,18 @@ export class HandoffService {
     return handoff;
   }
 
-  /** Called by the scheduled escalation task every 5 minutes */
-  async escalateStaleHandoffs(departmentHeadId: string): Promise<void> {
+  /**
+   * Called by the scheduled escalation task every 5 minutes.
+   *
+   * Each stale handoff is claimed atomically via `UPDATE ... RETURNING` so that
+   * only one instance escalates it, and the escalation target is resolved per
+   * tenant/department. A handoff is marked ESCALATED only after the
+   * notification is accepted; if no target is configured the handoff is left
+   * untouched and an error is logged so the misconfiguration is visible.
+   */
+  async escalateStaleHandoffs(
+    resolveTarget: EscalationTargetResolver,
+  ): Promise<void> {
     const cutoff = new Date(Date.now() - 30 * 60 * 1000);
 
     const stale = await this.repo
@@ -132,16 +148,81 @@ export class HandoffService {
       .andWhere('h.escalatedAt IS NULL')
       .getMany();
 
-    for (const handoff of stale) {
-      handoff.status = HandoffStatus.ESCALATED;
-      handoff.escalatedAt = new Date();
-      handoff.escalatedTo = departmentHeadId;
-      await this.repo.save(handoff);
+    for (const candidate of stale) {
+      // Atomically claim the handoff so concurrent instances skip it.
+      const claim = await this.repo
+        .createQueryBuilder()
+        .update(CarePlanHandoff)
+        .set({ escalatedAt: new Date() })
+        .where('id = :id', { id: candidate.id })
+        .andWhere('status = :status', { status: HandoffStatus.PENDING })
+        .andWhere('escalatedAt IS NULL')
+        .returning(['id'])
+        .execute();
 
-      this.logger.warn(
-        `[handoff] Escalated id=${handoff.id} patient=${handoff.patientId} to department-head`,
+      if (!claim.raw || claim.raw.length === 0) {
+        // Another instance already claimed this handoff.
+        continue;
+      }
+
+      const target = await resolveTarget(
+        (candidate as any).tenantId,
+        (candidate as any).departmentId,
       );
 
+      if (!target) {
+        this.logger.error(
+          `[handoff] No escalation target configured for tenant=${(candidate as any).tenantId} ` +
+            `department=${(candidate as any).departmentId}; handoff id=${candidate.id} left unescalated`,
+        );
+        // Release the claim so a later run can retry once configured.
+        await this.repo
+          .createQueryBuilder()
+          .update(CarePlanHandoff)
+          .set({ escalatedAt: null })
+          .where('id = :id', { id: candidate.id })
+          .andWhere('status = :status', { status: HandoffStatus.PENDING })
+          .execute();
+        continue;
+      }
+
+      try {
+        await this.notificationsService.sendProviderEmailNotification(
+          target,
+          'Unacknowledged patient handoff requires escalation',
+          `Handoff ${candidate.id} for patient ${candidate.patientId} has not been acknowledged ` +
+            `within 30 minutes. Receiving provider: ${candidate.toProvider}.`,
+        );
+      } catch (err) {
+        this.logger.error(
+          `[handoff] Failed to notify escalation target=${target} for id=${candidate.id}: ${(err as Error).message}`,
+        );
+        // Release the claim so the handoff can be retried on the next run.
+        await this.repo
+          .createQueryBuilder()
+          .update(CarePlanHandoff)
+          .set({ escalatedAt: null })
+          .where('id = :id', { id: candidate.id })
+          .andWhere('status = :status', { status: HandoffStatus.PENDING })
+          .execute();
+        continue;
+      }
+
+      // Notification accepted: finalize the escalation.
+      await this.repo
+        .createQueryBuilder()
+        .update(CarePlanHandoff)
+        .set({
+          status: HandoffStatus.ESCALATED,
+          escalatedAt: new Date(),
+          escalatedTo: target,
+        })
+        .where('id = :id', { id: candidate.id })
+        .andWhere('status = :status', { status: HandoffStatus.PENDING })
+        .execute();
+
+      this.logger.warn(
+        `[handoff] Escalated id=${candidate.id} patient=${candidate.patientId} to=${target}`,
       await this.notificationsService.sendProviderEmailNotification(
         departmentHeadId,
         'Unacknowledged patient handoff requires escalation',

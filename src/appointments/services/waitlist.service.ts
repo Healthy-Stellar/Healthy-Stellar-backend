@@ -1,4 +1,4 @@
-import { forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { AppointmentWaitlist, WaitlistStatus } from '../entities/appointment-waitlist.entity';
@@ -11,6 +11,8 @@ const DEFAULT_RESPONSE_WINDOW_MINUTES = 30;
 
 @Injectable()
 export class WaitlistService {
+  private readonly logger = new Logger(WaitlistService.name);
+
   constructor(
     @InjectRepository(AppointmentWaitlist)
     private readonly waitlistRepo: Repository<AppointmentWaitlist>,
@@ -18,8 +20,19 @@ export class WaitlistService {
     private readonly appointmentService: AppointmentService,
   ) {}
 
+  private getScopedWhere(where: Record<string, any> = {}): Record<string, any> {
+    const tenantId = TenantContext.getTenantId();
+    return tenantId ? { ...where, tenantId } : where;
+  }
+
   async join(patientId: string, dto: JoinWaitlistDto): Promise<AppointmentWaitlist> {
+    const tenantId = TenantContext.getTenantId();
+    if (!tenantId) {
+      throw new NotFoundException('Tenant context is required to join the waitlist');
+    }
+
     const entry = this.waitlistRepo.create({
+      tenantId,
       patientId,
       doctorId: dto.doctorId,
       preferredDateStart: new Date(dto.preferredDateStart),
@@ -31,14 +44,18 @@ export class WaitlistService {
   }
 
   async leave(patientId: string, waitlistId: string): Promise<void> {
-    const entry = await this.waitlistRepo.findOne({ where: { id: waitlistId, patientId } });
+    const entry = await this.waitlistRepo.findOne({
+      where: this.getScopedWhere({ id: waitlistId, patientId }),
+    });
     if (!entry) throw new NotFoundException(`Waitlist entry ${waitlistId} not found`);
     entry.status = WaitlistStatus.CANCELLED;
     await this.waitlistRepo.save(entry);
   }
 
   async listForPatient(patientId: string): Promise<AppointmentWaitlist[]> {
-    return this.waitlistRepo.find({ where: { patientId, status: WaitlistStatus.WAITING } });
+    return this.waitlistRepo.find({
+      where: this.getScopedWhere({ patientId, status: WaitlistStatus.WAITING }),
+    });
   }
 
   /**
@@ -54,12 +71,12 @@ export class WaitlistService {
     await this.expireStaleOffers();
 
     const candidates = await this.waitlistRepo.find({
-      where: {
+      where: this.getScopedWhere({
         doctorId: cancelledAppointment.doctorId,
         status: WaitlistStatus.WAITING,
         preferredDateStart: LessThanOrEqual(slotDate),
         preferredDateEnd: MoreThanOrEqual(slotDate),
-      },
+      }),
       order: { createdAt: 'ASC' },
     });
 
@@ -72,74 +89,116 @@ export class WaitlistService {
     return this.waitlistRepo.save(next);
   }
 
+  /**
+   * Scheduled job entry point. Expires stale offers and re-offers each freed
+   * slot to the next WAITING candidate, cascading until a candidate accepts
+   * or the slot time passes. Skips slots that have been booked by other means.
+   */
+  async processExpiredOffers(): Promise<void> {
+    const expired = await this.expireStaleOffers();
+    for (const entry of expired) {
+      if (!entry.offeredAppointmentId) continue;
+      try {
+        await this.reofferSlot(entry.offeredAppointmentId);
+      } catch (err) {
+        this.logger.error(
+          `Failed to re-offer slot ${entry.offeredAppointmentId}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Re-offers a freed slot to the next eligible candidate. Skips the slot if
+   * it has already been booked by other means or its time has passed.
+   */
+  private async reofferSlot(appointmentId: string): Promise<AppointmentWaitlist | null> {
+    const slot = await this.appointmentRepo.findOne({
+      where: this.getScopedWhere({ id: appointmentId }),
+    });
+    if (!slot) return null;
+
+    // Slot already booked by other means — nothing to re-offer.
+    if (slot.status !== AppointmentStatus.CANCELLED) return null;
+
+    // Slot time has passed — stop cascading.
+    if (new Date(slot.appointmentDate).getTime() <= Date.now()) return null;
+
+    return this.notifyNextEligible(slot);
+  }
+
   async acceptOffer(patientId: string, waitlistId: string): Promise<AppointmentWaitlist> {
-    const result = await this.waitlistRepo.manager.transaction(async (manager) => {
-      const entryRepo = manager.getRepository(AppointmentWaitlist);
-      const entry = await entryRepo.findOne({
-        where: { id: waitlistId, patientId, status: WaitlistStatus.NOTIFIED },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!entry) {
-        throw new NotFoundException(`No active offer found for waitlist entry ${waitlistId}`);
-      }
-
-      const now = Date.now();
-      if (entry.notifiedAt && now - entry.notifiedAt.getTime() > entry.responseWindowMinutes * 60_000) {
-        entry.status = WaitlistStatus.EXPIRED;
-        await entryRepo.save(entry);
-        return { expired: true as const };
-      }
-
-      let offeredAppointment: Appointment | null = null;
-      if (entry.offeredAppointmentId) {
-        offeredAppointment = await manager.getRepository(Appointment).findOne({
-          where: { id: entry.offeredAppointmentId },
-        });
-      }
-
-      const appointmentDate =
-        offeredAppointment?.startTime ??
-        offeredAppointment?.appointmentDate ??
-        entry.preferredDateStart;
-      const appointmentDto: CreateAppointmentDto = {
-        patientId: entry.patientId,
-        doctorId: entry.doctorId,
-        appointmentDate: appointmentDate.toISOString(),
-        duration: offeredAppointment?.duration ?? 30,
-        type: offeredAppointment?.type ?? AppointmentType.ROUTINE,
-        priority: offeredAppointment?.priority ?? MedicalPriority.NORMAL,
-        specialty: offeredAppointment?.specialty ?? undefined,
-        roomId: offeredAppointment?.roomId ?? undefined,
-        isTelemedicine: offeredAppointment?.isTelemedicine ?? false,
-        reason: offeredAppointment?.reason
-          ? `Waitlist acceptance: ${offeredAppointment.reason}`
-          : 'Booked via waitlist acceptance',
-        notes: `Accepted from waitlist entry ${entry.id}`,
-      };
-
-      const appointment = await this.appointmentService.create(appointmentDto, manager);
-      entry.status = WaitlistStatus.ACCEPTED;
-      const savedEntry = await entryRepo.save(entry);
-      Object.assign(savedEntry, { appointment });
-      return { entry: savedEntry };
+    const entry = await this.waitlistRepo.findOne({
+      where: this.getScopedWhere({
+        id: waitlistId,
+        patientId,
+        status: WaitlistStatus.NOTIFIED,
+      }),
     });
 
     if ('expired' in result) {
       throw new NotFoundException(`Offer for waitlist entry ${waitlistId} has expired`);
     }
 
-    return result.entry;
+    entry.status = WaitlistStatus.ACCEPTED;
+    const savedEntry = await this.waitlistRepo.save(entry);
+
+    let offeredAppointment: Appointment | null = null;
+    if (entry.offeredAppointmentId) {
+      offeredAppointment = await this.appointmentRepo.findOne({
+        where: this.getScopedWhere({ id: entry.offeredAppointmentId }),
+      });
+    }
+
+    const appointmentDate = offeredAppointment?.appointmentDate ?? entry.preferredDateStart;
+    const duration = offeredAppointment?.duration ?? 30;
+    const startTime = offeredAppointment?.startTime ?? appointmentDate;
+    const endTime =
+      offeredAppointment?.endTime ?? new Date(new Date(startTime).getTime() + duration * 60_000);
+    const tenantId = entry.tenantId;
+
+    const appointment = this.appointmentRepo.create({
+      tenantId,
+      patientId: entry.patientId,
+      doctorId: entry.doctorId,
+      appointmentDate,
+      startTime,
+      endTime,
+      duration,
+      type: offeredAppointment?.type ?? AppointmentType.ROUTINE,
+      status: AppointmentStatus.SCHEDULED,
+      priority: offeredAppointment?.priority ?? MedicalPriority.NORMAL,
+      specialty: offeredAppointment?.specialty ?? undefined,
+      roomId: offeredAppointment?.roomId ?? null,
+      reason: offeredAppointment?.reason
+        ? `Waitlist acceptance: ${offeredAppointment.reason}`
+        : 'Booked via waitlist acceptance',
+      notes: `Accepted from waitlist entry ${entry.id}`,
+    });
+
+    const savedAppointment = await this.appointmentRepo.save(appointment);
+    (savedEntry as any).appointment = savedAppointment;
+
+    return savedEntry;
   }
 
-  private async expireStaleOffers(): Promise<void> {
-    const notified = await this.waitlistRepo.find({ where: { status: WaitlistStatus.NOTIFIED } });
+  /**
+   * Marks NOTIFIED entries whose response window has passed as EXPIRED and
+   * returns them so callers can re-offer the freed slots.
+   */
+  private async expireStaleOffers(): Promise<AppointmentWaitlist[]> {
+    const notified = await this.waitlistRepo.find({
+      where: this.getScopedWhere({ status: WaitlistStatus.NOTIFIED }),
+    });
     const now = Date.now();
     const stale = notified.filter((e) => {
       if (!e.notifiedAt) return false;
       return now - e.notifiedAt.getTime() > e.responseWindowMinutes * 60_000;
     });
-    if (stale.length > 0) {
-      await this.waitlistRepo.save(stale.map((e) => ({ ...e, status: WaitlistStatus.EXPIRED })));
-    }
+    if (stale.length === 0) return [];
+
+    const expired = stale.map((e) => ({ ...e, status: WaitlistStatus.EXPIRED }));
+    await this.waitlistRepo.save(expired);
+    return expired as AppointmentWaitlist[];
   }
 }

@@ -17,9 +17,14 @@ export enum WaitlistStatus {
 
 @Entity('appointment_waitlist')
 @Index(['doctorId', 'status'])
+@Index(['tenantId', 'doctorId', 'status'])
 export class AppointmentWaitlist {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Index()
+  @Column({ name: 'tenant_id' })
+  tenantId: string;
 
   @Index()
   @Column()
