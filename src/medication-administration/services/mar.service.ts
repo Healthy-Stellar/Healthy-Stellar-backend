@@ -5,13 +5,15 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository, Between, In } from 'typeorm';
+import { DataSource, Repository, Between, In, IsNull } from 'typeorm';
 import {
   MedicationAdministrationRecord,
   AdministrationStatus,
 } from '../entities/medication-administration-record.entity';
 import { CreateMarDto } from '../dto/create-mar.dto';
 import { AdministerMedicationDto } from '../dto/administer-medication.dto';
+import { UpdateMarDto } from '../dto/update-mar.dto';
+import { VoidMarDto } from '../dto/void-mar.dto';
 import { MissedDoseService } from './missed-dose.service';
 import { AlertService } from './alert.service';
 import { User } from '../../users/entities/user.entity';
@@ -50,13 +52,14 @@ export class MarService {
 
   async findAll(): Promise<MedicationAdministrationRecord[]> {
     return await this.marRepository.find({
+      where: { voidedAt: IsNull() },
       order: { scheduledTime: 'ASC' },
     });
   }
 
   async findByPatient(patientId: string): Promise<MedicationAdministrationRecord[]> {
     return await this.marRepository.find({
-      where: { patientId },
+      where: { patientId, voidedAt: IsNull() },
       order: { scheduledTime: 'ASC' },
     });
   }
@@ -92,6 +95,7 @@ export class MarService {
       where: {
         patientId,
         administrationDate: date,
+        voidedAt: IsNull(),
       },
       order: { scheduledTime: 'ASC' },
     });
@@ -107,6 +111,7 @@ export class MarService {
   async findScheduledMedications(date?: string): Promise<MedicationAdministrationRecord[]> {
     const whereCondition: any = {
       status: AdministrationStatus.SCHEDULED,
+      voidedAt: IsNull(),
     };
 
     if (date) {
@@ -127,6 +132,7 @@ export class MarService {
       where: {
         status: AdministrationStatus.SCHEDULED,
         scheduledTime: Between(new Date('2000-01-01'), thirtyMinutesAgo),
+        voidedAt: IsNull(),
       },
       order: { scheduledTime: 'ASC' },
     });
@@ -237,16 +243,56 @@ export class MarService {
 
   async update(
     id: string,
-    updateData: Partial<MedicationAdministrationRecord>,
+    updateData: UpdateMarDto,
   ): Promise<MedicationAdministrationRecord> {
     const mar = await this.findOne(id);
-    Object.assign(mar, updateData, { updatedAt: new Date() });
+
+    if (mar.voidedAt) {
+      throw new BadRequestException('Cannot update a voided medication administration record');
+    }
+
+    const allowedFields: Array<keyof UpdateMarDto> = ['notes', 'scheduledTime'];
+    const disallowedFields = Object.keys(updateData ?? {}).filter(
+      (key) => !allowedFields.includes(key as keyof UpdateMarDto),
+    );
+    if (disallowedFields.length > 0) {
+      throw new BadRequestException(
+        `The following fields cannot be updated: ${disallowedFields.join(', ')}`,
+      );
+    }
+
+    if (updateData.notes !== undefined) {
+      mar.notes = updateData.notes;
+    }
+    if (updateData.scheduledTime !== undefined) {
+      const scheduledTime = new Date(updateData.scheduledTime);
+      if (isNaN(scheduledTime.getTime())) {
+        throw new BadRequestException('Invalid scheduledTime');
+      }
+      mar.scheduledTime = scheduledTime;
+      mar.administrationDate = scheduledTime.toISOString().split('T')[0];
+    }
+    mar.updatedAt = new Date();
+
     return await this.marRepository.save(mar);
   }
 
-  async remove(id: string): Promise<void> {
+  async voidRecord(
+    id: string,
+    dto: VoidMarDto,
+  ): Promise<MedicationAdministrationRecord> {
     const mar = await this.findOne(id);
-    await this.marRepository.remove(mar);
+
+    if (mar.voidedAt) {
+      throw new BadRequestException('Medication administration record is already voided');
+    }
+
+    mar.voidedAt = new Date();
+    mar.voidReason = dto.reason;
+    mar.voidedBy = dto.voidedBy;
+    mar.updatedAt = new Date();
+
+    return await this.marRepository.save(mar);
   }
 
   async getAdministrationStats(patientId: string, startDate: string, endDate: string) {
@@ -254,6 +300,7 @@ export class MarService {
       where: {
         patientId,
         administrationDate: Between(startDate, endDate),
+        voidedAt: IsNull(),
       },
     });
 
@@ -283,6 +330,7 @@ export class MarService {
       where: {
         status: AdministrationStatus.SCHEDULED,
         scheduledTime: Between(now, windowEnd),
+        voidedAt: IsNull(),
       },
       order: { scheduledTime: 'ASC' },
     });
@@ -293,6 +341,7 @@ export class MarService {
       where: {
         isHighAlert: true,
         status: In([AdministrationStatus.SCHEDULED, AdministrationStatus.ADMINISTERED]),
+        voidedAt: IsNull(),
       },
       order: { scheduledTime: 'DESC' },
     });
