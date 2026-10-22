@@ -23,6 +23,7 @@ import { ApiTags } from '@nestjs/swagger';
 
 @ApiTags('emergency')
 @Controller('emergency')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class EmergencyOperationsController {
   constructor(private emergencyService: EmergencyOperationsService) {}
 
