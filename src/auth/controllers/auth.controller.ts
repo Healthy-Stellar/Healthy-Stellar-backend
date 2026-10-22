@@ -19,8 +19,10 @@ import { SessionManagementService } from '../services/session-management.service
 import { AuthTokenService } from '../services/auth-token.service';
 import { RefreshTokenStoreService } from '../services/refresh-token-store.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { RolesGuard } from '../guards/roles.guard';
+import { Roles } from '../decorators/roles.decorator';
 import { JwtPayload } from '../services/auth-token.service';
-import { RegisterDto, LoginDto, ChangePasswordDto, ResetPasswordDto, ResetPasswordConfirmDto } from '../dto/auth.dto';
+import { RegisterDto, RegisterStaffDto, LoginDto, ChangePasswordDto, ResetPasswordDto, ResetPasswordConfirmDto } from '../dto/auth.dto';
 import { RefreshTokenDto } from '../dto/session.dto';
 import { User, UserRole } from '../entities/user.entity';
 import { AuthRateLimit } from '../../common/throttler/throttler.decorator';
@@ -55,34 +57,22 @@ export class AuthController {
   }
 
   /**
-   * Register healthcare staff
+   * Register healthcare staff (admin / super admin only)
    */
   @Post('register/staff')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @AuthRateLimit() // 10 requests per minute
-  @ApiOperation({ summary: 'Register healthcare staff with role' })
+  @ApiOperation({ summary: 'Register healthcare staff with role (admin only)' })
   @ApiResponse({ status: 201, description: 'Staff registered successfully' })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 403, description: 'Caller may not create this role' })
   async registerStaff(
-    @Body()
-    body: RegisterDto & { role: UserRole; npi?: string; licenseNumber?: string },
+    @Body() body: RegisterStaffDto,
     @Req() req: Request,
-  ): Promise<AuthResponse> {
-    if (!body.role || !Object.values(UserRole).includes(body.role)) {
-      throw new BadRequestException(I18nContext.current()?.t('errors.INVALID_ROLE') || 'Invalid role');
-    }
-
-    if (body.role === UserRole.PATIENT) {
-      throw new BadRequestException(I18nContext.current()?.t('errors.USE_REGISTER_ENDPOINT_FOR_PATIENT_REGISTRATION') || 'Use /register endpoint for patient registration');
-    }
-
-    const result = await this.authService.register(
-      body,
-      body.role,
-      this.getIpAddress(req),
-      req.get('user-agent'),
-    );
-
-    // Staff requires MFA setup immediately
-    return result;
+  ): Promise<{ user: AuthResponse['user'] }> {
+    return this.authService.registerStaff(body, req.user as JwtPayload, this.getIpAddress(req));
   }
 
   /**
