@@ -10,9 +10,11 @@ export interface RegionalConfig {
   horizonUrl: string;
   ipfsNodes: string[];
   databaseConfig: {
-    host: string;
-    port: number;
-    database: string;
+    type?: string;
+    host?: string;
+    port?: number;
+    database?: string;
+    url?: string;
   };
   awsRegion: string;
   dataCenter: string;
@@ -37,9 +39,11 @@ export class DataResidencyService implements OnModuleInit {
         horizonUrl: cfg('eu.horizonUrl'),
         ipfsNodes: cfg('eu.ipfsNodes'),
         databaseConfig: {
+          type: cfg('eu.dbType') || 'postgres',
           host: cfg('eu.dbHost'),
           port: cfg('eu.dbPort'),
           database: cfg('eu.dbName'),
+          url: cfg('eu.dbUrl'),
         },
         awsRegion: 'eu-west-1',
         dataCenter: 'Frankfurt',
@@ -49,9 +53,11 @@ export class DataResidencyService implements OnModuleInit {
         horizonUrl: cfg('us.horizonUrl'),
         ipfsNodes: cfg('us.ipfsNodes'),
         databaseConfig: {
+          type: cfg('us.dbType') || 'postgres',
           host: cfg('us.dbHost'),
           port: cfg('us.dbPort'),
           database: cfg('us.dbName'),
+          url: cfg('us.dbUrl'),
         },
         awsRegion: 'us-east-1',
         dataCenter: 'N. Virginia',
@@ -61,9 +67,11 @@ export class DataResidencyService implements OnModuleInit {
         horizonUrl: cfg('apac.horizonUrl'),
         ipfsNodes: cfg('apac.ipfsNodes'),
         databaseConfig: {
+          type: cfg('apac.dbType') || 'postgres',
           host: cfg('apac.dbHost'),
           port: cfg('apac.dbPort'),
           database: cfg('apac.dbName'),
+          url: cfg('apac.dbUrl'),
         },
         awsRegion: 'ap-southeast-1',
         dataCenter: 'Singapore',
@@ -73,9 +81,11 @@ export class DataResidencyService implements OnModuleInit {
         horizonUrl: cfg('africa.horizonUrl'),
         ipfsNodes: cfg('africa.ipfsNodes'),
         databaseConfig: {
+          type: cfg('africa.dbType') || 'postgres',
           host: cfg('africa.dbHost'),
           port: cfg('africa.dbPort'),
           database: cfg('africa.dbName'),
+          url: cfg('africa.dbUrl'),
         },
         awsRegion: 'af-south-1',
         dataCenter: 'Cape Town',
@@ -129,6 +139,11 @@ export class DataResidencyService implements OnModuleInit {
    */
   getAwsRegion(region: DataResidencyRegion): string {
     return this.getRegionalConfig(region).awsRegion;
+  }
+
+  getDefaultRegion(): DataResidencyRegion {
+    const region = this.configService.get<string>('DEFAULT_REGION') || DataResidencyRegion.EU;
+    return region as DataResidencyRegion;
   }
 
   /**

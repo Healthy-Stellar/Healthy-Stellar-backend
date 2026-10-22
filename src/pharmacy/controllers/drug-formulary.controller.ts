@@ -1,7 +1,10 @@
 import { Controller, Get, Post, Body, Param, Patch, Delete, Query } from '@nestjs/common';
 import { DrugFormularyService } from '../services/drug-formulary.service';
 import { FormularyTier } from '../entities/drug-formulary.entity';
+import { PaginationDto } from '../../common/dto/pagination.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pharmacy/formulary')
 @Controller('pharmacy/formulary')
 export class DrugFormularyController {
   constructor(private formularyService: DrugFormularyService) {}
@@ -12,18 +15,21 @@ export class DrugFormularyController {
   }
 
   @Get()
-  async findAll() {
-    return await this.formularyService.findAll();
+  async findAll(@Query() pagination: PaginationDto) {
+    return await this.formularyService.findAll(pagination);
   }
 
   @Get('plan/:insurancePlan')
-  async getFormularyByPlan(@Param('insurancePlan') insurancePlan: string) {
-    return await this.formularyService.getFormularyByPlan(insurancePlan);
+  async getFormularyByPlan(
+    @Param('insurancePlan') insurancePlan: string,
+    @Query() pagination: PaginationDto,
+  ) {
+    return await this.formularyService.getFormularyByPlan(insurancePlan, pagination);
   }
 
   @Get('tier/:tier')
-  async getFormularyByTier(@Param('tier') tier: FormularyTier) {
-    return await this.formularyService.getFormularyByTier(tier);
+  async getFormularyByTier(@Param('tier') tier: FormularyTier, @Query() pagination: PaginationDto) {
+    return await this.formularyService.getFormularyByTier(tier, pagination);
   }
 
   @Get('coverage/:drugId/:insurancePlan')
@@ -50,8 +56,9 @@ export class DrugFormularyController {
   async getPreferredAlternatives(
     @Param('drugId') drugId: string,
     @Param('insurancePlan') insurancePlan: string,
+    @Query() pagination: PaginationDto,
   ) {
-    return await this.formularyService.getPreferredAlternatives(drugId, insurancePlan);
+    return await this.formularyService.getPreferredAlternatives(drugId, insurancePlan, pagination);
   }
 
   @Get(':id')

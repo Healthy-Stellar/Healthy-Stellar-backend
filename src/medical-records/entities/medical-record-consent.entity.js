@@ -40,7 +40,6 @@ var __setFunctionName = (this && this.__setFunctionName) || function (f, name, p
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MedicalRecordConsent = exports.ConsentType = exports.ConsentStatus = void 0;
 var typeorm_1 = require("typeorm");
-var medical_record_entity_1 = require("./medical-record.entity");
 var ConsentStatus;
 (function (ConsentStatus) {
     ConsentStatus["PENDING"] = "pending";
@@ -152,7 +151,7 @@ var MedicalRecordConsent = function () {
         var _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(null) : void 0;
         _id_decorators = [(0, typeorm_1.PrimaryGeneratedColumn)('uuid')];
         _medicalRecordId_decorators = [(0, typeorm_1.Column)({ type: 'uuid' }), (0, typeorm_1.Index)()];
-        _medicalRecord_decorators = [(0, typeorm_1.ManyToOne)(function () { return medical_record_entity_1.MedicalRecord; }, function (record) { return record.consents; }, {
+        _medicalRecord_decorators = [(0, typeorm_1.ManyToOne)('MedicalRecord', 'consents', {
                 onDelete: 'CASCADE',
             }), (0, typeorm_1.JoinColumn)({ name: 'medicalRecordId' })];
         _patientId_decorators = [(0, typeorm_1.Column)({ type: 'uuid' }), (0, typeorm_1.Index)()];

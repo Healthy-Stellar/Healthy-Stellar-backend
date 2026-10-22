@@ -38,6 +38,37 @@ services:
       timeout: 10s
       retries: 3
 
+  # Background Job Worker
+  worker:
+    build: .
+    command: ["node", "dist/worker"]
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USERNAME=medical_user
+      - DB_PASSWORD_FILE=/run/secrets/db_password
+      - DB_NAME=healthy_stellar
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET_FILE=/run/secrets/jwt_secret
+      - LOG_LEVEL=info
+      - LOKI_HOST=http://loki:3100
+      - APP_LOG_RETENTION_DAYS=30
+      - AUDIT_LOG_RETENTION_DAYS=2555
+    secrets:
+      - db_password
+      - jwt_secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - medical_network
+    restart: unless-stopped
+    # Workers don't expose ports, they process jobs from Redis queues
+
   # PostgreSQL with Encryption
   postgres:
     image: postgres:15-alpine

@@ -86,6 +86,12 @@ export class AuditLogEntity {
   @Column({ nullable: true })
   stellarTxHash: string;
 
+  @Column({ nullable: true, length: 64 })
+  previousHash: string;
+
+  @Column({ nullable: true, length: 64 })
+  entryHash: string;
+
   @Column({ default: false })
   requiresInvestigation: boolean;
 

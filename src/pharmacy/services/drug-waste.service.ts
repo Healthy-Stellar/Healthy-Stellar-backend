@@ -3,6 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DrugWaste, WasteReason, DisposalMethod } from '../entities/drug-waste.entity';
 import { PharmacyInventoryService } from './pharmacy-inventory.service';
+import { PaginationDto } from '../../common/dto/pagination.dto';
+import { PaginationUtil } from '../../common/utils/pagination.util';
+import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
 
 @Injectable()
 export class DrugWasteService {
@@ -29,8 +32,8 @@ export class DrugWasteService {
     return this.wasteRepository.save(waste);
   }
 
-  async findAll(): Promise<DrugWaste[]> {
-    return this.wasteRepository.find({
+  async findAll(paginationDto: PaginationDto = new PaginationDto()): Promise<PaginatedResponseDto<DrugWaste>> {
+    return PaginationUtil.paginate(this.wasteRepository, paginationDto, {
       relations: ['inventory', 'inventory.drug'],
       order: { wasteDate: 'DESC' },
     });
@@ -47,22 +50,32 @@ export class DrugWasteService {
     return waste;
   }
 
-  async getWasteByReason(reason: WasteReason): Promise<DrugWaste[]> {
-    return this.wasteRepository.find({
-      where: { reason },
-      relations: ['inventory', 'inventory.drug'],
-      order: { wasteDate: 'DESC' },
-    });
+  async getWasteByReason(
+    reason: WasteReason,
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<DrugWaste>> {
+    const query = this.wasteRepository.createQueryBuilder('waste')
+      .leftJoinAndSelect('waste.inventory', 'inventory')
+      .leftJoinAndSelect('inventory.drug', 'drug')
+      .where('waste.reason = :reason', { reason })
+      .orderBy('waste.wasteDate', 'DESC');
+
+    return PaginationUtil.paginateQueryBuilder(query, paginationDto);
   }
 
-  async getWasteByDateRange(startDate: Date, endDate: Date): Promise<DrugWaste[]> {
-    return this.wasteRepository
+  async getWasteByDateRange(
+    startDate: Date,
+    endDate: Date,
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<DrugWaste>> {
+    const query = this.wasteRepository
       .createQueryBuilder('waste')
       .leftJoinAndSelect('waste.inventory', 'inventory')
       .leftJoinAndSelect('inventory.drug', 'drug')
       .where('waste.wasteDate BETWEEN :startDate AND :endDate', { startDate, endDate })
-      .orderBy('waste.wasteDate', 'DESC')
-      .getMany();
+      .orderBy('waste.wasteDate', 'DESC');
+
+    return PaginationUtil.paginateQueryBuilder(query, paginationDto);
   }
 
   async getTotalWasteCost(startDate?: Date, endDate?: Date): Promise<number> {
@@ -77,15 +90,18 @@ export class DrugWasteService {
     return parseFloat(result.total) || 0;
   }
 
-  async getControlledSubstanceWaste(): Promise<DrugWaste[]> {
-    return this.wasteRepository
+  async getControlledSubstanceWaste(
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<DrugWaste>> {
+    const query = this.wasteRepository
       .createQueryBuilder('waste')
       .leftJoinAndSelect('waste.inventory', 'inventory')
       .leftJoinAndSelect('inventory.drug', 'drug')
       .where('drug.controlledSubstanceSchedule != :schedule', { schedule: 'non-controlled' })
       .andWhere('waste.requiresDEAForm = :requires', { requires: true })
-      .orderBy('waste.wasteDate', 'DESC')
-      .getMany();
+      .orderBy('waste.wasteDate', 'DESC');
+
+    return PaginationUtil.paginateQueryBuilder(query, paginationDto);
   }
 
   async updateDisposalDetails(id: string, disposalDetails: any): Promise<DrugWaste> {
@@ -94,12 +110,15 @@ export class DrugWasteService {
     return this.wasteRepository.save(waste);
   }
 
-  async getWasteReport(filters: {
-    reason?: WasteReason;
-    startDate?: Date;
-    endDate?: Date;
-    drugId?: string;
-  }): Promise<DrugWaste[]> {
+  async getWasteReport(
+    filters: {
+      reason?: WasteReason;
+      startDate?: Date;
+      endDate?: Date;
+      drugId?: string;
+    },
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<DrugWaste>> {
     const query = this.wasteRepository
       .createQueryBuilder('waste')
       .leftJoinAndSelect('waste.inventory', 'inventory')
@@ -120,6 +139,6 @@ export class DrugWasteService {
       query.andWhere('inventory.drugId = :drugId', { drugId: filters.drugId });
     }
 
-    return query.orderBy('waste.wasteDate', 'DESC').getMany();
+    return PaginationUtil.paginateQueryBuilder(query.orderBy('waste.wasteDate', 'DESC'), paginationDto);
   }
 }

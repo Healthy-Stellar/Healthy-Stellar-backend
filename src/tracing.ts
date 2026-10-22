@@ -4,12 +4,15 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { Resource } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { TraceIdRatioBasedSampler, ParentBasedSampler } from '@opentelemetry/sdk-trace-base';
+import { Logger } from '@nestjs/common';
+
+const logger = new Logger('Tracing');
 
 export function initTracing() {
   const tracingEnabled = process.env.OTEL_TRACING_ENABLED !== 'false';
 
   if (!tracingEnabled) {
-    console.log('OpenTelemetry tracing is disabled');
+    logger.log('OpenTelemetry tracing is disabled');
     return null;
   }
 
@@ -95,13 +98,13 @@ export function initTracing() {
   process.on('SIGTERM', () => {
     sdk
       .shutdown()
-      .then(() => console.log('Tracing terminated'))
-      .catch((error) => console.error('Error terminating tracing', error))
+      .then(() => logger.log('Tracing terminated'))
+      .catch((error) => logger.error('Error terminating tracing', error))
       .finally(() => process.exit(0));
   });
 
-  console.log(`OpenTelemetry tracing initialized for ${serviceName} (sampling: ${samplingRate * 100}%)`);
-  console.log(`OTLP Exporter: ${process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318/v1/traces'}`);
+  logger.log(`OpenTelemetry tracing initialized for ${serviceName} (sampling: ${samplingRate * 100}%)`);
+  logger.log(`OTLP Exporter: ${process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318/v1/traces'}`);
 
   return sdk;
 }

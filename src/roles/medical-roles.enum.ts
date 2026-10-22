@@ -58,6 +58,9 @@ export enum MedicalPermission {
   MANAGE_STAFF = 'MANAGE_STAFF',
   VIEW_AUDIT_LOGS = 'VIEW_AUDIT_LOGS',
   MANAGE_SYSTEM = 'MANAGE_SYSTEM',
+
+  // Research
+  RESEARCH_EXPORT = 'RESEARCH_EXPORT',
 }
 
 export enum AuditAction {

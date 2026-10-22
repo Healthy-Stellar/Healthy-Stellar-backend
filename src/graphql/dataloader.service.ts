@@ -1,48 +1,69 @@
 import { Injectable, Scope } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, In } from 'typeorm';
 import DataLoader from 'dataloader';
+import { Patient as PatientEntity } from '../patients/entities/patient.entity';
+import { User, UserRole } from '../auth/entities/user.entity';
 import { Patient } from './types/patient.type';
 import { Provider } from './types/provider.type';
 
-// Replace these with actual injected service calls once modules are wired
-type PatientService = { findByIds(ids: string[]): Promise<Patient[]> };
-type ProviderService = { findByIds(ids: string[]): Promise<Provider[]> };
-
 @Injectable({ scope: Scope.REQUEST })
 export class DataloaderService {
-  constructor() // TODO: inject actual services
-  // private readonly patientService: PatientService,
-  // private readonly providerService: ProviderService,
-  {}
+  constructor(
+    @InjectRepository(PatientEntity)
+    private readonly patientRepository: Repository<PatientEntity>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+  ) {}
 
   createPatientLoader(): DataLoader<string, Patient> {
     return new DataLoader<string, Patient>(async (ids: readonly string[]) => {
-      // TODO: replace stub with: const patients = await this.patientService.findByIds([...ids]);
-      const patients: Patient[] = ids.map((id) => ({
-        id,
-        address: `stub-address-${id}`,
-        name: `Stub Patient ${id}`,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }));
+      const patients = await this.patientRepository.find({
+        where: { id: In([...ids]) },
+      });
 
-      const map = new Map(patients.map((p) => [p.id, p]));
-      return ids.map((id) => map.get(id) ?? new Error(`Patient ${id} not found`));
+      const map = new Map(
+        patients.map((p) => [
+          p.id,
+          {
+            id: p.id,
+            address: p.address ?? '',
+            name: `${p.firstName || ''} ${p.lastName || ''}`.trim(),
+            email: p.email,
+            createdAt: p.createdAt,
+            updatedAt: p.updatedAt,
+          } as Patient,
+        ]),
+      );
+
+      return ids.map((id) => map.get(id as string) ?? new Error(`Patient ${id} not found`));
     });
   }
 
   createProviderLoader(): DataLoader<string, Provider> {
     return new DataLoader<string, Provider>(async (ids: readonly string[]) => {
-      // TODO: replace stub with: const providers = await this.providerService.findByIds([...ids]);
-      const providers: Provider[] = ids.map((id) => ({
-        id,
-        address: `stub-address-${id}`,
-        name: `Stub Provider ${id}`,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }));
+      const providers = await this.userRepository.find({
+        where: {
+          id: In([...ids]),
+          role: In([UserRole.PHYSICIAN, UserRole.MEDICAL_RECORDS]),
+        },
+      });
 
-      const map = new Map(providers.map((p) => [p.id, p]));
-      return ids.map((id) => map.get(id) ?? new Error(`Provider ${id} not found`));
+      const map = new Map(
+        providers.map((p) => [
+          p.id,
+          {
+            id: p.id,
+            address: p.institution ?? '',
+            name: `${p.firstName || ''} ${p.lastName || ''}`.trim(),
+            specialty: p.specialization || p.specialty,
+            createdAt: p.createdAt,
+            updatedAt: p.updatedAt,
+          } as Provider,
+        ]),
+      );
+
+      return ids.map((id) => map.get(id as string) ?? new Error(`Provider ${id} not found`));
     });
   }
 }

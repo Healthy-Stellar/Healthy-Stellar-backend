@@ -10,6 +10,7 @@ export interface RequestContext {
   spanId?: string;
   tenantId?: string;
   userId?: string;
+  role?: string;
   timestamp: string;
 }
 
@@ -28,7 +29,9 @@ export class RequestContextMiddleware implements NestMiddleware {
 
     // Extract from JWT or headers if available
     const tenantId = req.headers['x-tenant-id'] as string;
-    const userId = (req as any).user?.id || (req.headers['x-user-id'] as string);
+    const user = (req as any).user;
+    const userId = user?.userId || (req.headers['x-user-id'] as string);
+    const role = user?.role;
 
     const context_obj: RequestContext = {
       requestId,
@@ -36,6 +39,7 @@ export class RequestContextMiddleware implements NestMiddleware {
       spanId,
       tenantId,
       userId,
+      role,
       timestamp: new Date().toISOString(),
     };
 

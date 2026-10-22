@@ -29,6 +29,15 @@ export class RefreshTokenStoreService {
     return createHash('sha256').update(token).digest('hex');
   }
 
+  /**
+   * Hash a password-reset token before it is stored or compared, so the raw
+   * token from the email link is never persisted in plaintext. Mirrors the
+   * SHA-256 pattern used for refresh tokens above.
+   */
+  hashPasswordResetToken(token: string): string {
+    return this.hash(token);
+  }
+
   private activeKey(sessionId: string): string {
     return `rt:active:${sessionId}`;
   }
@@ -53,23 +62,40 @@ export class RefreshTokenStoreService {
   async consumeAndValidate(sessionId: string, token: string): Promise<void> {
     const client = await this.getClient();
     const tokenHash = this.hash(token);
+    const activeKey = this.activeKey(sessionId);
+    const consumedKey = this.consumedKey(tokenHash);
 
-    // Reuse attack: token was already rotated away but is being replayed
-    const consumed = await client.get(this.consumedKey(tokenHash));
-    if (consumed) {
-      // Revoke the entire session — token theft assumed
-      await this.revokeSession(sessionId);
+    // Atomic Lua script to prevent race conditions
+    const luaScript = `
+      local consumed = redis.call('GET', KEYS[2])
+      if consumed then
+        redis.call('DEL', KEYS[1])
+        return 1
+      end
+      local stored = redis.call('GET', KEYS[1])
+      if not stored or stored ~= ARGV[1] then
+        return 2
+      end
+      redis.call('DEL', KEYS[1])
+      redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])
+      return 0
+    `;
+
+    const result = await client.eval(
+      luaScript,
+      2,
+      activeKey,
+      consumedKey,
+      tokenHash,
+      REFRESH_TTL_SECONDS,
+    );
+
+    if (result === 1) {
       throw new UnauthorizedException('Refresh token reuse detected — session revoked');
     }
-
-    const storedHash = await client.get(this.activeKey(sessionId));
-    if (!storedHash || storedHash !== tokenHash) {
+    if (result === 2) {
       throw new UnauthorizedException('Invalid refresh token');
     }
-
-    // Atomically: remove active entry, mark old hash as consumed for the TTL window
-    await client.del(this.activeKey(sessionId));
-    await client.set(this.consumedKey(tokenHash), '1', 'EX', REFRESH_TTL_SECONDS);
   }
 
   /** Remove the active refresh token for a session (logout / revoke). */

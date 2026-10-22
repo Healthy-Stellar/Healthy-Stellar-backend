@@ -18,7 +18,7 @@ OPENAPI_CONFIG="openapitools.json"
 
 # Fallback to built-in spec if primary file isn't present
 if [ ! -f "$OPENAPI_SPEC" ]; then
-  FALLBACK="src/Auto-Generate TypeScript Client SDK from OpenAPI Spec/openapi.json"
+  FALLBACK="src/auto-generate-typescript-client-sdk-from-openapi-spec/openapi.json"
   if [ -f "$FALLBACK" ]; then
     echo "⚠️  Spec not found at $OPENAPI_SPEC, using fallback spec at $FALLBACK"
     OPENAPI_SPEC="$FALLBACK"

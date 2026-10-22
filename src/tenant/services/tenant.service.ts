@@ -208,4 +208,10 @@ export class TenantService {
     await this.dataSource.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
     await this.tenantRepository.remove(tenant);
   }
+
+  async softDelete(id: string): Promise<void> {
+    const tenant = await this.findById(id);
+    tenant.status = 'deleted';
+    await this.tenantRepository.save(tenant);
+  }
 }

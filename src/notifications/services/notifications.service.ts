@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GraphqlPubSubService } from '../../pubsub/services/graphql-pubsub.service';
 import {
@@ -7,8 +7,16 @@ import {
 } from '../interfaces/notification-event.interface';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { NotificationTemplateService } from './notification-template.service';
+import { NotificationPreferenceCenterService } from './notification-preference-center.service';
+import { NotificationChannel } from '../entities/notification-category-preference.entity';
+import { PushNotificationService } from './push-notification.service';
 
 export const MAILER_SERVICE = 'MAILER_SERVICE';
+export const SMS_DELIVERY_SERVICE = 'SMS_DELIVERY_SERVICE';
+
+export interface SmsDeliveryService {
+  sendSms(to: string, message: string): Promise<void>;
+}
 
 @Injectable()
 export class NotificationsService {
@@ -21,6 +29,10 @@ export class NotificationsService {
     private readonly configService: ConfigService,
     private readonly templateService: NotificationTemplateService,
     @Optional() @Inject(MAILER_SERVICE) private readonly mailerService?: any,
+    @Optional() private readonly preferenceCenter?: NotificationPreferenceCenterService,
+    @Optional() @Inject(SMS_DELIVERY_SERVICE)
+    private readonly smsDeliveryService?: SmsDeliveryService,
+    @Optional() private readonly pushNotificationService?: PushNotificationService,
   ) {
     this.emailEnabled =
       this.configService.get<string>('ENABLE_EMAIL_NOTIFICATIONS', 'false') === 'true';
@@ -86,6 +98,50 @@ export class NotificationsService {
     });
   }
 
+  emitDiagnosisCreated(actorId: string, diagnosisId: string, metadata?: Record<string, any>): void {
+    this.emitEvent({
+      eventType: NotificationEventType.DIAGNOSIS_CREATED,
+      actorId,
+      resourceId: diagnosisId,
+      timestamp: new Date(),
+      metadata,
+    });
+  }
+
+  emitDiagnosisSeverityEscalated(actorId: string, diagnosisId: string, metadata?: Record<string, any>): void {
+    this.emitEvent({
+      eventType: NotificationEventType.DIAGNOSIS_SEVERITY_ESCALATED,
+      actorId,
+      resourceId: diagnosisId,
+      timestamp: new Date(),
+      metadata,
+    });
+  }
+
+  emitDiagnosisStatusConfirmed(actorId: string, diagnosisId: string, metadata?: Record<string, any>): void {
+    this.emitEvent({
+      eventType: NotificationEventType.DIAGNOSIS_STATUS_CONFIRMED,
+      actorId,
+      resourceId: diagnosisId,
+      timestamp: new Date(),
+      metadata,
+    });
+  }
+
+  /**
+   * Emit a proactive quota warning when a tenant crosses a usage threshold
+   * (Issue #954).
+   */
+  emitQuotaWarning(tenantId: string, quotaType: string, metadata?: Record<string, any>): void {
+    this.emitEvent({
+      eventType: NotificationEventType.QUOTA_WARNING,
+      actorId: tenantId,
+      resourceId: quotaType,
+      timestamp: new Date(),
+      metadata,
+    });
+  }
+
   async notifyOnChainEvent(
     eventType: NotificationEventType,
     actorId: string,
@@ -102,21 +158,30 @@ export class NotificationsService {
     };
 
     const preferenceKey = this.eventTypeToPreferenceKey(eventType);
-    const realtimeEnabled = preferenceKey
+    const category = this.eventTypeToCategory(eventType);
+
+    const legacyRealtimeEnabled = preferenceKey
       ? await this.preferencesService.isChannelEnabled(patientId, 'webSocket', preferenceKey)
       : true;
+    const categoryRealtimeEnabled = category
+      ? await this.isCategoryChannelEnabled(patientId, category, NotificationChannel.WEBSOCKET)
+      : true;
 
-    if (realtimeEnabled) {
+    if (legacyRealtimeEnabled && categoryRealtimeEnabled) {
       await this.publishRealtimeEvent(event);
     }
 
     if (this.emailEnabled && preferenceKey) {
-      const emailEnabled = await this.preferencesService.isChannelEnabled(
+      const legacyEmailEnabled = await this.preferencesService.isChannelEnabled(
         patientId,
         'email',
         preferenceKey,
       );
-      if (emailEnabled) {
+      const categoryEmailEnabled = category
+        ? await this.isCategoryChannelEnabled(patientId, category, NotificationChannel.EMAIL)
+        : true;
+
+      if (legacyEmailEnabled && categoryEmailEnabled) {
         await this.sendEmailNotification(event, patientId);
       }
     }
@@ -141,6 +206,17 @@ export class NotificationsService {
     );
   }
 
+  async sendProviderEmailNotification(
+    providerId: string,
+    subject: string,
+    message: string,
+    preferredLanguage = 'en',
+  ): Promise<void> {
+    this.logger.log(
+      `Email notification queued for provider ${providerId} [lang=${preferredLanguage}]: ${subject} - ${message}`,
+    );
+  }
+
   async sendEmail(
     to: string,
     subject: string,
@@ -152,6 +228,30 @@ export class NotificationsService {
       return;
     }
     await this.mailerService.sendMail({ to, subject, template, context });
+  }
+
+  async sendReminderEmail(to: string, subject: string, message: string): Promise<void> {
+    if (!this.emailEnabled || !this.mailerService) {
+      throw new ServiceUnavailableException('Appointment reminder email delivery is not configured');
+    }
+    await this.mailerService.sendMail({ to, subject, text: message });
+  }
+
+  async sendReminderSms(to: string, message: string): Promise<void> {
+    if (!this.smsDeliveryService) {
+      throw new ServiceUnavailableException('SMS delivery provider is not configured');
+    }
+    await this.smsDeliveryService.sendSms(to, message);
+  }
+
+  async sendReminderPush(recipient: string, title: string, message: string): Promise<void> {
+    if (!this.pushNotificationService) {
+      throw new ServiceUnavailableException('Push notification delivery is not configured');
+    }
+    await this.pushNotificationService.sendToRegisteredDevices(recipient, {
+      title,
+      body: message,
+    });
   }
 
   private emitEvent(event: NotificationEvent): void {
@@ -199,6 +299,14 @@ export class NotificationsService {
           timestamp,
         });
         return;
+      case NotificationEventType.QUOTA_WARNING:
+        // Quota warnings are recorded in the tenant-quota near-limit registry;
+        // surface them here for realtime/ops visibility.
+        this.logger.warn(
+          `Quota warning for tenant ${event.actorId} (${event.resourceId}): ` +
+            `${JSON.stringify(event.metadata ?? {})}`,
+        );
+        return;
       default:
         return;
     }
@@ -233,6 +341,30 @@ export class NotificationsService {
     } catch (error: any) {
       this.logger.error(`Failed to send email for ${event.eventType}: ${error?.message}`);
     }
+  }
+
+  private eventTypeToCategory(eventType: NotificationEventType): string | null {
+    switch (eventType) {
+      case NotificationEventType.RECORD_UPLOADED:
+        return 'new_record';
+      case NotificationEventType.ACCESS_GRANTED:
+        return 'access_granted';
+      case NotificationEventType.ACCESS_REVOKED:
+        return 'access_revoked';
+      default:
+        return null;
+    }
+  }
+
+  private async isCategoryChannelEnabled(
+    userId: string,
+    category: string,
+    channel: NotificationChannel,
+  ): Promise<boolean> {
+    if (!this.preferenceCenter) {
+      return true;
+    }
+    return this.preferenceCenter.isChannelEnabledForCategory(userId, category, channel);
   }
 
   private eventTypeToPreferenceKey(

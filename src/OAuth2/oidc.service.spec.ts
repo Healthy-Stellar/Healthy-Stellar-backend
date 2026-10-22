@@ -11,7 +11,7 @@ import { DataSource, Repository } from 'typeorm';
 
 import { OidcService } from './oidc.service';
 import { OidcIdentity } from './entities/oidc-identity.entity';
-import { User } from '../users/entities/user.entity';
+import { User } from '../auth/entities/user.entity';
 import { OidcVerifiedProfile } from './oidc.strategy';
 import { LinkStellarAddressDto } from './dto/oidc.dto';
 

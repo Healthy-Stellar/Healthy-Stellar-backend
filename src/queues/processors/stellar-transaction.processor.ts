@@ -6,12 +6,16 @@ import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { QUEUE_NAMES, JOB_TYPES } from '../queue.constants';
 import { StellarTransactionJobDto } from '../dto/stellar-transaction-job.dto';
+import { StellarWithBreakerService } from '../../stellar/services/stellar-with-breaker.service';
 import { StellarContractService } from '../../blockchain/stellar-contract.service';
+import { verifyQueuePayload } from '../queue-payload.util';
+import { DLQ_WORKER_SETTINGS } from '../../dlq/dlq-retry.strategy';
 
 const IDEMPOTENCY_TTL_SECONDS = 86400; // 24 hours
 
 @Processor(QUEUE_NAMES.STELLAR_TRANSACTIONS, {
   concurrency: 5,
+  ...DLQ_WORKER_SETTINGS,
 })
 export class StellarTransactionProcessor extends WorkerHost implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(StellarTransactionProcessor.name);
@@ -19,9 +23,10 @@ export class StellarTransactionProcessor extends WorkerHost implements OnModuleI
   private redis: Redis;
 
   constructor(
+    private readonly stellarService: StellarWithBreakerService,
+    private readonly configService: ConfigService,
     @Inject(StellarContractService)
     private readonly stellarContractService: StellarContractService,
-    private readonly configService: ConfigService,
   ) {
     super();
   }
@@ -60,6 +65,9 @@ export class StellarTransactionProcessor extends WorkerHost implements OnModuleI
 
   async process(job: Job<StellarTransactionJobDto>): Promise<any> {
     const { operationType, params, initiatedBy, correlationId, traceContext } = job.data;
+
+    // Integrity check — reject tampered payloads before any processing
+    verifyQueuePayload(job.data, this.configService.getOrThrow<string>('QUEUE_HMAC_SECRET'));
 
     // Idempotency check — short-circuit if this correlationId already succeeded
     const cached = await this.getCachedResult(correlationId);
@@ -176,11 +184,11 @@ export class StellarTransactionProcessor extends WorkerHost implements OnModuleI
     );
     job.progress(30);
 
-    const result = await this.stellarContractService.grantAccess({
+    const result = await this.stellarService.grantAccess({
       patientId: params.patientId,
       granteeId: params.granteeId,
       recordId: params.recordId,
-      expirationTime: params.expirationTime || Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, // 7 days default
+      expiresAt: new Date((params.expirationTime || Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60) * 1000), // Convert seconds to Date
     });
 
     job.progress(90);
@@ -208,7 +216,7 @@ export class StellarTransactionProcessor extends WorkerHost implements OnModuleI
     );
     job.progress(30);
 
-    const result = await this.stellarContractService.revokeAccess({
+    const result = await this.stellarService.revokeAccess({
       patientId: params.patientId,
       granteeId: params.granteeId,
       recordId: params.recordId,

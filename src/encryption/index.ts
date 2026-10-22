@@ -8,6 +8,7 @@
 
 export { EncryptionModule } from './encryption.module';
 export { EncryptionService } from './services/encryption.service';
+export { PhiColumnEncryptionService } from './services/phi-column-encryption.service';
 export { EncryptedRecord } from './interfaces';
 export {
   EncryptionServiceError,

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>אימות דוא"ל</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: #f5f5f5;
+      margin: 0;
+      padding: 20px;
+      direction: rtl;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px 20px;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 600;
+    }
+    .content {
+      padding: 30px 20px;
+    }
+    .content h2 {
+      color: #333333;
+      font-size: 20px;
+      margin: 0 0 15px 0;
+      text-align: right;
+    }
+    .content p {
+      color: #555555;
+      line-height: 1.6;
+      margin: 0 0 15px 0;
+      text-align: right;
+    }
+    .code-box {
+      background-color: #f9f9f9;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 20px;
+      margin: 20px 0;
+      text-align: center;
+    }
+    .code-box .code {
+      font-size: 32px;
+      font-weight: 700;
+      color: #667eea;
+      letter-spacing: 4px;
+      font-family: monospace;
+    }
+    .code-box p {
+      margin: 10px 0 0 0;
+      font-size: 13px;
+      color: #888;
+    }
+    .cta-button {
+      display: inline-block;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      text-decoration: none;
+      padding: 12px 30px;
+      border-radius: 6px;
+      margin: 20px 0;
+      font-weight: 600;
+      transition: opacity 0.3s;
+    }
+    .cta-button:hover {
+      opacity: 0.9;
+    }
+    .warning {
+      background-color: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 4px;
+      padding: 12px;
+      margin: 20px 0;
+      color: #856404;
+      font-size: 13px;
+      text-align: right;
+    }
+    .footer {
+      background-color: #f9f9f9;
+      padding: 20px;
+      text-align: center;
+      color: #888888;
+      font-size: 13px;
+      border-top: 1px solid #eeeeee;
+    }
+    .footer a {
+      color: #667eea;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>אימות דוא"ל</h1>
+    </div>
+    <div class="content">
+      <h2>ברוכים הבאים ל-MedChain, {{userName}}!</h2>
+      <p>תודה על ההרשמה. כדי להתחיל, אנא אמת את כתובת הדוא"ל שלך על ידי הזנת הקוד שלהלן או לחיצה על קישור האימות.</p>
+
+      <div class="code-box">
+        <p>קוד אימות:</p>
+        <div class="code">{{verificationCode}}</div>
+        <p>קוד זה יפוג תוך 24 שעות</p>
+      </div>
+
+      <p>או לחץ על הכפתור שלהלן לאימות מיידי:</p>
+      <a href="{{verificationLink}}" class="cta-button">אימות כתובת דוא"ל</a>
+
+      <div class="warning">
+        <strong>התראת אבטחה:</strong> אם לא נרשמת לחשבון MedChain, אנא התעלם מהודעה זו. אל תשתף קוד אימות זה עם איש.
+      </div>
+
+      <p>אם הכפתור לעיל אינו פועל, העתק והדבק קישור זה בדפדפן שלך:<br>
+      <a href="{{verificationLink}}">{{verificationLink}}</a></p>
+    </div>
+    <div class="footer">
+      <p>© 2024 MedChain. כל הזכויות שמורות.</p>
+      <p><a href="{{privacyUrl}}">מדיניות פרטיות</a> | <a href="{{termsUrl}}">תנאי שימוש</a></p>
+    </div>
+  </div>
+</body>
+</html>

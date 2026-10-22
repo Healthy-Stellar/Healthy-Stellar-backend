@@ -9,8 +9,13 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  DefaultValuePipe,
+  ParseIntPipe,
+  Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../common/constants/swagger.constants';
 import { Icd10ValidationService } from './services/icd10-validation.service';
 import { CptValidationService } from './services/cpt-validation.service';
 import { LoincValidationService } from './services/loinc-validation.service';
@@ -19,6 +24,9 @@ import { ClinicalDecisionSupportService } from './services/clinical-decision-sup
 import { ReferenceDataService } from './services/reference-data.service';
 import { DataGovernanceService } from './services/data-governance.service';
 import { MedicalMonitoringService } from '../medical-monitoring/medical-monitoring.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import {
   ValidateIcd10Dto,
   ValidateCptDto,
@@ -29,8 +37,13 @@ import {
   DataGovernancePolicyDto,
 } from './dto/medical-validation.dto';
 
+const CLINICAL_ROLES = ['admin', 'super_admin', 'physician', 'doctor', 'nurse', 'clinician'];
+const GOVERNANCE_ROLES = ['admin', 'super_admin', 'compliance_officer'];
+
 @ApiTags('Medical Data Validation')
 @ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 @Controller('medical-validation')
 export class MedicalValidationController {
   constructor(
@@ -169,22 +182,31 @@ export class MedicalValidationController {
   }
 
   @Get('clinical-alerts/:patientId')
+  @Roles(...CLINICAL_ROLES)
   @ApiOperation({ summary: 'Get clinical alerts for a patient' })
   @ApiQuery({ name: 'includeResolved', required: false, type: Boolean })
   async getPatientAlerts(
     @Param('patientId') patientId: string,
     @Query('includeResolved') includeResolved: boolean = false,
+    @Req() req: any,
   ) {
+    this.assertPatientAccess(req, patientId);
     return this.cdsService.getPatientAlerts(patientId, includeResolved);
   }
 
   @Patch('clinical-alerts/:alertId/acknowledge')
+  @Roles(...CLINICAL_ROLES)
   @ApiOperation({ summary: 'Acknowledge/resolve a clinical alert' })
   async acknowledgeAlert(
     @Param('alertId') alertId: string,
-    @Body() body: { resolvedBy: string; overrideReason?: string },
+    @Body() body: { overrideReason?: string },
+    @Req() req: any,
   ) {
-    return this.cdsService.acknowledgeAlert(alertId, body.resolvedBy, body.overrideReason);
+    const resolvedBy = req?.user?.id ?? req?.user?.userId ?? req?.user?.sub;
+    if (!resolvedBy) {
+      throw new ForbiddenException('Authenticated user required to acknowledge alerts');
+    }
+    return this.cdsService.acknowledgeAlert(alertId, resolvedBy, body?.overrideReason);
   }
 
   // ─── Reference Data ───────────────────────────────────────────────────────
@@ -199,79 +221,30 @@ export class MedicalValidationController {
   @ApiOperation({ summary: 'Get reference data update history' })
   @ApiQuery({ name: 'system', required: false })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  async getUpdateHistory(@Query('system') system?: string, @Query('limit') limit: number = 10) {
+  async getUpdateHistory(
+    @Query('system') system?: string,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit = 10,
+  ) {
     return this.referenceDataService.getUpdateHistory(system, limit);
   }
 
-  @Post('reference-data/bulk-check')
-  @ApiOperation({ summary: 'Bulk check if codes exist in registry' })
-  async bulkExistenceCheck(@Body() body: { codeSystem: string; codes: string[] }) {
-    return this.referenceDataService.bulkExistenceCheck(body.codeSystem, body.codes);
-  }
-
-  // ─── Governance ───────────────────────────────────────────────────────────
-
-  @Post('governance/enforce')
-  @ApiOperation({ summary: 'Enforce governance policies on a data record' })
-  async enforceGovernance(
-    @Body()
-    body: {
-      resourceId: string;
-      resourceType: string;
-      data: Record<string, unknown>;
-      checkedBy?: string;
-    },
-  ) {
-    return this.governanceService.enforceGovernancePolicies(
-      body.resourceId,
-      body.resourceType,
-      body.data,
-      body.checkedBy,
-    );
-  }
-
-  @Post('governance/detect-phi')
-  @ApiOperation({ summary: 'Detect unprotected PHI fields in a data record' })
-  async detectPhi(@Body() body: { data: Record<string, unknown> }) {
-    return this.governanceService.detectUnprotectedPhi(body.data);
-  }
-
-  @Post('governance/retention-check')
-  @ApiOperation({ summary: 'Check if a record is compliant with retention policy' })
-  async checkRetention(@Body() body: { recordType: string; createdAt: string }) {
-    return this.governanceService.checkRetentionCompliance(
-      body.recordType,
-      new Date(body.createdAt),
-    );
-  }
-
-  @Post('governance/policies')
-  @ApiOperation({ summary: 'Create or update a governance policy' })
-  async upsertPolicy(@Body() dto: DataGovernancePolicyDto) {
-    return this.governanceService.upsertPolicy({
-      ...dto,
-      effectiveDate: new Date(dto.effectiveDate),
-      expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
-    });
-  }
-
-  @Get('governance/compliance-summary')
-  @ApiOperation({ summary: 'Get governance compliance summary' })
-  @ApiQuery({ name: 'resourceType', required: false })
-  @ApiQuery({ name: 'days', required: false, type: Number })
-  async getComplianceSummary(
-    @Query('resourceType') resourceType?: string,
-    @Query('days') days: number = 30,
-  ) {
-    return this.governanceService.getComplianceSummary(resourceType, days);
-  }
-
-  // ─── Monitoring Dashboard ─────────────────────────────────────────────────
-
-  @Get('monitoring/dashboard')
-  @ApiOperation({ summary: 'Get medical data monitoring dashboard' })
-  @ApiQuery({ name: 'days', required: false, type: Number })
-  async getMonitoringDashboard(@Query('days') days: number = 7) {
-    return this.monitoringService.getDashboard(days);
+  private assertPatientAccess(req: any, patientId: string): void {
+    const user = req?.user;
+    if (!user) {
+      throw new ForbiddenException('Authenticated user required');
+    }
+    const role = user.role;
+    if (role === 'admin' || role === 'super_admin') {
+      return;
+    }
+    const userPatientId = user.patientId ?? user.patient_id;
+    if (userPatientId && userPatientId === patientId) {
+      return;
+    }
+    const assigned = user.assignedPatientIds ?? user.patientIds;
+    if (Array.isArray(assigned) && assigned.includes(patientId)) {
+      return;
+    }
+    throw new ForbiddenException('Not authorized to access this patient\'s clinical alerts');
   }
 }

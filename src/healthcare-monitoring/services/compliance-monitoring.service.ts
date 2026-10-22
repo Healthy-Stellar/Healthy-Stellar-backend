@@ -10,6 +10,20 @@ import {
 } from '../entities/compliance-check.entity';
 import { ClinicalAlertService } from './clinical-alert.service';
 
+interface ComplianceTypeBucket {
+  compliant: number;
+  nonCompliant: number;
+  pendingReview: number;
+  remediationRequired: number;
+}
+
+const STATUS_BUCKET_MAP: Record<ComplianceStatus, keyof ComplianceTypeBucket> = {
+  [ComplianceStatus.COMPLIANT]: 'compliant',
+  [ComplianceStatus.NON_COMPLIANT]: 'nonCompliant',
+  [ComplianceStatus.PENDING_REVIEW]: 'pendingReview',
+  [ComplianceStatus.REMEDIATION_REQUIRED]: 'remediationRequired',
+};
+
 @Injectable()
 export class ComplianceMonitoringService {
   private readonly logger = new Logger(ComplianceMonitoringService.name);
@@ -72,7 +86,7 @@ export class ComplianceMonitoringService {
         complianceType: ComplianceType.HIPAA,
         checkName: check.name,
         description: check.description,
-        status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+        status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
         severity: result.severity || ComplianceSeverity.MEDIUM,
         findings: result.findings,
         recommendations: result.recommendations,
@@ -105,7 +119,7 @@ export class ComplianceMonitoringService {
         complianceType: ComplianceType.HITECH,
         checkName: check.name,
         description: check.description,
-        status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+        status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
         severity: result.severity || ComplianceSeverity.HIGH,
         findings: result.findings,
         recommendations: result.recommendations,
@@ -120,7 +134,7 @@ export class ComplianceMonitoringService {
       complianceType: ComplianceType.INTERNAL_POLICIES,
       checkName: 'Role-Based Access Control',
       description: 'Verify users have appropriate access levels',
-      status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+      status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
       severity: result.severity || ComplianceSeverity.HIGH,
       findings: result.findings,
       recommendations: result.recommendations,
@@ -134,7 +148,7 @@ export class ComplianceMonitoringService {
       complianceType: ComplianceType.HIPAA,
       checkName: 'Audit Log Retention',
       description: 'Verify audit logs are retained for required period',
-      status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+      status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
       severity: result.severity || ComplianceSeverity.MEDIUM,
       findings: result.findings,
       recommendations: result.recommendations,
@@ -162,7 +176,7 @@ export class ComplianceMonitoringService {
         complianceType: ComplianceType.JOINT_COMMISSION,
         checkName: check.name,
         description: check.description,
-        status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+        status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
         severity: result.severity || ComplianceSeverity.HIGH,
         findings: result.findings,
         recommendations: result.recommendations,
@@ -176,7 +190,7 @@ export class ComplianceMonitoringService {
       complianceType: ComplianceType.FDA,
       checkName: 'Medical Device Compliance',
       description: 'Verify medical devices meet FDA requirements',
-      status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+      status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
       severity: result.severity || ComplianceSeverity.HIGH,
       findings: result.findings,
       recommendations: result.recommendations,
@@ -190,7 +204,7 @@ export class ComplianceMonitoringService {
       complianceType: ComplianceType.OSHA,
       checkName: 'Workplace Safety Standards',
       description: 'Verify compliance with OSHA safety standards',
-      status: result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT,
+      status: result.status ?? (result.compliant ? ComplianceStatus.COMPLIANT : ComplianceStatus.NON_COMPLIANT),
       severity: result.severity || ComplianceSeverity.MEDIUM,
       findings: result.findings,
       recommendations: result.recommendations,
@@ -227,176 +241,175 @@ export class ComplianceMonitoringService {
   }
 
   async getComplianceStatus(complianceType?: ComplianceType): Promise<any> {
-    const query = this.complianceRepository
-      .createQueryBuilder('check')
-      .where('check.checkDate >= :since', {
-        since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Last 30 days
-      });
+    const query = this.complianceRepository.createQueryBuilder('check');
 
     if (complianceType) {
-      query.andWhere('check.complianceType = :type', { type: complianceType });
+      query.where('check.complianceType = :complianceType', { complianceType });
     }
 
     const checks = await query.getMany();
 
     const status = {
-      overall: 'compliant',
       totalChecks: checks.length,
       compliant: 0,
       nonCompliant: 0,
       pendingReview: 0,
-      byType: {},
-      bySeverity: {},
-      recentViolations: [],
+      remediationRequired: 0,
+      byType: {} as Record<string, ComplianceTypeBucket>,
+      bySeverity: {} as Record<string, number>,
+      lastCheckDate: null as Date | null,
     };
 
-    checks.forEach((check) => {
-      // Count by status
+    for (const check of checks) {
+      if (!status.byType[check.complianceType]) {
+        status.byType[check.complianceType] = {
+          compliant: 0,
+          nonCompliant: 0,
+          pendingReview: 0,
+          remediationRequired: 0,
+        };
+      }
+
+      const bucketKey = STATUS_BUCKET_MAP[check.status];
+      if (bucketKey) {
+        status.byType[check.complianceType][bucketKey]++;
+      }
+
       switch (check.status) {
         case ComplianceStatus.COMPLIANT:
           status.compliant++;
           break;
         case ComplianceStatus.NON_COMPLIANT:
           status.nonCompliant++;
-          status.overall = 'non-compliant';
           break;
         case ComplianceStatus.PENDING_REVIEW:
           status.pendingReview++;
           break;
+        case ComplianceStatus.REMEDIATION_REQUIRED:
+          status.remediationRequired++;
+          break;
       }
 
-      // Count by type
-      status.byType[check.complianceType] = status.byType[check.complianceType] || {
-        compliant: 0,
-        nonCompliant: 0,
-        pendingReview: 0,
-      };
-      status.byType[check.complianceType][check.status.replace('_', '')]++;
-
-      // Count by severity
-      status.bySeverity[check.severity] = (status.bySeverity[check.severity] || 0) + 1;
-
-      // Collect recent violations
-      if (check.status === ComplianceStatus.NON_COMPLIANT) {
-        status.recentViolations.push({
-          type: check.complianceType,
-          checkName: check.checkName,
-          severity: check.severity,
-          findings: check.findings,
-          checkDate: check.checkDate,
-        });
+      if (!status.bySeverity[check.severity]) {
+        status.bySeverity[check.severity] = 0;
       }
-    });
+      status.bySeverity[check.severity]++;
+
+      if (!status.lastCheckDate || check.checkDate > status.lastCheckDate) {
+        status.lastCheckDate = check.checkDate;
+      }
+    }
 
     return status;
   }
 
-  // Mock compliance check implementations
   private async verifyDataEncryption(): Promise<any> {
-    return {
-      compliant: Math.random() > 0.1,
-      severity: ComplianceSeverity.HIGH,
-      findings: 'All patient data encrypted with AES-256',
-      recommendations: 'Continue monitoring encryption status',
-    };
+    return this.pendingReviewResult(
+      'Data encryption',
+      'Encryption settings are not yet validated automatically; confirm key management and storage configuration before reporting compliance.',
+      ComplianceSeverity.MEDIUM,
+    );
   }
 
   private async verifyAccessControls(): Promise<any> {
-    return {
-      compliant: Math.random() > 0.05,
-      severity: ComplianceSeverity.HIGH,
-      findings: 'Access controls properly configured',
-      recommendations: 'Regular access review recommended',
-    };
+    return this.pendingReviewResult(
+      'Access controls',
+      'Access-control review is pending manual validation and cannot be treated as an automated compliance finding.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifyAuditLogs(): Promise<any> {
-    return {
-      compliant: Math.random() > 0.02,
-      severity: ComplianceSeverity.MEDIUM,
-      findings: 'Audit logs complete and secure',
-      recommendations: 'Continue current audit practices',
-    };
+    return this.pendingReviewResult(
+      'Audit log integrity',
+      'Audit-log hash-chain verification is not yet automated; log integrity cannot be claimed without manual review.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifyPasswordPolicies(): Promise<any> {
-    return {
-      compliant: Math.random() > 0.1,
-      severity: ComplianceSeverity.MEDIUM,
-      findings: 'Password policies meet requirements',
-      recommendations: 'Consider implementing password rotation',
-    };
+    return this.pendingReviewResult(
+      'Password policy compliance',
+      'Password-policy enforcement is pending a manual security review.',
+      ComplianceSeverity.MEDIUM,
+    );
   }
 
   private async verifyMfaCompliance(): Promise<any> {
-    return {
-      compliant: Math.random() > 0.15,
-      severity: ComplianceSeverity.HIGH,
-      findings: 'MFA enabled for 95% of users',
-      recommendations: 'Enforce MFA for remaining users',
-    };
+    return this.pendingReviewResult(
+      'MFA compliance',
+      'MFA coverage is pending review; no automated coverage decision should be saved as evidence.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifySessionSecurity(): Promise<any> {
-    return {
-      compliant: Math.random() > 0.05,
-      severity: ComplianceSeverity.MEDIUM,
-      findings: 'Session management secure',
-      recommendations: 'Continue current practices',
-    };
+    return this.pendingReviewResult(
+      'Session security',
+      'Session hardening review is pending and should not be stored as a verified compliance result.',
+      ComplianceSeverity.MEDIUM,
+    );
   }
 
   private async verifyRoleBasedAccess(): Promise<any> {
-    return {
-      compliant: Math.random() > 0.1,
-      severity: ComplianceSeverity.HIGH,
-      findings: 'Role-based access properly implemented',
-      recommendations: 'Regular access reviews needed',
-    };
+    return this.pendingReviewResult(
+      'Role-based access control',
+      'RBAC verification is pending review; the system cannot claim automated access-control compliance.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifyAuditLogRetention(): Promise<any> {
-    return {
-      compliant: Math.random() > 0.05,
-      severity: ComplianceSeverity.MEDIUM,
-      findings: 'Audit logs retained for required period',
-      recommendations: 'Continue current retention policy',
-    };
+    return this.pendingReviewResult(
+      'Audit log retention',
+      'Retention verification is pending manual review and is not yet backed by evidence.',
+      ComplianceSeverity.MEDIUM,
+    );
   }
 
   private async verifyPatientSafetyGoals(): Promise<any> {
-    return {
-      compliant: Math.random() > 0.1,
-      severity: ComplianceSeverity.HIGH,
-      findings: 'Patient safety goals implemented',
-      recommendations: 'Continue monitoring safety metrics',
-    };
+    return this.pendingReviewResult(
+      'Patient safety goals',
+      'The patient-safety goal check is not yet implemented and remains pending review.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifyMedicationManagement(): Promise<any> {
-    return {
-      compliant: Math.random() > 0.08,
-      severity: ComplianceSeverity.HIGH,
-      findings: 'Medication management standards met',
-      recommendations: 'Regular medication safety reviews',
-    };
+    return this.pendingReviewResult(
+      'Medication management',
+      'Medication management compliance is pending review and cannot be relied upon as a validated result.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifyMedicalDeviceCompliance(): Promise<any> {
-    return {
-      compliant: Math.random() > 0.05,
-      severity: ComplianceSeverity.HIGH,
-      findings: 'Medical devices FDA compliant',
-      recommendations: 'Continue device monitoring',
-    };
+    return this.pendingReviewResult(
+      'Medical device compliance',
+      'Medical-device compliance is not automated here and requires a manual assessment before being recorded.',
+      ComplianceSeverity.HIGH,
+    );
   }
 
   private async verifyWorkplaceSafety(): Promise<any> {
+    return this.pendingReviewResult(
+      'Workplace safety',
+      'Occupational safety review is not yet automated and remains pending manual validation.',
+      ComplianceSeverity.MEDIUM,
+    );
+  }
+
+  private pendingReviewResult(
+    checkName: string,
+    detail: string,
+    severity: ComplianceSeverity = ComplianceSeverity.MEDIUM,
+  ) {
     return {
-      compliant: Math.random() > 0.1,
-      severity: ComplianceSeverity.MEDIUM,
-      findings: 'Workplace safety standards met',
-      recommendations: 'Regular safety training recommended',
+      compliant: false,
+      status: ComplianceStatus.PENDING_REVIEW,
+      severity,
+      findings: `${checkName}: pending review - ${detail}`,
+      recommendations: ['Manual compliance review required before this control can be treated as verified.'],
     };
   }
 }

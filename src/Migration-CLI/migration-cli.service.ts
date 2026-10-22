@@ -3,7 +3,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, MigrationInterface } from 'typeorm';
 import * as crypto from 'crypto';
 import * as os from 'os';
-import { MigrationHistory, MigrationStatus } from './entities/migration-history.entity';
+import { MigrationHistory, MigrationStatus } from './migration-history.entity';
 import { SafetyChecksService, SafetyCheckResult } from './safety-checks.service';
 import { DryRunService, DryRunReport } from './dry-run.service';
 import { BackupService, BackupResult } from './backup.service';

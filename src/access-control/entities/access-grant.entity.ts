@@ -69,6 +69,10 @@ export class AccessGrant {
   @Column({ type: 'text', nullable: true })
   revocationReason: string;
 
+  @Column({ type: 'uuid' })
+  @Index()
+  organizationId: string;
+
   @Column({ type: 'varchar', nullable: true })
   sorobanTxHash: string;
 

@@ -16,7 +16,9 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { UserRole } from '../../auth/entities/user.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('medication-administration')
 @Controller('medication-administration')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class MarController {
@@ -32,6 +34,12 @@ export class MarController {
   @Roles(UserRole.NURSE, UserRole.PHYSICIAN, UserRole.ADMIN)
   findAll() {
     return this.marService.findAll();
+  }
+
+  @Get('mar')
+  @Roles(UserRole.NURSE, UserRole.PHYSICIAN, UserRole.ADMIN)
+  getMarGrid(@Query('patientId') patientId: string, @Query('date') date: string) {
+    return this.marService.getMarGrid(patientId, date);
   }
 
   @Get('patient/:patientId')
@@ -96,6 +104,12 @@ export class MarController {
   @Roles(UserRole.NURSE)
   administerMedication(@Body() administerDto: AdministerMedicationDto) {
     return this.marService.administerMedication(administerDto);
+  }
+
+  @Post('doses/:id/administer')
+  @Roles(UserRole.NURSE)
+  administerDose(@Param('id') id: string, @Body() administerDto: Omit<AdministerMedicationDto, 'marId'>) {
+    return this.marService.administerDoseById(id, administerDto);
   }
 
   @Patch(':id')

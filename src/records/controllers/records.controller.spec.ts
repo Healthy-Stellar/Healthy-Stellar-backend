@@ -7,9 +7,9 @@ import { RecordDownloadService } from '../services/record-download.service';
 import { RecordAttachmentUploadService } from '../services/record-attachment-upload.service';
 import { RecordType } from '../dto/create-record.dto';
 import { SortBy, SortOrder } from '../dto/pagination-query.dto';
-import { MedicalPermissionsService } from '../../roles/services/medical-permissions.service';
-import { MedicalAuditService } from '../../roles/services/medical-audit.service';
-import { EmergencyOverrideService } from '../../roles/services/emergency-override.service';
+import { MedicalPermissionsService } from '../../roles/medical-permissions.service';
+import { MedicalAuditService } from '../../roles/medical-audit.service';
+import { EmergencyOverrideService } from '../../roles/emergency-override.service';
 
 describe('RecordsController', () => {
   let controller: RecordsController;

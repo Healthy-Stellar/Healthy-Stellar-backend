@@ -1,4 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import {
+  DecryptCommand,
+  EncryptCommand,
+  GenerateDataKeyCommand,
+  KMSClient,
+} from '@aws-sdk/client-kms';
+import type { KeySpec } from '@aws-sdk/client-kms';
 import { CircuitBreakerService } from '../circuit-breaker/circuit-breaker.service';
 import { BrokenCircuitError } from 'cockatiel';
 import { CircuitOpenException } from '../circuit-breaker/exceptions/circuit-open.exception';
@@ -6,33 +14,49 @@ import { CIRCUIT_BREAKER_CONFIGS } from '../circuit-breaker/circuit-breaker.conf
 
 /**
  * Key Management Service with circuit breaker protection
- * 
- * This is a placeholder implementation. Replace with actual KMS integration
- * (AWS KMS, HashiCorp Vault, etc.) when available.
  */
 @Injectable()
 export class KmsWithBreakerService {
   private readonly logger = new Logger(KmsWithBreakerService.name);
   private readonly serviceName = 'kms';
+  private readonly kmsClient: KMSClient;
 
-  constructor(private readonly circuitBreaker: CircuitBreakerService) {}
+  constructor(
+    private readonly circuitBreaker: CircuitBreakerService,
+    private readonly configService: ConfigService,
+  ) {
+    const provider = this.configService.get<string>('KMS_PROVIDER', 'aws');
+    const region = this.configService.get<string>('AWS_REGION');
+
+    if (provider !== 'aws') {
+      throw new Error(`Unsupported KMS_PROVIDER '${provider}'. Configure AWS KMS before starting.`);
+    }
+
+    if (!region) {
+      throw new Error('AWS_REGION must be set for AWS KMS encryption');
+    }
+
+    this.kmsClient = new KMSClient({ region });
+  }
 
   /**
    * Encrypt data using KMS
    */
   async encrypt(plaintext: Buffer, keyId: string): Promise<Buffer> {
     return this.executeWithBreaker(async () => {
-      // TODO: Implement actual KMS encryption
-      // Example: AWS KMS
-      // const result = await this.kmsClient.encrypt({
-      //   KeyId: keyId,
-      //   Plaintext: plaintext,
-      // }).promise();
-      // return Buffer.from(result.CiphertextBlob);
-
       this.logger.debug(`[KMS] Encrypting data with key: ${keyId}`);
-      // Placeholder implementation
-      return plaintext;
+      const result = await this.kmsClient.send(
+        new EncryptCommand({
+          KeyId: keyId,
+          Plaintext: plaintext,
+        }),
+      );
+
+      if (!result.CiphertextBlob) {
+        throw new Error('AWS KMS encrypt response did not include CiphertextBlob');
+      }
+
+      return Buffer.from(result.CiphertextBlob);
     });
   }
 
@@ -41,16 +65,19 @@ export class KmsWithBreakerService {
    */
   async decrypt(ciphertext: Buffer, keyId: string): Promise<Buffer> {
     return this.executeWithBreaker(async () => {
-      // TODO: Implement actual KMS decryption
-      // Example: AWS KMS
-      // const result = await this.kmsClient.decrypt({
-      //   CiphertextBlob: ciphertext,
-      // }).promise();
-      // return Buffer.from(result.Plaintext);
-
       this.logger.debug(`[KMS] Decrypting data with key: ${keyId}`);
-      // Placeholder implementation
-      return ciphertext;
+      const result = await this.kmsClient.send(
+        new DecryptCommand({
+          KeyId: keyId,
+          CiphertextBlob: ciphertext,
+        }),
+      );
+
+      if (!result.Plaintext) {
+        throw new Error('AWS KMS decrypt response did not include Plaintext');
+      }
+
+      return Buffer.from(result.Plaintext);
     });
   }
 
@@ -62,23 +89,21 @@ export class KmsWithBreakerService {
     ciphertext: Buffer;
   }> {
     return this.executeWithBreaker(async () => {
-      // TODO: Implement actual KMS data key generation
-      // Example: AWS KMS
-      // const result = await this.kmsClient.generateDataKey({
-      //   KeyId: keyId,
-      //   KeySpec: keySpec,
-      // }).promise();
-      // return {
-      //   plaintext: Buffer.from(result.Plaintext),
-      //   ciphertext: Buffer.from(result.CiphertextBlob),
-      // };
-
       this.logger.debug(`[KMS] Generating data key with spec: ${keySpec}`);
-      // Placeholder implementation
-      const mockKey = Buffer.alloc(32);
+      const result = await this.kmsClient.send(
+        new GenerateDataKeyCommand({
+          KeyId: keyId,
+          KeySpec: keySpec as KeySpec,
+        }),
+      );
+
+      if (!result.Plaintext || !result.CiphertextBlob) {
+        throw new Error('AWS KMS generateDataKey response was missing key material');
+      }
+
       return {
-        plaintext: mockKey,
-        ciphertext: mockKey,
+        plaintext: Buffer.from(result.Plaintext),
+        ciphertext: Buffer.from(result.CiphertextBlob),
       };
     });
   }

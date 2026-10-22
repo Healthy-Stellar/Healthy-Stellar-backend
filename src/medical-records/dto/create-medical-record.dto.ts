@@ -1,39 +1,31 @@
 import {
-  IsString,
   IsUUID,
   IsEnum,
   IsOptional,
   IsDateString,
   IsObject,
   IsNotEmpty,
+  IsString,
   Length,
-  Matches,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RecordType } from '../entities/medical-record.entity';
 
 export class CreateMedicalRecordDto {
   @ApiProperty({
-    description: 'Patient identifier (anonymized)',
-    example: 'patient-12345-anon',
-    pattern: '^[a-zA-Z0-9-]+$',
-    minLength: 10,
-    maxLength: 50,
+    description: 'Patient UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
-  @Length(10, 50)
-  @Matches(/^[a-zA-Z0-9-]+$/, { message: 'Patient ID must be alphanumeric with hyphens only' })
   patientId: string;
 
   @ApiPropertyOptional({
-    description: 'Healthcare provider identifier',
-    example: 'provider-67890-anon',
-    pattern: '^[a-zA-Z0-9-]+$',
+    description: 'Healthcare provider UUID',
+    example: '123e4567-e89b-12d3-a456-426614174001',
   })
-  @IsString()
+  @IsUUID()
   @IsOptional()
-  @Matches(/^[a-zA-Z0-9-]+$/, { message: 'Provider ID must be alphanumeric with hyphens only' })
   providerId?: string;
 
   @ApiProperty({

@@ -19,7 +19,7 @@ export class IpfsHealthIndicator extends HealthIndicator {
 
     try {
       await firstValueFrom(
-        this.httpService.post(`${ipfsUrl}/api/v0/version`, null, { timeout: 5000 }),
+        this.httpService.post(`${ipfsUrl}/api/v0/id`, null, { timeout: 3000 }),
       );
 
       const responseTime = Date.now() - startTime;

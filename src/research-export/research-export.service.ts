@@ -7,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'crypto';
+import { createHmac, createCipheriv, createDecipheriv, scryptSync } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { MedicalRecord } from '../medical-records/entities/medical-record.entity';
@@ -97,6 +97,7 @@ export class ResearchExportService {
   private readonly logger = new Logger(ResearchExportService.name);
   private readonly s3: S3Client;
   private readonly bucket: string;
+  private grantedOrganizationId: string;
 
   constructor(
     @InjectRepository(MedicalRecord)
@@ -119,8 +120,16 @@ export class ResearchExportService {
   async exportAnonymizedDataset(
     researcherId: string,
     filters: ResearchExportFiltersDto,
+    options: { approvedBy?: string } = {},
   ): Promise<AnonymizedExport> {
-    await this.assertValidGrant(researcherId);
+    const grant = await this.assertValidGrant(researcherId);
+    this.grantedOrganizationId = grant.organizationId;
+
+    // Real (non-dryRun) exports must be approved by an administrator before
+    // the job is dispatched — researchers cannot self-authorise a dispatch.
+    if (!filters.dryRun && !options.approvedBy) {
+      throw new ForbiddenException('Research export requires admin approval before dispatch');
+    }
 
     this.exportSalt = uuidv4();
     const records = await this.fetchRecords(filters);
@@ -135,8 +144,17 @@ export class ResearchExportService {
     const anonymized = this.anonymizeAndSuppress(records, patientMap);
     const exportId = uuidv4();
 
-    // dryRun: return sample without persisting to S3 or emitting audit log
+    // dryRun: return sample without persisting to S3. Still audited — every
+    // research export request (preview or dispatch) produces an audit entry.
     if (filters.dryRun) {
+      await this.auditService.logDataExport(
+        researcherId,
+        'AnonymizedResearchExport',
+        [exportId],
+        'system',
+        'ResearchExportService',
+        { exportId, recordCount: anonymized.length, filters, dryRun: true },
+      );
       return {
         exportId,
         researcherId,
@@ -155,7 +173,7 @@ export class ResearchExportService {
       [exportId],
       'system',
       'ResearchExportService',
-      { exportId, recordCount: anonymized.length, filters },
+      { exportId, recordCount: anonymized.length, filters, approvedBy: options.approvedBy },
     );
 
     this.logger.log(`Research export ${exportId} by ${researcherId}: ${anonymized.length} records`);
@@ -172,7 +190,7 @@ export class ResearchExportService {
 
   // ─── Grant Validation ──────────────────────────────────────────────────────
 
-  private async assertValidGrant(researcherId: string): Promise<void> {
+  private async assertValidGrant(researcherId: string): Promise<AccessGrant> {
     const grant = await this.grantRepo.findOne({
       where: { granteeId: researcherId, status: GrantStatus.ACTIVE },
       order: { createdAt: 'DESC' },
@@ -185,14 +203,35 @@ export class ResearchExportService {
     if (grant.expiresAt && grant.expiresAt <= new Date()) {
       throw new ForbiddenException('Research access grant has expired');
     }
+
+    return grant;
   }
 
   // ─── Data Fetch ────────────────────────────────────────────────────────────
 
+  /**
+   * Fetch active medical records matching `filters` along with a map of
+   * their associated patients. Shared by both the S3-dispatch export
+   * pipeline and the `/research-export/anonymized` NDJSON stream so query
+   * logic for record selection lives in one place.
+   */
+  async fetchRecordsAndPatients(
+    filters: ResearchExportFiltersDto,
+  ): Promise<{ records: MedicalRecord[]; patientMap: Map<string, Patient> }> {
+    const records = await this.fetchRecords(filters);
+    const patientIds = [...new Set(records.map((r) => r.patientId))];
+
+    const patients = patientIds.length
+      ? await this.patientRepo.find({ where: { id: In(patientIds) } })
+      : [];
+
+    return { records, patientMap: new Map(patients.map((p) => [p.id, p])) };
+  }
+
   private async fetchRecords(filters: ResearchExportFiltersDto): Promise<MedicalRecord[]> {
-    const qb = this.recordRepo.createQueryBuilder('r').where('r.status = :status', {
-      status: 'active',
-    });
+    const qb = this.recordRepo.createQueryBuilder('r')
+      .where('r.status = :status', { status: 'active' })
+      .andWhere('r.organizationId = :orgId', { orgId: this.grantedOrganizationId });
 
     if (filters.recordType) {
       qb.andWhere('r.recordType = :type', { type: filters.recordType });
@@ -263,13 +302,23 @@ export class ResearchExportService {
     return suppressed;
   }
 
-  private deIdentifyRecord(record: MedicalRecord, patient?: Patient): AnonymizedRecord {
+  private deIdentifyRecord(
+    record: MedicalRecord,
+    patient: Patient | undefined,
+    quasiIdentifiers: string[],
+  ): AnonymizedRecord {
+    const keep = (field: string, value: string): string =>
+      quasiIdentifiers.includes(field) ? value : 'suppressed';
     return {
       pseudoId: this.pseudonymize(record.patientId),
-      ageBracket: patient ? this.toAgeBracket(patient.dateOfBirth) : 'unknown',
-      sex: patient?.sex ?? 'unknown',
-      region: patient ? this.toRegion(patient.address) : 'unknown',
-      yearOfRecord: record.recordDate ? new Date(record.recordDate).getFullYear() : 0,
+      ageBracket: keep('ageBracket', patient ? this.toAgeBracket(patient.dateOfBirth) : 'unknown'),
+      sex: keep('sex', patient?.sex ?? 'unknown'),
+      region: keep('region', patient ? this.toRegion(patient.address) : 'unknown'),
+      yearOfRecord: quasiIdentifiers.includes('yearOfRecord')
+        ? record.recordDate
+          ? new Date(record.recordDate).getFullYear()
+          : 0
+        : 0,
       recordType: record.recordType,
       clinicalSummary: stripPii(record.description ?? record.title ?? ''),
     };

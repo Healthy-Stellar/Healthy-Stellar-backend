@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { CustomMetricsService } from '../../metrics/custom-metrics.service';
 
 /**
  * Stellar Transaction Retry and Failure Recovery Service
@@ -51,7 +52,10 @@ export class StellarTransactionRetryService {
   private readonly logger = new Logger(StellarTransactionRetryService.name);
   private readonly config: RetryConfig;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() private readonly metrics?: CustomMetricsService,
+  ) {
     this.config = {
       maxRetries: parseInt(this.configService.get<string>('STELLAR_RETRY_MAX_ATTEMPTS', '5'), 10),
       baseDelayMs: parseInt(
@@ -89,11 +93,13 @@ export class StellarTransactionRetryService {
     let currentTx = transaction;
     let lastError: Error | undefined;
     let errorType: TransactionErrorType = TransactionErrorType.UNKNOWN;
+    let submittedTxHash: string | undefined;
 
     this.logger.log(`[${context.operation}] Starting transaction submission with retry logic`);
 
     for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
       const attemptStart = Date.now();
+      this.metrics?.recordStellarTxAttempt(context.operation);
 
       try {
         // Sign the transaction
@@ -108,6 +114,8 @@ export class StellarTransactionRetryService {
             `Transaction submission error: ${JSON.stringify(sendResult.errorResult)}`,
           );
         }
+
+        submittedTxHash = sendResult.hash;
 
         // Poll for confirmation
         const confirmed = await this.pollForConfirmation(
@@ -166,6 +174,7 @@ export class StellarTransactionRetryService {
 
         // Check if we should retry
         if (attempt < this.config.maxRetries && this.shouldRetry(errorType)) {
+          this.metrics?.recordStellarTxRetry(context.operation, errorType);
           const delay = this.calculateBackoffDelay(attempt);
           this.logger.log(
             `[${context.operation}] Retrying in ${delay}ms (error type: ${errorType})`,
@@ -180,12 +189,14 @@ export class StellarTransactionRetryService {
 
     const totalDuration = Date.now() - startTime;
 
+    this.metrics?.recordStellarTxFailure(context.operation, errorType);
     this.logger.error(
       `[${context.operation}] Transaction failed after ${this.config.maxRetries} attempts (${totalDuration}ms): ${lastError?.message}`,
     );
 
     return {
       success: false,
+      txHash: submittedTxHash,
       attempts: this.config.maxRetries,
       totalDurationMs: totalDuration,
       error: lastError?.message || 'Unknown error',

@@ -9,6 +9,9 @@ import {
   IsDateString,
   IsNumber,
   Length,
+  MaxLength,
+  ArrayNotEmpty,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -54,6 +57,7 @@ export class CreateLabResultValueDto {
   })
   @IsString()
   @IsOptional()
+  @MaxLength(1000)
   notes?: string;
 }
 
@@ -105,6 +109,7 @@ export class CreateLabResultDto {
   })
   @IsString()
   @IsOptional()
+  @MaxLength(2000)
   resultNotes?: string;
 
   @ApiPropertyOptional({
@@ -112,6 +117,7 @@ export class CreateLabResultDto {
   })
   @IsString()
   @IsOptional()
+  @MaxLength(2000)
   interpretation?: string;
 
   @ApiPropertyOptional({
@@ -151,7 +157,8 @@ export class CreateLabResultDto {
     type: [CreateLabResultValueDto],
   })
   @IsArray()
-  @IsNotEmpty()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(200)
   @ValidateNested({ each: true })
   @Type(() => CreateLabResultValueDto)
   values: CreateLabResultValueDto[];

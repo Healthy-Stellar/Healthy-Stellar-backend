@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { INestApplication, Controller, Get, Post, UseGuards, HttpCode } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import * as request from 'supertest';
@@ -26,6 +26,7 @@ class TestController {
   }
 
   @Post('write')
+  @HttpCode(200)
   @WriteRateLimit()
   writeEndpoint() {
     return { message: 'write success' };
@@ -87,13 +88,23 @@ describe('Rate Limiting Integration', () => {
     });
 
     it('should return 429 when limit exceeded', async () => {
+      // Use a dedicated IP so this test starts with a fresh counter independent
+      // of the previous test which already exhausted the default-IP counter.
+      const ip = '10.0.0.2';
+
       // First 5 requests should succeed
       for (let i = 0; i < 5; i++) {
-        await request(app.getHttpServer()).get('/test/auth').expect(200);
+        await request(app.getHttpServer())
+          .get('/test/auth')
+          .set('X-Forwarded-For', ip)
+          .expect(200);
       }
 
       // 6th request should fail
-      const response = await request(app.getHttpServer()).get('/test/auth').expect(429);
+      const response = await request(app.getHttpServer())
+        .get('/test/auth')
+        .set('X-Forwarded-For', ip)
+        .expect(429);
 
       expect(response.headers['retry-after']).toBeDefined();
       expect(response.body.message).toContain('auth endpoints');

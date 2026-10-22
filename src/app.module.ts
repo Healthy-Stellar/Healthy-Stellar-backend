@@ -1,12 +1,17 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { HospitalConfigurationModule } from './hospital-config/src/hospital-configuration/hospital-configuration.module';
+import { ConfigDriftService } from './config/config-drift.service';
+import { envValidationSchema } from './config/env.validation';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
-import { I18nModule, AcceptLanguageResolver } from 'nestjs-i18n';
+import { I18nModule, AcceptLanguageResolver, QueryResolver } from 'nestjs-i18n';
 import * as path from 'path';
 import { AuthModule } from './auth/auth.module';
+import { OidcModule } from './OAuth2/oidc.module';
+import { SecurityModule } from './security/security.module';
 import { AdminModule } from './admin/admin.module';
 import { BillingModule } from './billing/billing.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
@@ -17,6 +22,7 @@ import { LaboratoryModule } from './laboratory/laboratory.module';
 import { DiagnosisModule } from './diagnosis/diagnosis.module';
 import { TreatmentPlanningModule } from './treatment-planning/treatment-planning.module';
 import { PharmacyModule } from './pharmacy/pharmacy.module';
+import { MedicationAdministrationModule } from './medication-administration/medication-administration.module';
 import { InfectionControlModule } from './infection-control/infection-control.module';
 import { EmergencyOperationsModule } from './emergency-operations/emergency-operations.module';
 import { EmergencyMedicalInfoModule } from './emergency-medical-info/emergency-medical-info.module';
@@ -32,16 +38,26 @@ import { DatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
+import { ClinicalMfaGuard } from './auth/guards/clinical-mfa.guard';
 import { ValidationModule } from './common/validation/validation.module';
 import { MedicalEmergencyErrorFilter } from './common/errors/medical-emergency-error.filter';
 import { MedicalDataValidationPipe } from './common/validation/medical-data.validator.pipe';
 import { TenantConfigModule } from './tenant-config/tenant-config.module';
+import { TenantIpAllowlistGuard } from './tenant-config/guards/tenant-ip-allowlist.guard';
 import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
+import { QueryPerformanceInterceptor } from './common/interceptors/query-performance.interceptor';
 import { GdprModule } from './gdpr/gdpr.module';
 import { ProviderPatientModule } from './provider-patient/provider-patient.module';
+import { ConsistencyCheckerModule } from './consistency-checker/consistency-checker.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
+import { TenantGuard } from './tenant/guards/tenant.guard';
+import { DataResidencyInterceptor } from './common/interceptors/data-residency.interceptor';
 import { JobsModule } from './jobs/jobs.module';
+import { IdempotencyModule } from './idempotency/idempotency.module';
 import { DataRetentionModule } from './data-retention/data-retention.module';
+import { DataResidencyModule } from './data-residency/data-residency.module';
+import { ResearchExportModule } from './research-export/research-export.module';
+import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { VersioningModule } from './versioning/versioning.module';
 import { LedgerReconciliationModule } from './ledger-reconciliation/ledger-reconciliation.module';
@@ -58,10 +74,29 @@ import { MetricsModule } from './metrics/metrics.module';
 import { HttpMetricsInterceptor } from './metrics/interceptors/http-metrics.interceptor';
 import { LoggerModule } from './common/logger/logger.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
+import { FeatureFlagModule } from './feature-flags/feature-flag.module';
+import { ProjectionsModule } from './projections/projections.module';
+import { CqrsModule } from '@nestjs/cqrs';
+import { HealthcareMonitoringModule } from './healthcare-monitoring/healthcare-monitoring.module';
+import { OperatorRunbookModule } from './operator-runbook/operator-runbook.module';
+import { PaginationInterceptor } from './common/interceptors/pagination.interceptor';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { EventStoreModule } from './event-store/event-store.module';
 import { BullBoardAuthMiddleware } from './queues/middleware/bull-board-auth.middleware';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { GovernanceAnalyticsModule } from './governance-analytics/governance-analytics.module';
+import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor';
+import { DlqModule } from './dlq/dlq.module';
+import { IncidentModule } from './incident/incident.module';
+import { PiiRedactionInterceptor } from './common/interceptors/pii-redaction.interceptor';
+import { BedOccupancyModule } from './bed-occupancy/bed-occupancy.module';
+import { MedicalStaffModule } from './medical-staff/medical-staff.module';
+import { AppointmentsModule } from './appointments/appointments.module';
+import { SurgicalModule } from './surgical-management-system/surgical/Surgical.module';
+import { TelemedicineModule } from './telemedicine-and-remote/src/telemedicine/Telemedicine.module';
+import { User } from './auth/entities/user.entity';
+import { MigrationCliModule } from './Migration-CLI/migration-cli.module';
 
 @Module({
   imports: [
@@ -70,10 +105,13 @@ import { WebhooksModule } from './webhooks/webhooks.module';
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
       cache: true,
+      validationSchema: envValidationSchema,
+      validationOptions: { abortEarly: false },
     }),
     TypeOrmModule.forRootAsync({
       useClass: DatabaseConfig,
     }),
+    TypeOrmModule.forFeature([User]),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
@@ -86,96 +124,11 @@ import { WebhooksModule } from './webhooks/webhooks.module';
         path: path.join(__dirname, '/i18n/'),
         watch: true,
       },
-      resolvers: [AcceptLanguageResolver],
+      resolvers: [
+        { use: QueryResolver, options: ['lang'] },
+        AcceptLanguageResolver,
+      ],
     }),
-    // Application modules
-    TenantModule,
-    CommonModule,
-    I18nAppModule,
-    AuthModule,
-    AdminModule,
-    BillingModule,
-    MedicalRecordsModule,
-    RecordsModule,
-    PatientModule,
-    LaboratoryModule,
-    DiagnosisModule,
-    TreatmentPlanningModule,
-    PharmacyModule,
-    EmergencyOperationsModule,
-    EmergencyMedicalInfoModule,
-    HospitalRegistryModule,
-    ValidationModule,
-    InfectionControlModule,
-    HealthModule,
-    MetricsModule,
-    NotificationsModule,
-    QueueModule,
-    FhirModule,
-    AccessControlModule,
-    JobsModule,
-    DataRetentionModule,
-    StellarModule,
-    AuditModule,
-    TenantConfigModule,
-    AnalyticsModule,
-    GdprModule,
-    ResearchExportModule,
-    ReconciliationModule,
-    GraphqlModule,
-    VersioningModule,
-    LedgerReconciliationModule,
-    StellarStreamModule,
-    EventStoreModule,
-    ProjectionsModule,
-    CqrsModule,
-    ProviderPatientModule,
-    WebhooksModule,
-  ],
-  controllers: [AppController],
-  providers: [
-    AppService,
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: TracingInterceptor,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: HttpMetricsInterceptor,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: TenantInterceptor,
-    },
-    {
-      provide: APP_FILTER,
-      useClass: MedicalEmergencyErrorFilter,
-    },
-    {
-      provide: APP_FILTER,
-      useClass: CircuitBreakerExceptionFilter,
-    },
-    {
-      provide: APP_FILTER,
-      useClass: I18nExceptionFilter,
-    },
-    {
-      provide: APP_PIPE,
-      useClass: MedicalDataValidationPipe,
-    },
-    {
-      provide: APP_GUARD,
-      useClass: CustomThrottlerGuard,
-    },
-  ],
-})
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    // RequestIdMiddleware runs first to ensure X-Request-Id is set before
-    // RequestContextMiddleware stores it in AsyncLocalStorage
-    consumer.apply(RequestIdMiddleware, RequestContextMiddleware).forRoutes('*');
+    // Applica
 
-    // Protect Bull Board dashboard with authentication
-    consumer.apply(BullBoardAuthMiddleware).forRoutes('/admin/queues');
-  }
-}
+/* … truncated 3397 chars — edit only what you need near the top … */

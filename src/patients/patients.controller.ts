@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   Param,
@@ -14,23 +15,31 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../common/constants/swagger.constants';
 
 import { PatientsService } from './patients.service';
 import { PatientTimelineService } from './services/patient-timeline.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { SetGeoRestrictionsDto } from './dto/set-geo-restrictions.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
+import { PatientTimelineDto, PatientTimelineResponse } from './dto/patient-timeline.dto';
+import { UpdatePatientProfileDto } from './dto/update-patient-profile.dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
 import { PatientPrivacyGuard } from './guards/patient-privacy.guard';
 import { AdminGuard } from './guards/admin-guard';
 import { PatientOwnerGuard } from './guards/patient-owner.guard';
-import { SetGeoRestrictionsDto } from './dto/set-geo-restrictions.dto';
 import { GeoRestrictionGuard } from './guards/geo-restriction.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../auth/services/auth-token.service';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../auth/entities/user.entity';
 import { CurrentUser } from '../common/decorators/audit-context.decorator';
+import { PhiAuditInterceptor } from '../common/interceptors/phi-audit.interceptor';
 
 @ApiTags('patients')
+@UseInterceptors(PhiAuditInterceptor)
 @Controller('patients')
 export class PatientsController {
   constructor(
@@ -39,20 +48,26 @@ export class PatientsController {
   ) { }
 
   @Post()
-  @ApiOperation({ summary: 'Register a new patient' })
-  async createPatient(@Body() dto: CreatePatientDto) {
-    return this.patientsService.create(dto);
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.MEDICAL_RECORDS)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Register a new patient (registration staff and admin only)' })
+  @ApiResponse({ status: 201, description: 'Patient registered' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 403, description: 'Forbidden - insufficient role' })
+  async createPatient(@Body() dto: CreatePatientDto, @CurrentUser() user: JwtPayload) {
+    return this.patientsService.create(dto, user.userId);
   }
 
   @Get(':id')
-  @UseGuards(PatientPrivacyGuard, GeoRestrictionGuard)
+  @UseGuards(JwtAuthGuard, PatientPrivacyGuard, GeoRestrictionGuard)
   @ApiOperation({ summary: 'Get patient by ID' })
   async getPatientById(@Param('id') id: string) {
     return this.patientsService.findById(id);
   }
 
   @Get('/admin/all/')
-  @UseGuards(AdminGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiOperation({ summary: 'Get all patients (admin only)' })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'pageSize', required: false, type: Number, example: 20 })
@@ -61,7 +76,7 @@ export class PatientsController {
   }
 
   @Get()
-  @UseGuards(AdminGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiOperation({ summary: 'Search patients' })
   search(@Query('query') q: string) {
     return this.patientsService.search(q);
@@ -73,7 +88,7 @@ export class PatientsController {
    * Empty array removes all restrictions.
    */
   @Patch(':address/geo-restrictions')
-  @UseGuards(PatientPrivacyGuard)
+  @UseGuards(JwtAuthGuard, PatientPrivacyGuard)
   @ApiOperation({ summary: 'Set geo-restrictions for a patient record' })
   @ApiParam({ name: 'address', description: 'Patient ID (Stellar address)' })
   @ApiResponse({ status: 200, description: 'Geo-restrictions updated' })
@@ -84,7 +99,7 @@ export class PatientsController {
 
   @Patch(':address/notification-preferences')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({ summary: 'Update notification preferences for the authenticated patient' })
   @ApiResponse({ status: 200, description: 'Notification preferences updated' })
   @ApiResponse({
@@ -106,8 +121,18 @@ export class PatientsController {
     );
   }
 
+  @Post('merge/:sourceId/:targetId')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiOperation({ summary: 'Merge duplicate patient records (admin only)' })
+  @ApiResponse({ status: 200, description: 'Patients merged successfully' })
+  @ApiResponse({ status: 404, description: 'Patient not found' })
+  @ApiResponse({ status: 409, description: 'Duplicate merge conflict' })
+  async mergePatients(@Param('sourceId') sourceId: string, @Param('targetId') targetId: string) {
+    return this.patientsService.mergePatients(sourceId, targetId, 'admin', undefined);
+  }
+
   @Post(':id/admit')
-  @UseGuards(AdminGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiOperation({ summary: 'Admit a patient (admin only)' })
   async admitPatient(@Param('id') id: string) {
     return this.patientsService.admit(id);
@@ -128,7 +153,7 @@ export class PatientsController {
    * - stellarAddress and nationalIdHash are immutable (not in DTO)
    */
   @Patch(':address/profile')
-  @UseGuards(PatientOwnerGuard)
+  @UseGuards(JwtAuthGuard, PatientOwnerGuard)
   async updateProfile(@Param('address') address: string, @Body() dto: UpdatePatientProfileDto) {
     return this.patientsService.updateProfile(address, dto);
   }
@@ -141,7 +166,7 @@ export class PatientsController {
    * Patient and admin access only
    */
   @Get(':address/timeline')
-  @UseGuards(PatientPrivacyGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, PatientPrivacyGuard)
   @ApiOperation({ summary: 'Get patient timeline (chronological events)' })
   @ApiParam({ name: 'address', description: 'Patient Stellar address' })
   @ApiResponse({ status: 200, description: 'Timeline retrieved successfully', type: PatientTimelineResponse })
@@ -163,7 +188,7 @@ export class PatientsController {
    * - Stored locally
    */
   @Post(':id/photo')
-  @UseGuards(PatientPrivacyGuard)
+  @UseGuards(JwtAuthGuard, PatientPrivacyGuard)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({

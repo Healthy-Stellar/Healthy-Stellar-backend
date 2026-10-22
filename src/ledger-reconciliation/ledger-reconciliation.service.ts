@@ -5,14 +5,20 @@ import { ConfigService } from '@nestjs/config';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Counter } from 'prom-client';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { v4 as uuidv4 } from 'uuid';
 import { Record } from '../records/entities/record.entity';
 import { ReconciliationRun, ReconciliationRunStatus } from './reconciliation-run.entity';
+import { QueueService } from '../queues/queue.service';
+import { JOB_TYPES } from '../queues/queue.constants';
 
 /** Records with a stellarTxHash older than this are eligible for reconciliation. */
 const PENDING_THRESHOLD_MINUTES = 10;
 
 /** Alert ops when missing count in a single run exceeds this. */
 const MISSING_ALERT_THRESHOLD = 5;
+
+/** Max times reconciliation re-queues the anchor for the same record. */
+const MAX_REQUEUE_ATTEMPTS = 3;
 
 export interface RunSummary {
   id: string;
@@ -40,6 +46,7 @@ export class LedgerReconciliationService {
     private readonly config: ConfigService,
     @InjectMetric('medchain_reconciliation_discrepancies_total')
     private readonly discrepanciesCounter: Counter<string>,
+    private readonly queueService: QueueService,
   ) {}
 
   private get horizon(): StellarSdk.Horizon.Server {
@@ -146,13 +153,40 @@ export class LedgerReconciliationService {
     }
   }
 
-  /** Re-queue the anchor operation for a record. */
+  /**
+   * Re-queue the anchor operation for a record via the Stellar transaction queue.
+   * Bounded by MAX_REQUEUE_ATTEMPTS so a permanently-broken record cannot
+   * generate an unbounded stream of jobs.
+   */
   private async _requeueAnchor(record: Record): Promise<void> {
-    // Emit a log entry — the actual queue dispatch is handled by the caller's
-    // queue infrastructure (StellarTransactionQueue). We log here so ops can
-    // pick it up; a full queue integration would inject QueueService.
-    this.logger.warn(
-      `Re-queuing anchor for record ${record.id} (cid=${record.cid}, hash=${record.stellarTxHash})`,
+    const attempts = record.reconciliationAttempts ?? 0;
+
+    if (attempts >= MAX_REQUEUE_ATTEMPTS) {
+      // Detected, but deliberately NOT re-queued — retry limit reached.
+      this.discrepanciesCounter.inc({ type: 'detected_only' });
+      this.logger.warn(
+        `Reconciliation detected discrepancy for record ${record.id} ` +
+          `(cid=${record.cid}, hash=${record.stellarTxHash}) but max re-queue attempts ` +
+          `(${MAX_REQUEUE_ATTEMPTS}) reached — detected only, not re-queued`,
+      );
+      return;
+    }
+
+    const correlationId = uuidv4();
+    await this.queueService.dispatchStellarTransaction({
+      operationType: JOB_TYPES.ANCHOR_RECORD,
+      params: { recordId: record.id, patientId: record.patientId, cid: record.cid },
+      initiatedBy: 'ledger-reconciliation',
+      correlationId,
+    });
+
+    record.reconciliationAttempts = attempts + 1;
+    await this.recordRepo.save(record);
+
+    this.discrepanciesCounter.inc({ type: 'requeued' });
+    this.logger.log(
+      `Re-queued anchor for record ${record.id} (cid=${record.cid}, hash=${record.stellarTxHash}) ` +
+        `— attempt ${attempts + 1}/${MAX_REQUEUE_ATTEMPTS} (correlation=${correlationId})`,
     );
   }
 

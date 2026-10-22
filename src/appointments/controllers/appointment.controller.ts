@@ -1,10 +1,15 @@
-import { Controller, Get, Post, Body, Param, Patch, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
 import { AppointmentService } from '../services/appointment.service';
 import { CreateAppointmentDto } from '../dto/create-appointment.dto';
 import { AppointmentStatus, MedicalPriority } from '../entities/appointment.entity';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
 
 @ApiTags('Appointments')
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('appointments')
 export class AppointmentController {
   constructor(private readonly appointmentService: AppointmentService) {}
@@ -12,6 +17,7 @@ export class AppointmentController {
   @Post()
   @ApiOperation({ summary: 'Schedule a new appointment with medical priority' })
   @ApiResponse({ status: 201, description: 'Appointment scheduled successfully' })
+  @ApiResponse({ status: 409, description: 'Time slot is already booked (conflict)' })
   create(@Body() createAppointmentDto: CreateAppointmentDto) {
     return this.appointmentService.create(createAppointmentDto);
   }
@@ -45,6 +51,14 @@ export class AppointmentController {
   @ApiQuery({ name: 'date', required: true, type: String })
   getAvailableSlots(@Param('doctorId') doctorId: string, @Query('date') date: string) {
     return this.appointmentService.getAvailableSlots(doctorId, new Date(date));
+  }
+
+  @Get('providers/:id/availability')
+  @ApiOperation({ summary: 'Get provider availability with conflict detection' })
+  @ApiResponse({ status: 200, description: 'Provider availability status' })
+  @ApiQuery({ name: 'date', required: true, type: String })
+  getProviderAvailability(@Param('id') providerId: string, @Query('date') date: string) {
+    return this.appointmentService.getProviderAvailability(providerId, new Date(date));
   }
 
   @Patch(':id/status')

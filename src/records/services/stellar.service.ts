@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { TracingService } from '../../common/services/tracing.service';
+import { CircuitBreakerService } from '../../common/circuit-breaker/circuit-breaker.service';
 
 @Injectable()
 export class StellarService {
@@ -8,7 +9,10 @@ export class StellarService {
   private server: StellarSdk.Horizon.Server;
   private contract: StellarSdk.Contract;
 
-  constructor(private readonly tracingService: TracingService) {
+  constructor(
+    private readonly tracingService: TracingService,
+    private readonly circuitBreaker: CircuitBreakerService,
+  ) {
     const network = process.env.STELLAR_NETWORK || 'testnet';
     const horizonUrl =
       network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
@@ -18,100 +22,17 @@ export class StellarService {
   }
 
   async createShareLink(recordId: string, patientId: string): Promise<string> {
-    const sourceKeypair = StellarSdk.Keypair.fromSecret(process.env.STELLAR_SECRET_KEY || '');
-    const sourceAccount = await this.server.loadAccount(sourceKeypair.publicKey());
-    const contract = new StellarSdk.Contract(process.env.STELLAR_CONTRACT_ID || '');
-    const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
-
-    const operation = contract.call(
-      'create_share_link',
-      StellarSdk.nativeToScVal(recordId, { type: 'string' }),
-      StellarSdk.nativeToScVal(patientId, { type: 'string' }),
-      StellarSdk.nativeToScVal(expiresAt, { type: 'u64' }),
-    );
-
-    const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
-      fee: StellarSdk.BASE_FEE,
-      networkPassphrase:
-        process.env.STELLAR_NETWORK === 'testnet'
-          ? StellarSdk.Networks.TESTNET
-          : StellarSdk.Networks.PUBLIC,
-    })
-      .addOperation(operation)
-      .setTimeout(30)
-      .build();
-
-    transaction.sign(sourceKeypair);
-    const result = await this.server.submitTransaction(transaction);
-    this.logger.log(`Share link created on Stellar: ${result.hash}`);
-    // Return the transaction hash as the share token
-    return result.hash;
-  }
-
-  async anchorCid(patientId: string, cid: string): Promise<string> {
-    return this.tracingService.withSpan(
-      'stellar.anchorCid',
-      async (span) => {
-        span.setAttribute('stellar.patient_id', patientId);
-        span.setAttribute('stellar.cid', cid);
-        span.setAttribute('stellar.network', process.env.STELLAR_NETWORK || 'testnet');
-
-        try {
-          const sourceKeypair = StellarSdk.Keypair.fromSecret(
-            process.env.STELLAR_SECRET_KEY || '',
-          );
-          
-          // Load account with tracing
-          this.tracingService.addEvent('stellar.loadAccount.start');
-          const sourceAccount = await this.server.loadAccount(
-            sourceKeypair.publicKey(),
-          );
-          this.tracingService.addEvent('stellar.loadAccount.complete');
-
-          const operation = this.contract.call(
-            'anchor_record',
-            StellarSdk.nativeToScVal(patientId, { type: 'string' }),
-            StellarSdk.nativeToScVal(cid, { type: 'string' }),
-          );
-
-          const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
-            fee: StellarSdk.BASE_FEE,
-            networkPassphrase:
-              process.env.STELLAR_NETWORK === 'testnet'
-                ? StellarSdk.Networks.TESTNET
-                : StellarSdk.Networks.PUBLIC,
-          })
-            .addOperation(operation)
-            .setTimeout(30)
-            .build();
-
-          transaction.sign(sourceKeypair);
-
-          // Submit transaction with tracing
-          this.tracingService.addEvent('stellar.submitTransaction.start');
-          const result = await this.server.submitTransaction(transaction);
-          this.tracingService.addEvent('stellar.submitTransaction.complete', {
-            'stellar.transaction_hash': result.hash,
-          });
-
-          span.setAttribute('stellar.transaction_hash', result.hash);
-          this.logger.log(`CID anchored on Stellar: ${result.hash}`);
-          return result.hash;
-        } catch (error) {
-          this.tracingService.recordException(error as Error);
-          this.logger.error(`Stellar anchoring failed: ${error.message}`);
-          throw new Error(`Stellar anchoring failed: ${error.message}`);
-        }
-      },
-    );
-    try {
+    return this.circuitBreaker.execute('stellar', async () => {
       const sourceKeypair = StellarSdk.Keypair.fromSecret(process.env.STELLAR_SECRET_KEY || '');
       const sourceAccount = await this.server.loadAccount(sourceKeypair.publicKey());
+      const contract = new StellarSdk.Contract(process.env.STELLAR_CONTRACT_ID || '');
+      const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
 
-      const operation = this.contract.call(
-        'anchor_record',
+      const operation = contract.call(
+        'create_share_link',
+        StellarSdk.nativeToScVal(recordId, { type: 'string' }),
         StellarSdk.nativeToScVal(patientId, { type: 'string' }),
-        StellarSdk.nativeToScVal(cid, { type: 'string' }),
+        StellarSdk.nativeToScVal(expiresAt, { type: 'u64' }),
       );
 
       const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
@@ -126,13 +47,69 @@ export class StellarService {
         .build();
 
       transaction.sign(sourceKeypair);
-
       const result = await this.server.submitTransaction(transaction);
-      this.logger.log(`CID anchored on Stellar: ${result.hash}`);
+      this.logger.log(`Share link created on Stellar: ${result.hash}`);
       return result.hash;
-    } catch (error) {
-      this.logger.error(`Stellar anchoring failed: ${error.message}`);
-      throw new Error(`Stellar anchoring failed: ${error.message}`);
-    }
+    });
+  }
+
+  async anchorCid(patientId: string, cid: string): Promise<string> {
+    return this.tracingService.withSpan(
+      'stellar.anchorCid',
+      async (span) => {
+        span.setAttribute('stellar.patient_id', patientId);
+        span.setAttribute('stellar.cid', cid);
+        span.setAttribute('stellar.network', process.env.STELLAR_NETWORK || 'testnet');
+
+        try {
+          return await this.circuitBreaker.execute('stellar', async () => {
+            const sourceKeypair = StellarSdk.Keypair.fromSecret(
+              process.env.STELLAR_SECRET_KEY || '',
+            );
+            
+            // Load account with tracing
+            this.tracingService.addEvent('stellar.loadAccount.start');
+            const sourceAccount = await this.server.loadAccount(
+              sourceKeypair.publicKey(),
+            );
+            this.tracingService.addEvent('stellar.loadAccount.complete');
+
+            const operation = this.contract.call(
+              'anchor_record',
+              StellarSdk.nativeToScVal(patientId, { type: 'string' }),
+              StellarSdk.nativeToScVal(cid, { type: 'string' }),
+            );
+
+            const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+              fee: StellarSdk.BASE_FEE,
+              networkPassphrase:
+                process.env.STELLAR_NETWORK === 'testnet'
+                  ? StellarSdk.Networks.TESTNET
+                  : StellarSdk.Networks.PUBLIC,
+            })
+              .addOperation(operation)
+              .setTimeout(30)
+              .build();
+
+            transaction.sign(sourceKeypair);
+
+            // Submit transaction with tracing
+            this.tracingService.addEvent('stellar.submitTransaction.start');
+            const result = await this.server.submitTransaction(transaction);
+            this.tracingService.addEvent('stellar.submitTransaction.complete', {
+              'stellar.transaction_hash': result.hash,
+            });
+
+            span.setAttribute('stellar.transaction_hash', result.hash);
+            this.logger.log(`CID anchored on Stellar: ${result.hash}`);
+            return result.hash;
+          });
+        } catch (error) {
+          this.tracingService.recordException(error as Error);
+          this.logger.error(`Stellar anchoring failed: ${error.message}`);
+          throw new Error(`Stellar anchoring failed: ${error.message}`);
+        }
+      },
+    );
   }
 }

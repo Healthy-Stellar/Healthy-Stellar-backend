@@ -5,9 +5,9 @@ const files = [
     "src/tenant-config/controllers/tenant-config.controller.ts",
     "src/reports/reports.controller.ts",
     "src/records/controllers/records.controller.ts",
-    "src/Tenant Provisioning and Onboarding Workflow/src/tenants/controllers/tenants.controller.ts",
+    "src/tenant-provisioning-and-onboarding-workflow/src/tenants/controllers/tenants.controller.ts",
     "src/patients/patients.controller.ts",
-    "src/Email Notification Service for Critical Access Events/notifications.controller.ts",
+    "src/email-notification-service-for-critical-access-events/notifications.controller.ts",
     "src/auth/controllers/mfa.controller.ts",
     "src/auth/controllers/auth.controller.ts",
 ];

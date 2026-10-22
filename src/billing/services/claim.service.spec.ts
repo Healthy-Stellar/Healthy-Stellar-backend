@@ -261,4 +261,77 @@ describe('ClaimService', () => {
       expect(result[0].status).toBe(ClaimStatus.DENIED);
     });
   });
+
+  describe('full claim lifecycle', () => {
+    it('should move a claim from draft to submitted to approved and generate a patient statement', async () => {
+      const createDto = {
+        billingId: 'billing-123',
+        insuranceId: 'insurance-123',
+        patientId: 'patient-123',
+        serviceStartDate: '2024-01-15',
+        serviceEndDate: '2024-01-15',
+        diagnosisCodes: [{ code: 'J06.9', sequence: 1 }],
+        procedureCodes: [{ code: '99213', units: 1, charge: 150, diagnosisPointers: [1] }],
+        provider: { npi: '1234567890', name: 'Dr. Smith', taxId: '123456789' },
+        subscriber: { memberId: 'ABC123', name: 'John Doe', dob: '1980-01-01', gender: 'M' },
+      };
+
+      const mockInsurance = { id: 'insurance-123', payerName: 'BCBS' };
+      const mockBilling = {
+        id: 'billing-123',
+        lineItems: [],
+        totalCharges: 150,
+        totalPayments: 0,
+        totalAdjustments: 0,
+        patientResponsibility: 0,
+        balance: 150,
+        status: 'open',
+      };
+
+      mockInsuranceRepository.findOne.mockResolvedValue(mockInsurance);
+      mockBillingRepository.findOne.mockResolvedValue(mockBilling);
+      mockClaimRepository.create.mockImplementation((data) => data);
+      mockClaimRepository.save.mockImplementation((claim) => Promise.resolve(claim));
+
+      const draft = await service.create(createDto);
+      expect(draft.status).toBe(ClaimStatus.DRAFT);
+
+      mockClaimRepository.findOne.mockResolvedValue(draft);
+      const submitted = await service.submit({ claimId: draft.id ?? 'claim-1' });
+      expect(submitted.status).toBe(ClaimStatus.PENDING);
+
+      mockClaimRepository.findOne.mockResolvedValue(submitted);
+      const approved = await service.handleAdjudicationWebhook({
+        claimNumber: submitted.claimNumber,
+        decision: 'approved',
+        paidAmount: 120,
+        allowedAmount: 130,
+        patientResponsibility: 30,
+      });
+
+      expect(approved.status).toBe(ClaimStatus.APPROVED);
+      expect(approved.adjudicatedAt).toBeInstanceOf(Date);
+      expect(mockBillingRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ totalPayments: 120, patientResponsibility: 30, balance: 30 }),
+      );
+    });
+  });
+
+  describe('getClaimsDashboard', () => {
+    it('should group claims by status and bucket outstanding claims by age', async () => {
+      const now = Date.now();
+      const mockClaims = [
+        { status: ClaimStatus.APPROVED },
+        { status: ClaimStatus.SUBMITTED, submittedAt: new Date(now - 10 * 86_400_000) },
+        { status: ClaimStatus.PENDING, submittedAt: new Date(now - 95 * 86_400_000) },
+      ];
+      mockClaimRepository.find.mockResolvedValue(mockClaims);
+
+      const result = await service.getClaimsDashboard();
+
+      expect(result.byStatus[ClaimStatus.APPROVED]).toBe(1);
+      expect(result.agingBuckets['0-30']).toBe(1);
+      expect(result.agingBuckets['90+']).toBe(1);
+    });
+  });
 });

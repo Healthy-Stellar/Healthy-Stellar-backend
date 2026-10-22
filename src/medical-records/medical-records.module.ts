@@ -13,6 +13,8 @@ import { ReportJob } from './entities/report-job.entity';
 import { AccessControlModule } from '../access-control/access-control.module';
 import { ProviderPatientModule } from '../provider-patient/provider-patient.module';
 import { QUEUE_NAMES } from '../queues/queue.constants';
+import { MailModule } from '../email-notification-service-for-critical-access-events/mail.module';
+import { AuditModule } from '../common/audit/audit.module';
 
 import { MedicalRecordsService } from './services/medical-records.service';
 import { ClinicalTemplatesService } from './services/clinical-templates.service';
@@ -27,18 +29,24 @@ import { ClinicalNotesService } from './services/clinical-notes.service';
 
 import { MedicalRecordsController } from './controllers/medical-records.controller';
 import { ClinicalTemplatesController } from './controllers/clinical-templates.controller';
+import { MedicalRecordSearchSubscriber } from './subscribers/medical-record-search.subscriber';
 import { ConsentController } from './controllers/consent.controller';
 import { FileUploadController } from './controllers/file-upload.controller';
 import { ReportingController } from './controllers/reporting.controller';
 import { ClinicalNotesController } from './controllers/clinical-notes.controller';
 
 import { ReportProcessor } from './processors/report.processor';
+import { OcrProcessor } from './processors/ocr.processor';
+
+import { Patient } from '../patients/entities/patient.entity';
 
 @Module({
   imports: [
     ConfigModule,
     AccessControlModule,
     ProviderPatientModule,
+    MailModule,
+    AuditModule,
     TypeOrmModule.forFeature([
       MedicalRecord,
       MedicalRecordVersion,
@@ -48,10 +56,12 @@ import { ReportProcessor } from './processors/report.processor';
       MedicalAttachment,
       MedicalRecordConsent,
       ReportJob,
+      Patient,
     ]),
-    BullModule.registerQueue({
-      name: QUEUE_NAMES.REPORTS,
-    }),
+    BullModule.registerQueue(
+      { name: QUEUE_NAMES.REPORTS },
+      { name: QUEUE_NAMES.OCR },
+    ),
   ],
   controllers: [
     MedicalRecordsController,
@@ -73,6 +83,8 @@ import { ReportProcessor } from './processors/report.processor';
     EmailService,
     ClinicalNotesService,
     ReportProcessor,
+    OcrProcessor,
+    MedicalRecordSearchSubscriber,
   ],
   exports: [
     MedicalRecordsService,

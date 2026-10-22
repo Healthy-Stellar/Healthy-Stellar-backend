@@ -1,8 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 @Injectable()
 export class AuditContextGuard implements CanActivate {
+  private logger = new Logger(AuditContextGuard.name);
+
   constructor(private dataSource: DataSource) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -25,7 +27,7 @@ export class AuditContextGuard implements CanActivate {
         requestId,
       ]);
     } catch (error) {
-      console.error('[AUDIT CONTEXT] Failed to set context:', error.message);
+      this.logger.error('[AUDIT CONTEXT] Failed to set context:', error.message);
     }
 
     request.auditContext = {

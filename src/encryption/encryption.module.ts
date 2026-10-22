@@ -1,31 +1,34 @@
 import { Module } from '@nestjs/common';
 import { EncryptionService } from './services/encryption.service';
 import { KeyManagementService } from './services/key-management.service';
+import { PhiColumnEncryptionService } from './services/phi-column-encryption.service';
+import { DeterministicEncryptionService } from './services/deterministic-encryption.service';
 
 /**
  * Encryption Module
- * 
- * This module encapsulates the envelope encryption functionality for medical records.
- * It provides the EncryptionService for encrypting and decrypting medical record payloads,
- * while keeping the KeyManagementService private to enforce security boundaries.
- * 
- * Module Configuration:
- * - Providers: EncryptionService and KeyManagementService
- * - Exports: Only EncryptionService (KeyManagementService is private)
- * 
- * This configuration ensures that KeyManagementService can only be accessed through
- * EncryptionService, enforcing the security boundary specified in Requirement 8.
- * 
+ *
+ * Provides:
+ *  - EncryptionService          — envelope encryption for medical record payloads
+ *  - PhiColumnEncryptionService — field-level PHI encryption via key-management
+ *  - DeterministicEncryptionService — AES-256-GCM deterministic mode (HMAC-derived IV)
+ *    for exact-match queries on high-cardinality PHI fields (SSN, MRN, passport number)
+ *
+ * KeyManagementService is intentionally NOT exported — it is private to this module
+ * to enforce the security boundary around KEK material.
+ *
  * Requirements: 8.1, 8.2, 8.3, 8.4
  */
 @Module({
   providers: [
     EncryptionService,
     KeyManagementService,
+    PhiColumnEncryptionService,
+    DeterministicEncryptionService,
   ],
   exports: [
     EncryptionService,
-    // KeyManagementService is NOT exported - it's private to this module
+    PhiColumnEncryptionService,
+    DeterministicEncryptionService,
   ],
 })
 export class EncryptionModule {}

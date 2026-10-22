@@ -2,3 +2,8 @@ export * from './activity-query.dto';
 export * from './activity-response.dto';
 export * from './overview-response.dto';
 export * from './top-providers-response.dto';
+export * from './cohort-query.dto';
+export * from './cohort-response.dto';
+export * from './report-query.dto';
+export * from './readmission-rate-response.dto';
+export * from './length-of-stay-response.dto';

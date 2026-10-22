@@ -1,25 +1,43 @@
-import { IsString, IsEnum, IsOptional, IsBoolean, IsDateString, IsObject } from 'class-validator';
+import {
+  IsString,
+  IsEnum,
+  IsOptional,
+  IsBoolean,
+  IsDateString,
+  IsObject,
+  IsUUID,
+  IsNotEmpty,
+  MaxLength,
+} from 'class-validator';
 import { ConsultationOutcome } from '../entities/consultation-note.entity';
 
 export class CreateConsultationNoteDto {
-  @IsString()
+  @IsUUID()
+  @IsNotEmpty()
   appointmentId: string;
 
-  @IsString()
+  @IsUUID()
+  @IsNotEmpty()
   doctorId: string;
 
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
   symptoms: string;
 
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
   diagnosis: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   treatment?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   prescription?: string;
 
   @IsEnum(ConsultationOutcome)
@@ -27,6 +45,7 @@ export class CreateConsultationNoteDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   recommendations?: string;
 
   @IsOptional()
@@ -38,10 +57,10 @@ export class CreateConsultationNoteDto {
   followUpDate?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   referredTo?: string;
 
   @IsOptional()
   @IsObject()
-  vitals?: Record<string, any>;
+  vitals?: Record<string, number | string>;
 }

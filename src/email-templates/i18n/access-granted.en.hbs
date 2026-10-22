@@ -20,7 +20,7 @@
       overflow: hidden;
     }
     .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, {{primaryColor}} 0%, {{secondaryColor}} 100%);
       color: white;
       padding: 30px 20px;
       text-align: center;
@@ -45,7 +45,7 @@
     }
     .record-info {
       background-color: #f9f9f9;
-      border-left: 4px solid #667eea;
+      border-left: 4px solid {{primaryColor}};
       padding: 15px;
       margin: 20px 0;
       border-radius: 4px;
@@ -55,7 +55,7 @@
     }
     .cta-button {
       display: inline-block;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, {{primaryColor}} 0%, {{secondaryColor}} 100%);
       color: white;
       text-decoration: none;
       padding: 12px 30px;
@@ -76,7 +76,7 @@
       border-top: 1px solid #eeeeee;
     }
     .footer a {
-      color: #667eea;
+      color: {{primaryColor}};
       text-decoration: none;
     }
   </style>
@@ -84,6 +84,7 @@
 <body>
   <div class="container">
     <div class="header">
+      {{#if logoUrl}}<img src="{{logoUrl}}" alt="{{organizationName}}" style="max-height:48px;margin-bottom:10px;"><br>{{/if}}
       <h1>✓ Access Granted</h1>
     </div>
     <div class="content">
@@ -111,7 +112,8 @@
       <p>If you have any questions or believe this access was granted in error, please contact the record holder or reply to this email.</p>
     </div>
     <div class="footer">
-      <p>© 2024 MedChain. All rights reserved.</p>
+      <p>© 2024 {{organizationName}}. All rights reserved.</p>
+      {{#if supportEmail}}<p>Support: <a href="mailto:{{supportEmail}}">{{supportEmail}}</a>{{#if supportPhone}} | {{supportPhone}}{{/if}}</p>{{/if}}
       <p><a href="{{privacyUrl}}">Privacy Policy</a> | <a href="{{termsUrl}}">Terms of Service</a></p>
     </div>
   </div>

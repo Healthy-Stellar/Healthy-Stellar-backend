@@ -175,13 +175,53 @@ var ConsentService = function () {
                         case 0:
                             now = new Date();
                             return [4 /*yield*/, this.consentRepository.findOne({
-                                    where: {
-                                        medicalRecordId: recordId,
-                                        sharedWithUserId: userId,
-                                        consentType: consentType,
-                                        status: medical_record_consent_entity_1.ConsentStatus.GRANTED,
-                                        expiresAt: (0, typeorm_1.MoreThan)(now),
-                                    },
+                                    where: [
+                                        {
+                                            medicalRecordId: recordId,
+                                            sharedWithUserId: userId,
+                                            consentType: consentType,
+                                            status: medical_record_consent_entity_1.ConsentStatus.GRANTED,
+                                            expiresAt: (0, typeorm_1.IsNull)(),
+                                        },
+                                        {
+                                            medicalRecordId: recordId,
+                                            sharedWithUserId: userId,
+                                            consentType: consentType,
+                                            status: medical_record_consent_entity_1.ConsentStatus.GRANTED,
+                                            expiresAt: (0, typeorm_1.MoreThan)(now),
+                                        },
+                                    ],
+                                })];
+                        case 1:
+                            consent = _a.sent();
+                            return [2 /*return*/, !!consent];
+                    }
+                });
+            });
+        };
+
+        ConsentService_1.prototype.hasActiveConsentForRecord = function (recordId, userId) {
+            return __awaiter(this, void 0, void 0, function () {
+                var now, consent;
+                return __generator(this, function (_a) {
+                    switch (_a.label) {
+                        case 0:
+                            now = new Date();
+                            return [4 /*yield*/, this.consentRepository.findOne({
+                                    where: [
+                                        {
+                                            medicalRecordId: recordId,
+                                            sharedWithUserId: userId,
+                                            status: medical_record_consent_entity_1.ConsentStatus.GRANTED,
+                                            expiresAt: (0, typeorm_1.IsNull)(),
+                                        },
+                                        {
+                                            medicalRecordId: recordId,
+                                            sharedWithUserId: userId,
+                                            status: medical_record_consent_entity_1.ConsentStatus.GRANTED,
+                                            expiresAt: (0, typeorm_1.MoreThan)(now),
+                                        },
+                                    ],
                                 })];
                         case 1:
                             consent = _a.sent();

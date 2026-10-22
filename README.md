@@ -1,452 +1,553 @@
-# Healthy-Stellar-backend
+# Handsoff
 
-NestJS Backend Documentation - Decentralized Healthcare System
-Comprehensive documentation for the NestJS backend that interfaces with Stellar Soroban smart contracts for the decentralized healthcare management system.
+Handsoff is a NestJS backend for clinical operations: patient records, appointments, pharmacy, laboratory, analytics, and integrations.
 
+## Getting started
 ## Table of Contents
 
-- [Architecture Overview](#architecture-overview)
 - [Project Structure](#project-structure)
 - [Local Development with Docker](#local-development-with-docker)
-- [Installation & Setup](#installation--setup)
+- [Background Worker Process](#background-worker-process)
+- [Getting Started](#getting-started)
 - [Configuration](#configuration)
-- [Core Modules](#core-modules)
+- [Scripts Reference](#scripts-reference)
+- [Security Headers](#security-headers)
 - [API Endpoints](#api-endpoints)
+- [Webhooks](#webhooks)
 - [Postman Collection](#postman-collection)
 - [Database Schema](#database-schema)
-- [Medical Records System](#medical-records-system)
-- [Authentication & Authorization](#authentication--authorization)
-- [Stellar Integration](#stellar-integration)
 - [Error Handling](#error-handling)
 - [Testing](#testing)
 - [Deployment](#deployment)
 
-## Architecture Overview
-
-The NestJS backend serves as the application layer between the frontend and Stellar blockchain, providing:
-
-- RESTful API endpoints for client applications
-- Off-chain data caching and indexing
-- User authentication and session management
-- Encryption/decryption of sensitive health data
-- Event listening and blockchain synchronization
-- Business logic orchestration
-- File upload and storage management
-
 ## Project Structure
 
-```
-src/
-├── main.ts                          # Application entry point
-├── app.module.ts                    # Root application module
-├── config/
-│   └── database.config.ts           # Database configuration
-├── common/
-│   └── filters/
-│       └── http-exception.filter.ts  # Global exception filter
-└── medical-records/
-    ├── medical-records.module.ts    # Medical records module
-    ├── entities/                     # Database entities
-    │   ├── medical-record.entity.ts
-    │   ├── medical-record-version.entity.ts
-    │   ├── medical-history.entity.ts
-    │   ├── clinical-note-template.entity.ts
-    │   ├── medical-attachment.entity.ts
-    │   └── medical-record-consent.entity.ts
-    ├── dto/                          # Data Transfer Objects
-    │   ├── create-medical-record.dto.ts
-    │   ├── update-medical-record.dto.ts
-    │   ├── search-medical-records.dto.ts
-    │   ├── create-consent.dto.ts
-    │   └── create-clinical-template.dto.ts
-    ├── services/                     # Business logic services
-    │   ├── medical-records.service.ts
-    │   ├── clinical-templates.service.ts
-    │   ├── consent.service.ts
-    │   ├── file-upload.service.ts
-    │   └── reporting.service.ts
-    └── controllers/                  # API controllers
-        ├── medical-records.controller.ts
-        ├── clinical-templates.controller.ts
-        ├── consent.controller.ts
-        ├── file-upload.controller.ts
-        └── reporting.controller.ts
-```
+### Entry points
 
-## Local Development with Docker
-
-The fastest way to get a fully working environment is Docker — no local Node, Postgres, or Redis installation required.
-
-### Services started
-
-| Service  | Container    | Exposed port(s)       | Purpose                        |
-|----------|--------------|-----------------------|--------------------------------|
-| api      | hs-api       | 3000                  | NestJS app with hot reload     |
-| postgres | hs-postgres  | 5432                  | PostgreSQL 15                  |
-| redis    | hs-redis     | 6379                  | Redis 7                        |
-| mailhog  | hs-mailhog   | 1025 (SMTP), 8025 (UI)| Local email capture            |
-
-### Quick start
-
-```bash
-# 1. Copy the Docker env file (values are pre-wired to compose service names)
-cp .env.docker .env.docker.local   # optional: customise secrets
-
-# 2. Start all services
-docker compose -f docker-compose.local.yml up --build
-
-# 3. (First run) run migrations inside the running api container
-docker compose -f docker-compose.local.yml exec api npm run migration:run
-```
-
-The API is available at **http://localhost:3000**  
-Swagger UI is at **http://localhost:3000/api**  
-MailHog web UI is at **http://localhost:8025**
-
-### Hot reload
-
-The `src/` directory is bind-mounted into the container. NestJS runs with `nest start --watch`, so any file save triggers an automatic rebuild inside the container — no restart needed.
-
-### Useful commands
-
-```bash
-# Tail logs for a single service
-docker compose -f docker-compose.local.yml logs -f api
-
-# Run a one-off command inside the api container
-docker compose -f docker-compose.local.yml exec api npm run migration:run
-
-# Stop and remove containers (keeps volumes)
-docker compose -f docker-compose.local.yml down
-
-# Stop and wipe all data volumes
-docker compose -f docker-compose.local.yml down -v
-```
-
-### Environment file
-
-`.env.docker` is committed to the repo and contains safe local-only defaults. All hostnames (`postgres`, `redis`, `mailhog`) match the compose service names so they resolve inside the Docker network automatically. Copy and edit it if you need to override any value:
-
-```bash
-cp .env.docker .env.docker.local
-# then pass it explicitly:
-docker compose -f docker-compose.local.yml --env-file .env.docker.local up
-```
-
-> **Note:** `.env.docker` uses placeholder secrets. Never use these values outside of local development.
+| File | Purpose |
+|---|---|
+| `src/main.ts` | HTTP API process — bootstraps the NestJS app, applies global middleware, starts listening |
+| `src/worker.ts` | BullMQ worker process — runs queue processors without exposing an HTTP port |
+| `src/worker.module.ts` | NestJS module that wires only the queue processors (no HTTP layer) |
+| `packages/sdk/` | Auto-generated TypeScript client SDK published to npm |
 
 ---
 
-## Installation & Setup
+### Module map
 
-### Prerequisites
+Modules are grouped below by domain. Each entry is a top-level directory under `src/`.
 
-- Node.js (v18 or higher)
-- PostgreSQL (v12 or higher)
-- npm or yarn
+#### Clinical
 
-### Installation Steps
+| Directory | Description |
+|---|---|
+| `patients/` | Patient registry, demographics, geo-restrictions, notification preferences |
+| `medical-records/` | Core medical records with version control, consent, clinical notes, attachments |
+| `records/` | Versioned record storage with IPFS anchoring and Stellar event-sourcing |
+| `pharmacy/` | Drugs, prescriptions, drug interactions, recalls, inventory, controlled substances |
+| `laboratory/` | Lab orders, results, specimens, equipment, quality control |
+| `appointments/` | Scheduling, consultations, doctor availability |
+| `diagnosis/` | Diagnosis management and ICD code handling |
+| `treatment-planning/` | Care plans, clinical guidelines, decision-support alerts |
+| `medication-administration/` | MAR (Medication Administration Record), barcode verification, adverse reactions |
+| `infection-control/` | Outbreak tracking, isolation protocols, antibiotic resistance surveillance |
+| `emergency-operations/` | Triage, rapid-response teams, critical care coordination |
+| `emergency-medical-info/` | Break-glass emergency access to patient data |
+| `pathology/` | Histology, cytology, genetic testing, digital pathology |
+| `hospital-registry/` | Hospital and facility configuration |
 
-1. Install dependencies:
+#### Billing & Finance
+
+| Directory | Description |
+|---|---|
+| `billing/` | Claims, invoices, insurance, payment processing |
+
+#### Blockchain & Data Integrity
+
+| Directory | Description |
+|---|---|
+| `stellar/` | Stellar Horizon / Soroban SDK wrapper, transaction retry/recovery |
+| `stellar-stream/` | Real-time Stellar event streaming and re-indexing |
+| `ledger-reconciliation/` | Detects discrepancies between the DB and on-chain state |
+| `reconciliation/` | General data reconciliation jobs |
+| `blockchain/` | Low-level blockchain utilities and abstract contract interface |
+| `event-store/` | Append-only event-sourcing store for domain aggregates |
+| `projections/` | CQRS read-model projections built from the event store |
+
+#### Platform / Infrastructure
+
+| Directory | Description |
+|---|---|
+| `app.module.ts` | Root module — wires all application modules together |
+| `common/` | Shared DTOs, interceptors, filters, guards, audit, pagination, throttler, circuit-breaker |
+| `config/` | Database config, env validation schema, logger config |
+| `auth/` | JWT, MFA, API keys, session management, OIDC/OAuth2 |
+| `OAuth2/` | OIDC provider module (wraps the auth OIDC flow) |
+| `rbac/` | Role-Based Access Control policy engine |
+| `roles/` | Medical RBAC decorators and guards (MedicalRole enum, MedicalRbacGuard) |
+| `access-control/` | Fine-grained access grants, revocations, and consent enforcement |
+| `tenant/` | Multi-tenancy — tenant resolution, Row-Level Security (RLS), tenant context |
+| `tenant-config/` | Per-tenant feature flags and configuration overrides |
+| `notifications/` | WebSocket gateway, transactional outbox, email, notification preferences |
+| `queues/` | BullMQ job queues, DLQ, queue dashboard |
+| `graphql/` | Apollo GraphQL server, subscriptions, dataloaders, cursor pagination |
+| `pubsub/` | GraphQL PubSub transport (Redis-backed) |
+| `subscriptions/` | GraphQL subscription lifecycle management |
+| `metrics/` | Prometheus metrics, Grafana dashboards, SLO tracking |
+| `health/` | `/health` endpoint (Terminus health indicators) |
+| `analytics/` | Admin statistics and platform-level activity tracking |
+| `jobs/` | Scheduled background jobs (cron-based) |
+| `data-retention/` | Automated data-retention policy enforcement |
+| `webhooks/` | Outbound webhook delivery, signature verification |
+| `idempotency/` | Idempotency-key middleware for safe request replays |
+| `dlq/` | Dead-letter queue inspection and replay |
+| `incident/` | Incident tracking and escalation |
+| `operator-runbook/` | Runbook endpoints for on-call operators |
+| `versioning/` | API versioning helpers and deprecation interceptor |
+| `admin/` | Admin-only endpoints, user management, system configuration |
+| `security/` | Security headers config, IP allowlist, brute-force detection |
+| `key-management/` | AWS KMS / local envelope encryption, DEK rotation |
+| `encryption/` | PHI field-level encryption (AES-GCM, deterministic column transforms) |
+| `i18n/` | Internationalisation (nestjs-i18n), translation files, i18n exception filter |
+| `feature-flags/` | Runtime feature-flag evaluation |
+| `circuit-breaker/` _(under `common/`)_ | Cockatiel-based circuit breaker for external calls |
+
+#### Compliance & GDPR
+
+| Directory | Description |
+|---|---|
+| `gdpr/` | GDPR data-subject requests (access, erasure, portability) |
+| `data-residency/` | Geo-based data residency enforcement |
+| `fhir/` | FHIR R4 resource mapping and bulk export |
+| `research-export/` | De-identified, k-anonymous data exports for research |
+| `ehr-import/` | Structured import of external EHR data (HL7, CSV) |
+| `governance-analytics/` | Compliance dashboards and governance metrics |
+| `consistency-checker/` | Cross-system data consistency validation |
+
+---
+
+### Directories that need cleanup ⚠️
+
+The following directories are **named after GitHub issues** rather than their domain, which makes the codebase harder to navigate. They contain valid implementations but should be renamed or merged in a future clean-up PR.
+
+| Directory | Status | Recommended action |
+|---|---|---|
+| `src/Auto-Generate TypeScript Client SDK from OpenAPI Spec/` | Duplicate — CI workflows only | Move workflows to `.github/workflows/`; delete directory |
+| `src/SwaggerOpenAPI Documentation with Full Schema Coverage/` | Contains `export-openapi.ts` | Move script to `scripts/`; delete directory |
+| `src/Profile and Optimize Database Query Performance Under Load/` | Contains benchmark scripts | Merge into `scripts/`; delete directory |
+| `src/profile-and-optimize-database-query-performance-under-load/` | Duplicate of above (different casing) | Delete after merging |
+| `src/Dockerfile and Docker Compose for Production-Ready Containerization/` | Contains CI yml files | Move to `.github/workflows/`; delete directory |
+| `src/Build Admin Analytics Dashboard Endpoints/` | Unclear overlap with `analytics/` | Audit and merge or delete |
+| `src/Telemedicine and Remote/` | Contains spaces in name; likely overlaps with… | Merge into `telemedicine-and-remote/` and delete |
+| `src/telemedicine-and-remote/` | …this directory | Keep this one; delete the spaced variant |
+| `src/Tenant Provisioning and Onboarding Workflow/` | Overlaps with… | Merge into `tenant-provisioning-and-onboarding-workflow/` |
+| `src/tenant-provisioning-and-onboarding-workflow/` | …this directory | Keep; delete the spaced variant |
+| `src/Department and Ward Management/` | Unclear if wired into app.module | Audit and either wire or delete |
+| `src/Surgical Management System/` | Unclear if wired into app.module | Audit and either wire or delete |
+| `src/Email Notification Service for Critical Access Events/` | Likely superseded by `notifications/` | Audit and delete if redundant |
+| `src/Hospital config/` | Likely superseded by `hospital-registry/` | Audit and merge or delete |
+| `src/Migration-CLI/` | Likely superseded by TypeORM CLI scripts | Audit and delete if redundant |
+| `src/modules/` | Contains a `patient` sub-module alongside `src/patients/` | Audit which is canonical; delete the other |
+
+> Track clean-up work in a dedicated issue. Do not import from the spaced-name directories in new code.
+
+## Local Development with Docker
+
+| Service  | Container   | Port(s)                | Purpose                    |
+| -------- | ----------- | ---------------------- | -------------------------- |
+| api      | hs-api      | 3000                   | NestJS app with hot reload |
+| worker   | hs-worker   | -                      | BullMQ queue processors    |
+| postgres | hs-postgres | 5432                   | PostgreSQL 15              |
+| redis    | hs-redis    | 6379                   | Redis 7                    |
+| mailhog  | hs-mailhog  | 1025 (SMTP), 8025 (UI) | Local email capture        |
+
 ```bash
-npm install
+cp .env.docker .env.docker.local
+docker compose -f docker-compose.local.yml up --build
+docker compose -f docker-compose.local.yml exec api npm run migration:run
+docker compose -f docker-compose.local.yml exec api npm run seed
 ```
 
-2. Create a `.env` file from `.env.example`:
+- API: http://localhost:3000
+- Swagger: http://localhost:3000/api
+- MailHog: http://localhost:8025
+
+The `src/` directory is bind-mounted; NestJS runs with `--watch` so changes reload automatically.
+
+```bash
+docker compose -f docker-compose.local.yml logs -f api      # Follow API logs
+docker compose -f docker-compose.local.yml logs -f worker   # Follow Worker logs
+docker compose -f docker-compose.local.yml down             # keep volumes
+docker compose -f docker-compose.local.yml down -v          # wipe volumes
+```
+
+> `.env.docker` contains placeholder secrets for local use only. Never use outside local dev.
+
+## Background Worker Process
+
+The backend application uses [BullMQ](https://bullmq.io/) for managing and executing background queues. This is essential for offloading heavy operations or interacting with the Stellar blockchain without blocking the main HTTP event loop of the API service.
+
+The worker process is defined in `src/worker.ts` and `src/worker.module.ts`.
+
+> For how `src/blockchain/`, `src/stellar/`, and `src/stellar-stream/` fit
+> together and interact with this worker process — including which parts are
+> fully wired up versus built-but-not-yet-connected — see
+> [`docs/STELLAR_ARCHITECTURE.md`](docs/STELLAR_ARCHITECTURE.md).
+
+### Key Responsibilities
+
+The worker processes tasks from several queues:
+
+- **`contract-writes`**: Schedules and signs write transactions to Stellar Soroban smart contracts.
+- **`stellar-transactions`**: Manages blockchain transaction submission and retry logic.
+- **`event-indexing`**: Scrapes and indexes events emitted by the smart contracts.
+- **`ipfs-uploads`**: Uploads records/PHI hashes to IPFS.
+- **`email-notifications`**: Sends transactional and notification emails.
+- **`reports`**: Processes PDF/CSV healthcare compliance report generation.
+- **`fhir-bulk-export` / `ehr-import`**: Processes FHIR/EHR batch data imports and exports.
+
+### Running the Worker
+
+#### With Docker Compose (Local Dev)
+
+The worker is included in `docker-compose.local.yml` and runs automatically when you spin up the project:
+
+```bash
+docker compose -f docker-compose.local.yml up --build
+```
+
+#### Bare Metal (Without Docker)
+
+If you run the NestJS API locally using `npm run start:dev`, you **MUST** also start the worker process in a separate terminal:
+
+```bash
+npm run start:worker:dev
+```
+
+The application will be available at `http://localhost:3000`.
+Swagger documentation will be available at `http://localhost:3000/api`.
+
+## Getting Started
+
+**Prerequisites:** Node.js v18+ and PostgreSQL v12+.
+
+1. Install dependencies with `npm install`.
+2. Copy `.env.example` to `.env` and configure the required values.
+3. Run database migrations with `npm run migration:run`.
+4. Start the API with `npm run start:dev`.
+5. In a separate terminal, start the background worker with `npm run start:worker:dev`.
+
+Run `npm run seed` only when you want to populate a development database with sample data.
+
+## Scripts Reference
+
+The project has 66 npm scripts. A full reference — including descriptions, prerequisites, and safety warnings for destructive scripts — is in **[docs/scripts.md](docs/scripts.md)**.
+
+Quick-start summary:
+
+```bash
+npm run start:dev          # API with hot-reload
+npm run migration:run      # apply pending DB migrations
+npm run seed               # load development reference data
+npm run test               # unit tests
+npm run test:e2e           # end-to-end tests (requires Docker)
+npm run load-test:ci       # k6 load test + CI gate (requires k6)
+npm run build:sdk          # build the TypeScript client SDK
+```
+
+---
+
+## Configuration
+
+### Environment variables
+
+Copy `.env.example` to `.env` and fill in the values:
+
 ```bash
 cp .env.example .env
 ```
 
-3. Update the `.env` file with your database credentials and configuration.
+`.env.example` is the authoritative reference for every environment variable the application reads. Variables are grouped by area and annotated with:
 
-4. Run database migrations (if using migrations):
-```bash
-npm run migration:run
-```
+- `[REQUIRED]` — must be set before the app starts in production
+- `[OPTIONAL]` — has a safe default; override only when needed
+- `[SECRET]` — never commit the real value; use a secrets manager in production
 
-5. Start the development server:
-```bash
-npm run start:dev
-```
+**Key sections in `.env.example`:**
 
-The application will be available at `http://localhost:3000`
-Swagger documentation will be available at `http://localhost:3000/api`
-
-## Configuration
-
-### Environment Variables
-
-- `DB_HOST` - Database host (default: localhost)
-- `DB_PORT` - Database port (default: 5432)
-- `DB_USERNAME` - Database username (default: postgres)
-- `DB_PASSWORD` - Database password (default: postgres)
-- `DB_NAME` - Database name (default: healthy_stellar)
-- `PORT` - Application port (default: 3000)
-- `NODE_ENV` - Environment (development/production)
-- `UPLOAD_PATH` - File upload directory (default: ./storage/uploads)
-- `JWT_SECRET` - JWT secret key for authentication
-- `JWT_EXPIRES_IN` - JWT expiration time
+| Section | Variables |
+|---|---|
+| Application | `NODE_ENV`, `PORT`, `API_URL`, `APP_BASE_URL` |
+| Database (primary) | `DATABASE_URL` / `DB_HOST` … `DB_POOL_MAX` |
+| Database (read replica) | `DB_REPLICA_HOST` … `DB_REPLICA_POOL_MAX` |
+| Redis | `REDIS_URL` / `REDIS_HOST` … `REDIS_DB` |
+| JWT & Auth | `JWT_SECRET`, `JWT_EXPIRATION`, `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRATION` |
+| Encryption / KMS | `ENCRYPTION_MASTER_KEY`, `MASTER_KEY`, `KMS_ENABLED`, `AWS_*` |
+| Stellar / Soroban | `STELLAR_SECRET_KEY`, `STELLAR_CONTRACT_ID`, `SOROBAN_RPC_URL` |
+| IPFS | `IPFS_NODE_URL`, `IPFS_GATEWAY`, `IPFS_FALLBACK_GATEWAY` |
+| Email / SMTP | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM_ADDRESS` |
+| Telemedicine | `TELEMEDICINE_SIGNALING_URL`, `TELEMEDICINE_TOKEN_SECRET` |
+| Research export | `RESEARCH_EXPORT_BUCKET`, `RESEARCH_K_ANONYMITY` |
+| EHR import | `EHR_IMPORT_S3_BUCKET`, `EHR_IMPORT_MAX_RETRIES` |
+| GraphQL subscriptions | `SUBSCRIPTIONS_IDLE_TIMEOUT_MS`, `SUBSCRIPTIONS_MAX_PER_CONNECTION` |
+| Ops / alerting | `OPS_SLACK_WEBHOOK_URL`, `QUEUE_DEPTH_THRESHOLD` |
+| Migrations | `MIGRATION_EXECUTOR`, `CONFIRM_PRODUCTION_MIGRATION` |
 
 ## Security Headers
 
-The API applies `helmet()` in `src/main.ts` using the shared configuration in `src/security/http-security.config.ts`.
+The API applies the shared Helmet configuration once through `applySecurityHeaders()` in `src/security/http-security.config.ts`.
 
-- `Content-Security-Policy`: Restricts the browser to loading scripts, styles, images, and network connections only from approved sources, reducing XSS and asset injection risk.
-- `X-Frame-Options: DENY`: Prevents the API from being embedded in frames or iframes, blocking clickjacking attacks.
-- `X-Content-Type-Options: nosniff`: Stops browsers from MIME-sniffing responses into a different content type than declared.
-- `Strict-Transport-Security`: Tells browsers to use HTTPS for future requests and resist protocol downgrade attacks.
-- `Referrer-Policy: no-referrer`: Prevents browsers from leaking request origin or path information in the `Referer` header.
-- `X-XSS-Protection: 0`: Explicitly disables the legacy browser XSS filter so CSP remains the single, predictable browser-side XSS control.
+**Prerequisites:** Node.js v18+, PostgreSQL v12+
 
-## Core Modules
+1. Install dependencies:
+   `npm install`
+2. Set up environment variables:
+   `cp .env.example .env`
+3. Run database migrations:
+   `npm run migration:run`
+4. **Seed the database with test data:**
+   `npm run seed`
+   _(Why added: This generates fake users, medical records, and access grants via `src/database/seeder.ts` so you can log in and test the application)._
+5. Start the development server:
+   `npm run start:dev`
+6. Start the background job worker process:
+   `npm run start:worker:dev`
 
-### Medical Records Module
+## Configuration
 
-The medical records module provides comprehensive functionality for managing medical records, including:
+Copy `.env.example` to `.env`. Key sections:
 
-- Medical record CRUD operations
-- Version control and audit trails
-- Clinical note templates
-- Medical history and timeline tracking
-- File attachments (images, documents)
-- Consent management
-- Search and reporting
+### Data residency and multi-region routing
+
+The backend supports region-aware tenant database routing across four regions: **EU**, **US**, **APAC**, and **AFRICA**. Each tenant declares a residency region and, when `strictDataResidency` is enabled, requests are rejected with `403 Forbidden` if they attempt to access data outside the configured region.
+
+Each region has its own set of environment variables for database, Stellar Horizon, and IPFS configuration:
+
+| Variable                     | Region | Description                                           | Default                                |
+| ---------------------------- | ------ | ----------------------------------------------------- | -------------------------------------- |
+| `DEFAULT_REGION`             | global | Default region for new tenants                        | `EU`                                   |
+| `DB_TYPE_EU`                 | EU     | Database type                                         | `postgres`                             |
+| `DB_HOST_EU`                 | EU     | Database host                                         | —                                      |
+| `DB_PORT_EU`                 | EU     | Database port                                         | `5432`                                 |
+| `DB_NAME_EU`                 | EU     | Database name                                         | `healthy_stellar_eu`                   |
+| `EU_DB_URL`                  | EU     | Database connection URL (overrides individual params) | —                                      |
+| `DB_URL_EU`                  | EU     | Fallback database URL                                 | —                                      |
+| `STELLAR_HORIZON_EU_URL`     | EU     | Stellar Horizon endpoint                              | `https://horizon.eu.stellar.org`       |
+| `IPFS_NODES_EU`              | EU     | Comma-separated IPFS node URLs                        | `https://ipfs-eu-1.infura.io:5001`     |
+| `DB_TYPE_US`                 | US     | Database type                                         | `postgres`                             |
+| `DB_HOST_US`                 | US     | Database host                                         | —                                      |
+| `DB_PORT_US`                 | US     | Database port                                         | `5432`                                 |
+| `DB_NAME_US`                 | US     | Database name                                         | `healthy_stellar_us`                   |
+| `US_DB_URL`                  | US     | Database connection URL (overrides individual params) | —                                      |
+| `DB_URL_US`                  | US     | Fallback database URL                                 | —                                      |
+| `STELLAR_HORIZON_US_URL`     | US     | Stellar Horizon endpoint                              | `https://horizon.us.stellar.org`       |
+| `IPFS_NODES_US`              | US     | Comma-separated IPFS node URLs                        | `https://ipfs-us-1.infura.io:5001`     |
+| `DB_TYPE_APAC`               | APAC   | Database type                                         | `postgres`                             |
+| `DB_HOST_APAC`               | APAC   | Database host                                         | —                                      |
+| `DB_PORT_APAC`               | APAC   | Database port                                         | `5432`                                 |
+| `DB_NAME_APAC`               | APAC   | Database name                                         | `healthy_stellar_apac`                 |
+| `APAC_DB_URL`                | APAC   | Database connection URL (overrides individual params) | —                                      |
+| `DB_URL_APAC`                | APAC   | Fallback database URL                                 | —                                      |
+| `STELLAR_HORIZON_APAC_URL`   | APAC   | Stellar Horizon endpoint                              | `https://horizon.apac.stellar.org`     |
+| `IPFS_NODES_APAC`            | APAC   | Comma-separated IPFS node URLs                        | `https://ipfs-apac-1.infura.io:5001`   |
+| `DB_TYPE_AFRICA`             | AFRICA | Database type                                         | `postgres`                             |
+| `DB_HOST_AFRICA`             | AFRICA | Database host                                         | —                                      |
+| `DB_PORT_AFRICA`             | AFRICA | Database port                                         | `5432`                                 |
+| `DB_NAME_AFRICA`             | AFRICA | Database name                                         | `healthy_stellar_africa`               |
+| `AFRICA_DB_URL`              | AFRICA | Database connection URL (overrides individual params) | —                                      |
+| `DB_URL_AFRICA`              | AFRICA | Fallback database URL                                 | —                                      |
+| `STELLAR_HORIZON_AFRICA_URL` | AFRICA | Stellar Horizon endpoint                              | `https://horizon.africa.stellar.org`   |
+| `IPFS_NODES_AFRICA`          | AFRICA | Comma-separated IPFS node URLs                        | `https://ipfs-africa-1.infura.io:5001` |
+
+Example configuration:
+
+```bash
+DEFAULT_REGION=EU
+DB_HOST_EU=postgres-eu.internal.example.com
+DB_PORT_EU=5432
+DB_NAME_EU=healthy_stellar_eu
+STELLAR_HORIZON_EU_URL=https://horizon.eu.stellar.org
+IPFS_NODES_EU=https://ipfs-eu-1.infura.io:5001
+
+DB_HOST_US=postgres-us.internal.example.com
+DB_PORT_US=5432
+DB_NAME_US=healthy_stellar_us
+STELLAR_HORIZON_US_URL=https://horizon.us.stellar.org
+IPFS_NODES_US=https://ipfs-us-1.infura.io:5001
+
+DB_HOST_APAC=postgres-apac.internal.example.com
+DB_PORT_APAC=5432
+DB_NAME_APAC=healthy_stellar_apac
+STELLAR_HORIZON_APAC_URL=https://horizon.apac.stellar.org
+IPFS_NODES_APAC=https://ipfs-apac-1.infura.io:5001
+
+DB_HOST_AFRICA=postgres-africa.internal.example.com
+DB_PORT_AFRICA=5432
+DB_NAME_AFRICA=healthy_stellar_africa
+STELLAR_HORIZON_AFRICA_URL=https://horizon.africa.stellar.org
+IPFS_NODES_AFRICA=https://ipfs-africa-1.infura.io:5001
+```
+
+Tenant example:
+
+```json
+{
+  "region": "EU",
+  "strictDataResidency": true
+}
+```
+
+When a policy violation occurs, the API returns:
+
+```text
+403 Forbidden
+Tenant data residency policy prohibits access outside the configured region.
+```
+
+For local development, the routing service initializes SQLite-backed regional datasources so tests and simulations can verify region selection without a full multi-database deployment.
+
+| Section            | Variables                                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Core               | `NODE_ENV`, `PORT`, `APP_URL`, `APP_DOMAIN`                                                                               |
+| Database           | `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_NAME`                                                             |
+| Encryption / PHI   | `ENCRYPTION_KEY`, `PHI_ENCRYPTION_KEY`                                                                                    |
+| JWT & Auth         | `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRATION`, `SESSION_SECRET` |
+| CORS & Security    | `ALLOWED_ORIGINS`, `CORS_ORIGIN`, `ADMIN_IP_ALLOWLIST`                                                                    |
+| Redis              | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`                                                                              |
+| Email              | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`                                                                    |
+| Stellar Blockchain | `STELLAR_NETWORK`, `STELLAR_SECRET_KEY`, `STELLAR_CONTRACT_ID`                                                            |
+| Data Residency     | `DEFAULT_REGION`, `DB_TYPE_*`, `DB_HOST_*`, `DB_PORT_*`, `DB_NAME_*`, `*_DB_URL`, `STELLAR_HORIZON_*_URL`, `IPFS_NODES_*` |
+| IPFS               | `IPFS_HOST`, `IPFS_PORT`, `IPFS_URL`                                                                                      |
+| Webhooks           | `IPFS_WEBHOOK_SECRET`, `STELLAR_WEBHOOK_SECRET`, `QUEUE_HMAC_SECRET`                                                      |
+| OIDC / SSO         | `OIDC_PROVIDERS`, `OIDC_{PROVIDER}_CLIENT_ID`, …                                                                          |
+| Logging            | `LOG_LEVEL`, `LOKI_HOST`                                                                                                  |
+| Metrics & Tracing  | `METRICS_TOKEN`, `OTEL_EXPORTER_OTLP_ENDPOINT`                                                                            |
+| Backup             | `BACKUP_DIR`, `BACKUP_ENCRYPTION_KEY`, `BACKUP_RETENTION_DAYS`                                                            |
+| Feature Flags      | `TELEMEDICINE_ENABLED`, `SURGICAL_MANAGEMENT_ENABLED`                                                                     |
+
+Generate secrets with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+## Security Headers
+
+The API applies the shared Helmet configuration once through `applySecurityHeaders()` in `src/security/http-security.config.ts`:
+
+- `Content-Security-Policy` — defaults to same-origin resources, blocks object embedding and framing, and uses a per-request nonce for scripts. Development additionally allows the Swagger CDN.
+- `X-Frame-Options: DENY` — blocks clickjacking through iframes.
+- `X-Content-Type-Options: nosniff` — prevents MIME-type sniffing.
+- `Strict-Transport-Security` — enables HTTPS-only access with a one-year max age, subdomains, and preload.
+- `Referrer-Policy: no-referrer` — suppresses referrer information.
+- `X-XSS-Protection: 0` — disables the legacy browser filter; CSP provides the script policy.
 
 ## API Endpoints
 
-### Medical Records
+The complete route reference is available in the [Swagger UI](/api) when the
+application is running and in the generated [OpenAPI specification](docs/openapi.json).
+The prefixes below summarize the API by domain; URI-versioned endpoints are
+normally served under `/v1` (version-neutral routes are not).
 
-- `POST /medical-records` - Create a new medical record
-- `GET /medical-records/search` - Search medical records
-- `GET /medical-records/:id` - Get a medical record by ID
-- `GET /medical-records/:id/versions` - Get version history
-- `GET /medical-records/timeline/:patientId` - Get patient timeline
-- `PUT /medical-records/:id` - Update a medical record
-- `PUT /medical-records/:id/archive` - Archive a medical record
-- `PUT /medical-records/:id/restore` - Restore an archived record
-- `DELETE /medical-records/:id` - Delete a medical record (soft delete)
+- **Access control and roles:** `/access`, `/users`, `/policies`, `/medical-rbac`, `/role-templates`
+- **Administration and operations:** `/admin/*`, `/operator/runbooks`
+- **Analytics and governance:** `/analytics/*`, `/governance/reports`, `/financial-reports`
+- **Appointments:** `/appointments/*`, `/consultations`, `/doctor-availability`
+- **Authentication and identity:** `/auth/*`, `/oauth2`, `/providers`
+- **Backup and recovery:** `/backup`
+- **Beds, departments, and wards:** `/bed-occupancy`, `/beds`, `/departments`, `/wards`
+- **Billing and insurance:** `/billing/*`, `/claims`, `/denials`, `/appeals`, `/insurance`, `/medical-codes`, `/payments`, `/subscriptions`
+- **Clinical records:** `/medical-records`, `/clinical-notes`, `/clinical-templates`, `/consents`, `/attachments`
+- **Clinical workflow:** `/diagnosis`, `/treatment-plans`, `/procedures`, `/care-templates`, `/outcomes`, `/decision-support`
+- **Data governance and validation:** `/api/v1/data-residency`, `/gdpr`, `/research-export`, `/medical-validation`, `/admin/tenants/*/field-validation-rules`
+- **EHR import:** `/ehr-import`, `/admin/import`
+- **Emergency and incidents:** `/emergency`, `/emergency-medical-info`, `/incidents`
+- **FHIR interoperability:** `/fhir/r4`
+- **Hospital configuration and registry:** `/hospital-configuration`, `/hospital-registry`
+- **Infection control:** `/infection-control`
+- **Laboratory:** `/laboratory/*`, `/lab-*`
+- **Medical staff:** `/medical-staff`, `/medical-staff/credentials`
+- **Medication administration:** `/medication-administration`, `/medication-reconciliation`, `/adverse-reactions`, `/barcode-verification`
+- **Monitoring and compliance:** `/health`, `/healthcare-monitoring`, `/clinical-alerts`, `/compliance`, `/dashboard`, `/monitoring`, `/metrics`
+- **Notifications:** `/notifications/*`
+- **Pathology:** `/pathology/*`
+- **Patients and portal:** `/patients`, `/guardians`, `/patient-portal`
+- **Pharmacy:** `/pharmacy/*`, `/cds-hooks`
+- **Provider-patient coordination:** `/provider-patient/handoffs`
+- **Queues and jobs:** `/jobs`, `/dlq`, `/admin/dlq`
+- **Reporting:** `/reports`, `/admin/report-schedules`
+- **Security and key management:** `/healthcare-security`, `/key-management/kek`, `/admin/key-management`, `/csp-report`, `/admin/api-keys`, `/admin/secret-rotation`
+- **Stellar integration:** `/stellar/*`
+- **Surgical management:** `/surgical`
+- **Telemedicine:** `/telemedicine/*`
+- **Tenant management:** `/admin/tenants`, `/admin/tenant-quota`, `/onboarding`
+- **Webhooks:** `/webhooks`
+- **Platform services:** `/audit`, `/audit-logs`, `/api/versions`, `/consistency`, `/errors`, `/i18n`, `/performance`, `/admin/query-performance`, `/admin/reconciliation`, `/admin/feature-flags`, `/admin/projections`
 
-### Clinical Templates
+## Webhooks
 
-- `POST /clinical-templates` - Create a clinical template
-- `GET /clinical-templates` - Get all active templates
-- `GET /clinical-templates/:id` - Get a template by ID
-- `PUT /clinical-templates/:id` - Update a template
-- `DELETE /clinical-templates/:id` - Delete a template
+Tenants can subscribe to healthcare events (record uploads, access grants, diagnosis
+updates, and more). Deliveries are signed with HMAC-SHA256 (`X-Webhook-Signature`),
+retried with exponential backoff, replayable from the dead-letter queue, and the
+platform also receives signed inbound callbacks from IPFS, Stellar and insurance
+payers.
 
-### Consent Management
-
-- `POST /consents` - Create a new consent
-- `GET /consents/record/:recordId` - Get consents for a record
-- `GET /consents/patient/:patientId` - Get consents for a patient
-- `GET /consents/check` - Check if consent exists
-- `GET /consents/:id` - Get a consent by ID
-- `PUT /consents/:id/revoke` - Revoke a consent
-
-### File Attachments
-
-- `POST /attachments/upload` - Upload a file attachment
-- `GET /attachments/record/:recordId` - Get attachments for a record
-- `GET /attachments/:id` - Get an attachment by ID
-- `GET /attachments/:id/download` - Download an attachment
-- `DELETE /attachments/:id` - Delete an attachment
-
-### Reporting
-
-- `GET /reports/patient/:patientId/summary` - Get patient summary
-- `GET /reports/activity` - Get activity report
-- `GET /reports/consent` - Get consent report
-- `GET /reports/statistics` - Get statistics
+See the [webhook integrator guide](docs/webhooks.md) for the delivery headers,
+signature verification snippets (Node and Python), secret rotation semantics, retry
+and alerting behaviour, manual replay, the event catalog, and the inbound signing
+scheme.
 
 ## Postman Collection
 
-A comprehensive Postman collection is available for testing and exploring the API:
-
-- **Location**: `docs/postman/`
-- **Collection**: `MedChain.postman_collection.json`
-- **Environments**: Local, Testnet, and Staging
-- **Documentation**: `docs/postman/README.md`
-
-### Features
-
-- Organized into folders matching API modules (Auth, Records, Access Control, etc.)
-- Pre-configured authentication with automatic JWT token management
-- Collection-level tests for response validation
-- Environment-specific configurations
-- Example requests and responses for all endpoints
-
-### Quick Start
-
-1. Import the collection and environment files into Postman
-2. Select the appropriate environment (Local/Testnet/Staging)
-3. Run the "Login" request in the Auth folder
-4. All subsequent requests will automatically use the JWT token
+Import [`docs/postman/MedChain.postman_collection.json`](docs/postman/MedChain.postman_collection.json). Environments: Local, Testnet, Staging. The collection is generated from OpenAPI; see [how to regenerate the API references](docs/OPENAPI_REGENERATION.md).
 
 ## Database Schema
 
-### Medical Records
-
-The system uses the following main entities:
-
-1. **MedicalRecord** - Main medical record entity with version control
-2. **MedicalRecordVersion** - Version history for audit trails
-3. **MedicalHistory** - Timeline and activity tracking
-4. **ClinicalNoteTemplate** - Reusable clinical note templates
-5. **MedicalAttachment** - File attachments (images, documents)
-6. **MedicalRecordConsent** - Consent management and sharing
-
-## Medical Records System
-
-### Features
-
-#### 1. Medical Record Entity with Version Control
-- Complete version history tracking
-- Change tracking with before/after states
-- Change reason documentation
-- Automatic version numbering
-
-#### 2. Clinical Note Templates and Structured Data
-- Reusable templates for common clinical notes
-- Structured field definitions
-- Template categorization
-- System and custom templates
-
-#### 3. Medical History and Timeline Tracking
-- Complete audit trail of all record activities
-- Event types: created, updated, viewed, shared, archived, deleted
-- IP address and user agent tracking
-- Chronological timeline view
-
-#### 4. Medical Image and Document Attachment
-- Support for multiple file types (images, PDFs, documents)
-- File size validation (10MB max)
-- Secure file storage
-- Metadata tracking
-
-#### 5. Medical Record Sharing and Consent Management
-- Granular consent types (view, share, download, modify, delete)
-- Consent expiration management
-- Consent revocation with reason tracking
-- Sharing with users and organizations
-
-#### 6. Medical Record Search and Reporting
-- Advanced search with filters
-- Patient summary reports
-- Activity reports
-- Consent reports
-- Statistical analysis
-
-### Acceptance Criteria Met
-
-✅ **Medical records maintain complete audit trails**
-- All changes are tracked in MedicalRecordVersion
-- All activities are logged in MedicalHistory
-- IP addresses and user agents are recorded
-
-✅ **Clinical documentation follows medical standards**
-- Structured templates for consistent documentation
-- Version control ensures data integrity
-- Metadata support for additional context
-
-✅ **Medical history is easily accessible and searchable**
-- Timeline endpoint for chronological view
-- Search functionality with multiple filters
-- Activity reports for analysis
-
-✅ **Patient consent is properly managed and documented**
-- Comprehensive consent entity with status tracking
-- Expiration management
-- Revocation with audit trail
-- Consent verification endpoints
-
-## Authentication & Authorization
-
-(To be implemented - placeholder for future authentication system)
-
-## Stellar Integration
-
-(To be implemented - placeholder for Stellar Soroban smart contract integration)
+The authoritative database schema is defined by the [TypeORM migrations](src/migrations/)
+and corresponding entity definitions in `src/`.
 
 ## Error Handling
 
-The application uses a global exception filter (`HttpExceptionFilter`) that:
-- Catches all exceptions
-- Formats error responses consistently
-- Logs errors appropriately
-- Provides detailed error information in development
-- Sanitizes error messages in production
+All non-FHIR errors return a consistent envelope (`statusCode`, `error`, `message`, `code`, `traceId`, `timestamp`, `path`, `details`). Clients should branch on the machine-readable `code` — one of the `AppErrorCode` values — rather than on `message` or the HTTP status. `GlobalExceptionFilter` is the effective handler: it maps errors to codes, logs them with a `traceId`, and withholds internal details (stack traces) from responses. Routes under `/fhir` return an HL7 FHIR `OperationOutcome` instead.
 
-## Clinical Workflow APIs (#68)
-
-The backend now includes an integrated clinical workflow surface across diagnosis, treatment planning, pharmacy, and documentation modules.
-
-### Implemented API capabilities
-
-- Diagnosis and treatment planning integration:
-  - Get treatment plans by diagnosis
-  - Get patient diagnoses with linked treatment plans
-  - Validate diagnosis IDs on treatment plan create/update
-- Prescription and medication workflow improvements:
-  - Search prescriptions by status/patient/prescriber/date
-  - Update eligible prescriptions
-  - Add and retrieve prescription note history
-- Clinical documentation enhancements:
-  - Dedicated `clinical-notes` endpoints
-  - SOAP/progress/discharge/consultation note support
-  - Note completeness checks and signing workflow
-- Procedure/care tracking and decision support:
-  - Procedure cancellation endpoint
-  - Auto decision-support alerts on treatment/procedure lifecycle changes
-  - Treatment plan progress endpoint for care coordination dashboards
-
-### Key endpoint groups
-
-- `GET /diagnosis/:id/treatment-plans`
-- `GET /diagnosis/patient/:patientId/treatment-plans`
-- `GET /treatment-plans` (search filters)
-- `GET /treatment-plans/:id/progress`
-- `GET /pharmacy/prescriptions` (search filters)
-- `PATCH /pharmacy/prescriptions/:id`
-- `POST /pharmacy/prescriptions/:id/notes`
-- `GET /pharmacy/prescriptions/:id/notes`
-- `POST /clinical-notes`
-- `GET /clinical-notes`
-- `POST /clinical-notes/:id/sign`
-- `GET /clinical-notes/:id/completeness`
+See [`docs/errors.md`](docs/errors.md) for the full error-code catalog (HTTP status, meaning, and retryability for every code), the exception-filter order, sanitization rules, and how `traceId` maps to logs and tracing for support requests.
 
 ## Testing
 
-### Running Tests
+See **[docs/scripts.md](docs/scripts.md)** for the full list of test scripts and their prerequisites.
 
 ```bash
-# Unit tests
-npm run test
-
-# E2E tests
-npm run test:e2e
-
-# Test coverage
-npm run test:cov
+npm run test          # Unit tests
+npm run test:e2e      # End-to-end tests (requires Docker)
+npm run test:cov      # Unit-test coverage
+npm run test:all:cov  # Unit and end-to-end coverage
+npm run test:compliance  # HIPAA/GDPR compliance tests
 ```
 
 ## Deployment
 
-### Production Build
-
 ```bash
-npm run build
-npm run start:prod
+npm install
+npm run start:dev
 ```
 
-### Environment Considerations
+The API is served under the global prefix `/api`. Swagger docs are available at `/api/docs`.
 
-- Set `NODE_ENV=production`
-- Configure proper database credentials
-- Set up secure file storage
-- Configure CORS appropriately
-- Enable HTTPS
-- Set up proper logging and monitoring
+## Route overview
 
-## License
+Routes are grouped by module. Only routes registered in a module's `controllers` array are served; any controller not listed there is not exposed.
 
-MIT
+- `/auth` — authentication and session management
+- `/users` — user accounts and roles
+- `/patients` — patient records
+- `/appointments` — scheduling
+- `/pharmacy` — prescriptions, dispensing, and inventory
+- `/laboratory` — lab orders and results
+- `/analytics` — reporting and dashboards
+- `/integrations` — external system integrations
+
+## Contributing
+
+- Keep controllers registered in a module and protected by `JwtAuthGuard` + `RolesGuard`.
+- Derive actor ids from `req.user`, never from request bodies.
+- Update this route list whenever a module's registered controllers change.

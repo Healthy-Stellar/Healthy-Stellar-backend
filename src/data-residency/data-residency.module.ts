@@ -8,6 +8,7 @@ import { RegionalHorizonService } from './services/regional-horizon.service';
 import { DataResidencyGuard } from './guards/data-residency.guard';
 import { DataRegionHeaderInterceptor } from './interceptors/data-region-header.interceptor';
 import { DataResidencyController } from './controllers/data-residency.controller';
+import { TenantDatabaseRoutingService } from '../database/tenant-database-routing.service';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { DataResidencyController } from './controllers/data-residency.controller
     RegionalHorizonService,
     DataResidencyGuard,
     DataRegionHeaderInterceptor,
+    TenantDatabaseRoutingService,
   ],
   controllers: [DataResidencyController],
   exports: [
@@ -30,6 +32,7 @@ import { DataResidencyController } from './controllers/data-residency.controller
     RegionalHorizonService,
     DataResidencyGuard,
     DataRegionHeaderInterceptor,
+    TenantDatabaseRoutingService,
   ],
 })
 export class DataResidencyModule {}

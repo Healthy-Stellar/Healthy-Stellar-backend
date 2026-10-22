@@ -4,7 +4,9 @@ import { ReportTemplateService } from '../services/report-template.service';
 import { CreatePathologyReportDto } from '../dto/create-pathology-report.dto';
 import { CreateReportTemplateDto } from '../dto/create-report-template.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pathology/reports')
 @Controller('pathology/reports')
 @UseGuards(JwtAuthGuard)
 export class PathologyReportController {

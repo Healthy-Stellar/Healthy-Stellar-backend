@@ -4,7 +4,9 @@ import { BarcodeScanDto } from '../dto/barcode-scan.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('barcode-verification')
 @Controller('barcode-verification')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class BarcodeController {

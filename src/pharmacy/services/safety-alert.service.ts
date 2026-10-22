@@ -24,13 +24,13 @@ export class SafetyAlertService {
     const interactionCheck = await this.drugInteractionService.checkInteractions(drugIds);
 
     if (interactionCheck.hasInteractions) {
-      for (const interaction of interactionCheck.interactions) {
+      for (const warning of interactionCheck.warnings) {
         const alert = this.alertRepository.create({
           prescriptionId: prescription.id,
           alertType: 'drug-interaction',
-          severity: interaction.severity as any,
-          message: `Interaction detected between ${interaction.drug1.genericName} and ${interaction.drug2.genericName}`,
-          recommendation: interaction.management,
+          severity: warning.severity === 'contraindicated' ? 'critical' : (warning.severity as any),
+          message: `Interaction detected between ${warning.drug1Name} and ${warning.drug2Name}`,
+          recommendation: warning.management,
         });
         alerts.push(alert);
       }
@@ -40,12 +40,13 @@ export class SafetyAlertService {
     if (prescription.patientAllergies && prescription.patientAllergies.length > 0) {
       for (const item of prescription.items) {
         const drug = await this.drugRepository.findOne({ where: { id: item.drugId } });
+        if (!drug) continue;
 
         // Simple allergy check - in production, this would be more sophisticated
         const allergyMatch = prescription.patientAllergies.some(
           (allergy) =>
             drug.genericName.toLowerCase().includes(allergy.toLowerCase()) ||
-            drug.brandName.toLowerCase().includes(allergy.toLowerCase()),
+            drug.name.toLowerCase().includes(allergy.toLowerCase()),
         );
 
         if (allergyMatch) {

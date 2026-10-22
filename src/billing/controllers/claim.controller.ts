@@ -8,13 +8,22 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 import { ClaimService } from '../services/claim.service';
 import { CreateClaimDto, UpdateClaimDto, SubmitClaimDto } from '../dto/claim.dto';
 
-@ApiTags('Insurance Claims')\n@ApiBearerAuth('medical-auth')
+@ApiTags('Insurance Claims')
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 @Controller('claims')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.BILLING_STAFF)
 export class ClaimController {
   constructor(private readonly claimService: ClaimService) {}
 
@@ -51,7 +60,7 @@ export class ClaimController {
   @ApiResponse({ status: 200, description: 'Claim submitted successfully to payer' })
   @ApiResponse({ status: 400, description: 'Claim validation failed' })
   async submit(@Param('id') id: string, @Body() submitDto: SubmitClaimDto) {
-    return this.claimService.submit(id, submitDto);
+    return this.claimService.submit({ ...submitDto, id });
   }
 
   @Get(':id')
@@ -203,6 +212,16 @@ export class ClaimController {
     return this.claimService.getDenialAnalysis(startDate, endDate);
   }
 
+  @Get('dashboard/status-aging')
+  @ApiOperation({
+    summary: 'Claims dashboard',
+    description: 'Claim counts grouped by status plus aging buckets (0-30/31-60/61-90/90+) for unresolved claims',
+  })
+  @ApiResponse({ status: 200, description: 'Dashboard data retrieved' })
+  async getDashboard() {
+    return this.claimService.getClaimsDashboard();
+  }
+
   @Get('pending/review')
   @ApiOperation({
     summary: 'Get pending claims',
@@ -211,6 +230,6 @@ export class ClaimController {
   @ApiQuery({ name: 'priority', required: false, description: 'Filter by priority level' })
   @ApiResponse({ status: 200, description: 'Pending claims retrieved' })
   async getPendingClaims(@Query('priority') priority?: string) {
-    return this.claimService.getPendingClaims(priority);
+    return this.claimService.getPendingClaims();
   }
 }

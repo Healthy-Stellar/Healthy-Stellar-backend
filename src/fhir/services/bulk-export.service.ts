@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, MoreThan, FindOptionsWhere } from 'typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { BulkExportJob, ExportJobStatus } from '../entities/bulk-export-job.entity';
+import { BulkExportJob, ExportJobStatus, ExportScope } from '../entities/bulk-export-job.entity';
+import { generateSignedUrl } from '../utils/signed-url.util';
 import { Patient } from '../../patients/entities/patient.entity';
 import { MedicalRecord } from '../../medical-records/entities/medical-record.entity';
 import { MedicalRecordConsent } from '../../medical-records/entities/medical-record-consent.entity';
@@ -11,6 +12,7 @@ import { MedicalHistory } from '../../medical-records/entities/medical-history.e
 import { FhirMapper } from '../mappers/fhir.mapper';
 
 const BATCH_SIZE = parseInt(process.env.BULK_EXPORT_BATCH_SIZE ?? '500', 10);
+
 
 @Injectable()
 export class BulkExportService {
@@ -27,6 +29,10 @@ export class BulkExportService {
     requesterId: string,
     requesterRole: string,
     resourceTypes?: string[],
+    since?: string,
+    outputFormat?: string,
+    exportScope?: ExportScope,
+    groupId?: string,
   ): Promise<string> {
     const types = resourceTypes || ['Patient', 'DocumentReference', 'Consent', 'Provenance'];
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -37,6 +43,10 @@ export class BulkExportService {
       resourceTypes: types,
       status: ExportJobStatus.PENDING,
       expiresAt,
+      since: since ? new Date(since) : null,
+      outputFormat: outputFormat ?? 'application/fhir+ndjson',
+      exportScope: exportScope ?? ExportScope.PATIENT,
+      groupId: groupId ?? null,
     });
 
     await this.jobRepo.save(job);
@@ -56,7 +66,7 @@ export class BulkExportService {
     if (job.status === ExportJobStatus.COMPLETED) {
       return {
         transactionTime: job.updatedAt.toISOString(),
-        request: `/fhir/r4/Patient/$export?_type=${job.resourceTypes.join(',')}`,
+        request: this.buildRequestUrl(job),
         requiresAccessToken: true,
         output: job.outputFiles || [],
       };
@@ -88,7 +98,7 @@ export class BulkExportService {
 
     try {
       const outputFiles = [];
-      const isAdmin = job.requesterRole === 'ADMIN';
+      const isAdmin = job.requesterRole === 'ADMIN' || job.exportScope === ExportScope.SYSTEM;
 
       for (const type of job.resourceTypes) {
         const { url, count } = await this.exportResourceType(type, job.requesterId, isAdmin, job);
@@ -114,6 +124,7 @@ export class BulkExportService {
   ): Promise<{ url: string; count: number }> {
     const chunks: string[] = [];
     let count = 0;
+    const since = job.since ?? undefined;
 
     const append = async (lines: string[]) => {
       if (!lines.length) return;
@@ -124,59 +135,62 @@ export class BulkExportService {
     };
 
     if (type === 'Patient') {
+      const sinceWhere = since ? { updatedAt: MoreThan(since) } : {};
       await this.paginate(
         (skip, take) =>
           isAdmin
-            ? this.patientRepo.find({ skip, take, order: { id: 'ASC' } })
-            : this.patientRepo.find({ where: { id: requesterId }, skip, take }),
+            ? this.patientRepo.find({ where: sinceWhere as FindOptionsWhere<Patient>, skip, take, order: { id: 'ASC' } })
+            : this.patientRepo.find({ where: { id: requesterId, ...sinceWhere } as FindOptionsWhere<Patient>, skip, take }),
         async (batch) => append(batch.map((p) => JSON.stringify(FhirMapper.toPatient(p)))),
       );
     } else if (type === 'DocumentReference') {
+      const sinceWhere = since ? { updatedAt: MoreThan(since) } : {};
       await this.paginate(
         (skip, take) =>
           isAdmin
-            ? this.recordRepo.find({ skip, take, order: { id: 'ASC' } })
-            : this.recordRepo.find({ where: { patientId: requesterId }, skip, take, order: { id: 'ASC' } }),
+            ? this.recordRepo.find({ where: sinceWhere as FindOptionsWhere<MedicalRecord>, skip, take, order: { id: 'ASC' } })
+            : this.recordRepo.find({ where: { patientId: requesterId, ...sinceWhere } as FindOptionsWhere<MedicalRecord>, skip, take, order: { id: 'ASC' } }),
         async (batch) => append(batch.map((r) => JSON.stringify(FhirMapper.toDocumentReference(r)))),
       );
     } else if (type === 'Consent') {
+      const sinceWhere = since ? { updatedAt: MoreThan(since) } : {};
       await this.paginate(
         (skip, take) =>
           isAdmin
-            ? this.consentRepo.find({ skip, take, order: { id: 'ASC' } })
-            : this.consentRepo.find({ where: { patientId: requesterId }, skip, take, order: { id: 'ASC' } }),
+            ? this.consentRepo.find({ where: sinceWhere as FindOptionsWhere<MedicalRecordConsent>, skip, take, order: { id: 'ASC' } })
+            : this.consentRepo.find({ where: { patientId: requesterId, ...sinceWhere } as FindOptionsWhere<MedicalRecordConsent>, skip, take, order: { id: 'ASC' } }),
         async (batch) => append(batch.map((c) => JSON.stringify(FhirMapper.toConsent(c)))),
       );
     } else if (type === 'Provenance') {
-      // Collect record IDs in batches to avoid unbounded IN clause
       const recordIds: string[] = [];
+      const sinceRecordWhere = since ? { updatedAt: MoreThan(since) } : {};
       await this.paginate(
         (skip, take) =>
           isAdmin
-            ? this.recordRepo.find({ select: { id: true }, skip, take, order: { id: 'ASC' } })
-            : this.recordRepo.find({ select: { id: true }, where: { patientId: requesterId }, skip, take, order: { id: 'ASC' } }),
+            ? this.recordRepo.find({ select: { id: true }, where: sinceRecordWhere as FindOptionsWhere<MedicalRecord>, skip, take, order: { id: 'ASC' } })
+            : this.recordRepo.find({ select: { id: true }, where: { patientId: requesterId, ...sinceRecordWhere } as FindOptionsWhere<MedicalRecord>, skip, take, order: { id: 'ASC' } }),
         async (batch) => { recordIds.push(...batch.map((r) => r.id)); },
       );
 
-      // Page through history using the collected IDs in slices
       for (let i = 0; i < recordIds.length; i += BATCH_SIZE) {
         const idSlice = recordIds.slice(i, i + BATCH_SIZE);
+        const qb = this.historyRepo
+          .createQueryBuilder('h')
+          .where('h.medicalRecordId IN (:...ids)', { ids: idSlice })
+          .orderBy('h.id', 'ASC');
+
+        if (since) {
+          qb.andWhere('h.createdAt > :since', { since });
+        }
+
         await this.paginate(
-          (skip, take) =>
-            this.historyRepo
-              .createQueryBuilder('h')
-              .where('h.medicalRecordId IN (:...ids)', { ids: idSlice })
-              .orderBy('h.id', 'ASC')
-              .skip(skip)
-              .take(take)
-              .getMany(),
+          (skip, take) => qb.clone().skip(skip).take(take).getMany(),
           async (batch) => append(FhirMapper.toProvenance(batch).map((r) => JSON.stringify(r))),
         );
       }
     }
 
-    const ndjson = chunks.join('\n');
-    const url = await this.uploadToIPFS(ndjson);
+    const url = generateSignedUrl(job.id, type, job.outputFormat);
     return { url, count };
   }
 
@@ -195,12 +209,6 @@ export class BulkExportService {
     }
   }
 
-  private async uploadToIPFS(content: string): Promise<string> {
-    // Placeholder - integrate with actual IPFS service
-    const hash = Buffer.from(content).toString('base64').substring(0, 46);
-    return `ipfs://${hash}`;
-  }
-
   async cleanupExpiredJobs(): Promise<void> {
     const expired = await this.jobRepo.find({
       where: { status: ExportJobStatus.COMPLETED },
@@ -212,5 +220,23 @@ export class BulkExportService {
         await this.jobRepo.remove(job);
       }
     }
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  private buildRequestUrl(job: BulkExportJob): string {
+    const base = job.exportScope === ExportScope.SYSTEM
+      ? '/fhir/r4/$export'
+      : job.exportScope === ExportScope.GROUP
+        ? `/fhir/r4/Group/${job.groupId}/$export`
+        : '/fhir/r4/Patient/$export';
+
+    const params = [`_type=${job.resourceTypes.join(',')}`];
+    if (job.since) params.push(`_since=${job.since.toISOString()}`);
+    if (job.outputFormat && job.outputFormat !== 'application/fhir+ndjson') {
+      params.push(`_outputFormat=${encodeURIComponent(job.outputFormat)}`);
+    }
+
+    return `${base}?${params.join('&')}`;
   }
 }

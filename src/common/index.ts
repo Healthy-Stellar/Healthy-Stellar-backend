@@ -15,6 +15,7 @@ export * from './interceptors/audit.interceptor';
 // Decorators
 export * from './decorators/encrypted.decorator';
 export * from './decorators/audit-context.decorator';
+export * from './decorators/traced.decorator';
 
 // Utils
 export * from './utils/encryption.util';

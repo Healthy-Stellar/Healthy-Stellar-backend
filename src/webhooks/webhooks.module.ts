@@ -1,10 +1,34 @@
 import { Module, NestModule, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import { WebhooksController } from './webhooks.controller';
 import { WebhookSignatureMiddleware } from '../common/middleware/webhook-signature.middleware';
 import { RawBodyMiddleware } from '../common/middleware/raw-body.middleware';
+import { IpfsService } from '../stellar/services/ipfs.service';
+import { QueueService } from '../queues/queue.service';
+import { WebhookSubscription } from './entities/webhook-subscription.entity';
+import { WebhookDelivery } from './entities/webhook-delivery.entity';
+import { WebhookDeliveryService } from './services/webhook-delivery.service';
+import { WebhookSubscriptionService } from './services/webhook-subscription.service';
+import { WebhookDeliveryProcessor } from './processors/webhook-delivery.processor';
+import { QUEUE_NAMES } from '../queues/queue.constants';
+import { AuditModule } from '../common/audit/audit.module';
+import { BillingModule } from '../billing/billing.module';
+import { DlqModule } from '../dlq/dlq.module';
 
 @Module({
+  imports: [
+    TypeOrmModule.forFeature([WebhookSubscription, WebhookDelivery]),
+    BullModule.registerQueue({
+      name: QUEUE_NAMES.WEBHOOK_DELIVERY,
+    }),
+    AuditModule,
+    BillingModule,
+    DlqModule,
+  ],
   controllers: [WebhooksController],
+  providers: [IpfsService, QueueService, WebhookDeliveryService, WebhookDeliveryProcessor, WebhookSubscriptionService],
+  exports: [WebhookDeliveryService, WebhookSubscriptionService],
 })
 export class WebhooksModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
@@ -20,5 +44,11 @@ export class WebhooksModule implements NestModule {
     consumer
       .apply(new WebhookSignatureMiddleware('STELLAR_WEBHOOK_SECRET') as any)
       .forRoutes({ path: 'webhooks/stellar', method: RequestMethod.POST });
+
+    // Insurance-claims webhook — verified with INSURANCE_WEBHOOK_SECRET
+    consumer
+      .apply(new WebhookSignatureMiddleware('INSURANCE_WEBHOOK_SECRET') as any)
+      .forRoutes({ path: 'webhooks/insurance-claims', method: RequestMethod.POST });
   }
 }
+

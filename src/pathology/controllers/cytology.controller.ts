@@ -2,7 +2,9 @@ import { Controller, Get, Post, Body, Param, UseGuards, Request } from '@nestjs/
 import { CytologyService } from '../services/cytology.service';
 import { CreateCytologySlideDto } from '../dto/create-cytology-slide.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pathology/cytology')
 @Controller('pathology/cytology')
 @UseGuards(JwtAuthGuard)
 export class CytologyController {

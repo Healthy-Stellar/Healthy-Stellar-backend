@@ -8,6 +8,9 @@ import {
   IsNotEmpty,
   IsDateString,
   Length,
+  MaxLength,
+  ArrayNotEmpty,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -27,6 +30,7 @@ export class CreateLabOrderItemDto {
   })
   @IsString()
   @IsOptional()
+  @MaxLength(1000)
   notes?: string;
 }
 
@@ -88,6 +92,7 @@ export class CreateLabOrderDto {
   })
   @IsString()
   @IsOptional()
+  @MaxLength(2000)
   clinicalIndication?: string;
 
   @ApiPropertyOptional({
@@ -95,6 +100,7 @@ export class CreateLabOrderDto {
   })
   @IsString()
   @IsOptional()
+  @MaxLength(2000)
   notes?: string;
 
   @ApiPropertyOptional({
@@ -118,7 +124,8 @@ export class CreateLabOrderDto {
     type: [CreateLabOrderItemDto],
   })
   @IsArray()
-  @IsNotEmpty()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(50)
   @ValidateNested({ each: true })
   @Type(() => CreateLabOrderItemDto)
   items: CreateLabOrderItemDto[];

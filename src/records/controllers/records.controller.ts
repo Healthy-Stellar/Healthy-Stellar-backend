@@ -13,10 +13,13 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
 import { RecordsService } from '../services/records.service';
 import { RecordDownloadService } from '../services/record-download.service';
 import { RecordAttachmentUploadService } from '../services/record-attachment-upload.service';
@@ -45,11 +48,12 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../../auth/guards/admin.guard';
 import { JwtPayload } from '../../auth/services/auth-token.service';
 import { RecordResponseDto } from '../dto/record-response.dto';
+import { AttachmentResponseDto } from '../dto/attachment-response.dto';
 import { RecordAccessGuard } from '../guards/record-access.guard';
+import { DeprecatedRoute } from '../../common/decorators/deprecated.decorator';
 
 @ApiTags('Records')
-@Version('1')
-@Controller('records')
+@Controller({ path: 'records', version: '1' })
 export class RecordsController {
   constructor(
     private readonly recordsService: RecordsService,
@@ -71,7 +75,11 @@ export class RecordsController {
       },
     }),
   )
-  async uploadRecord(@Body() dto: CreateRecordDto, @UploadedFile() file: Express.Multer.File, @Req() req: any) {
+  async uploadRecord(
+    @Body() dto: CreateRecordDto,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: any,
+  ) {
     if (!file) {
       throw new BadRequestException('Encrypted record file is required');
     }
@@ -141,7 +149,7 @@ export class RecordsController {
 
   @Get('search')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({
     summary: 'Search records with dynamic filtering',
     description:
@@ -170,8 +178,8 @@ export class RecordsController {
   }
 
   @Get('recent')
-  @ApiBearerAuth()
-  @UseGuards(MedicalRbacGuard)
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+  @UseGuards(JwtAuthGuard, MedicalRbacGuard)
   @MedicalRoles(MedicalRole.ADMIN)
   @ApiOperation({ summary: 'Get latest platform activity (Admin only)' })
   @ApiResponse({
@@ -180,7 +188,15 @@ export class RecordsController {
     type: [RecentRecordDto],
   })
   @ApiResponse({ status: 403, description: 'Forbidden - Admin role required' })
-  async getRecent(): Promise<RecentRecordDto[]> {
+  async getRecent(@Req() req: any): Promise<RecentRecordDto[]> {
+    // Populate request.medicalUser from the authenticated JWT so that
+    // MedicalRbacGuard.canActivate() can read it instead of always throwing.
+    if (!req.medicalUser && req.user) {
+      req.medicalUser = {
+        id: req.user.userId ?? req.user.id,
+        role: req.user.role,
+      };
+    }
     return this.recordsService.findRecent();
   }
 
@@ -188,7 +204,7 @@ export class RecordsController {
 
   @Post(':id/amend')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: 10 * 1024 * 1024 },
@@ -214,129 +230,102 @@ export class RecordsController {
     if (!file) {
       throw new BadRequestException('Encrypted record file is required');
     }
-    const requesterId: string = req.user?.userId ?? req.user?.id;
-    return this.recordVersionService.amend(id, dto, file.buffer, requesterId);
+    const ownerId = req.user?.userId || req.user?.id;
+    return this.recordVersionService.amendRecord(id, dto, file.buffer, ownerId);
   }
 
   @Get(':id/versions')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'List all versions of a record (metadata only)' })
-  @ApiQuery({ name: 'page', required: false, type: Number })
-  @ApiQuery({ name: 'pageSize', required: false, type: Number })
-  @ApiResponse({ status: 200, description: 'Version list', type: PaginatedVersionsResponseDto })
-  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+  @ApiOperation({ summary: 'List all versions of a record' })
+  @ApiResponse({ status: 200, description: 'Versions retrieved', type: PaginatedVersionsResponseDto })
   @ApiResponse({ status: 404, description: 'Record not found' })
-  async getVersions(
+  async listVersions(
     @Param('id') id: string,
-    @Query('page') page = '1',
-    @Query('pageSize') pageSize = '20',
-    @Req() req: any,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize: number,
   ): Promise<PaginatedVersionsResponseDto> {
-    const requesterId: string = req.user?.userId ?? req.user?.id;
-    return this.recordVersionService.getVersions(
-      id,
-      requesterId,
-      parseInt(page, 10),
-      parseInt(pageSize, 10),
-    );
+    return this.recordVersionService.listVersions(id, page, pageSize);
   }
 
   @Get(':id/versions/:version')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Retrieve a specific historical version of a record' })
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+  @ApiOperation({ summary: 'Get metadata for a specific record version' })
   @ApiResponse({ status: 200, description: 'Version metadata', type: RecordVersionMetaDto })
-  @ApiResponse({ status: 403, description: 'Access denied' })
   @ApiResponse({ status: 404, description: 'Record or version not found' })
   async getVersion(
     @Param('id') id: string,
     @Param('version', ParseIntPipe) version: number,
-    @Req() req: any,
   ): Promise<RecordVersionMetaDto> {
-    const requesterId: string = req.user?.userId ?? req.user?.id;
-    return this.recordVersionService.getVersion(id, version, requesterId);
+    return this.recordVersionService.getVersion(id, version);
   }
 
   @Get(':id/diff')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Compare two versions of a record',
-    description:
-      'Returns a structured diff of record metadata between two versions. ' +
-      'Binary content is not diffed — only binaryContentChanged is flagged. ' +
-      'Results are cached in Redis for 10 minutes.',
-  })
-  @ApiQuery({ name: 'from', required: true, type: Number, description: 'Source version number' })
-  @ApiQuery({ name: 'to', required: true, type: Number, description: 'Target version number' })
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+  @ApiOperation({ summary: 'Diff two versions of a record' })
   @ApiResponse({ status: 200, description: 'Diff result', type: RecordDiffResponseDto })
-  @ApiResponse({ status: 400, description: 'Missing or invalid from/to params' })
-  @ApiResponse({ status: 403, description: 'Access denied to one or both versions' })
   @ApiResponse({ status: 404, description: 'Record or version not found' })
-  async getDiff(
+  async diffVersions(
     @Param('id') id: string,
-    @Query('from') from: string,
-    @Query('to') to: string,
-    @Req() req: any,
+    @Query('from', ParseIntPipe) from: number,
+    @Query('to', ParseIntPipe) to: number,
   ): Promise<RecordDiffResponseDto> {
-    if (!from || !to) {
-      throw new BadRequestException('Query params "from" and "to" are required');
-    }
-    const fromV = parseInt(from, 10);
-    const toV = parseInt(to, 10);
-    if (isNaN(fromV) || isNaN(toV) || fromV < 1 || toV < 1) {
-      throw new BadRequestException('"from" and "to" must be positive integers');
-    }
-    const requesterId: string = req.user?.userId ?? req.user?.id;
-    return this.recordDiffService.computeDiff(id, fromV, toV, requesterId);
+    return this.recordDiffService.diff(id, from, to);
   }
 
-  // ── Existing endpoints ──────────────────────────────────────────────────────
-
-  @Get(':id')
+  @Get(':id/download')
   @UseGuards(JwtAuthGuard, RecordAccessGuard)
-  @ApiBearerAuth()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Get a single record by ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Record retrieved successfully',
-    type: RecordResponseDto,
-  })
-  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+  @ApiOperation({ summary: 'Download a record (owner or granted user)' })
+  @ApiResponse({ status: 200, description: 'Record file stream' })
   @ApiResponse({ status: 403, description: 'Access denied' })
   @ApiResponse({ status: 404, description: 'Record not found' })
-  async findOne(@Param('id') id: string, @Req() req: any): Promise<RecordResponseDto> {
-    const user = req.user as JwtPayload;
-    return this.recordsService.findOneById(id, user.userId, user.role, req.record);
+  async downloadRecord(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Res() res: Response,
+  ): Promise<void> {
+    const userId = req.user?.userId || req.user?.id;
+    const { stream, filename, mimeType } = await this.recordDownloadService.download(id, userId);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    stream.pipe(res);
   }
 
-  @Get(':id/events')
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Get raw event stream for a record (admin only)',
-    description:
-      'Returns the full immutable event log for a record in sequence order. ' +
-      'Each event represents a state change. Current state is derived by replaying these events.',
-  })
-  @ApiResponse({ status: 200, description: 'Event stream returned successfully' })
-  @ApiResponse({ status: 401, description: 'Unauthenticated' })
-  @ApiResponse({ status: 403, description: 'Admin access required' })
-  @ApiResponse({ status: 404, description: 'No events found for this record' })
-  async getEventStream(@Param('id') id: string) {
-    return this.recordsService.getEventStream(id);
+  @Post(':id/attachments')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  @ApiOperation({ summary: 'Attach a file to a record' })
+  @ApiResponse({ status: 201, description: 'Attachment created', type: AttachmentResponseDto })
+  @ApiResponse({ status: 400, description: 'Missing file' })
+  @ApiResponse({ status: 404, description: 'Record not found' })
+  async addAttachment(
+    @Param('id') id: string,
+    @Body() dto: CreateAttachmentDto,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: any,
+  ): Promise<AttachmentResponseDto> {
+    if (!file) {
+      throw new BadRequestException('Attachment file is required');
+    }
+    const uploaderId = req.user?.userId || req.user?.id;
+    return this.recordAttachmentUploadService.upload(id, dto, file.buffer, uploaderId);
   }
 
-  @Get(':id/state')
-  @ApiOperation({
-    summary: 'Get current record state derived from event replay',
-    description: 'Replays the event stream (using snapshot optimisation) to return current state.',
-  })
-  @ApiResponse({ status: 200, description: 'State derived successfully' })
-  @ApiResponse({ status: 404, description: 'Record not found in event store' })
-  async getStateFromEvents(@Param('id') id: string) {
-    return this.recordsService.getStateFromEvents(id);
+  @Get(':id/related')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+  @ApiOperation({ summary: 'List records related to a record' })
+  @ApiResponse({ status: 200, description: 'Related records', type: [RelatedRecordDto] })
+  @ApiResponse({ status: 404, description: 'Record not found' })
+  async getRelated(@Param('id') id: string): Promise<RelatedRecordDto[]> {
+    return this.relatedRecordsService.findRelated(id);
   }
 }

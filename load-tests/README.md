@@ -1,551 +1,336 @@
-# k6 Load Testing Suite
+# Load Tests
 
-## Overview
-
-Comprehensive load testing suite for the Healthy-Stellar backend API using k6. Tests critical endpoints under various load conditions to ensure system reliability, performance, and scalability.
+k6-based load test suite for the Healthy-Stellar backend. Covers REST endpoints, GraphQL subscriptions, and Stellar blockchain write operations.
 
 ## Table of Contents
 
-1. [Prerequisites](#prerequisites)
-2. [Installation](#installation)
-3. [Test Scenarios](#test-scenarios)
-4. [Running Tests](#running-tests)
-5. [Test Types](#test-types)
-6. [Performance Thresholds](#performance-thresholds)
-7. [Baseline Management](#baseline-management)
-8. [Results and Reporting](#results-and-reporting)
-9. [InfluxDB and Grafana Integration](#influxdb-and-grafana-integration)
-10. [Interpreting Results](#interpreting-results)
-11. [Troubleshooting](#troubleshooting)
+- [Prerequisites](#prerequisites)
+- [Environment variables](#environment-variables)
+- [Scenario reference](#scenario-reference)
+- [npm scripts quick-reference](#npm-scripts-quick-reference)
+- [Baseline / Compare / Gate workflow](#baseline--compare--gate-workflow)
+- [CI integration](#ci-integration)
+- [Stellar write tests — safety warning](#stellar-write-tests--safety-warning)
+- [Grafana dashboard](#grafana-dashboard)
+- [Results directory](#results-directory)
+
+---
 
 ## Prerequisites
 
-- **k6**: Load testing tool
-  ```bash
-  # Windows (using Chocolatey)
-  choco install k6
-  
-  # macOS
-  brew install k6
-  
-  # Linux
-  sudo gpg -k
-  sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-  echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-  sudo apt-get update
-  sudo apt-get install k6
-  ```
+| Requirement | Version | Notes |
+|---|---|---|
+| [k6](https://k6.io/docs/get-started/installation/) | ≥ 0.49 | Must be on `PATH`. No k6 extensions required. |
+| Node.js | ≥ 18 | Only needed for the gate/compare scripts (`load-test:gate`, `load-test:compare`). |
+| A running API | — | Default target is `http://localhost:3000`. Start the stack with `docker compose up`. |
 
-- **Node.js**: For baseline comparison scripts
-- **Running API**: The backend API must be running
-- **InfluxDB** (Optional): For metrics storage
-- **Grafana** (Optional): For visualization
-
-## Installation
+**Install k6 (choose one):**
 
 ```bash
-# Clone repository
-git clone <repository-url>
-cd Healthy-Stellar-backend
+# macOS
+brew install k6
 
-# Install Node.js dependencies for scripts
-npm install
+# Linux
+sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+  --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+  | sudo tee /etc/apt/sources.list.d/k6.list
+sudo apt-get update && sudo apt-get install k6
 
-# Verify k6 installation
-k6 version
+# Windows (winget)
+winget install k6 --source winget
 ```
 
-## Test Scenarios
+---
 
-### 1. Authentication Flow (`scenarios/auth-flow.js`)
-- **Target**: 500 concurrent users
-- **Operations**:
-  - User registration
-  - Challenge request
-  - Authentication verification
-  - Profile access
-- **Threshold**: P95 < 300ms
+## Environment variables
 
-### 2. Record Upload (`scenarios/record-upload.js`)
-- **Target**: 100 concurrent uploads
-- **Operations**:
-  - Medical record upload with file (100KB)
-  - Upload verification
-- **Threshold**: P95 < 2000ms
-
-### 3. Record Fetch (`scenarios/record-fetch.js`)
-- **Target**: 1000 concurrent reads
-- **Operations**:
-  - Single record fetch
-  - Paginated list fetch
-  - Filtered record fetch
-- **Threshold**: P95 < 200ms
-
-### 4. Access Control (`scenarios/access-control.js`)
-- **Target**: 200 concurrent operations
-- **Operations**:
-  - Access grant
-  - Access verification
-  - Access list
-  - Access revoke
-- **Threshold**: P95 < 400ms
-
-## Running Tests
-
-### Quick Start
+Copy `.env.example` and adjust:
 
 ```bash
-# Set environment variables
-export BASE_URL=http://localhost:3000
-export ADMIN_EMAIL=admin@test.com
-export ADMIN_PASSWORD=Admin123!@#
-export DOCTOR_EMAIL=doctor@test.com
-export DOCTOR_PASSWORD=Doctor123!@#
+cp load-tests/.env.example load-tests/.env
+```
 
-# Run smoke test (quick validation)
+| Variable | Default | Required for |
+|---|---|---|
+| `BASE_URL` | `http://localhost:3000` | All tests |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `admin@test.com` / `Admin123!@#` | Auth-dependent scenarios |
+| `DOCTOR_EMAIL` / `DOCTOR_PASSWORD` | `doctor@test.com` / `Doctor123!@#` | Provider-write scenarios |
+| `AUTH_TOKEN` | `testnet-jwt-placeholder` | Stellar write tests (see warning below) |
+| `SUBSCRIPTION_WS_URL` | `ws://localhost:3000/graphql` | GraphQL subscription test |
+| `SUBSCRIPTION_AUTH_TOKEN` | — | GraphQL subscription test |
+| `SUBSCRIPTION_PATIENT_ID` | — | GraphQL subscription test |
+| `SUBSCRIPTION_REPLAY_CURSOR` | — | Optional event-replay cursor |
+| `INFLUXDB_URL` / `INFLUXDB_DB` / `INFLUXDB_TOKEN` | `http://localhost:8086` / `k6` / — | Optional metrics streaming |
+| `TOLERANCE` | `0.20` | `compare-baseline.js` (20 % regression threshold) |
+| `TEST_TYPE` | `smoke` | `comprehensive-test.js` (smoke / load / stress / soak) |
+
+k6 reads variables via `--env KEY=value` flags or the shell environment. The `.env` file is **not** loaded automatically by k6; source it manually or use a wrapper:
+
+```bash
+export $(grep -v '^#' load-tests/.env | xargs)
+npm run load-test:smoke
+```
+
+---
+
+## Scenario reference
+
+### Top-level scripts
+
+| File | Purpose | VUs / duration | Target |
+|---|---|---|---|
+| `production-load-test.js` | Four concurrent scenarios that mirror production: 100 patient reads, 50 provider writes, 200 health checks, spike 0 → 500 → 0. Generates an HTML + JSON report. | ~5 min | Staging / local |
+| `comprehensive-test.js` | Single entry-point for all four core flows (auth, upload, fetch, access). Behaviour is controlled by `TEST_TYPE`. | See table below | Local / staging |
+| `graphql-subscriptions-load-test.js` | 1 000 concurrent WebSocket clients using `graphql-transport-ws`, holding subscriptions for 60 s. Measures delivery latency (p99 < 200 ms). | 1 000 VUs / 60 s | Local / staging |
+
+#### `comprehensive-test.js` TEST_TYPE modes
+
+| `TEST_TYPE` | VUs (auth / upload / fetch / access) | Duration |
+|---|---|---|
+| `smoke` (default) | 1 / 1 / 1 / 1 | 1 min |
+| `load` | ramp to 500 / 100 / 1 000 / 200 | ~11 min |
+| `stress` | ramp to 1 500 / 300 / 3 000 / 600 | ~26 min |
+| `soak` | ramp to 250 / 50 / 500 / 100, hold 3 h | ~3 h 10 min |
+
+### `scenarios/` — individual focused scripts
+
+| File | What it tests | Safe for staging? |
+|---|---|---|
+| `auth-flow.js` | Login + token refresh cycle | Yes |
+| `record-upload.js` | `POST /records` with realistic payload | Yes |
+| `record-fetch.js` | `GET /records` + detail fetch | Yes |
+| `access-control.js` | Grant / revoke patient access | Yes |
+| `patient-reads.js` | Patient record listing | Yes |
+| `provider-writes.js` | Provider record creation | Yes |
+| `health-check-flood.js` | `GET /health` at high concurrency | Yes |
+| `fulltext-search.js` | Full-text search endpoint | Yes |
+| `spike-test.js` | Sudden concurrency ramp | Yes — but creates test data |
+
+### `stellar-write/` — blockchain write suite
+
+| File | Purpose | VUs / duration |
+|---|---|---|
+| `Smoke.js` | Single VU sanity-check for `POST /medical-records` with `anchorToBlockchain: true` | 1 VU / 30 s |
+| `Stellar-write.test.js` | Three sequential scenarios: smoke → ramp_load (1 → 20 VU) → stress (1 → 50 VU). Full SLA coverage. | ~14 min |
+| `Stress.js` | Isolated stress ramp for Stellar writes | See file |
+| `Soak.js` | Extended Stellar write endurance | See file |
+
+SLA thresholds enforced by `Stellar-write.test.js`:
+
+| Metric | Threshold |
+|---|---|
+| `stellar_record_creation_duration` p50 | < 3 000 ms |
+| `stellar_record_creation_duration` p95 | < 8 000 ms |
+| `stellar_record_creation_duration` p99 | < 15 000 ms |
+| `http_req_failed` | < 5 % |
+| `stellar_error_rate` | < 5 % |
+
+---
+
+## npm scripts quick-reference
+
+```bash
+# Smoke — fast sanity check (< 2 min)
 npm run load-test:smoke
 
-# Run load test (expected production load)
-npm run load-test:load
+# Individual focused scenarios
+npm run load-test:auth
+npm run load-test:fetch
+npm run load-test:upload
+npm run load-test:access
+npm run load-test:health-checks
+npm run load-test:spike
+npm run load-test:subscriptions
 
-# Run stress test (find breaking points)
-npm run load-test:stress
+# Full production scenario (HTML report generated)
+npm run load-test:production
 
-# Run soak test (extended duration)
-npm run load-test:soak
-```
+# Comprehensive suite by load level
+npm run load-test:load     # ~11 min
+npm run load-test:stress   # ~26 min
+npm run load-test:soak     # ~3 h 10 min  ← staging only
 
-### Individual Scenario Tests
-
-```bash
-# Test authentication flow only
-k6 run load-tests/scenarios/auth-flow.js
-
-# Test record upload only
-k6 run load-tests/scenarios/record-upload.js
-
-# Test record fetch only
-k6 run load-tests/scenarios/record-fetch.js
-
-# Test access control only
-k6 run load-tests/scenarios/access-control.js
-```
-
-### Comprehensive Test Suite
-
-```bash
-# Run all scenarios with smoke test
-TEST_TYPE=smoke k6 run load-tests/comprehensive-test.js
-
-# Run all scenarios with load test
-TEST_TYPE=load k6 run load-tests/comprehensive-test.js
-
-# Run all scenarios with stress test
-TEST_TYPE=stress k6 run load-tests/comprehensive-test.js
-
-# Run all scenarios with soak test
-TEST_TYPE=soak k6 run load-tests/comprehensive-test.js
-```
-
-## Test Types
-
-### Smoke Test
-- **Duration**: 1 minute
-- **VUs**: 1-10
-- **Purpose**: Verify functionality, quick sanity check
-- **When**: Before every deployment, after code changes
-
-### Load Test
-- **Duration**: 11 minutes
-- **VUs**: Ramps up to target load
-  - Auth: 500 VUs
-  - Upload: 100 VUs
-  - Fetch: 1000 VUs
-  - Access: 200 VUs
-- **Purpose**: Test expected production load
-- **When**: Before release, weekly performance checks
-
-### Stress Test
-- **Duration**: 26 minutes
-- **VUs**: Ramps beyond normal load
-  - Auth: Up to 1500 VUs
-  - Upload: Up to 300 VUs
-  - Fetch: Up to 3000 VUs
-  - Access: Up to 600 VUs
-- **Purpose**: Find breaking points, test system limits
-- **When**: Before major releases, capacity planning
-
-### Soak Test
-- **Duration**: 3+ hours
-- **VUs**: Sustained moderate load
-  - Auth: 250 VUs
-  - Upload: 50 VUs
-  - Fetch: 500 VUs
-  - Access: 100 VUs
-- **Purpose**: Find memory leaks, stability issues
-- **When**: Before major releases, after infrastructure changes
-
-## Performance Thresholds
-
-### Global Thresholds
-- **P95 Response Time**: < 500ms
-- **P99 Response Time**: < 1000ms
-- **Error Rate**: < 1%
-
-### Scenario-Specific Thresholds
-- **Auth Flow**: P95 < 300ms
-- **Record Upload**: P95 < 2000ms
-- **Record Fetch**: P95 < 200ms
-- **Access Control**: P95 < 400ms
-
-### Threshold Configuration
-
-Thresholds are defined in `config/config.js`:
-
-```javascript
-thresholds: {
-  http_req_duration_p95: 500,
-  http_req_duration_p99: 1000,
-  http_req_failed_rate: 0.01,
-  auth_duration_p95: 300,
-  record_upload_duration_p95: 2000,
-  record_fetch_duration_p95: 200,
-  access_grant_duration_p95: 400,
-}
-```
-
-## Baseline Management
-
-### Creating Baseline
-
-Run tests and save results as baseline:
-
-```bash
-# Run load test and create baseline
+# Baseline / regression workflow (see section below)
 npm run load-test:baseline
-
-# Or manually
-TEST_TYPE=load k6 run load-tests/comprehensive-test.js
-cp load-tests/results/comprehensive-load-latest.json load-tests/baselines/load-baseline.json
-```
-
-### Comparing with Baseline
-
-```bash
-# Run test and compare with baseline
 npm run load-test:compare
+npm run load-test:gate
 
-# Or manually
-TEST_TYPE=load k6 run load-tests/comprehensive-test.js
-node load-tests/scripts/compare-baseline.js load comprehensive-load-latest.json
+# Stellar blockchain writes (reads testnet funds — see warning)
+./load-tests/run-stellar-load-tests.sh                          # local defaults
+./load-tests/run-stellar-load-tests.sh testnet <JWT>            # testnet
+./load-tests/run-stellar-load-tests.sh staging <JWT> https://… # staging
+
+# CI all-in-one (production run + gate)
+npm run load-test:ci
 ```
 
-### Baseline Tolerance
+---
 
-- **Default**: 20% tolerance
-- **Configurable**: Set `TOLERANCE` environment variable
+## Baseline / Compare / Gate workflow
+
+These three scripts form a lightweight performance regression guard.
+
+```
+load-test:baseline  →  run once to capture the "good" state
+load-test:compare   →  run after code changes to detect regressions
+load-test:gate      →  run in CI to block a deployment on failures
+```
+
+### Step 1 — capture a baseline
 
 ```bash
-# Use 10% tolerance
-TOLERANCE=0.10 node load-tests/scripts/compare-baseline.js load comprehensive-load-latest.json
+npm run load-test:baseline
 ```
 
-### Regression Detection
+Internally: runs `comprehensive-test.js` with `TEST_TYPE=load`, then copies the results to `load-tests/baselines/load-baseline.json`. Commit this file so the baseline travels with the code.
 
-The comparison script will:
-- ✅ Pass if metrics are within tolerance
-- ⚠️ Warn if metrics exceed tolerance by 20-50%
-- 🔴 Fail if metrics exceed tolerance by >50%
-
-## Results and Reporting
-
-### Result Files
-
-Results are saved in `load-tests/results/`:
-
-```
-results/
-├── auth-flow-summary.json
-├── record-upload-summary.json
-├── record-fetch-summary.json
-├── access-control-summary.json
-├── comprehensive-load-latest.json
-├── comprehensive-load-2024-01-15T10-30-00.json
-└── comparison-load-1705315800000.txt
-```
-
-### Result Structure
-
-```json
-{
-  "metrics": {
-    "http_reqs": { "values": { "count": 10000 } },
-    "http_req_duration": {
-      "values": {
-        "avg": 150.5,
-        "min": 50.2,
-        "med": 140.3,
-        "max": 500.8,
-        "p(90)": 200.1,
-        "p(95)": 250.3,
-        "p(99)": 400.5
-      }
-    },
-    "http_req_failed": { "values": { "rate": 0.005 } }
-  }
-}
-```
-
-### Reading Results
+### Step 2 — compare against the baseline
 
 ```bash
-# View latest results
-cat load-tests/results/comprehensive-load-latest.json | jq '.metrics.http_req_duration.values'
-
-# View comparison report
-cat load-tests/results/comparison-load-*.txt
+npm run load-test:compare
 ```
 
-## InfluxDB and Grafana Integration
+Runs the same load test and passes the output to `scripts/compare-baseline.js`. The script compares `http_req_duration` (avg / p95 / p99), per-scenario p95, and the error rate against the baseline. A metric is flagged as a regression if it exceeds **baseline × (1 + TOLERANCE)** (default 20 %). The comparison report is saved to `load-tests/results/comparison-load-<timestamp>.txt`.
 
-### Setup InfluxDB
+Regression severity levels:
+
+| Change vs baseline | Severity |
+|---|---|
+| > 20 % (configurable) | medium |
+| > 30 % | high |
+| > 50 % | critical |
+| Error rate increase > 1 pp | critical |
+
+The script exits with code `1` if any regression is found, making it suitable as a pre-merge check.
+
+### Step 3 — CI gate
 
 ```bash
-# Run InfluxDB with Docker
-docker run -d \
-  --name influxdb \
-  -p 8086:8086 \
-  -e INFLUXDB_DB=k6 \
-  -e INFLUXDB_ADMIN_USER=admin \
-  -e INFLUXDB_ADMIN_PASSWORD=admin123 \
-  influxdb:1.8
+npm run load-test:gate
 ```
 
-### Configure k6 to Send Metrics
+Reads `load-tests/results/production-latest.json` (written by `load-test:production`) and enforces these hard acceptance criteria:
+
+| Criterion | Threshold |
+|---|---|
+| Patient reads p95 | < 500 ms |
+| Provider writes p95 | < 2 000 ms |
+| Health checks p95 | < 100 ms |
+| Spike test p95 | < 2 000 ms |
+| Global HTTP error rate | < 2 % |
+| Spike error rate | < 5 % |
+
+Exit code `0` → deployment approved. Exit code `1` → deployment blocked. Exit code `2` → results file missing (run `load-test:production` first).
+
+A custom results file can be passed directly:
 
 ```bash
-# Set InfluxDB URL
-export INFLUXDB_URL=http://localhost:8086
-export INFLUXDB_DB=k6
-export INFLUXDB_TOKEN=your-token
-
-# Run test with InfluxDB output
-k6 run --out influxdb=http://localhost:8086/k6 load-tests/comprehensive-test.js
+node load-tests/scripts/ci-gate.js load-tests/results/my-run.json
 ```
 
-### Setup Grafana
+---
+
+## CI integration
+
+`load-test:ci` is the all-in-one command used in pipelines:
 
 ```bash
-# Run Grafana with Docker
-docker run -d \
-  --name grafana \
-  -p 3001:3000 \
-  grafana/grafana
+npm run load-test:ci
+# equivalent to:
+# k6 run --out json=load-tests/results/production-latest.json load-tests/production-load-test.js \
+#   && node load-tests/scripts/ci-gate.js
 ```
 
-### Configure Grafana Dashboard
-
-1. Open Grafana: http://localhost:3001
-2. Login (admin/admin)
-3. Add InfluxDB data source:
-   - URL: http://influxdb:8086
-   - Database: k6
-4. Import k6 dashboard:
-   - Dashboard ID: 2587
-   - Or use custom dashboard in `load-tests/grafana/`
-
-### Grafana Dashboard Features
-
-- Real-time metrics visualization
-- Request rate over time
-- Response time percentiles
-- Error rate tracking
-- VU (Virtual User) count
-- Data transfer rates
-
-## Interpreting Results
-
-### Key Metrics
-
-**Response Time Percentiles:**
-- **P50 (Median)**: 50% of requests faster than this
-- **P95**: 95% of requests faster than this (most important)
-- **P99**: 99% of requests faster than this
-- **Max**: Slowest request
-
-**Error Rate:**
-- **< 0.1%**: Excellent
-- **0.1% - 1%**: Acceptable
-- **> 1%**: Needs investigation
-
-**Throughput:**
-- **Requests/second**: System capacity
-- **Data transfer**: Network utilization
-
-### Good Performance Indicators
-
-✅ P95 response time within thresholds
-✅ Error rate < 1%
-✅ Stable response times under load
-✅ No memory leaks in soak tests
-✅ Graceful degradation under stress
-
-### Warning Signs
-
-⚠️ P95 response time increasing over time
-⚠️ Error rate > 1%
-⚠️ High variance in response times
-⚠️ Memory usage increasing in soak tests
-⚠️ System crashes under stress
-
-### Example Analysis
-
-```
-=== Load Test Results ===
-Total Requests: 50,000
-Success Rate: 99.5%
-P95 Response Time: 245ms
-P99 Response Time: 450ms
-
-Analysis:
-✅ Success rate excellent (99.5%)
-✅ P95 within threshold (< 500ms)
-✅ P99 within threshold (< 1000ms)
-✅ System handles expected load well
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**Issue: Connection refused**
-```
-Solution: Ensure API is running
-$ npm run start:dev
-```
-
-**Issue: Authentication failures**
-```
-Solution: Create test users
-$ npm run seed
-```
-
-**Issue: High error rate**
-```
-Solution: Check API logs, reduce load
-$ docker logs healthy-stellar-backend
-```
-
-**Issue: Slow response times**
-```
-Solution: Check database performance, add indexes
-$ npm run explain:queries
-```
-
-**Issue: Memory leaks in soak test**
-```
-Solution: Check for unclosed connections, memory profiling
-$ node --inspect src/main.ts
-```
-
-### Debug Mode
-
-```bash
-# Run with verbose logging
-k6 run --verbose load-tests/comprehensive-test.js
-
-# Run with HTTP debug
-k6 run --http-debug load-tests/comprehensive-test.js
-
-# Run single VU for debugging
-k6 run --vus 1 --duration 30s load-tests/scenarios/auth-flow.js
-```
-
-### Performance Optimization Tips
-
-1. **Database**:
-   - Add indexes on frequently queried fields
-   - Optimize slow queries
-   - Use connection pooling
-
-2. **API**:
-   - Enable caching
-   - Optimize middleware
-   - Use compression
-
-3. **Infrastructure**:
-   - Scale horizontally
-   - Use load balancer
-   - Optimize network
-
-## CI/CD Integration
-
-### GitHub Actions
-
-Add to `.github/workflows/load-test.yml`:
+Typical GitHub Actions usage:
 
 ```yaml
-name: Load Tests
-
-on:
-  schedule:
-    - cron: '0 2 * * *' # Daily at 2 AM
-  workflow_dispatch:
-
-jobs:
-  load-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup k6
-        run: |
-          sudo gpg -k
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update
-          sudo apt-get install k6
-      
-      - name: Start API
-        run: |
-          docker-compose up -d
-          sleep 30
-      
-      - name: Run Load Tests
-        run: |
-          TEST_TYPE=load k6 run load-tests/comprehensive-test.js
-      
-      - name: Compare with Baseline
-        run: |
-          node load-tests/scripts/compare-baseline.js load comprehensive-load-latest.json
-      
-      - name: Upload Results
-        uses: actions/upload-artifact@v4
-        with:
-          name: load-test-results
-          path: load-tests/results/
+- name: Run load tests
+  run: npm run load-test:ci
+  env:
+    BASE_URL: ${{ secrets.STAGING_URL }}
+    ADMIN_EMAIL: ${{ secrets.LOAD_TEST_ADMIN_EMAIL }}
+    ADMIN_PASSWORD: ${{ secrets.LOAD_TEST_ADMIN_PASSWORD }}
 ```
 
-## Best Practices
+The job will fail if any gate criterion is violated, blocking deployment to the next environment.
 
-1. **Start Small**: Begin with smoke tests, then scale up
-2. **Baseline Early**: Create baseline before making changes
-3. **Test Regularly**: Run load tests weekly or before releases
-4. **Monitor Production**: Compare test results with production metrics
-5. **Document Changes**: Note infrastructure or code changes that affect performance
-6. **Iterate**: Continuously improve based on results
+---
 
-## Resources
+## Stellar write tests — safety warning
 
-- [k6 Documentation](https://k6.io/docs/)
-- [k6 Examples](https://k6.io/docs/examples/)
-- [Performance Testing Best Practices](https://k6.io/docs/testing-guides/test-types/)
-- [Grafana k6 Dashboard](https://grafana.com/grafana/dashboards/2587)
+> **The `stellar-write/` tests send real transactions to the Stellar testnet and consume testnet XLM. Do not point them at Mainnet.**
 
-## Support
+The scripts set `anchorToBlockchain: true` in every payload, which causes the API to submit a Stellar transaction for each created record. Under load (up to 50 concurrent VUs) this can create hundreds of on-chain transactions per minute.
 
-For issues or questions:
-1. Check this README
-2. Review k6 documentation
-3. Check API logs
-4. Open an issue in the repository
+**Rules of thumb:**
+
+- Run `stellar-write/` tests against **local** or **testnet** only.
+- Always pass a valid testnet JWT via `AUTH_TOKEN`; the placeholder value (`testnet-jwt-placeholder`) will be rejected by the API and cause 100 % errors.
+- Use the shell wrapper which confirms the environment before running:
+
+  ```bash
+  ./load-tests/run-stellar-load-tests.sh testnet <your-jwt>
+  ```
+
+- To run a single scenario instead of the full suite, set `SCENARIO`:
+
+  ```bash
+  SCENARIO=smoke ./load-tests/run-stellar-load-tests.sh testnet <your-jwt>
+  # SCENARIO options: smoke | stress | soak | full | all (default)
+  ```
+
+- Results are saved to `load-tests/results/` with a timestamp suffix.
+
+---
+
+## Grafana dashboard
+
+A pre-built k6 dashboard is provided at `load-tests/grafana/k6-dashboard.json`.
+
+**Prerequisites:** the monitoring stack must be running (`docker compose --profile monitoring up`). This starts Grafana on port 3001, Prometheus on 9090, and InfluxDB on 8086.
+
+**Import steps:**
+
+1. Open Grafana at `http://localhost:3001` (default credentials: `admin` / `admin`).
+2. Go to **Dashboards → Import**.
+3. Click **Upload JSON file** and select `load-tests/grafana/k6-dashboard.json`.
+4. Select the **InfluxDB** data source (configured automatically by `docker/monitoring/grafana/datasources/datasources.yml`).
+5. Click **Import**.
+
+**Stream k6 results live to InfluxDB:**
+
+```bash
+k6 run \
+  --out influxdb=http://localhost:8086/k6 \
+  load-tests/production-load-test.js
+```
+
+Or set the env vars and use an npm script:
+
+```bash
+INFLUXDB_URL=http://localhost:8086 \
+INFLUXDB_DB=k6 \
+npm run load-test:production
+```
+
+The dashboard shows request rate, p95/p99 latency, error rate, and VU count in real time.
+
+---
+
+## Results directory
+
+`load-tests/results/` is the write destination for all k6 JSON and HTML output. It is intentionally **not committed** (only `.gitkeep` is tracked). Do not commit individual result files — they are large and change every run.
+
+Files written here:
+
+| Pattern | Written by |
+|---|---|
+| `production-latest.json` | `load-test:production`, `load-test:ci` |
+| `production-report-<ts>.html` | `load-test:production` |
+| `comprehensive-<type>-latest.json` | `load-test:smoke/load/stress/soak` |
+| `comparison-load-<ts>.txt` | `load-test:compare` |
+| `stellar-write-summary.json` | `stellar-write/Stellar-write.test.js` |
+| `<scenario>-<ts>.json` | `run-stellar-load-tests.sh` |
+
+Baselines in `load-tests/baselines/` **should** be committed so the regression comparison works consistently across machines and CI runs.

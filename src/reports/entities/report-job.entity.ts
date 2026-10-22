@@ -13,6 +13,7 @@ import { User } from '../../auth/entities/user.entity';
 export enum ReportFormat {
   PDF = 'pdf',
   CSV = 'csv',
+  XLSX = 'xlsx',
 }
 
 export enum ReportStatus {

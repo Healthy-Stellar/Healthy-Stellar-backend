@@ -7,13 +7,15 @@ import {
   SoftRemoveEvent,
   DataSource,
 } from 'typeorm';
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { BaseAuditEntity } from '../entities/base-audit.entity';
 import { AuditLog } from '../entities/audit-log.entity';
 
 @Injectable()
 @EventSubscriber()
 export class AuditSubscriber implements EntitySubscriberInterface<BaseAuditEntity> {
+  private logger = new Logger(AuditSubscriber.name);
+
   constructor(@Inject('DATA_SOURCE') private dataSource: DataSource) {}
 
   listenTo() {
@@ -125,7 +127,7 @@ export class AuditSubscriber implements EntitySubscriberInterface<BaseAuditEntit
       });
       await auditLogRepository.save(auditLog);
     } catch (error) {
-      console.error('[AUDIT] Failed to create audit log:', error.message);
+      this.logger.error('[AUDIT] Failed to create audit log:', error.message);
     }
   }
 

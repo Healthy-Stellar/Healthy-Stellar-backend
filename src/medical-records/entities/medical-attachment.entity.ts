@@ -81,6 +81,21 @@ export class MedicalAttachment {
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
 
+  // ── OCR fields ────────────────────────────────────────────────────────────
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  ocrStatus: 'pending' | 'completed' | 'failed' | null;
+
+  @Column({ type: 'text', nullable: true })
+  extractedText: string;
+
+  /** Confidence score 0–1 from the OCR provider; < 0.7 flags for manual review */
+  @Column({ type: 'float', nullable: true })
+  ocrConfidence: number;
+
+  @Column({ type: 'boolean', default: false })
+  flaggedForReview: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

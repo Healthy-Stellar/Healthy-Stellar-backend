@@ -1,14 +1,15 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
-import { PaginationDto } from '../../common/dto/pagination.dto';
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export class ProviderDirectoryQueryDto extends PaginationDto {
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   search?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   specialty?: string;
 
   @IsOptional()

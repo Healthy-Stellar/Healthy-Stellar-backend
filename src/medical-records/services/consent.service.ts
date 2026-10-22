@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
+import { Repository, MoreThan, IsNull, LessThanOrEqual } from 'typeorm';
 import {
   MedicalRecordConsent,
   ConsentStatus,
@@ -9,7 +9,8 @@ import {
 import { MedicalHistory, HistoryEventType } from '../entities/medical-history.entity';
 import { CreateConsentDto } from '../dto/create-consent.dto';
 import { MedicalRecordsService } from './medical-records.service';
-
+import { TenantContext } from '../../tenant/context/tenant.context';
+ 
 @Injectable()
 export class ConsentService {
   private readonly logger = new Logger(ConsentService.name);
@@ -28,7 +29,8 @@ export class ConsentService {
     grantedBy: string,
   ): Promise<MedicalRecordConsent> {
     // Verify medical record exists
-    await this.medicalRecordsService.findOne(createDto.recordId, patientId);
+    const organizationId = TenantContext.getTenantId();
+    await this.medicalRecordsService.findOne(createDto.recordId, patientId, organizationId);
 
     const consent = this.consentRepository.create({
       ...createDto,
@@ -84,13 +86,49 @@ export class ConsentService {
   async checkConsent(recordId: string, userId: string, consentType: ConsentType): Promise<boolean> {
     const now = new Date();
     const consent = await this.consentRepository.findOne({
-      where: {
-        medicalRecordId: recordId,
-        sharedWithUserId: userId,
-        consentType,
-        status: ConsentStatus.GRANTED,
-        expiresAt: MoreThan(now),
-      },
+      where: [
+        {
+          medicalRecordId: recordId,
+          sharedWithUserId: userId,
+          consentType,
+          status: ConsentStatus.GRANTED,
+          expiresAt: IsNull(),
+        },
+        {
+          medicalRecordId: recordId,
+          sharedWithUserId: userId,
+          consentType,
+          status: ConsentStatus.GRANTED,
+          expiresAt: MoreThan(now),
+        },
+      ],
+    });
+
+    return !!consent;
+  }
+
+  /**
+   * Returns true when the given user holds any active (granted, non-expired)
+   * consent for the specified medical record. Used by access-control checks
+   * on direct record reads so the consent model is enforced, not decorative.
+   */
+  async hasActiveConsentForRecord(recordId: string, userId: string): Promise<boolean> {
+    const now = new Date();
+    const consent = await this.consentRepository.findOne({
+      where: [
+        {
+          medicalRecordId: recordId,
+          sharedWithUserId: userId,
+          status: ConsentStatus.GRANTED,
+          expiresAt: IsNull(),
+        },
+        {
+          medicalRecordId: recordId,
+          sharedWithUserId: userId,
+          status: ConsentStatus.GRANTED,
+          expiresAt: MoreThan(now),
+        },
+      ],
     });
 
     return !!consent;
@@ -129,7 +167,7 @@ export class ConsentService {
     const expired = await this.consentRepository.find({
       where: {
         status: ConsentStatus.GRANTED,
-        expiresAt: MoreThan(now),
+        expiresAt: LessThanOrEqual(now),
       },
     });
 

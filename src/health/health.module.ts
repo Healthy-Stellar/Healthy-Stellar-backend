@@ -9,6 +9,7 @@ import { QUEUE_NAMES } from '../queues/queue.constants';
 import { HealthController } from './health.controller';
 import { DetailedHealthIndicator } from './indicators/detailed-health.indicator';
 import { IpfsHealthIndicator } from './indicators/ipfs.health';
+import { QueueHealthIndicator } from './indicators/queue.health';
 import { RedisHealthIndicator } from './indicators/redis.health';
 import { StellarHealthIndicator } from './indicators/stellar.health';
 import { SyntheticProbeIndicator } from './indicators/synthetic-probe.indicator';
@@ -31,6 +32,7 @@ import { SyntheticProbeIndicator } from './indicators/synthetic-probe.indicator'
   providers: [
     RedisHealthIndicator,
     IpfsHealthIndicator,
+    QueueHealthIndicator,
     StellarHealthIndicator,
     DetailedHealthIndicator,
     SyntheticProbeIndicator,

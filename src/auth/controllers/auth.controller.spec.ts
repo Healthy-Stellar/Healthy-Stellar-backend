@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { AuthService } from '../services/auth.service';
 import { AuthTokenService } from '../services/auth-token.service';
@@ -199,5 +199,62 @@ describe('DELETE /auth/sessions', () => {
     expect(mocks.sessionManagementService.revokeSession).not.toHaveBeenCalled();
     expect(mocks.refreshTokenStore.revokeSession).not.toHaveBeenCalled();
     expect(result).toEqual({ message: 'All sessions revoked' });
+  });
+});
+
+describe('DELETE /auth/sessions/:id', () => {
+  const mockReq = (userId: string) => ({ user: { userId } } as any);
+
+  it('revokes session in both DB and Redis store', async () => {
+    const { controller, mocks } = await buildController();
+
+    const result = await controller.deleteSession('session-1', mockReq('user-1'));
+
+    expect(mocks.sessionManagementService.revokeSession).toHaveBeenCalledWith('session-1');
+    expect(mocks.refreshTokenStore.revokeSession).toHaveBeenCalledWith('session-1');
+    expect(result).toEqual({ message: 'Session terminated' });
+  });
+
+  it('throws NotFoundException when session does not belong to user', async () => {
+    const { controller, mocks } = await buildController();
+    mocks.sessionManagementService.getUserSessions.mockResolvedValue([]);
+
+    await expect(controller.deleteSession('unknown-session', mockReq('user-1'))).rejects.toThrow(
+      NotFoundException,
+    );
+    expect(mocks.sessionManagementService.revokeSession).not.toHaveBeenCalled();
+    expect(mocks.refreshTokenStore.revokeSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /auth/sessions/revoke-all', () => {
+  it('revokes all sessions except current in DB and Redis', async () => {
+    const otherSession = { id: 'session-2', userId: 'user-1', isActive: true };
+    const { controller, mocks } = await buildController();
+    mocks.sessionManagementService.getUserSessions.mockResolvedValue([mockSession, otherSession]);
+
+    const req = { user: { userId: 'user-1' }, sessionId: 'session-1' } as any;
+    const result = await controller.revokeAllSessions(req);
+
+    // Current session (session-1) must NOT be revoked
+    expect(mocks.sessionManagementService.revokeSession).not.toHaveBeenCalledWith('session-1');
+    expect(mocks.refreshTokenStore.revokeSession).not.toHaveBeenCalledWith('session-1');
+
+    // Other session (session-2) must be revoked in both stores
+    expect(mocks.sessionManagementService.revokeSession).toHaveBeenCalledWith('session-2');
+    expect(mocks.refreshTokenStore.revokeSession).toHaveBeenCalledWith('session-2');
+    expect(result).toEqual({ message: 'All other sessions revoked' });
+  });
+});
+
+describe('POST /auth/sessions/:sessionId/revoke', () => {
+  it('revokes session in both DB and Redis store', async () => {
+    const { controller, mocks } = await buildController();
+
+    const result = await controller.revokeSession('session-1', { user: { userId: 'user-1' } } as any);
+
+    expect(mocks.sessionManagementService.revokeSession).toHaveBeenCalledWith('session-1');
+    expect(mocks.refreshTokenStore.revokeSession).toHaveBeenCalledWith('session-1');
+    expect(result).toEqual({ message: 'Session revoked' });
   });
 });

@@ -7,6 +7,7 @@ rule_files:
   - "app-alerts.yml"
   - "slo-rules.yml"
   - "slo-alerts.yml"
+  - "sla-alerts.yml"
 
 alerting:
   alertmanagers:

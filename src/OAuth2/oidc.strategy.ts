@@ -16,6 +16,7 @@ export interface OidcVerifiedProfile {
   provider: string;
   providerSubject: string;
   email: string | null;
+  emailVerified: boolean;
   givenName: string | null;
   familyName: string | null;
   rawClaims: Record<string, unknown>;
@@ -156,10 +157,16 @@ export class OidcStrategy extends PassportStrategy(Strategy, 'oidc') {
       throw new UnauthorizedException('OIDC userinfo missing subject claim');
     }
 
+    // Capture the email_verified claim so downstream account-linking logic can
+    // refuse to auto-link an OIDC identity to an existing account by email
+    // unless the IdP has actually verified ownership of that address.
+    const emailVerified = userInfo.email_verified === true;
+
     const profile: OidcVerifiedProfile = {
       provider: providerName,
       providerSubject: userInfo.sub,
       email: (userInfo.email as string) ?? null,
+      emailVerified,
       givenName: (userInfo.given_name as string) ?? null,
       familyName: (userInfo.family_name as string) ?? null,
       rawClaims: userInfo as Record<string, unknown>,
@@ -167,7 +174,7 @@ export class OidcStrategy extends PassportStrategy(Strategy, 'oidc') {
     };
 
     this.logger.log(
-      `OIDC login success: provider=${providerName} sub=${userInfo.sub}`,
+      `OIDC login success: provider=${providerName} sub=${userInfo.sub} emailVerified=${emailVerified}`,
     );
 
     return profile;

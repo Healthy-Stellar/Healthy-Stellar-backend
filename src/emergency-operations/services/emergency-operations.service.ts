@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import {
   CreateDisasterIncidentDto,
   CreateEmergencyChartNoteDto,
@@ -8,6 +10,7 @@ import {
   CreateRapidResponseDto,
   CreateResourceDto,
   CreateTriageCaseDto,
+  PanicAlertDto,
   UpdateDisasterIncidentStatusDto,
   UpdateRapidResponseStatusDto,
   UpdateResourceAllocationDto,
@@ -26,9 +29,13 @@ import {
   DisasterIncidentStatus,
   EmergencyChartNote,
 } from '../entities/emergency-documentation.entity';
+import { QUEUE_NAMES } from '../../queues/queue.constants';
+import { NotificationsGateway } from '../../notifications/notifications.gateway';
 
 @Injectable()
 export class EmergencyOperationsService {
+  private readonly logger = new Logger(EmergencyOperationsService.name);
+
   constructor(
     @InjectRepository(EmergencyTriageCase)
     private triageRepository: Repository<EmergencyTriageCase>,
@@ -44,6 +51,9 @@ export class EmergencyOperationsService {
     private chartNoteRepository: Repository<EmergencyChartNote>,
     @InjectRepository(DisasterIncident)
     private disasterRepository: Repository<DisasterIncident>,
+    @InjectQueue(QUEUE_NAMES.PANIC_ALERTS)
+    private panicAlertQueue: Queue,
+    private notificationsGateway: NotificationsGateway,
   ) {}
 
   async createTriageCase(dto: CreateTriageCaseDto): Promise<EmergencyTriageCase> {
@@ -222,6 +232,59 @@ export class EmergencyOperationsService {
       where: { status: DisasterIncidentStatus.ACTIVE },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  async triggerPanicAlert(dto: PanicAlertDto): Promise<{ jobId: string; message: string }> {
+    // Dispatch async job to BullMQ for multi-channel fan-out
+    const job = await this.panicAlertQueue.add(
+      'panic-alert',
+      {
+        patientId: dto.patientId,
+        patientLocation: dto.patientLocation,
+        emergencyType: dto.emergencyType,
+        requestingStaffId: dto.requestingStaffId,
+        requestingStaffName: dto.requestingStaffName,
+        ward: dto.ward,
+        metadata: dto.metadata,
+        timestamp: new Date().toISOString(),
+      },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 50 },
+      },
+    );
+
+    // Broadcast via WebSocket to all online users in the same ward
+    try {
+      const wsPayload = {
+        type: 'PANIC_ALERT',
+        patientId: dto.patientId,
+        patientLocation: dto.patientLocation,
+        emergencyType: dto.emergencyType,
+        requestingStaffName: dto.requestingStaffName,
+        ward: dto.ward,
+        timestamp: new Date().toISOString(),
+        jobId: job.id,
+      };
+
+      // Emit to the ward room if ward is specified, else broadcast globally
+      if (dto.ward) {
+        this.notificationsGateway.server.to(dto.ward).emit('panic.alert', wsPayload);
+      } else {
+        this.notificationsGateway.server.emit('panic.alert', wsPayload);
+      }
+    } catch (err: any) {
+      this.logger.warn('WebSocket broadcast failed for panic alert: ' + err.message);
+    }
+
+    this.logger.log(`Panic alert job ${job.id} dispatched for type=${dto.emergencyType}`);
+
+    return {
+      jobId: job.id,
+      message: `Panic alert dispatched for ${dto.emergencyType}`,
+    };
   }
 
   private async findTriageCase(id: string): Promise<EmergencyTriageCase> {

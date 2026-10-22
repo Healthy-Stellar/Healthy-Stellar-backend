@@ -30,9 +30,7 @@ export class ApiKeyStrategy extends PassportStrategy(Strategy, 'api-key') {
 
     // Update last used IP if available
     if (req.ip) {
-      await this.apiKeyService['apiKeyRepository'].update(validatedKey.id, {
-        lastUsedByIp: req.ip,
-      });
+      await this.apiKeyService.recordLastUsedIp(validatedKey.id, req.ip);
     }
 
     return {

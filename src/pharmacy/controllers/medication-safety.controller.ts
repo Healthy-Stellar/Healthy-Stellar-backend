@@ -5,7 +5,9 @@ import {
   PrescriptionValidationService,
   PatientFactors,
 } from '../services/prescription-validation.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('medication-safety')
 @Controller('pharmacy/safety')
 // @UseGuards(JwtAuthGuard)
 export class MedicationSafetyController {

@@ -110,7 +110,7 @@ export class AuditService implements OnModuleInit, OnApplicationShutdown {
    *   for crash-safe durability, then flushed to PostgreSQL by the background worker.
    */
   async log(options: AuditLogOptions): Promise<void> {
-    const entry = this.buildAuditEntry(options);
+    const entry = await this.buildAuditEntry(options);
 
     this.eventEmitter.emit('audit.logged', entry);
 
@@ -293,12 +293,36 @@ export class AuditService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
-  private buildAuditEntry(options: AuditLogOptions): Partial<AuditLog> {
+  /**
+   * Fetch the integrityHash of the most-recently inserted audit row.
+   * Used to chain each new entry to its predecessor.
+   */
+  private async getLatestIntegrityHash(): Promise<string | null> {
+    const latest = await this.auditLogRepository.findOne({
+      where: {},
+      order: { createdAt: 'DESC' },
+      select: ['integrityHash'],
+    });
+    return latest?.integrityHash ?? null;
+  }
+
+  /**
+   * Build a tamper-evident audit entry.
+   *
+   * The integrityHash covers: userId, action, resource, timestamp, AND the
+   * previousHash of the preceding row.  Any deletion or modification of a
+   * historical row breaks the chain and is detectable by a sequential scan.
+   */
+  private async buildAuditEntry(options: AuditLogOptions): Promise<Partial<AuditLog>> {
+    const previousHash = await this.getLatestIntegrityHash();
+    const timestamp = new Date().toISOString();
+
     const dataString = JSON.stringify({
       userId: options.userId,
       action: options.action,
       resource: options.resource,
-      timestamp: new Date().toISOString(),
+      timestamp,
+      previousHash,
     });
 
     return {
@@ -320,6 +344,7 @@ export class AuditService implements OnModuleInit, OnApplicationShutdown {
       deviceId: options.deviceId || null,
       correlationId: options.correlationId || null,
       isAnomaly: false,
+      previousHash,
       integrityHash: this.encryptionService.createIntegritySignature(dataString),
     };
   }

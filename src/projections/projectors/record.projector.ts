@@ -6,17 +6,7 @@ import { Queue } from 'bull';
 import { Logger } from '@nestjs/common';
 import { RecordUploadedEvent, RecordAmendedEvent } from './domain-events';
 import { CheckpointService } from '../checkpoint/checkpoint.service';
-
-// Stub entity — replace with actual MedicalRecord read-model entity
-class MedicalRecordReadModel {
-  id: string;
-  patientId: string;
-  cid: string;
-  recordType: string;
-  uploadedBy: string;
-  latestVersion: number;
-  updatedAt: Date;
-}
+import { MedicalRecordReadModel } from '../entities/medical-record-read.entity';
 
 const PROJECTOR_NAME = 'RecordProjector';
 
@@ -32,11 +22,15 @@ export class RecordProjector implements IEventHandler<RecordUploadedEvent | Reco
   ) {}
 
   async handle(event: RecordUploadedEvent | RecordAmendedEvent): Promise<void> {
-    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME);
+    const aggregateId = event.recordId;
+    const version = event instanceof RecordUploadedEvent ? event.version : event.newVersion;
 
-    // Idempotency guard — skip already-processed versions
-    if (event.version <= lastVersion) {
-      this.logger.debug(`${PROJECTOR_NAME}: skipping already-projected version ${event.version}`);
+    // Idempotency guard — scoped per aggregate, since event versions reset per aggregate
+    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME, aggregateId);
+    if (version <= lastVersion) {
+      this.logger.debug(
+        `${PROJECTOR_NAME}: skipping already-projected version ${version} for ${aggregateId}`,
+      );
       return;
     }
 
@@ -47,9 +41,9 @@ export class RecordProjector implements IEventHandler<RecordUploadedEvent | Reco
         await this.projectAmended(event);
       }
 
-      await this.checkpoints.advance(PROJECTOR_NAME, event.version);
+      await this.checkpoints.advance(PROJECTOR_NAME, aggregateId, version);
     } catch (err) {
-      this.logger.error(`${PROJECTOR_NAME}: failed on version ${event.version} — ${err.message}`);
+      this.logger.error(`${PROJECTOR_NAME}: failed on version ${version} — ${err.message}`);
       await this.dlq.add(
         'projection-failed',
         { projectorName: PROJECTOR_NAME, event, error: err.message },
@@ -68,12 +62,12 @@ export class RecordProjector implements IEventHandler<RecordUploadedEvent | Reco
       .insert()
       .into(MedicalRecordReadModel)
       .values({
-        id: event.recordId,
+        aggregateId: event.recordId,
         patientId: event.patientId,
         cid: event.cid,
         recordType: event.recordType,
         uploadedBy: event.uploadedBy,
-        latestVersion: 1,
+        version: 1,
         updatedAt: event.occurredAt,
       })
       .orIgnore() // idempotent: ignore duplicate inserts
@@ -86,11 +80,11 @@ export class RecordProjector implements IEventHandler<RecordUploadedEvent | Reco
       .update(MedicalRecordReadModel)
       .set({
         cid: event.newCid,
-        latestVersion: event.newVersion,
+        version: event.newVersion,
         updatedAt: event.occurredAt,
       })
-      .where('id = :id AND latest_version < :newVersion', {
-        id: event.recordId,
+      .where('aggregate_id = :aggregateId AND version < :newVersion', {
+        aggregateId: event.recordId,
         newVersion: event.newVersion,
       })
       .execute();

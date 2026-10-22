@@ -4,15 +4,10 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  ManyToOne,
   OneToMany,
   Index,
   VersionColumn,
 } from 'typeorm';
-import { MedicalRecordVersion } from './medical-record-version.entity';
-import { MedicalHistory } from './medical-history.entity';
-import { MedicalAttachment } from './medical-attachment.entity';
-import { MedicalRecordConsent } from './medical-record-consent.entity';
 import { PhiGcmTransformer } from '../../common/transformers/phi-gcm.transformer';
 import { PhiDeterministicTransformer } from '../../common/transformers/phi-deterministic.transformer';
 
@@ -99,6 +94,22 @@ export class MedicalRecord {
   @Column({ type: 'text', nullable: true, transformer: gcmTransformer })
   notes: string;
 
+  /**
+   * PHI: prescription details -- encrypted with key-managed AES-256-GCM.
+   * Encryption/decryption handled by PhiColumnEncryptionService.
+   * Raw column value is base64-encoded ciphertext.
+   */
+  @Column({ type: 'text', nullable: true })
+  prescriptionDetails?: string;
+
+  /**
+   * HMAC-SHA256 index of plaintext prescriptionDetails for exact-match lookup.
+   * Keyed with the patient DEK from KeyManagementService.
+   */
+  @Index()
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  prescriptionDetailsHmac?: string;
+
   @Column({
     type: 'enum',
     enum: MedicalRecordStatus,
@@ -128,23 +139,23 @@ export class MedicalRecord {
   updatedBy: string;
 
   // Relations
-  @OneToMany(() => MedicalRecordVersion, (version) => version.medicalRecord, {
+  @OneToMany('MedicalRecordVersion', 'medicalRecord', {
     cascade: true,
   })
-  versions: MedicalRecordVersion[];
+  versions: any[];
 
-  @OneToMany(() => MedicalHistory, (history) => history.medicalRecord, {
+  @OneToMany('MedicalHistory', 'medicalRecord', {
     cascade: true,
   })
-  history: MedicalHistory[];
+  history: any[];
 
-  @OneToMany(() => MedicalAttachment, (attachment) => attachment.medicalRecord, {
+  @OneToMany('MedicalAttachment', 'medicalRecord', {
     cascade: true,
   })
-  attachments: MedicalAttachment[];
+  attachments: any[];
 
-  @OneToMany(() => MedicalRecordConsent, (consent) => consent.medicalRecord, {
+  @OneToMany('MedicalRecordConsent', 'medicalRecord', {
     cascade: true,
   })
-  consents: MedicalRecordConsent[];
+  consents: any[];
 }

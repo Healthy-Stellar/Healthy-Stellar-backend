@@ -6,17 +6,9 @@ import { Queue } from 'bull';
 import { Logger } from '@nestjs/common';
 import { RecordUploadedEvent, AccessGrantedEvent, AccessRevokedEvent } from './domain-events';
 import { CheckpointService } from '../checkpoint/checkpoint.service';
+import { AnalyticsSnapshot } from '../entities/analytics-snapshot.entity';
 
 type AnalyticsEvent = RecordUploadedEvent | AccessGrantedEvent | AccessRevokedEvent;
-
-class AnalyticsSnapshot {
-  id: string;
-  patientId: string;
-  totalRecords: number;
-  activeGrants: number;
-  revokedGrants: number;
-  lastEventAt: Date;
-}
 
 const PROJECTOR_NAME = 'AnalyticsProjector';
 
@@ -32,15 +24,17 @@ export class AnalyticsProjector implements IEventHandler<AnalyticsEvent> {
   ) {}
 
   async handle(event: AnalyticsEvent): Promise<void> {
-    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME);
+    const aggregateId = event instanceof RecordUploadedEvent ? event.recordId : event.grantId;
 
+    // Idempotency guard — scoped per aggregate, since event versions reset per aggregate
+    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME, aggregateId);
     if (event.version <= lastVersion) {
       return;
     }
 
     try {
       await this.upsertSnapshot(event);
-      await this.checkpoints.advance(PROJECTOR_NAME, event.version);
+      await this.checkpoints.advance(PROJECTOR_NAME, aggregateId, event.version);
     } catch (err) {
       this.logger.error(`${PROJECTOR_NAME}: failed on version ${event.version} — ${err.message}`);
       await this.dlq.add(
@@ -57,10 +51,11 @@ export class AnalyticsProjector implements IEventHandler<AnalyticsEvent> {
 
   private async upsertSnapshot(event: AnalyticsEvent): Promise<void> {
     // Build the increment deltas based on event type
+    const snapshotDate = event.occurredAt.toISOString().slice(0, 10);
     const delta = {
-      totalRecords: event instanceof RecordUploadedEvent ? 1 : 0,
-      activeGrants: event instanceof AccessGrantedEvent ? 1 : 0,
-      revokedGrants: event instanceof AccessRevokedEvent ? 1 : 0,
+      totalRecordsUploaded: event instanceof RecordUploadedEvent ? 1 : 0,
+      totalAccessGranted: event instanceof AccessGrantedEvent ? 1 : 0,
+      totalAccessRevoked: event instanceof AccessRevokedEvent ? 1 : 0,
       activeGrantsDecrement: event instanceof AccessRevokedEvent ? 1 : 0,
     };
 
@@ -69,25 +64,27 @@ export class AnalyticsProjector implements IEventHandler<AnalyticsEvent> {
       .insert()
       .into(AnalyticsSnapshot)
       .values({
-        id: () => 'gen_random_uuid()',
-        patientId: event.patientId,
-        totalRecords: delta.totalRecords,
-        activeGrants: delta.activeGrants,
-        revokedGrants: delta.revokedGrants,
-        lastEventAt: event.occurredAt,
+        snapshotDate,
+        totalRecordsUploaded: delta.totalRecordsUploaded,
+        totalAccessGranted: delta.totalAccessGranted,
+        totalAccessRevoked: delta.totalAccessRevoked,
       })
       .orUpdate(
-        ['total_records', 'active_grants', 'revoked_grants', 'last_event_at'],
-        ['patient_id'],
+        [
+          'total_records_uploaded',
+          'total_access_granted',
+          'total_access_revoked',
+          'updated_at',
+        ],
+        ['snapshot_date'],
         {
           skipUpdateIfNoValuesChanged: false,
           upsertType: 'on-conflict-do-update',
         },
       )
-      .setParameter('totalRecords', delta.totalRecords)
-      .setParameter('activeGrants', delta.activeGrants)
-      .setParameter('revokedGrants', delta.revokedGrants)
-      .setParameter('occurredAt', event.occurredAt)
+      .setParameter('totalRecordsUploaded', delta.totalRecordsUploaded)
+      .setParameter('totalAccessGranted', delta.totalAccessGranted)
+      .setParameter('totalAccessRevoked', delta.totalAccessRevoked)
       .execute();
 
     // Apply decrements for revocation separately to keep upsert readable
@@ -96,10 +93,9 @@ export class AnalyticsProjector implements IEventHandler<AnalyticsEvent> {
         .createQueryBuilder()
         .update(AnalyticsSnapshot)
         .set({
-          activeGrants: () => 'GREATEST(active_grants - 1, 0)',
-          lastEventAt: event.occurredAt,
+          totalAccessRevoked: () => 'total_access_revoked + 1',
         })
-        .where('patient_id = :patientId', { patientId: event.patientId })
+        .where('snapshot_date = :snapshotDate', { snapshotDate })
         .execute();
     }
   }

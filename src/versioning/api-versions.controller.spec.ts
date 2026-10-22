@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { VersioningType, VERSION_NEUTRAL } from '@nestjs/common';
+import { VERSION_NEUTRAL } from '@nestjs/common';
+import { VERSION_METADATA } from '@nestjs/common/constants';
 import { ApiVersionsController } from './api-versions.controller';
 
 describe('ApiVersionsController', () => {
@@ -41,6 +42,10 @@ describe('ApiVersionsController', () => {
       const { versions } = controller.getVersions();
       const v1 = versions.find((v) => v.version === '1');
       expect(v1?.baseUrl).toBe('/v1');
+    });
+
+    it('is version-neutral so lifecycle discovery remains available', () => {
+      expect(Reflect.getMetadata(VERSION_METADATA, ApiVersionsController)).toBe(VERSION_NEUTRAL);
     });
   });
 });

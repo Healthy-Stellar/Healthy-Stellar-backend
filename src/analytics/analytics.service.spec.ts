@@ -3,7 +3,7 @@ import { getRepositoryToken, getDataSourceToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ForbiddenException } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
-import { User } from '../users/entities/user.entity';
+import { User } from '../auth/entities/user.entity';
 import { MedicalRecord } from '../medical-records/entities/medical-record.entity';
 import { AccessGrant, GrantStatus } from '../access-control/entities/access-grant.entity';
 import { StellarTransaction } from './entities/stellar-transaction.entity';
@@ -46,6 +46,7 @@ async function buildModule(repos: {
       { provide: getRepositoryToken(AccessGrant), useValue: repos.grant ?? makeRepo() },
       { provide: getRepositoryToken(StellarTransaction), useValue: repos.stellar ?? makeRepo() },
       { provide: CACHE_MANAGER, useValue: mockCache },
+      { provide: getDataSourceToken(), useValue: {} },
     ],
   }).compile();
   return module.get<AnalyticsService>(AnalyticsService);

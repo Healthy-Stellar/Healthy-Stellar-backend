@@ -222,19 +222,141 @@ export class EquipmentMonitoringService {
     );
   }
 
-  // Mock implementation - replace with actual equipment monitoring
-  private async getEquipmentHealthData(equipmentId: string): Promise<any> {
+  async getEquipmentHealthData(equipmentId: string): Promise<{
+    batteryLevel?: number;
+    isConnected: boolean;
+    operatingHours?: number;
+    performanceIssues: string[];
+    calibrationExpired: boolean;
+    metrics: Record<string, any>;
+  }> {
+    const equipment = await this.equipmentRepository.findOne({
+      where: { equipmentId },
+    });
+
+    if (!equipment) {
+      return {
+        isConnected: false,
+        performanceIssues: [`Equipment ${equipmentId} not found`],
+        calibrationExpired: false,
+        metrics: {},
+      };
+    }
+
+    const now = Date.now();
+    const HEARTBEAT_TIMEOUT_MS = 15 * 60 * 1000;
+    const lastSeenTime = equipment.performanceMetrics?.lastSeen
+      ? new Date(equipment.performanceMetrics.lastSeen).getTime()
+      : equipment.updatedAt
+        ? new Date(equipment.updatedAt).getTime()
+        : null;
+
+    let isConnected = equipment.isActive;
+    if (equipment.performanceMetrics?.isConnected !== undefined) {
+      isConnected = Boolean(equipment.performanceMetrics.isConnected);
+    } else if (lastSeenTime && now - lastSeenTime > HEARTBEAT_TIMEOUT_MS) {
+      isConnected = false;
+    }
+
+    const batteryLevel =
+      equipment.batteryLevel !== null && equipment.batteryLevel !== undefined
+        ? Number(equipment.batteryLevel)
+        : equipment.performanceMetrics?.batteryLevel !== undefined
+          ? Number(equipment.performanceMetrics.batteryLevel)
+          : undefined;
+
+    const operatingHours =
+      equipment.operatingHours !== null && equipment.operatingHours !== undefined
+        ? Number(equipment.operatingHours)
+        : Number(equipment.performanceMetrics?.operatingHours ?? 0);
+
+    let calibrationExpired = false;
+    if (equipment.calibrationData) {
+      const calExpiry =
+        equipment.calibrationData.expirationDate ||
+        equipment.calibrationData.nextCalibrationDate ||
+        equipment.calibrationData.validUntil;
+      if (calExpiry && new Date(calExpiry).getTime() < now) {
+        calibrationExpired = true;
+      } else if (
+        equipment.calibrationData.isCalibrated === false ||
+        equipment.calibrationData.calibrationExpired === true
+      ) {
+        calibrationExpired = true;
+      }
+    }
+
+    const performanceIssues: string[] = [];
+    if (equipment.currentIssues && equipment.currentIssues.trim().length > 0) {
+      performanceIssues.push(equipment.currentIssues.trim());
+    }
+    if (Array.isArray(equipment.performanceMetrics?.performanceIssues)) {
+      performanceIssues.push(...equipment.performanceMetrics.performanceIssues);
+    }
+    if (Array.isArray(equipment.performanceMetrics?.issues)) {
+      performanceIssues.push(...equipment.performanceMetrics.issues);
+    }
+
     return {
-      batteryLevel: Math.random() * 100,
-      isConnected: Math.random() > 0.1, // 90% uptime
-      operatingHours: Math.random() * 1000,
-      performanceIssues: Math.random() > 0.8 ? ['Performance degraded'] : [],
-      calibrationExpired: Math.random() > 0.9,
-      metrics: {
-        temperature: 20 + Math.random() * 10,
-        humidity: 40 + Math.random() * 20,
-        vibration: Math.random() * 5,
-      },
+      batteryLevel,
+      isConnected,
+      operatingHours,
+      performanceIssues,
+      calibrationExpired,
+      metrics: equipment.performanceMetrics || {},
     };
+  }
+
+  async recordTelemetry(
+    equipmentId: string,
+    telemetry: {
+      batteryLevel?: number;
+      isConnected?: boolean;
+      operatingHours?: number;
+      performanceIssues?: string[];
+      calibrationData?: Record<string, any>;
+      metrics?: Record<string, any>;
+      currentIssues?: string;
+    },
+  ): Promise<EquipmentStatus> {
+    const equipment = await this.equipmentRepository.findOne({
+      where: { equipmentId },
+    });
+
+    if (!equipment) {
+      throw new Error(`Equipment ${equipmentId} not found`);
+    }
+
+    if (telemetry.batteryLevel !== undefined) {
+      equipment.batteryLevel = telemetry.batteryLevel;
+    }
+    if (telemetry.operatingHours !== undefined) {
+      equipment.operatingHours = telemetry.operatingHours;
+    }
+    if (telemetry.currentIssues !== undefined) {
+      equipment.currentIssues = telemetry.currentIssues;
+    }
+    if (telemetry.calibrationData !== undefined) {
+      equipment.calibrationData = {
+        ...equipment.calibrationData,
+        ...telemetry.calibrationData,
+      };
+    }
+    if (
+      telemetry.metrics !== undefined ||
+      telemetry.isConnected !== undefined ||
+      telemetry.performanceIssues !== undefined
+    ) {
+      equipment.performanceMetrics = {
+        ...equipment.performanceMetrics,
+        ...telemetry.metrics,
+        lastSeen: new Date().toISOString(),
+        isConnected: telemetry.isConnected ?? true,
+        performanceIssues:
+          telemetry.performanceIssues ?? equipment.performanceMetrics?.performanceIssues ?? [],
+      };
+    }
+
+    return await this.equipmentRepository.save(equipment);
   }
 }

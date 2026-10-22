@@ -8,12 +8,13 @@ import { createTypeOrmRetryCallback, MAX_RETRIES, RETRY_DELAY_MS } from '../comm
 /**
  * TypeORM Database Configuration
  *
- * Acceptance criteria (#208):
- * - TypeORM configured via @nestjs/typeorm and ConfigService
- * - Connection pool: min: 2, max: 10
- * - synchronize: false in all environments (migrations only)
- * - logging: ['error'] in production, ['query', 'error'] in development
- * - SSL enabled for production database connection
+ * Connection pool sizing guidance (issue #574):
+ *   Development  — DB_POOL_MIN=2,  DB_POOL_MAX=10
+ *   Staging      — DB_POOL_MIN=5,  DB_POOL_MAX=20
+ *   Production   — DB_POOL_MIN=10, DB_POOL_MAX=50  (tune against Postgres max_connections)
+ *
+ * Rule of thumb: (DB_POOL_MAX × worker_processes) < pg max_connections × 0.8
+ * Monitor pg_pool_size / pg_pool_checked_out Prometheus gauges to detect exhaustion.
  */
 @Injectable()
 export class DatabaseConfig implements TypeOrmOptionsFactory {
@@ -21,6 +22,11 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
 
   createTypeOrmOptions(): TypeOrmModuleOptions {
     const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+    const isStaging = this.configService.get<string>('NODE_ENV') === 'staging';
+
+    // Production-safe pool defaults: larger pool for production/staging workloads
+    const defaultPoolMax = isProduction ? 50 : isStaging ? 20 : 10;
+    const defaultPoolMin = isProduction ? 10 : isStaging ? 5 : 2;
 
     // Validate required configuration
     const requiredVars = ['DB_HOST', 'DB_PORT', 'DB_USERNAME', 'DB_PASSWORD', 'DB_NAME'];
@@ -65,13 +71,14 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       // logging: ['error'] in production, ['query', 'error'] in development
       logging: isProduction ? ['error'] : ['query', 'error'],
 
-      // Connection pool: min 2, max 10
+      // Connection pool — env vars override environment-aware defaults (see class comment)
       extra: {
-        max: this.configService.get<number>('DB_POOL_MAX', 10),
-        min: this.configService.get<number>('DB_POOL_MIN', 2),
+        max: this.configService.get<number>('DB_POOL_MAX', defaultPoolMax),
+        min: this.configService.get<number>('DB_POOL_MIN', defaultPoolMin),
         connectionTimeoutMillis: this.configService.get<number>('DB_CONNECTION_TIMEOUT_MS', 2000),
         idleTimeoutMillis: this.configService.get<number>('DB_IDLE_TIMEOUT_MS', 30000),
-        statement_timeout: 60000,
+        statement_timeout: this.configService.get<number>('DB_STATEMENT_TIMEOUT_MS', 10000),
+        query_timeout: this.configService.get<number>('DB_QUERY_TIMEOUT_MS', 30000),
         application_name: 'healthy-stellar-backend',
       },
 

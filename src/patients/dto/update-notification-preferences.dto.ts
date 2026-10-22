@@ -7,6 +7,11 @@ export enum NotificationChannel {
   SMS = 'SMS',
 }
 
+export enum EmailDeliveryMode {
+  IMMEDIATE = 'IMMEDIATE',
+  DIGEST = 'DIGEST',
+}
+
 export class UpdateNotificationPreferencesDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -34,4 +39,13 @@ export class UpdateNotificationPreferencesDto {
   @ArrayUnique()
   @IsEnum(NotificationChannel, { each: true })
   channels?: NotificationChannel[];
+
+  @ApiPropertyOptional({
+    enum: EmailDeliveryMode,
+    description:
+      'Delivery mode for non-critical access-event emails. Critical events always send immediately.',
+  })
+  @IsOptional()
+  @IsEnum(EmailDeliveryMode)
+  emailDeliveryMode?: EmailDeliveryMode;
 }

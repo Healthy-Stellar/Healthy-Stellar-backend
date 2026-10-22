@@ -25,7 +25,7 @@ export interface StellarVerifyResult {
 
 /** Structured payload emitted to the logger on every contract call. */
 export interface StellarOperationLog {
-  operation: 'anchorRecord' | 'grantAccess' | 'revokeAccess' | 'verifyAccess' | 'submitTransaction' | 'getAccount' | 'invokeContract' | 'getContractEvents';
+  operation: 'anchorRecord' | 'grantAccess' | 'revokeAccess' | 'createShareLink' | 'verifyAccess' | 'submitTransaction' | 'getAccount' | 'invokeContract' | 'getContractEvents';
   attempt: number;
   durationMs: number;
   success: boolean;

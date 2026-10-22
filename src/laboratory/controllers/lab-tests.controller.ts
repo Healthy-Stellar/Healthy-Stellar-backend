@@ -9,8 +9,11 @@ import {
   Query,
   UseGuards,
   Request,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
 import { LabTestsService } from '../services/lab-tests.service';
 import { CreateLabTestDto } from '../dto/create-lab-test.dto';
 import { TestStatus } from '../entities/lab-test.entity';
@@ -18,7 +21,7 @@ import { TestStatus } from '../entities/lab-test.entity';
 @ApiTags('Laboratory - Tests')
 @Controller('laboratory/tests')
 // @UseGuards(JwtAuthGuard, RolesGuard) // Uncomment when auth is ready
-// @ApiBearerAuth()
+// @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 export class LabTestsController {
   constructor(private readonly labTestsService: LabTestsService) {}
 
@@ -38,8 +41,8 @@ export class LabTestsController {
     @Query('category') category?: string,
     @Query('status') status?: TestStatus,
     @Query('search') search?: string,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
   ) {
     return this.labTestsService.findAll({
       category,

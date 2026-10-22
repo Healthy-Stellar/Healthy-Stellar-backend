@@ -1,5 +1,9 @@
+import { Logger } from '@nestjs/common';
+
 export const MAX_RETRIES = 10;
 export const RETRY_DELAY_MS = 3000;
+
+const logger = new Logger('ConnectionRetryUtil');
 
 /**
  * Returns a TypeORM-compatible `toRetry` callback.
@@ -11,11 +15,11 @@ export function createTypeOrmRetryCallback(
   let attempt = 0;
   return (err: Error): boolean => {
     attempt++;
-    console.error(
+    logger.error(
       `[TypeORM] Database connection attempt ${attempt} failed. Error: ${err.message}`,
     );
     if (attempt >= maxRetries) {
-      console.error(
+      logger.error(
         `[TypeORM] Max connection retries (${maxRetries}) exhausted. Exiting...`,
       );
       process.exit(1);
@@ -24,22 +28,25 @@ export function createTypeOrmRetryCallback(
   };
 }
 
+const REDIS_BASE_DELAY_MS = 500;
+const REDIS_MAX_DELAY_MS = 30_000;
+
 /**
- * Returns an ioredis-compatible `retryStrategy` callback.
- * Logs each attempt, exits with code 1 after MAX_RETRIES exhausted.
+ * Returns an ioredis-compatible `retryStrategy` callback with exponential backoff.
+ * Exits with code 1 after MAX_RETRIES exhausted.
  */
 export function createRedisRetryStrategy(
   maxRetries = MAX_RETRIES,
-  delayMs = RETRY_DELAY_MS,
 ): (times: number) => number | null {
   return (times: number): number | null => {
-    console.error(`[Redis] Connection attempt ${times} failed.`);
+    logger.error(`[Redis] Connection attempt ${times} failed.`);
     if (times >= maxRetries) {
-      console.error(
+      logger.error(
         `[Redis] Max connection retries (${maxRetries}) exhausted. Exiting...`,
       );
       process.exit(1);
     }
-    return delayMs;
+    const delay = Math.min(REDIS_BASE_DELAY_MS * Math.pow(2, times - 1), REDIS_MAX_DELAY_MS);
+    return delay;
   };
 }

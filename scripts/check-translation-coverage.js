@@ -75,7 +75,9 @@ function validateTranslations() {
   logSection('Translation Coverage Check');
 
   const localesDir = path.join(__dirname, '../src/i18n/locales');
-  const languages = ['en', 'fr', 'es', 'ar'];
+  const languages = ['en', 'fr', 'es', 'ar', 'he'];
+
+  const rtlLanguages = ['ar', 'he'];
 
   logInfo(`Checking translations in: ${localesDir}`);
   logInfo(`Languages to validate: ${languages.join(', ')}\n`);
@@ -188,6 +190,42 @@ function validateTranslations() {
 
   if (emptyCount === 0) {
     logSuccess('No empty translation values found');
+  }
+
+  // RTL locale validation
+  logSection('RTL Locale Validation');
+
+  for (const lang of rtlLanguages) {
+    logInfo(`Validating RTL locale: ${lang}`);
+
+    // Check that dir attribute is present in email templates
+    const emailTemplatesDir = path.join(__dirname, '../src/email-templates/i18n');
+    const templates = ['access-granted', 'verify-email', 'reset-password'];
+
+    for (const template of templates) {
+      const filePath = path.join(emailTemplatesDir, `${template}.${lang}.hbs`);
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        if (content.includes('dir="rtl"') || content.includes("dir='rtl'")) {
+          logSuccess(`  ${template}.${lang}.hbs — has dir="rtl"`);
+        } else {
+          logWarning(`  ${template}.${lang}.hbs — missing dir="rtl" attribute`);
+          hasErrors = true;
+        }
+      } else {
+        logError(`  ${template}.${lang}.hbs — template file missing`);
+        hasErrors = true;
+      }
+    }
+
+    // Check for notification translations
+    const notificationsDir = path.join(__dirname, '../src/i18n/notifications');
+    const notifPath = path.join(notificationsDir, `${lang}.json`);
+    if (fs.existsSync(notifPath)) {
+      logSuccess(`  notifications/${lang}.json — present`);
+    } else {
+      logWarning(`  notifications/${lang}.json — missing (will fallback to default)`);
+    }
   }
 
   // Email template validation

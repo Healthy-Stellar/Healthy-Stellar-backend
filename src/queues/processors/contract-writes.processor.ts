@@ -2,8 +2,11 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, Inject } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { context, propagation, trace } from '@opentelemetry/api';
+import { ConfigService } from '@nestjs/config';
 import { QUEUE_NAMES, JOB_TYPES } from '../queue.constants';
 import { StellarContractService } from '../../blockchain/stellar-contract.service';
+import { verifyQueuePayload } from '../queue-payload.util';
+import { DLQ_WORKER_SETTINGS } from '../../dlq/dlq-retry.strategy';
 
 /**
  * ContractWritesProcessor
@@ -12,7 +15,8 @@ import { StellarContractService } from '../../blockchain/stellar-contract.servic
  * These are operations that modify on-chain state (anchorRecord, grantAccess, revokeAccess)
  */
 @Processor(QUEUE_NAMES.CONTRACT_WRITES, {
-  concurrency: 3, // Lower concurrency for contract writes to handle blockchain rate limits
+  concurrency: 3,
+  ...DLQ_WORKER_SETTINGS,
 })
 export class ContractWritesProcessor extends WorkerHost {
   private readonly logger = new Logger(ContractWritesProcessor.name);
@@ -21,6 +25,7 @@ export class ContractWritesProcessor extends WorkerHost {
   constructor(
     @Inject(StellarContractService)
     private readonly stellarContractService: StellarContractService,
+    private readonly configService: ConfigService,
   ) {
     super();
   }
@@ -31,6 +36,9 @@ export class ContractWritesProcessor extends WorkerHost {
   async process(job: Job<any>): Promise<any> {
     const { operationType, params, initiatedBy, correlationId, traceContext } =
       job.data;
+
+    // Integrity check — reject tampered payloads before any processing
+    verifyQueuePayload(job.data, this.configService.getOrThrow<string>('QUEUE_HMAC_SECRET'));
 
     // Extract trace context from job data
     const extractedContext = traceContext
@@ -156,16 +164,21 @@ export class ContractWritesProcessor extends WorkerHost {
 
     job.progress(30);
 
-    // Calculate expiration if not provided (default 7 days, in milliseconds)
-    const expiresAtMs =
-      params.expiresAtMs ||
-      BigInt(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    // Calculate expiration if not provided (default 7 days, in milliseconds).
+    // GrantAccessArgs.expiresAt is milliseconds since epoch (Date.now()-style);
+    // encodeGrantAccess converts it to the on-chain seconds-since-epoch unit
+    // Soroban expects (#967) — this call site just needs to hand it a
+    // millisecond value, not do that conversion itself.
+    const expiresAt =
+      params.expiresAt != null
+        ? (typeof params.expiresAt === 'bigint' ? params.expiresAt : BigInt(params.expiresAt))
+        : BigInt(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     const result = await this.stellarContractService.grantAccess({
       patientId: params.patientId,
       granteeId: params.granteeId,
       recordId: params.recordId,
-      expiresAtMs: typeof expiresAtMs === 'bigint' ? expiresAtMs : BigInt(expiresAtMs),
+      expiresAt,
     });
 
     job.progress(90);

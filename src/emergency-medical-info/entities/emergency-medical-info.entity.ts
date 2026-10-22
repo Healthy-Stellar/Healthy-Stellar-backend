@@ -7,6 +7,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+
 export enum BloodType {
   A_POS = 'A+',
   A_NEG = 'A-',
@@ -51,6 +52,18 @@ export class EmergencyMedicalInfo {
 
   @Column({ type: 'text', nullable: true })
   additionalNotes: string;
+
+  /** Whether the patient has opted in to QR emergency card */
+  @Column({ type: 'boolean', default: false })
+  qrOptIn: boolean;
+
+  /** Opaque token embedded in the QR payload; null until opt-in */
+  @Column({ type: 'uuid', nullable: true, unique: true })
+  qrToken: string | null;
+
+  /** When the current token was issued; used to enforce 30-day rotation */
+  @Column({ type: 'timestamp', nullable: true })
+  qrIssuedAt: Date | null;
 
   @CreateDateColumn()
   createdAt: Date;

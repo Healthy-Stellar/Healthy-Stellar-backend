@@ -22,7 +22,8 @@ export class RealtimeEventsResolver {
   ) {
     this.assertPatientScope(ctx, patientId);
     const replayCursor = this.readReplayCursor(ctx, `recordAccessed:${patientId}`);
-    return this.graphqlPubSubService.recordAccessedIterator(patientId, replayCursor);
+    const { sessionId, userId } = this.getSessionContext(ctx);
+    return this.graphqlPubSubService.recordAccessedIterator(patientId, replayCursor, sessionId, userId);
   }
 
   @Subscription(() => AccessGrantedEventType, {
@@ -34,7 +35,8 @@ export class RealtimeEventsResolver {
   ) {
     this.assertPatientScope(ctx, patientId);
     const replayCursor = this.readReplayCursor(ctx, `accessGranted:${patientId}`);
-    return this.graphqlPubSubService.accessGrantedIterator(patientId, replayCursor);
+    const { sessionId, userId } = this.getSessionContext(ctx);
+    return this.graphqlPubSubService.accessGrantedIterator(patientId, replayCursor, sessionId, userId);
   }
 
   @Subscription(() => AccessRevokedEventType, {
@@ -46,7 +48,8 @@ export class RealtimeEventsResolver {
   ) {
     this.assertPatientScope(ctx, patientId);
     const replayCursor = this.readReplayCursor(ctx, `accessRevoked:${patientId}`);
-    return this.graphqlPubSubService.accessRevokedIterator(patientId, replayCursor);
+    const { sessionId, userId } = this.getSessionContext(ctx);
+    return this.graphqlPubSubService.accessRevokedIterator(patientId, replayCursor, sessionId, userId);
   }
 
   @Subscription(() => RecordUploadedEventType, {
@@ -58,7 +61,8 @@ export class RealtimeEventsResolver {
   ) {
     this.assertPatientScope(ctx, patientId);
     const replayCursor = this.readReplayCursor(ctx, `recordUploaded:${patientId}`);
-    return this.graphqlPubSubService.recordUploadedIterator(patientId, replayCursor);
+    const { sessionId, userId } = this.getSessionContext(ctx);
+    return this.graphqlPubSubService.recordUploadedIterator(patientId, replayCursor, sessionId, userId);
   }
 
   @Subscription(() => JobStatusEventType, {
@@ -67,7 +71,8 @@ export class RealtimeEventsResolver {
   async jobStatusUpdated(@Args('jobId', { type: () => ID }) jobId: string, @Context() ctx: any) {
     this.assertAuthenticated(ctx);
     const replayCursor = this.readReplayCursor(ctx, `jobStatusUpdated:${jobId}`);
-    return this.graphqlPubSubService.jobStatusUpdatedIterator(jobId, replayCursor);
+    const { sessionId, userId } = this.getSessionContext(ctx);
+    return this.graphqlPubSubService.jobStatusUpdatedIterator(jobId, replayCursor, sessionId, userId);
   }
 
   private assertAuthenticated(ctx: any): void {
@@ -102,6 +107,17 @@ export class RealtimeEventsResolver {
       ctx?.extra?.user?.userId ??
       ctx?.extra?.user?.id
     );
+  }
+
+  private getSessionContext(ctx: any): { sessionId: string | undefined; userId: string | undefined } {
+    const user =
+      ctx?.user ??
+      ctx?.req?.user ??
+      ctx?.extra?.user;
+    return {
+      sessionId: user?.sessionId,
+      userId: user?.userId ?? user?.id,
+    };
   }
 
   private readReplayCursor(ctx: any, cursorKey: string): string | undefined {

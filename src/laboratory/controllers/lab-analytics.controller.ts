@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Query, Param } from '@nestjs/common';
+import { Controller, Get, Post, Query, Param, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { LabAnalyticsService } from '../services/lab-analytics.service';
 import { MetricType, MetricPeriod } from '../entities/lab-analytics.entity';
@@ -69,7 +69,10 @@ export class LabAnalyticsController {
   @ApiOperation({ summary: 'Get metrics by type' })
   @ApiResponse({ status: 200, description: 'List of metrics by type' })
   @ApiQuery({ name: 'limit', type: Number, required: false })
-  getMetricsByType(@Param('metricType') metricType: MetricType, @Query('limit') limit?: number) {
+  getMetricsByType(
+    @Param('metricType') metricType: MetricType,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
+  ) {
     return this.analyticsService.getMetricsByType(metricType, limit);
   }
 

@@ -16,6 +16,26 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { TreatmentPlanStatus, ProcedureStatus } from '../../common/enums';
 
+import {
+  IsUUID,
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsArray,
+  IsDateString,
+  IsObject,
+  ValidateNested,
+  MaxLength,
+  IsInt,
+  Min,
+  IsIn,
+  IsNotEmpty,
+  ArrayMaxSize,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { TreatmentPlanStatus, ProcedureStatus } from '../../common/enums';
+
 // Treatment Plan DTOs
 export class CreateTreatmentPlanDto {
   @ApiProperty()
@@ -29,12 +49,14 @@ export class CreateTreatmentPlanDto {
 
   @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   @MaxLength(255)
   title: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(5000)
   description?: string;
 
   @ApiPropertyOptional({ enum: TreatmentPlanStatus })
@@ -45,6 +67,7 @@ export class CreateTreatmentPlanDto {
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(50)
   @IsUUID('4', { each: true })
   diagnosisIds?: string[];
 
@@ -60,36 +83,42 @@ export class CreateTreatmentPlanDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
-  goals?: any[];
+  @ArrayMaxSize(50)
+  goals?: Record<string, any>[];
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
-  objectives?: any[];
+  @ArrayMaxSize(50)
+  objectives?: Record<string, any>[];
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
-  interventions?: any[];
+  @ArrayMaxSize(100)
+  interventions?: Record<string, any>[];
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
-  medications?: any[];
+  @ArrayMaxSize(100)
+  medications?: Record<string, any>[];
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsObject()
-  reviewSchedule?: any;
+  reviewSchedule?: Record<string, any>;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(5000)
   specialInstructions?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(5000)
   patientEducation?: string;
 
   @ApiPropertyOptional()

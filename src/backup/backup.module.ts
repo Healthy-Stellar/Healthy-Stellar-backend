@@ -8,9 +8,14 @@ import { DisasterRecoveryService } from './services/disaster-recovery.service';
 import { BackupMonitoringService } from './services/backup-monitoring.service';
 import { BackupLog } from './entities/backup-log.entity';
 import { RecoveryTest } from './entities/recovery-test.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([BackupLog, RecoveryTest]), ScheduleModule.forRoot()],
+  imports: [
+    TypeOrmModule.forFeature([BackupLog, RecoveryTest]),
+    ScheduleModule.forRoot(),
+    NotificationsModule,
+  ],
   controllers: [BackupController],
   providers: [
     BackupService,

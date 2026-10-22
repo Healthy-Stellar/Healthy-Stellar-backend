@@ -9,7 +9,7 @@ import {
   Provider,
   MedicalRecord,
   SuspiciousAccessEvent,
-} from '../../Email Notification Service for Critical Access Events/mail.service';
+} from '../../email-notification-service-for-critical-access-events/mail.service';
 
 /**
  * Wrapper around MailService that adds circuit breaker protection

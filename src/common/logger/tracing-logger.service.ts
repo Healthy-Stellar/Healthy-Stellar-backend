@@ -22,22 +22,32 @@ export class TracingLogger implements LoggerService {
   }
 
   log(message: any, ...optionalParams: any[]) {
-    console.log(this.formatMessage(message), ...optionalParams);
+    const pino = require('pino');
+    const logger = pino();
+    logger.info(this.formatMessage(message), optionalParams);
   }
 
   error(message: any, ...optionalParams: any[]) {
-    console.error(this.formatMessage(message), ...optionalParams);
+    const pino = require('pino');
+    const logger = pino();
+    logger.error(this.formatMessage(message), optionalParams);
   }
 
   warn(message: any, ...optionalParams: any[]) {
-    console.warn(this.formatMessage(message), ...optionalParams);
+    const pino = require('pino');
+    const logger = pino();
+    logger.warn(this.formatMessage(message), optionalParams);
   }
 
   debug(message: any, ...optionalParams: any[]) {
-    console.debug(this.formatMessage(message), ...optionalParams);
+    const pino = require('pino');
+    const logger = pino();
+    logger.debug(this.formatMessage(message), optionalParams);
   }
 
   verbose(message: any, ...optionalParams: any[]) {
-    console.log(this.formatMessage(message), ...optionalParams);
+    const pino = require('pino');
+    const logger = pino();
+    logger.info(this.formatMessage(message), optionalParams);
   }
 }

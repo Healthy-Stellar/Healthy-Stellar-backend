@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PaymentService } from './payment.service';
+import { InvoicePdfService } from './invoice-pdf.service';
 import { Payment } from '../entities/payment.entity';
 import { Billing } from '../entities/billing.entity';
 import { BillingLineItem } from '../entities/billing-line-item.entity';
@@ -32,10 +33,18 @@ describe('PaymentService', () => {
     save: jest.fn(),
   };
 
+  const mockInvoicePdfService = {
+    sendInvoiceEmail: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PaymentService,
+        {
+          provide: InvoicePdfService,
+          useValue: mockInvoicePdfService,
+        },
         {
           provide: getRepositoryToken(Payment),
           useValue: mockPaymentRepository,

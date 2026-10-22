@@ -24,6 +24,7 @@ export const SUPPORTED_CONFIG_KEYS = {
   SESSION_TIMEOUT_MINUTES: 'session_timeout_minutes',
   PASSWORD_EXPIRATION_DAYS: 'password_expiration_days',
   MAX_LOGIN_ATTEMPTS: 'max_login_attempts',
+  IP_ALLOWLIST: 'ip_allowlist',
 
   // Data Retention
   MEDICAL_RECORD_RETENTION_DAYS: 'medical_record_retention_days',
@@ -32,6 +33,15 @@ export const SUPPORTED_CONFIG_KEYS = {
   // Integration Settings
   HL7_INTEGRATION_ENABLED: 'hl7_integration_enabled',
   DICOM_INTEGRATION_ENABLED: 'dicom_integration_enabled',
+
+  // Branding
+  BRANDING_LOGO_URL: 'branding_logo_url',
+  BRANDING_PRIMARY_COLOR: 'branding_primary_color',
+  BRANDING_SECONDARY_COLOR: 'branding_secondary_color',
+  BRANDING_CUSTOM_DOMAIN: 'branding_custom_domain',
+  BRANDING_SUPPORT_EMAIL: 'branding_support_email',
+  BRANDING_SUPPORT_PHONE: 'branding_support_phone',
+  BRANDING_ORGANIZATION_NAME: 'branding_organization_name',
 } as const;
 
 /**
@@ -52,6 +62,7 @@ export const DEFAULT_CONFIG_VALUES: Record<string, any> = {
   [SUPPORTED_CONFIG_KEYS.SESSION_TIMEOUT_MINUTES]: 15,
   [SUPPORTED_CONFIG_KEYS.PASSWORD_EXPIRATION_DAYS]: 90,
   [SUPPORTED_CONFIG_KEYS.MAX_LOGIN_ATTEMPTS]: 5,
+  [SUPPORTED_CONFIG_KEYS.IP_ALLOWLIST]: [], // Empty array = no restriction
   [SUPPORTED_CONFIG_KEYS.MEDICAL_RECORD_RETENTION_DAYS]: 2555,
   [SUPPORTED_CONFIG_KEYS.BACKUP_RETENTION_DAYS]: 90,
   [SUPPORTED_CONFIG_KEYS.HL7_INTEGRATION_ENABLED]: false,

@@ -51,6 +51,15 @@ function maxSeverity(
 export class DrugInteractionService {
   private readonly logger = new Logger(DrugInteractionService.name);
 
+  // ─── Circuit breaker for the external OpenFDA API ──────────────────────────
+  // Protects prescription creation from a slow/down external dependency: after
+  // CB_THRESHOLD consecutive failures the circuit opens for CB_COOLDOWN_MS,
+  // during which OpenFDA lookups are skipped (local checks still run).
+  private cbConsecutiveFailures = 0;
+  private cbOpenUntil = 0;
+  private readonly CB_THRESHOLD = 3;
+  private readonly CB_COOLDOWN_MS = 30_000;
+
   constructor(
     @InjectRepository(DrugInteraction)
     private readonly interactionRepo: Repository<DrugInteraction>,
@@ -177,6 +186,13 @@ export class DrugInteractionService {
   // relations. Falls back gracefully on network errors.
 
   private async queryOpenFda(drugIds: string[]): Promise<InteractionWarning[]> {
+    // Circuit breaker open — skip the external call entirely so a downed API
+    // never blocks or slows prescription creation.
+    if (Date.now() < this.cbOpenUntil) {
+      this.logger.warn('OpenFDA circuit breaker open — skipping external interaction lookup');
+      return [];
+    }
+
     // Load drug names so we can query OpenFDA by generic name
     const drugs = await this.interactionRepo.manager
       .getRepository('Drug')
@@ -191,6 +207,7 @@ export class DrugInteractionService {
         const name = encodeURIComponent(drug.genericName ?? drug.name);
         const url = `https://api.fda.gov/drug/label.json?search=drug_interactions:"${name}"&limit=1`;
         const resp = await firstValueFrom(this.httpService.get(url, { timeout: 5000 }));
+        this.recordOpenFdaSuccess();
         const results: any[] = resp.data?.results ?? [];
 
         for (const label of results) {
@@ -218,11 +235,28 @@ export class DrugInteractionService {
           }
         }
       } catch (err) {
+        this.recordOpenFdaFailure();
         this.logger.warn(`OpenFDA query failed for ${drug.name}: ${err.message}`);
+        // If the breaker just tripped, stop hammering the dependency for this batch.
+        if (Date.now() < this.cbOpenUntil) break;
       }
     }
 
     return warnings;
+  }
+
+  private recordOpenFdaSuccess(): void {
+    this.cbConsecutiveFailures = 0;
+  }
+
+  private recordOpenFdaFailure(): void {
+    this.cbConsecutiveFailures += 1;
+    if (this.cbConsecutiveFailures >= this.CB_THRESHOLD) {
+      this.cbOpenUntil = Date.now() + this.CB_COOLDOWN_MS;
+      this.logger.error(
+        `OpenFDA circuit breaker opened for ${this.CB_COOLDOWN_MS}ms after ${this.cbConsecutiveFailures} consecutive failures`,
+      );
+    }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

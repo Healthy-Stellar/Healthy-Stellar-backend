@@ -6,6 +6,7 @@ import {
   IsEmail,
   IsArray,
   IsUUID,
+  IsObject,
   Length,
   MaxLength,
 } from 'class-validator';
@@ -95,4 +96,11 @@ export class CreatePatientDto {
   @IsOptional()
   @IsString()
   nationalIdType?: string; // Passport, SSN, NIN
+
+  // -----------------------------
+  // Tenant-specific extended attributes
+  // -----------------------------
+  @IsOptional()
+  @IsObject()
+  customFields?: Record<string, string>;
 }

@@ -2,28 +2,24 @@ import { Resolver, Query, Args, ID } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { Provider } from '../types/provider.type';
 import { GqlAuthGuard } from '../guards/gql-auth.guard';
-
-interface ProviderService {
-  findOne(id: string): Promise<Provider | null>;
-  findAll(args: { limit: number; offset: number }): Promise<Provider[]>;
-}
+import { UsersService } from '../../users/users.service';
 
 @Resolver(() => Provider)
 @UseGuards(GqlAuthGuard)
 export class ProviderResolver {
-  constructor() // TODO: inject actual service
-  // private readonly providerService: ProviderService,
-  {}
+  constructor(private readonly usersService: UsersService) {}
 
   @Query(() => Provider, { nullable: true })
   async provider(@Args('id', { type: () => ID }) id: string): Promise<Provider | null> {
-    // TODO: return this.providerService.findOne(id);
+    const user = await this.usersService.findOne(id);
+    if (!user) return null;
     return {
-      id,
-      address: `stub-address-${id}`,
-      name: 'Stub Provider',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      id: user.id,
+      address: (user as any).address ?? '',
+      name: `${user.firstName} ${user.lastName}`,
+      specialty: (user as any).specialization,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
     };
   }
 
@@ -32,7 +28,14 @@ export class ProviderResolver {
     @Args('limit', { defaultValue: 20 }) limit: number,
     @Args('offset', { defaultValue: 0 }) offset: number,
   ): Promise<Provider[]> {
-    // TODO: return this.providerService.findAll({ limit, offset });
-    return [];
+    const users = await this.usersService.findAll();
+    return users.slice(offset, offset + limit).map((user) => ({
+      id: user.id,
+      address: (user as any).address ?? '',
+      name: `${user.firstName} ${user.lastName}`,
+      specialty: (user as any).specialization,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    }));
   }
 }

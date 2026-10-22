@@ -1,10 +1,21 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { randomUUID } from 'crypto';
+
+const RELEASE_SCRIPT = `
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('del', KEYS[1])
+else
+  return 0
+end
+`;
 
 @Injectable()
 export class RedisLockService implements OnModuleInit, OnModuleDestroy {
   private redis: Redis;
+  private logger = new Logger(RedisLockService.name);
+  private readonly tokens = new Map<string, string>();
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -16,9 +27,9 @@ export class RedisLockService implements OnModuleInit, OnModuleDestroy {
       db: this.configService.get('REDIS_DB', 0),
       maxRetriesPerRequest: null,
       retryStrategy: (times: number) => {
-        console.error(`[Redis Lock] Connection attempt ${times} failed.`);
+        this.logger.error(`[Redis Lock] Connection attempt ${times} failed.`);
         if (times >= 10) {
-          console.error(`[Redis Lock] Max connection retries (10) exhausted. Exiting...`);
+          this.logger.error(`[Redis Lock] Max connection retries (10) exhausted. Exiting...`);
           process.exit(1);
         }
         return 3000;
@@ -33,11 +44,24 @@ export class RedisLockService implements OnModuleInit, OnModuleDestroy {
   }
 
   async acquireLock(key: string, ttlMs: number): Promise<boolean> {
-    const result = await this.redis.set(key, '1', 'PX', ttlMs, 'NX');
-    return result === 'OK';
+    const token = randomUUID();
+    const result = await this.redis.set(key, token, 'PX', ttlMs, 'NX');
+    if (result === 'OK') {
+      this.tokens.set(key, token);
+      return true;
+    }
+    return false;
   }
 
   async releaseLock(key: string): Promise<void> {
-    await this.redis.del(key);
+    const token = this.tokens.get(key);
+    if (!token) {
+      return;
+    }
+    try {
+      await this.redis.eval(RELEASE_SCRIPT, 1, key, token);
+    } finally {
+      this.tokens.delete(key);
+    }
   }
 }

@@ -28,6 +28,16 @@ export class GdprRequest {
   @Index()
   userId: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  @Index()
+  patientId: string;
+
+  @Column({ nullable: true })
+  requestorIdentity: string;
+
+  @Column({ nullable: true })
+  tenantId: string;
+
   @Column({
     type: 'enum',
     enum: GdprRequestType,

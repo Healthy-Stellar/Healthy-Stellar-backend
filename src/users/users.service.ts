@@ -3,16 +3,17 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { User } from './entities/user.entity';
+import { User, UserStatus } from '../auth/entities/user.entity';
 import { Patient } from './entities/patient.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { MedicalRole, UserStatus } from './enums/medical-role.enum';
+import { MedicalRole } from './enums/medical-role.enum';
 
 @Injectable()
 export class UsersService {
@@ -36,7 +37,7 @@ export class UsersService {
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
     const user = this.usersRepository.create({
       ...createUserDto,
-      password: hashedPassword,
+      passwordHash: hashedPassword,
       status: UserStatus.PENDING_VERIFICATION,
     });
 
@@ -52,7 +53,7 @@ export class UsersService {
     const hashedPassword = await bcrypt.hash(createPatientDto.password, 10);
     const user = this.usersRepository.create({
       email: createPatientDto.email,
-      password: hashedPassword,
+      passwordHash: hashedPassword,
       firstName: createPatientDto.firstName,
       lastName: createPatientDto.lastName,
       role: MedicalRole.PATIENT,
@@ -94,11 +95,28 @@ export class UsersService {
     return this.usersRepository.save(user);
   }
 
-  async updateUser(userId: string, updateUserDto: UpdateUserDto): Promise<User> {
+  async updateUser(
+    userId: string,
+    updateUserDto: UpdateUserDto,
+    requester?: { id: string; role: MedicalRole },
+  ): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    Object.assign(user, updateUserDto);
+    if (requester && requester.role !== MedicalRole.ADMIN && requester.id !== userId) {
+      throw new ForbiddenException('You can only update your own profile');
+    }
+
+    if (updateUserDto.firstName !== undefined) user.firstName = updateUserDto.firstName;
+    if (updateUserDto.lastName !== undefined) user.lastName = updateUserDto.lastName;
+    if (updateUserDto.displayName !== undefined) user.displayName = updateUserDto.displayName;
+    if (updateUserDto.country !== undefined) user.country = updateUserDto.country;
+    if (updateUserDto.isAcceptingPatients !== undefined) user.isAcceptingPatients = updateUserDto.isAcceptingPatients;
+    if (updateUserDto.medicalLicenseNumber !== undefined) user.licenseNumber = updateUserDto.medicalLicenseNumber;
+    if (updateUserDto.licenseExpiryDate !== undefined) user.licenseExpiryDate = new Date(updateUserDto.licenseExpiryDate);
+    if (updateUserDto.specialization !== undefined) user.specialization = updateUserDto.specialization;
+    if (updateUserDto.department !== undefined) user.department = updateUserDto.department;
+
     return this.usersRepository.save(user);
   }
 
@@ -109,7 +127,14 @@ export class UsersService {
       .getMany();
   }
 
-  async findOne(id: string): Promise<User> {
+  async findOne(
+    id: string,
+    requester?: { id: string; role: MedicalRole },
+  ): Promise<User> {
+    if (requester && requester.role !== MedicalRole.ADMIN && requester.id !== id) {
+      throw new ForbiddenException('You can only view your own profile');
+    }
+
     const user = await this.usersRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.patientProfile', 'patientProfile')
@@ -122,6 +147,22 @@ export class UsersService {
 
   async findByEmail(email: string): Promise<User> {
     return this.usersRepository.findOne({ where: { email } });
+  }
+
+  async findByStellarAddress(stellarAddress: string): Promise<User | null> {
+    if (!stellarAddress) return null;
+    return this.usersRepository.findOne({ where: { stellarAddress } });
+  }
+
+  async resolveUserIdsByStellarAddresses(stellarAddresses: string[]): Promise<string[]> {
+    if (!stellarAddresses || stellarAddresses.length === 0) return [];
+
+    const users = await this.usersRepository
+      .createQueryBuilder('user')
+      .where('user.stellarAddress IN (:...stellarAddresses)', { stellarAddresses })
+      .getMany();
+
+    return users.map((user) => user.id);
   }
 
   private async generateUniqueMRN(): Promise<string> {

@@ -4,8 +4,11 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
   Index,
 } from 'typeorm';
+import { LabOrder } from './lab-order.entity';
 
 @Entity('specimens')
 export class Specimen {
@@ -19,6 +22,10 @@ export class Specimen {
   @Column()
   @Index()
   orderId: string;
+
+  @ManyToOne(() => LabOrder, (order) => order.specimens, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'orderId' })
+  order: LabOrder;
 
   @Column()
   patientId: string;

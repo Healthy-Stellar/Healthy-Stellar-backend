@@ -33,6 +33,13 @@ export class Record {
   @Column({ type: 'timestamp with time zone', nullable: true })
   deletedOnChainAt: Date | null;
 
+  /**
+   * Number of times ledger reconciliation has re-queued the Stellar anchor
+   * for this record. Guards against unbounded re-queue loops.
+   */
+  @Column({ type: 'int', default: 0 })
+  reconciliationAttempts: number;
+
   @CreateDateColumn()
   createdAt: Date;
 }

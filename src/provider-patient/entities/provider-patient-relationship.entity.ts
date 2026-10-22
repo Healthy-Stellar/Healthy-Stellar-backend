@@ -1,30 +1,43 @@
 import {
-  Entity,
   Column,
   CreateDateColumn,
-  UpdateDateColumn,
+  Entity,
   PrimaryGeneratedColumn,
-  Index,
-  Unique,
+  UpdateDateColumn,
 } from 'typeorm';
 
+export enum ProviderPatientRelationshipStatus {
+  ACTIVE = 'active',
+  TERMINATED = 'terminated',
+}
+
 @Entity('provider_patient_relationships')
-@Unique(['providerId', 'patientId'])
-@Index('IDX_PPR_PROVIDER', ['providerId'])
-@Index('IDX_PPR_PATIENT', ['patientId'])
 export class ProviderPatientRelationship {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column()
-  providerId: string;
+  providerAddress: string;
 
   @Column()
-  patientId: string;
+  patientAddress: string;
+
+  @Column({ default: 1 })
+  recordCount: number;
+
+  @Column({
+    type: 'enum',
+    enum: ProviderPatientRelationshipStatus,
+    default: ProviderPatientRelationshipStatus.ACTIVE,
+  })
+  status: ProviderPatientRelationshipStatus;
+
+  @Column({ type: 'timestamp', nullable: true })
+  terminatedAt: Date | null;
 
   @CreateDateColumn()
-  firstInteractionAt: Date;
+  createdAt: Date;
 
-  @Column({ type: 'int', default: 1 })
-  recordCount: number;
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

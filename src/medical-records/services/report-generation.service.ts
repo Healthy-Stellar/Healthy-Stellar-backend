@@ -32,6 +32,14 @@ export class ReportGenerationService {
       jobId: job.id,
       patientId,
       format,
+    }, {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5_000 },
+      // Hard timeout: kill the job if it runs longer than 10 minutes.
+      // This prevents a single runaway report from blocking the worker indefinitely.
+      timeout: 10 * 60 * 1000,
+      removeOnComplete: true,
+      removeOnFail: false, // keep for DLQ capture
     });
 
     this.logger.log(`Report generation queued: ${job.id}`);

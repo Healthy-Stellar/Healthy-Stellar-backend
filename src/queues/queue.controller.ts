@@ -7,13 +7,18 @@ import {
   NotFoundException,
   UseGuards,
   Logger,
+  Sse,
+  MessageEvent,
 } from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../common/constants/swagger.constants';
 import { QueueService } from './queue.service';
 import { JobStatusResponse, JobNotFoundResponse } from './dto/job-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -32,7 +37,7 @@ export class QueueController {
   @Get(':jobId')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('access-token')
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({
     summary: 'Get job status by job ID',
     description:
@@ -72,13 +77,33 @@ export class QueueController {
   }
 
   /**
+   * Subscribe to job status updates (Server-Sent Events)
+   */
+  @Sse(':jobId/stream')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+  @ApiOperation({
+    summary: 'Stream job status updates (SSE)',
+    description:
+      'Opens a Server-Sent Events stream for real-time updates on a job\'s lifecycle.',
+  })
+  streamJobStatus(@Param('jobId') jobId: string): Observable<MessageEvent> {
+    this.logger.debug(`Streaming job status for: ${jobId}`);
+    return this.queueService.subscribeToJob(jobId).pipe(
+      map((status) => ({
+        data: this.formatStatusResponse(status),
+      } as MessageEvent)),
+    );
+  }
+
+  /**
    * Get job status by correlation ID (for backward compatibility)
    * Searches all queues for a job matching the correlation ID
    */
   @Get('correlation/:correlationId')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('access-token')
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({
     summary: 'Get job status by correlation ID',
     description:

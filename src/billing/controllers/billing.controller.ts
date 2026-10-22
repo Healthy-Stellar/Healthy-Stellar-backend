@@ -9,7 +9,12 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  DefaultValuePipe,
+  ParseIntPipe,
+  Res,
+  UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -19,7 +24,13 @@ import {
   ApiBearerAuth,
   ApiBody,
 } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 import { BillingService } from '../services/billing.service';
+import { InvoicePdfService } from '../services/invoice-pdf.service';
 import {
   CreateBillingDto,
   UpdateBillingDto,
@@ -28,10 +39,45 @@ import {
 } from '../dto/billing.dto';
 
 @ApiTags('Billing & Invoicing')
-@ApiBearerAuth('medical-auth')
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 @Controller('billing')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.BILLING_STAFF)
 export class BillingController {
-  constructor(private readonly billingService: BillingService) {}
+  constructor(
+    private readonly billingService: BillingService,
+    private readonly invoicePdfService: InvoicePdfService,
+  ) {}
+
+  @Get('invoices/:id/pdf')
+  @ApiOperation({
+    summary: 'Download invoice PDF',
+    description:
+      'Generate and stream a structured patient invoice PDF (itemised charges, tax, total, payment reference).',
+  })
+  @ApiParam({ name: 'id', description: 'Billing record UUID' })
+  @ApiResponse({ status: 200, description: 'Invoice PDF stream' })
+  @ApiResponse({ status: 404, description: 'Billing invoice not found' })
+  async getInvoicePdf(@Param('id') id: string, @Res() res: Response) {
+    const pdf = await this.invoicePdfService.generateInvoicePdf(id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="invoice-${id}.pdf"`,
+      'Content-Length': pdf.length,
+    });
+    res.end(pdf);
+  }
+
+  @Get('invoices/:id/pdf-link')
+  @ApiOperation({
+    summary: 'Get signed invoice PDF download link',
+    description: 'Persist the invoice PDF to file storage and return a time-limited signed URL.',
+  })
+  @ApiParam({ name: 'id', description: 'Billing record UUID' })
+  @ApiResponse({ status: 200, description: 'Signed download URL generated' })
+  async getInvoicePdfLink(@Param('id') id: string) {
+    return this.invoicePdfService.storeInvoicePdf(id);
+  }
 
   @Post()
   @ApiOperation({
@@ -119,8 +165,8 @@ export class BillingController {
   })
   async findByPatientId(
     @Param('patientId') patientId: string,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
   ) {
     return this.billingService.findByPatientId(patientId, { page, limit });
   }

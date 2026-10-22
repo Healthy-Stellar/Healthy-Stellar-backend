@@ -25,3 +25,6 @@ export {
   AxiosRequestConfig,
   AxiosResponse,
 } from 'axios';
+
+// Export GraphQL TypeScript types (auto-generated from schema.graphql)
+export * from './graphql';

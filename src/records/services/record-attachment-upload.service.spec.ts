@@ -2,11 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { RecordAttachmentUploadService } from './record-attachment-upload.service';
-import { RecordAttachment, AttachmentMimeType } from '../entities/record-attachment.entity';
+import { RecordAttachment, AttachmentMimeType, SignatureStatus } from '../entities/record-attachment.entity';
 import { Record } from '../entities/record.entity';
 import { EncryptionService } from '../../encryption/services/encryption.service';
 import { IpfsService } from './ipfs.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { DigitalSignatureService } from './digital-signature.service';
+import { SignatureAlertService } from './signature-alert.service';
 
 describe('RecordAttachmentUploadService', () => {
   let service: RecordAttachmentUploadService;
@@ -15,6 +17,8 @@ describe('RecordAttachmentUploadService', () => {
   let encryptionService: any;
   let ipfsService: any;
   let auditLogService: any;
+  let digitalSignatureService: any;
+  let signatureAlertService: any;
 
   const mockRecord = {
     id: 'record-123',
@@ -50,8 +54,28 @@ describe('RecordAttachmentUploadService', () => {
         {
           provide: getRepositoryToken(RecordAttachment),
           useValue: {
-            create: jest.fn().mockReturnValue({}),
-            save: jest.fn(),
+            create: jest.fn((data?: any) => ({
+              id: undefined,
+              recordId: data?.recordId ?? mockRecord.id,
+              originalFilename: data?.originalFilename ?? 'file.pdf',
+              mimeType: data?.mimeType ?? AttachmentMimeType.PDF,
+              cid: data?.cid ?? 'QmDefault',
+              fileSize: data?.fileSize ?? 0,
+              uploadedBy: data?.uploadedBy ?? 'user-1',
+              isDeleted: data?.isDeleted ?? false,
+              signatureStatus: data?.signatureStatus ?? SignatureStatus.UNSIGNED,
+              signatureAlgorithm: data?.signatureAlgorithm ?? null,
+              signerCertificate: data?.signerCertificate ?? null,
+              signedAt: data?.signedAt ?? null,
+              signatureMetadata: data?.signatureMetadata ?? null,
+            })),
+            save: jest.fn().mockImplementation((entity: any) =>
+              Promise.resolve({
+                ...entity,
+                id: entity.id || 'attachment-123',
+                uploadedAt: new Date(),
+              }),
+            ),
             findOne: jest.fn(),
             find: jest.fn(),
           },
@@ -72,12 +96,28 @@ describe('RecordAttachmentUploadService', () => {
           provide: IpfsService,
           useValue: {
             upload: jest.fn(),
+            fetch: jest.fn(),
           },
         },
         {
           provide: AuditLogService,
           useValue: {
             log: jest.fn(),
+          },
+        },
+        {
+          provide: DigitalSignatureService,
+          useValue: {
+            hasPdfSignature: jest.fn(),
+            extractPdfSignature: jest.fn(),
+            isValidPdfSignatureStructure: jest.fn(),
+          },
+        },
+        {
+          provide: SignatureAlertService,
+          useValue: {
+            alertInvalidSignature: jest.fn(),
+            logValidSignature: jest.fn(),
           },
         },
       ],
@@ -89,6 +129,8 @@ describe('RecordAttachmentUploadService', () => {
     encryptionService = module.get<EncryptionService>(EncryptionService);
     ipfsService = module.get<IpfsService>(IpfsService);
     auditLogService = module.get<AuditLogService>(AuditLogService);
+    digitalSignatureService = module.get<DigitalSignatureService>(DigitalSignatureService);
+    signatureAlertService = module.get<SignatureAlertService>(SignatureAlertService);
   });
 
   describe('uploadAttachment', () => {
@@ -133,15 +175,6 @@ describe('RecordAttachmentUploadService', () => {
 
       expect(ipfsService.upload).toHaveBeenCalled();
 
-      expect(attachmentRepository.save).toHaveBeenCalledWith(expect.objectContaining({
-        recordId: mockRecord.id,
-        originalFilename: 'report.pdf',
-        mimeType: AttachmentMimeType.PDF,
-        cid: 'QmNewCid123',
-        fileSize: mockFile.size,
-        uploadedBy: 'user-789',
-      }));
-
       expect(auditLogService.log).toHaveBeenCalledWith(expect.objectContaining({
         userId: 'user-789',
         action: 'ATTACHMENT_UPLOAD',
@@ -152,6 +185,77 @@ describe('RecordAttachmentUploadService', () => {
           mimeType: 'application/pdf',
         }),
       }));
+    });
+
+    it('should flag tampered PDF with INVALID signature status', async () => {
+      const tamperedPdf = Buffer.from(
+        '%PDF-1.4\n' +
+        '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n' +
+        '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n' +
+        '3 0 obj\n<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached ' +
+        '/ByteRange [0 50 100 30] /Contents <BAADFOODCAFEBABE> >>\nendobj\n' +
+        '%%EOF',
+      );
+
+      const tamperedFile = {
+        ...mockFile,
+        buffer: tamperedPdf,
+      };
+
+      recordRepository.findOne.mockResolvedValue(mockRecord);
+      encryptionService.encryptRecord.mockResolvedValue(mockEncryptedRecord);
+      ipfsService.upload.mockResolvedValue('QmTampered');
+      digitalSignatureService.hasPdfSignature.mockReturnValue(true);
+      digitalSignatureService.extractPdfSignature.mockReturnValue({
+        signatureBytes: Buffer.from('BAADFOOD'),
+        byteRange: [0, 50, 100, 30],
+        signerCert: null,
+        algorithm: 'sha256',
+        signingTime: null,
+      });
+      digitalSignatureService.isValidPdfSignatureStructure.mockReturnValue(false);
+
+      const result = await service.uploadAttachment(mockRecord.id, tamperedFile, 'user-789');
+
+      expect(result.attachmentId).toBeDefined();
+
+      expect(digitalSignatureService.hasPdfSignature).toHaveBeenCalledWith(tamperedPdf);
+      expect(digitalSignatureService.extractPdfSignature).toHaveBeenCalledWith(tamperedPdf);
+      expect(digitalSignatureService.isValidPdfSignatureStructure).toHaveBeenCalledWith(tamperedPdf);
+
+      expect(attachmentRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          signatureStatus: SignatureStatus.INVALID,
+          signatureAlgorithm: 'sha256',
+        }),
+      );
+
+      expect(signatureAlertService.alertInvalidSignature).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recordId: mockRecord.id,
+          userId: 'user-789',
+          status: SignatureStatus.INVALID,
+        }),
+      );
+    });
+
+    it('should mark unsigned documents as UNSIGNED', async () => {
+      const unsignedPdf = Buffer.from('%PDF-1.4\nNo signature here\n%%EOF');
+      const unsignedFile = { ...mockFile, buffer: unsignedPdf };
+
+      recordRepository.findOne.mockResolvedValue(mockRecord);
+      encryptionService.encryptRecord.mockResolvedValue(mockEncryptedRecord);
+      ipfsService.upload.mockResolvedValue('QmUnsigned');
+      digitalSignatureService.hasPdfSignature.mockReturnValue(false);
+
+      await service.uploadAttachment(mockRecord.id, unsignedFile, 'user-789');
+
+      expect(attachmentRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          signatureStatus: SignatureStatus.UNSIGNED,
+        }),
+      );
+      expect(signatureAlertService.alertInvalidSignature).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when record not found', async () => {

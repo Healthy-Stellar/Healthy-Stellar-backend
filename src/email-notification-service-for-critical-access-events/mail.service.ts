@@ -1,0 +1,230 @@
+// src/mail/mail.service.ts
+import { Injectable, Logger } from '@nestjs/common';
+import { MailerService } from '@nestjs-modules/mailer';
+import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
+import { CircuitBreakerService } from '../common/circuit-breaker/circuit-breaker.service';
+
+export interface Patient {
+  id: string;
+  email: string;
+  name: string;
+  unsubscribeToken?: string;
+}
+
+export interface Provider {
+  id: string;
+  name: string;
+  email: string;
+  specialty?: string;
+}
+
+export interface MedicalRecord {
+  id: string;
+  title: string;
+  uploadedAt: Date;
+  type?: string;
+}
+
+export interface SuspiciousAccessEvent {
+  accessedAt: Date;
+  ipAddress: string;
+  location?: string;
+  accessorName: string;
+}
+
+export interface DigestSummary {
+  accessGrantedCount: number;
+  accessRevokedCount: number;
+  recordUploadedCount: number;
+  totalEvents: number;
+}
+
+@Injectable()
+export class MailService {
+  private readonly logger = new Logger(MailService.name);
+  private readonly isTestEnv: boolean;
+  private readonly appUrl: string;
+
+  constructor(
+    private readonly mailerService: MailerService,
+    private readonly configService: ConfigService,
+    private readonly circuitBreaker: CircuitBreakerService,
+  ) {
+    this.isTestEnv = configService.get('NODE_ENV') === 'test';
+    this.appUrl = configService.get('APP_URL', 'http://localhost:3000');
+  }
+
+  /**
+   * Generates or returns existing unsubscribe token for patient
+   */
+  private generateUnsubscribeToken(patient: Patient): string {
+    if (patient.unsubscribeToken) return patient.unsubscribeToken;
+    return crypto
+      .createHmac('sha256', this.configService.get('UNSUBSCRIBE_SECRET', 'secret'))
+      .update(patient.id)
+      .digest('hex');
+  }
+
+  private buildUnsubscribeUrl(patient: Patient): string {
+    const token = this.generateUnsubscribeToken(patient);
+    return `${this.appUrl}/notifications/unsubscribe?token=${token}&patientId=${patient.id}`;
+  }
+
+  async sendAccessGrantedEmail(
+    patient: Patient,
+    grantee: Provider,
+    record: MedicalRecord,
+    language: string = 'en',
+  ): Promise<void> {
+    const template = `access-granted/access-granted.${language}`;
+    const subject = `Access Granted: ${grantee.name} can now view your records`;
+
+    if (this.isTestEnv) {
+      this.logger.log(`[TEST] Would send '${subject}' to ${patient.email}`, {
+        patient,
+        grantee,
+        record,
+      });
+      return;
+    }
+
+    await this.circuitBreaker.execute('mail', async () => {
+      await this.mailerService.sendMail({
+        to: patient.email,
+        subject,
+        template,
+        context: {
+          patientName: patient.name,
+          granteeName: grantee.name,
+          granteeSpecialty: grantee.specialty,
+          recordTitle: record.title,
+          recordType: record.type,
+          grantedAt: new Date().toLocaleDateString(),
+          unsubscribeUrl: this.buildUnsubscribeUrl(patient),
+          appUrl: this.appUrl,
+        },
+      });
+    });
+  }
+
+  async sendAccessRevokedEmail(
+    patient: Patient,
+    revokee: Provider,
+    record: MedicalRecord,
+    language: string = 'en',
+  ): Promise<void> {
+    const subject = `Access Revoked: ${revokee.name} no longer has access to your records`;
+
+    if (this.isTestEnv) {
+      this.logger.log(`[TEST] Would send '${subject}' to ${patient.email}`);
+      return;
+    }
+
+    await this.circuitBreaker.execute('mail', async () => {
+      await this.mailerService.sendMail({
+        to: patient.email,
+        subject,
+        template: `access-revoked/access-revoked.${language}`,
+        context: {
+          patientName: patient.name,
+          granteeName: revokee.name,
+          recordTitle: record.title,
+          revokedAt: new Date().toLocaleDateString(),
+          unsubscribeUrl: this.buildUnsubscribeUrl(patient),
+          appUrl: this.appUrl,
+        },
+      });
+    });
+  }
+
+  async sendRecordUploadedEmail(
+    patient: Patient,
+    record: MedicalRecord,
+    uploadedBy?: Provider,
+    language: string = 'en',
+  ): Promise<void> {
+    const subject = `New Record Available: ${record.title}`;
+
+    if (this.isTestEnv) {
+      this.logger.log(`[TEST] Would send '${subject}' to ${patient.email}`);
+      return;
+    }
+
+    await this.circuitBreaker.execute('mail', async () => {
+      await this.mailerService.sendMail({
+        to: patient.email,
+        subject,
+        template: `record-uploaded/record-uploaded.${language}`,
+        context: {
+          patientName: patient.name,
+          recordTitle: record.title,
+          recordType: record.type,
+          uploadedBy: uploadedBy?.name ?? 'Your care team',
+          uploadedAt: record.uploadedAt.toLocaleDateString(),
+          viewRecordUrl: `${this.appUrl}/records/${record.id}`,
+          unsubscribeUrl: this.buildUnsubscribeUrl(patient),
+          appUrl: this.appUrl,
+        },
+      });
+    });
+  }
+
+  async sendDigestEmail(
+    patient: Patient,
+    summary: DigestSummary,
+    language: string = 'en',
+  ): Promise<void> {
+    const subject = `Your Health Record Activity Summary (${summary.totalEvents} update${summary.totalEvents === 1 ? '' : 's'})`;
+
+    if (this.isTestEnv) {
+      this.logger.log(`[TEST] Would send '${subject}' to ${patient.email}`, { patient, summary });
+      return;
+    }
+
+    await this.circuitBreaker.execute('mail', async () => {
+      await this.mailerService.sendMail({
+        to: patient.email,
+        subject,
+        template: `digest/digest.${language}`,
+        context: {
+          patientName: patient.name,
+          ...summary,
+          unsubscribeUrl: this.buildUnsubscribeUrl(patient),
+          appUrl: this.appUrl,
+        },
+      });
+    });
+  }
+
+  async sendSuspiciousAccessEmail(
+    patient: Patient,
+    event: SuspiciousAccessEvent,
+    language: string = 'en',
+  ): Promise<void> {
+    const subject = '⚠️ Suspicious Access Detected on Your Health Records';
+
+    if (this.isTestEnv) {
+      this.logger.log(`[TEST] Would send '${subject}' to ${patient.email}`);
+      return;
+    }
+
+    await this.circuitBreaker.execute('mail', async () => {
+      await this.mailerService.sendMail({
+        to: patient.email,
+        subject,
+        template: `suspicious-access/suspicious-access.${language}`,
+        context: {
+          patientName: patient.name,
+          accessorName: event.accessorName,
+          accessedAt: event.accessedAt.toLocaleString(),
+          ipAddress: event.ipAddress,
+          location: event.location ?? 'Unknown',
+          reportUrl: `${this.appUrl}/security/report`,
+          unsubscribeUrl: this.buildUnsubscribeUrl(patient),
+          appUrl: this.appUrl,
+        },
+      });
+    });
+  }
+}

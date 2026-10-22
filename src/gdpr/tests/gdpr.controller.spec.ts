@@ -3,7 +3,10 @@ import { GdprController } from '../controllers/gdpr.controller';
 import { GdprService } from '../services/gdpr.service';
 import { ExecutionContext } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { GdprRequestType, GdprRequestStatus } from '../entities/gdpr-request.entity';
+import { ThrottlerBehindProxyGuard } from '../../common/throttler/throttler-behind-proxy.guard';
+import { GdprRequestType, GdprRequestStatus, GdprRequest } from '../entities/gdpr-request.entity';
+import { CreateErasureRequestDto } from '../dto/create-erasure-request.dto';
+import { getRepositoryToken } from '@nestjs/typeorm';
 
 describe('GdprController', () => {
   let controller: GdprController;
@@ -23,6 +26,10 @@ describe('GdprController', () => {
     getRequestsByUser: jest.fn().mockResolvedValue([{ id: '1' }]),
   };
 
+  const mockGdprRequestRepository = {
+    findOne: jest.fn().mockResolvedValue(null),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [GdprController],
@@ -31,9 +38,17 @@ describe('GdprController', () => {
           provide: GdprService,
           useValue: mockGdprService,
         },
+        {
+          provide: getRepositoryToken(GdprRequest),
+          useValue: mockGdprRequestRepository,
+        },
       ],
     })
       .overrideGuard(JwtAuthGuard)
+      .useValue({
+        canActivate: (context: ExecutionContext) => true,
+      })
+      .overrideGuard(ThrottlerBehindProxyGuard)
       .useValue({
         canActivate: (context: ExecutionContext) => true,
       })
@@ -59,8 +74,12 @@ describe('GdprController', () => {
   describe('requestErasure', () => {
     it('should call gdprService.createErasureRequest', async () => {
       const req = { user: { id: 'user1' } };
-      const res = await controller.requestErasure(req);
-      expect(mockGdprService.createErasureRequest).toHaveBeenCalledWith('user1');
+      const payload: CreateErasureRequestDto = {
+        patientId: 'patient-1',
+        requestorIdentity: 'operator-1',
+      };
+      const res = await controller.requestErasure(req, payload);
+      expect(mockGdprService.createErasureRequest).toHaveBeenCalledWith('user1', payload);
       expect(res.id).toEqual('2');
     });
   });

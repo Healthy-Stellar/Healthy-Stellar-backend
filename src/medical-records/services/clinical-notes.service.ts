@@ -1,11 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ClinicalNote } from '../entities/clinical-note.entity';
 import {
   CreateClinicalNoteDto,
   SearchClinicalNotesDto,
-  SignClinicalNoteDto,
   UpdateClinicalNoteDto,
 } from '../dto/clinical-note.dto';
 import { MedicalRecord } from '../entities/medical-record.entity';
@@ -54,7 +53,7 @@ export class ClinicalNotesService {
   async update(id: string, updateDto: UpdateClinicalNoteDto): Promise<ClinicalNote> {
     const note = await this.findById(id);
     if (note.isSigned) {
-      throw new BadRequestException('Signed notes cannot be modified');
+      throw new ConflictException('Signed notes are immutable and cannot be modified');
     }
     if (updateDto.medicalRecordId) {
       await this.assertMedicalRecordExists(updateDto.medicalRecordId);
@@ -69,7 +68,7 @@ export class ClinicalNotesService {
     return await this.clinicalNoteRepository.save(note);
   }
 
-  async sign(id: string, signDto: SignClinicalNoteDto): Promise<ClinicalNote> {
+  async sign(id: string, signedById: string): Promise<ClinicalNote> {
     const note = await this.findById(id);
     const completeness = this.checkCompleteness(note);
     if (!completeness.isComplete) {
@@ -79,7 +78,7 @@ export class ClinicalNotesService {
     }
 
     note.isSigned = true;
-    note.signedBy = signDto.signedBy;
+    note.signedBy = signedById;
     note.signedAt = new Date();
     return await this.clinicalNoteRepository.save(note);
   }

@@ -1,7 +1,9 @@
 import { ValueTransformer } from 'typeorm';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+import { Logger } from '@nestjs/common';
 
 export class EncryptionTransformer implements ValueTransformer {
+  private logger = new Logger(EncryptionTransformer.name);
   private readonly algorithm = 'aes-256-gcm';
   private readonly keyLength = 32;
   private readonly ivLength = 16;
@@ -32,7 +34,7 @@ export class EncryptionTransformer implements ValueTransformer {
       const result = Buffer.concat([salt, iv, tag, encrypted]);
       return result.toString('base64');
     } catch (error) {
-      console.error('[ENCRYPTION] Encryption failed:', error.message);
+      this.logger.error('[ENCRYPTION] Encryption failed:', error.message);
       return null;
     }
   }
@@ -59,7 +61,7 @@ export class EncryptionTransformer implements ValueTransformer {
 
       return decrypted.toString('utf8');
     } catch (error) {
-      console.error('[ENCRYPTION] Decryption failed:', error.message);
+      this.logger.error('[ENCRYPTION] Decryption failed:', error.message);
       return null;
     }
   }

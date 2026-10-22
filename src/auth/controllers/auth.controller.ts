@@ -11,6 +11,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
 import { Request } from 'express';
 import { AuthService, AuthResponse } from '../services/auth.service';
 import { MfaService } from '../services/mfa.service';
@@ -19,7 +20,7 @@ import { AuthTokenService } from '../services/auth-token.service';
 import { RefreshTokenStoreService } from '../services/refresh-token-store.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { JwtPayload } from '../services/auth-token.service';
-import { RegisterDto, LoginDto, ChangePasswordDto } from '../dto/auth.dto';
+import { RegisterDto, LoginDto, ChangePasswordDto, ResetPasswordDto, ResetPasswordConfirmDto } from '../dto/auth.dto';
 import { RefreshTokenDto } from '../dto/session.dto';
 import { User, UserRole } from '../entities/user.entity';
 import { AuthRateLimit } from '../../common/throttler/throttler.decorator';
@@ -150,7 +151,7 @@ export class AuthController {
    */
   @Delete('sessions')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({ summary: 'Revoke all sessions (logout everywhere)' })
   @ApiResponse({ status: 200, description: 'All sessions revoked' })
   async revokeAllSessionsDelete(@Req() req: Request): Promise<{ message: string }> {
@@ -165,6 +166,31 @@ export class AuthController {
       ),
     );
     return { message: 'All sessions revoked' };
+  }
+
+  /**
+   * Request password reset — sends token via email; silent on unknown email (enum protection)
+   */
+  @Post('forgot-password')
+  @AuthRateLimit()
+  @ApiOperation({ summary: 'Request a password reset email' })
+  @ApiResponse({ status: 200, description: 'Reset email sent if account exists' })
+  async forgotPassword(@Body() { email }: ResetPasswordDto): Promise<{ message: string }> {
+    await this.authService.forgotPassword(email);
+    return { message: 'If that email is registered, a reset link has been sent' };
+  }
+
+  /**
+   * Consume a reset token and set a new password (token is invalidated on first use)
+   */
+  @Post('reset-password')
+  @AuthRateLimit()
+  @ApiOperation({ summary: 'Reset password using a valid one-time token' })
+  @ApiResponse({ status: 200, description: 'Password reset successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid, expired, or already-used token' })
+  async resetPassword(@Body() body: ResetPasswordConfirmDto): Promise<{ message: string }> {
+    await this.authService.resetPassword(body.token, body.newPassword);
+    return { message: 'Password reset successfully' };
   }
 
   /**
@@ -235,7 +261,7 @@ export class AuthController {
    */
   @Delete('sessions/:id')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({ summary: 'Terminate a specific session' })
   @ApiResponse({ status: 200, description: 'Session terminated' })
   @ApiResponse({ status: 404, description: 'Session not found' })
@@ -250,7 +276,10 @@ export class AuthController {
     if (!session) {
       throw new NotFoundException('Session not found');
     }
-    await this.sessionManagementService.revokeSession(id);
+    await Promise.all([
+      this.sessionManagementService.revokeSession(id),
+      this.refreshTokenStore.revokeSession(id),
+    ]);
     return { message: 'Session terminated' };
   }
 
@@ -271,7 +300,10 @@ export class AuthController {
     if (!session) {
       throw new NotFoundException('Session not found');
     }
-    await this.sessionManagementService.revokeSession(sessionId);
+    await Promise.all([
+      this.sessionManagementService.revokeSession(sessionId),
+      this.refreshTokenStore.revokeSession(sessionId),
+    ]);
     return { message: 'Session revoked' };
   }
 
@@ -288,7 +320,10 @@ export class AuthController {
 
     for (const session of sessions) {
       if (session.id !== currentSessionId) {
-        await this.sessionManagementService.revokeSession(session.id);
+        await Promise.all([
+          this.sessionManagementService.revokeSession(session.id),
+          this.refreshTokenStore.revokeSession(session.id),
+        ]);
       }
     }
 

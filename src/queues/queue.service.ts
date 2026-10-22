@@ -1,10 +1,14 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue, Job } from 'bullmq';
+import { Observable } from 'rxjs';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { context, propagation, trace } from '@opentelemetry/api';
+import { ConfigService } from '@nestjs/config';
 import { QUEUE_NAMES, JOB_STATUS } from './queue.constants';
 import { StellarTransactionJobDto } from './dto/stellar-transaction-job.dto';
 import { TracingService } from '../common/services/tracing.service';
+import { signQueuePayload } from './queue-payload.util';
 
 interface JobDispatchResult {
   jobId: string;
@@ -30,7 +34,14 @@ export class QueueService {
     @InjectQueue(QUEUE_NAMES.REPORTS)
     private reportsQueue: Queue,
     private readonly tracingService: TracingService,
+    private readonly eventEmitter: EventEmitter2,
+    private readonly configService: ConfigService,
   ) {}
+
+  private signedPayload(data: Record<string, any>): Record<string, any> {
+    const secret = this.configService.getOrThrow<string>('QUEUE_HMAC_SECRET');
+    return { ...data, _sig: signQueuePayload(data, secret) };
+  }
 
   /**
    * Dispatch Soroban contract write operation to background queue
@@ -47,11 +58,11 @@ export class QueueService {
       const traceContext: Record<string, string> = {};
       propagation.inject(context.active(), traceContext);
 
-      const enrichedJobData = {
+      const enrichedJobData = this.signedPayload({
         ...jobData,
         traceContext,
         traceId: this.tracingService.getCurrentTraceId(),
-      };
+      });
 
       const job = await this.contractWritesQueue.add(
         jobData.operationType,
@@ -104,11 +115,11 @@ export class QueueService {
         propagation.inject(context.active(), traceContext);
 
         // Add trace context to job data
-        const enrichedJobData = {
+        const enrichedJobData = this.signedPayload({
           ...jobData,
           traceContext,
           traceId: this.tracingService.getCurrentTraceId(),
-        };
+        });
 
         const job = await this.stellarQueue.add(
           jobData.operationType,
@@ -154,11 +165,11 @@ export class QueueService {
       const traceContext: Record<string, string> = {};
       propagation.inject(context.active(), traceContext);
 
-      const enrichedJobData = {
+      const enrichedJobData = this.signedPayload({
         ...jobData,
         traceContext,
         traceId: this.tracingService.getCurrentTraceId(),
-      };
+      });
 
       const job = await this.ipfsQueue.add('upload', enrichedJobData, {
         jobId: jobData.correlationId,
@@ -196,11 +207,11 @@ export class QueueService {
         const traceContext: Record<string, string> = {};
         propagation.inject(context.active(), traceContext);
 
-        const enrichedJobData = {
+        const enrichedJobData = this.signedPayload({
           ...jobData,
           traceContext,
           traceId: this.tracingService.getCurrentTraceId(),
-        };
+        });
 
         const job = await this.eventIndexingQueue.add(
           'indexEvent',
@@ -247,7 +258,7 @@ export class QueueService {
       try {
         const job = await queue.getJob(jobId);
         if (job) {
-          return this.buildJobStatusResponse(job);
+          return await this.buildJobStatusResponse(job);
         }
       } catch (error) {
         this.logger.debug(
@@ -259,6 +270,69 @@ export class QueueService {
     throw new NotFoundException(
       `Job with ID ${jobId} not found in any queue`,
     );
+  }
+
+  /**
+   * Subscribe to job status updates in real-time
+   */
+  subscribeToJob(jobId: string): Observable<any> {
+    return new Observable((subscriber) => {
+      let isUnsubscribed = false;
+
+      // 1. First yield the current status
+      this.getJobStatusById(jobId)
+        .then((currentStatus) => {
+          if (isUnsubscribed) return;
+          subscriber.next(currentStatus);
+
+          // If already in a terminal state, close the stream
+          if (
+            currentStatus.status === JOB_STATUS.COMPLETED ||
+            currentStatus.status === JOB_STATUS.FAILED
+          ) {
+            subscriber.complete();
+            return;
+          }
+
+          // 2. Listen to future events for this job
+          const eventName = `job.${jobId}.status`;
+          const listener = (eventData: any) => {
+            if (isUnsubscribed) return;
+            // Fetch fresh status to ensure consistent formatting and accurate data
+            this.getJobStatusById(jobId)
+              .then((status) => {
+                if (isUnsubscribed) return;
+                subscriber.next(status);
+                if (
+                  status.status === JOB_STATUS.COMPLETED ||
+                  status.status === JOB_STATUS.FAILED
+                ) {
+                  this.eventEmitter.removeListener(eventName, listener);
+                  subscriber.complete();
+                }
+              })
+              .catch((err) => {
+                // Ignore NotFound in case job was removed quickly
+                if (err instanceof NotFoundException) {
+                  subscriber.complete();
+                } else {
+                  this.logger.error(`Error fetching job status during stream: ${err.message}`);
+                }
+              });
+          };
+
+          this.eventEmitter.on(eventName, listener);
+
+          // Return a teardown function
+          return () => {
+            isUnsubscribed = true;
+            this.eventEmitter.removeListener(eventName, listener);
+          };
+        })
+        .catch((err) => {
+          subscriber.error(err);
+        });
+    });
   }
 
   /**
@@ -288,7 +362,7 @@ export class QueueService {
         );
 
         if (job) {
-          return this.buildJobStatusResponse(job);
+          return await this.buildJobStatusResponse(job);
         }
       } catch (error) {
         this.logger.debug(
@@ -303,11 +377,12 @@ export class QueueService {
   }
 
   /**
-   * Build normalized job status response
+   * Build normalized job status response — params field is intentionally omitted
+   * to prevent PHI/sensitive contract data from leaking via the status API.
    */
-  private buildJobStatusResponse(job: Job): any {
-    const state = job._state;
-    const progress = job._progress || 0;
+  private async buildJobStatusResponse(job: Job): Promise<any> {
+    const state = await job.getState();
+    const progress = job.progress || 0;
     const failedReason = job.failedReason;
 
     return {

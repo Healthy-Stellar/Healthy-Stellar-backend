@@ -8,7 +8,6 @@ import {
   JoinColumn,
   Index,
 } from 'typeorm';
-import { MedicalRecord } from './medical-record.entity';
 
 export enum ConsentStatus {
   PENDING = 'pending',
@@ -36,11 +35,11 @@ export class MedicalRecordConsent {
   @Index()
   medicalRecordId: string;
 
-  @ManyToOne(() => MedicalRecord, (record) => record.consents, {
+  @ManyToOne('MedicalRecord', 'consents', {
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'medicalRecordId' })
-  medicalRecord: MedicalRecord;
+  medicalRecord: any;
 
   @Column({ type: 'uuid' })
   @Index()

@@ -40,4 +40,29 @@ export class IpfsService {
       },
     );
   }
+
+  async fetch(cid: string): Promise<Buffer> {
+    return this.tracingService.withSpan(
+      'ipfs.fetch',
+      async (span) => {
+        span.setAttribute('ipfs.cid', cid);
+        
+        try {
+          const chunks: Uint8Array[] = [];
+          for await (const chunk of this.ipfs.cat(cid)) {
+            chunks.push(chunk);
+          }
+          
+          const buffer = Buffer.concat(chunks);
+          span.setAttribute('ipfs.fetched_size', buffer.length);
+          
+          return buffer;
+        } catch (error) {
+          this.tracingService.recordException(error as Error);
+          this.logger.error(`IPFS fetch failed for CID ${cid}: ${error.message}`);
+          throw new Error(`IPFS fetch failed: ${error.message}`);
+        }
+      },
+    );
+  }
 }

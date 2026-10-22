@@ -1,4 +1,7 @@
 import { build } from 'pino-abstract-transport';
+import { Logger } from '@nestjs/common';
+
+const logger = new Logger('LokiTransport');
 
 interface LokiTransportOptions {
   host: string;
@@ -58,7 +61,7 @@ export async function createLokiTransport(opts: LokiTransportOptions) {
 
       batch = [];
     } catch (error) {
-      console.error('Failed to send logs to Loki:', error);
+      logger.error('Failed to send logs to Loki:', error);
     }
   };
 

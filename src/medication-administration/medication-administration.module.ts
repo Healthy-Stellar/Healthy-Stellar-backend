@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MedicationAdministrationRecord } from './entities/medication-administration-record.entity';
+import { MedicationOrder } from './entities/medication-order.entity';
 import { MissedDose } from './entities/missed-dose.entity';
 import { AdverseDrugReaction } from './entities/adverse-drug-reaction.entity';
 import { MedicationReconciliation } from './entities/medication-reconciliation.entity';
@@ -15,16 +16,20 @@ import { AdverseReactionService } from './services/adverse-reaction.service';
 import { ReconciliationService } from './services/reconciliation.service';
 import { MissedDoseService } from './services/missed-dose.service';
 import { AlertService } from './services/alert.service';
+import { MissedDoseDetectionTask } from './tasks/missed-dose-detection.task';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       MedicationAdministrationRecord,
+      MedicationOrder,
       MissedDose,
       AdverseDrugReaction,
       MedicationReconciliation,
       BarcodeVerification,
     ]),
+    NotificationsModule,
   ],
   controllers: [
     MarController,
@@ -39,6 +44,7 @@ import { AlertService } from './services/alert.service';
     ReconciliationService,
     MissedDoseService,
     AlertService,
+    MissedDoseDetectionTask,
   ],
   exports: [
     MarService,

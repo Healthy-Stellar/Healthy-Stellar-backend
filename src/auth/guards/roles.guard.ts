@@ -1,9 +1,12 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { UserRole } from '../entities/user.entity';
 import { JwtPayload } from '../services/auth-token.service';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
     const user: JwtPayload = request.user;
@@ -12,8 +15,11 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('User not found in request');
     }
 
-    // Get required roles from route metadata or endpoint
-    const requiredRoles: UserRole[] = Reflect.getMetadata('roles', context.getHandler()) || [];
+    const requiredRoles =
+      this.reflector.getAllAndOverride<UserRole[]>('roles', [
+        context.getHandler(),
+        context.getClass(),
+      ]) || [];
 
     if (requiredRoles.length === 0) {
       // No specific roles required

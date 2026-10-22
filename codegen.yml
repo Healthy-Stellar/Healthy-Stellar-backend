@@ -1,0 +1,14 @@
+overwrite: true
+schema: "docs/schema.graphql"
+generates:
+  packages/sdk/src/graphql/types.ts:
+    plugins:
+      - "typescript"
+      - "typescript-operations"
+    config:
+      strictScalars: false
+      skipTypename: false
+      enumsAsTypes: true
+  packages/sdk/src/graphql/schema.graphql:
+    plugins:
+      - "schema-ast"

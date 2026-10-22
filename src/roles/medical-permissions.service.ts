@@ -30,6 +30,7 @@ export class MedicalPermissionsService {
       MedicalPermission.VIEW_AUDIT_LOGS,
       MedicalPermission.MANAGE_SYSTEM,
       MedicalPermission.EMERGENCY_OVERRIDE,
+      MedicalPermission.RESEARCH_EXPORT,
     ],
     [MedicalRole.DOCTOR]: [
       MedicalPermission.READ_PATIENT_BASIC,
@@ -42,6 +43,7 @@ export class MedicalPermissionsService {
       MedicalPermission.WRITE_PRESCRIPTIONS,
       MedicalPermission.ACCESS_OWN_DEPARTMENT,
       MedicalPermission.EMERGENCY_OVERRIDE,
+      MedicalPermission.RESEARCH_EXPORT,
     ],
     [MedicalRole.NURSE]: [
       MedicalPermission.READ_PATIENT_BASIC,

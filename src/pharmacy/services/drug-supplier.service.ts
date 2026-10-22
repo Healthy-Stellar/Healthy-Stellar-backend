@@ -2,6 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DrugSupplier } from '../entities/drug-supplier.entity';
+import { PaginationDto } from '../../common/dto/pagination.dto';
+import { PaginationUtil } from '../../common/utils/pagination.util';
+import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
 
 @Injectable()
 export class DrugSupplierService {
@@ -15,8 +18,8 @@ export class DrugSupplierService {
     return this.supplierRepository.save(supplier);
   }
 
-  async findAll(): Promise<DrugSupplier[]> {
-    return this.supplierRepository.find({
+  async findAll(paginationDto: PaginationDto = new PaginationDto()): Promise<PaginatedResponseDto<DrugSupplier>> {
+    return PaginationUtil.paginate(this.supplierRepository, paginationDto, {
       where: { isActive: true },
       order: { name: 'ASC' },
     });
@@ -44,11 +47,15 @@ export class DrugSupplierService {
     await this.supplierRepository.save(supplier);
   }
 
-  async getPreferredSuppliers(): Promise<DrugSupplier[]> {
-    return this.supplierRepository.find({
-      where: { isActive: true, isPreferredSupplier: true },
-      order: { reliabilityScore: 'DESC' },
-    });
+  async getPreferredSuppliers(
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<DrugSupplier>> {
+    const query = this.supplierRepository.createQueryBuilder('supplier')
+      .where('supplier.isActive = :active', { active: true })
+      .andWhere('supplier.isPreferredSupplier = :preferred', { preferred: true })
+      .orderBy('supplier.reliabilityScore', 'DESC');
+
+    return PaginationUtil.paginateQueryBuilder(query, paginationDto);
   }
 
   async updateReliabilityScore(id: string, score: number): Promise<DrugSupplier> {

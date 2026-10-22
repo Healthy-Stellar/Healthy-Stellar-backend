@@ -2,6 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DrugFormulary, FormularyTier, FormularyStatus } from '../entities/drug-formulary.entity';
+import { PaginationDto } from '../../common/dto/pagination.dto';
+import { PaginationUtil } from '../../common/utils/pagination.util';
+import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
 
 @Injectable()
 export class DrugFormularyService {
@@ -15,8 +18,10 @@ export class DrugFormularyService {
     return await this.formularyRepository.save(formulary);
   }
 
-  async findAll(): Promise<DrugFormulary[]> {
-    return await this.formularyRepository.find({
+  async findAll(
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<DrugFormulary>> {
+    return PaginationUtil.paginate(this.formularyRepository, paginationDto, {
       where: { isActive: true },
       relations: ['drug'],
       order: { insurancePlan: 'ASC', tier: 'ASC' },
@@ -59,20 +64,30 @@ export class DrugFormularyService {
     await this.formularyRepository.save(formulary);
   }
 
-  async getFormularyByPlan(insurancePlan: string): Promise<DrugFormulary[]> {
-    return await this.formularyRepository.find({
-      where: { insurancePlan, isActive: true },
-      relations: ['drug'],
-      order: { tier: 'ASC' },
-    });
+  async getFormularyByPlan(
+    insurancePlan: string,
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<DrugFormulary>> {
+    const query = this.formularyRepository.createQueryBuilder('formulary')
+      .leftJoinAndSelect('formulary.drug', 'drug')
+      .where('formulary.insurancePlan = :insurancePlan', { insurancePlan })
+      .andWhere('formulary.isActive = true')
+      .orderBy('formulary.tier', 'ASC');
+
+    return PaginationUtil.paginateQueryBuilder(query, paginationDto);
   }
 
-  async getFormularyByTier(tier: FormularyTier): Promise<DrugFormulary[]> {
-    return await this.formularyRepository.find({
-      where: { tier, isActive: true },
-      relations: ['drug'],
-      order: { insurancePlan: 'ASC' },
-    });
+  async getFormularyByTier(
+    tier: FormularyTier,
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<DrugFormulary>> {
+    const query = this.formularyRepository.createQueryBuilder('formulary')
+      .leftJoinAndSelect('formulary.drug', 'drug')
+      .where('formulary.tier = :tier', { tier })
+      .andWhere('formulary.isActive = true')
+      .orderBy('formulary.insurancePlan', 'ASC');
+
+    return PaginationUtil.paginateQueryBuilder(query, paginationDto);
   }
 
   async checkCoverage(
@@ -175,21 +190,26 @@ export class DrugFormularyService {
     };
   }
 
-  async getPreferredAlternatives(drugId: string, insurancePlan: string): Promise<DrugFormulary[]> {
+  async getPreferredAlternatives(
+    drugId: string,
+    insurancePlan: string,
+    paginationDto: PaginationDto = new PaginationDto(),
+  ): Promise<PaginatedResponseDto<DrugFormulary>> {
     const formulary = await this.findByDrugAndPlan(drugId, insurancePlan);
 
     if (!formulary || !formulary.preferredAlternatives) {
-      return [];
+      return PaginationUtil.createResponse([], 0, paginationDto.page, paginationDto.pageSize);
     }
 
-    return await this.formularyRepository.find({
-      where: {
-        drugId: formulary.preferredAlternatives as any, // TypeORM In operator
-        insurancePlan,
-        isActive: true,
-      },
-      relations: ['drug'],
-      order: { tier: 'ASC' },
-    });
+    const query = this.formularyRepository.createQueryBuilder('formulary')
+      .leftJoinAndSelect('formulary.drug', 'drug')
+      .where('formulary.drugId IN (:...alternatives)', {
+        alternatives: formulary.preferredAlternatives,
+      })
+      .andWhere('formulary.insurancePlan = :insurancePlan', { insurancePlan })
+      .andWhere('formulary.isActive = true')
+      .orderBy('formulary.tier', 'ASC');
+
+    return PaginationUtil.paginateQueryBuilder(query, paginationDto);
   }
 }

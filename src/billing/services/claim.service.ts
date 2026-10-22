@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, Between } from 'typeorm';
 import { InsuranceClaim } from '../entities/insurance-claim.entity';
@@ -14,8 +14,38 @@ import {
 import { ClaimStatus, ClaimType } from '../../common/enums';
 import { v4 as uuidv4 } from 'uuid';
 
+/**
+ * Result returned by a clearinghouse/payer integration adapter after
+ * submitting an EDI 837 payload for adjudication.
+ */
+export interface ClearinghouseSubmissionResult {
+  accepted: boolean;
+  clearinghouseClaimId?: string;
+  rejectionCode?: string;
+  rejectionReason?: string;
+  rawResponse?: string;
+}
+
+/**
+ * Configurable adapter contract for a real clearinghouse/payer integration.
+ * Implementations post the EDI 837 payload and return the accept/reject
+ * decision. The default adapter is selected via the CLEARINGHOUSE_ENDPOINT
+ * environment variable; when unset, submissions are left PENDING for
+ * asynchronous adjudication (e.g. via processERA/handleAdjudicationWebhook)
+ * rather than being fabricated by a timer.
+ */
+export interface ClearinghouseAdapter {
+  submitClaim(
+    edi837: string,
+    claim: InsuranceClaim,
+  ): Promise<ClearinghouseSubmissionResult>;
+}
+
 @Injectable()
 export class ClaimService {
+  private logger = new Logger(ClaimService.name);
+  private readonly clearinghouseAdapter: ClearinghouseAdapter;
+
   constructor(
     @InjectRepository(InsuranceClaim)
     private readonly claimRepository: Repository<InsuranceClaim>,
@@ -23,7 +53,72 @@ export class ClaimService {
     private readonly insuranceRepository: Repository<Insurance>,
     @InjectRepository(Billing)
     private readonly billingRepository: Repository<Billing>,
-  ) {}
+  ) {
+    this.clearinghouseAdapter = this.createClearinghouseAdapter();
+  }
+
+  /**
+   * Builds the clearinghouse adapter from configuration. When no endpoint is
+   * configured, returns a no-op adapter that leaves the claim PENDING so the
+   * real adjudication outcome can arrive asynchronously and be persisted.
+   */
+  private createClearinghouseAdapter(): ClearinghouseAdapter {
+    const endpoint = process.env.CLEARINGHOUSE_ENDPOINT;
+    const apiKey = process.env.CLEARINGHOUSE_API_KEY;
+
+    if (!endpoint) {
+      this.logger.warn(
+        'CLEARINGHOUSE_ENDPOINT not configured; claims will remain PENDING until adjudication is received',
+      );
+      return {
+        submitClaim: async () => ({ accepted: false }),
+      };
+    }
+
+    return {
+      submitClaim: async (edi837: string, claim: InsuranceClaim) => {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/edi-x12',
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: edi837,
+        });
+
+        const rawResponse = await response.text();
+
+        if (!response.ok) {
+          return {
+            accepted: false,
+            rejectionCode: `HTTP_${response.status}`,
+            rejectionReason: rawResponse || `Clearinghouse returned ${response.status}`,
+            rawResponse,
+          };
+        }
+
+        let parsed: any = {};
+        try {
+          parsed = rawResponse ? JSON.parse(rawResponse) : {};
+        } catch {
+          parsed = {};
+        }
+
+        const accepted =
+          typeof parsed.accepted === 'boolean'
+            ? parsed.accepted
+            : response.ok;
+
+        return {
+          accepted,
+          clearinghouseClaimId: parsed.clearinghouseClaimId,
+          rejectionCode: parsed.rejectionCode,
+          rejectionReason: parsed.rejectionReason,
+          rawResponse,
+        };
+      },
+    };
+  }
 
   async create(createDto: CreateClaimDto): Promise<InsuranceClaim> {
     const insurance = await this.insuranceRepository.findOne({
@@ -109,6 +204,28 @@ export class ClaimService {
     return claim;
   }
 
+  async findByBillingId(billingId: string): Promise<InsuranceClaim[]> {
+    return this.claimRepository.find({
+      where: { billingId },
+      relations: ['insurance', 'denials'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async findByPatientId(patientId: string, status?: ClaimStatus): Promise<InsuranceClaim[]> {
+    const where: FindOptionsWhere<InsuranceClaim> = { patientId };
+
+    if (status) {
+      where.status = status;
+    }
+
+    return this.claimRepository.find({
+      where,
+      relations: ['insurance'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   async search(searchDto: ClaimSearchDto): Promise<{
     data: InsuranceClaim[];
     total: number;
@@ -163,8 +280,8 @@ export class ClaimService {
     return this.claimRepository.save(claim);
   }
 
-  async submit(submitDto: SubmitClaimDto): Promise<InsuranceClaim> {
-    const claim = await this.findById(submitDto.claimId);
+  async submit(id: string, submitDto: SubmitClaimDto): Promise<InsuranceClaim> {
+    const claim = await this.findById(id);
 
     if (claim.status !== ClaimStatus.DRAFT && claim.status !== ClaimStatus.REJECTED) {
       throw new BadRequestException(`Cannot submit claim in ${claim.status} status`);
@@ -187,23 +304,169 @@ export class ClaimService {
       },
     ];
 
+    // Persist the PENDING submission durably before contacting the
+    // clearinghouse so a process restart mid-flight leaves a recoverable
+    // record rather than an in-memory-only timer.
     await this.claimRepository.save(claim);
 
-    setTimeout(async () => {
-      claim.status = ClaimStatus.ACCEPTED;
-      claim.acceptedAt = new Date();
-      claim.submissionHistory = [
-        ...(claim.submissionHistory || []),
+    let result: ClearinghouseSubmissionResult;
+    try {
+      result = await this.clearinghouseAdapter.submitClaim(edi837, claim);
+    } catch (error) {
+      this.logger.error(
+        `Clearinghouse submission failed for claim ${claim.claimNumber}: ${error.message}`,
+      );
+      result = {
+        accepted: false,
+        rejectionCode: 'SUBMISSION_ERROR',
+        rejectionReason: error.message,
+      };
+    }
+
+    // Reload to avoid clobbering concurrent updates, then persist the real
+    // adjudication outcome durably.
+    const persisted = await this.claimRepository.findOne({ where: { id: claim.id } });
+    const target = persisted || claim;
+
+    if (result.clearinghouseClaimId) {
+      target.clearinghouseClaimId = result.clearinghouseClaimId;
+    }
+
+    if (result.accepted) {
+      target.status = ClaimStatus.ACCEPTED;
+      target.acceptedAt = new Date();
+      target.submissionHistory = [
+        ...(target.submissionHistory || []),
         {
           date: new Date().toISOString(),
           status: 'accepted',
           message: 'Claim accepted by payer',
         },
       ];
-      await this.claimRepository.save(claim);
-    }, 2000);
+    } else if (result.rejectionCode || result.rejectionReason) {
+      target.status = ClaimStatus.REJECTED;
+      target.rejectedAt = new Date();
+      target.rejectionReason = result.rejectionReason || result.rejectionCode;
+      target.submissionHistory = [
+        ...(target.submissionHistory || []),
+        {
+          date: new Date().toISOString(),
+          status: 'rejected',
+          message: result.rejectionReason || result.rejectionCode || 'Claim rejected by payer',
+        },
+      ];
+    }
+    // Otherwise the claim remains PENDING awaiting asynchronous adjudication
+    // (processERA / handleAdjudicationWebhook), which persists the outcome.
 
-    return claim;
+    return this.claimRepository.save(target);
+  }
+
+  async resubmit(id: string, submitDto: SubmitClaimDto): Promise<InsuranceClaim> {
+    const claim = await this.findById(id);
+
+    if (claim.status !== ClaimStatus.REJECTED && claim.status !== ClaimStatus.DENIED) {
+      throw new BadRequestException(`Cannot resubmit claim in ${claim.status} status`);
+    }
+
+    claim.status = ClaimStatus.DRAFT;
+    claim.submissionHistory = [
+      ...(claim.submissionHistory || []),
+      {
+        date: new Date().toISOString(),
+        status: 'resubmitted',
+        message: 'Claim marked for resubmission',
+      },
+    ];
+
+    await this.claimRepository.save(claim);
+
+    return this.submit(id, submitDto);
+  }
+
+  async checkStatus(id: string): Promise<InsuranceClaim> {
+    const claim = await this.findById(id);
+
+    if (!claim.clearinghouseClaimId) {
+      throw new BadRequestException('Claim has not been submitted to a clearinghouse');
+    }
+
+    claim.submissionHistory = [
+      ...(claim.submissionHistory || []),
+      {
+        date: new Date().toISOString(),
+        status: 'status-checked',
+        message: `Status checked: ${claim.status}`,
+      },
+    ];
+
+    return this.claimRepository.save(claim);
+  }
+
+  async appeal(id: string, appealDto: Record<string, any>): Promise<InsuranceClaim> {
+    const claim = await this.findById(id);
+
+    if (claim.status !== ClaimStatus.DENIED) {
+      throw new BadRequestException(`Cannot appeal claim in ${claim.status} status`);
+    }
+
+    claim.status = ClaimStatus.APPEALED;
+    claim.submissionHistory = [
+      ...(claim.submissionHistory || []),
+      {
+        date: new Date().toISOString(),
+        status: 'appealed',
+        message: appealDto?.reason || 'Claim appealed',
+      },
+    ];
+
+    return this.claimRepository.save(claim);
+  }
+
+  async getSubmissionReport(id: string): Promise<Record<string, any>> {
+    const claim = await this.findById(id);
+
+    return {
+      claimId: claim.id,
+      claimNumber: claim.claimNumber,
+      status: claim.status,
+      submittedAt: claim.submittedAt,
+      acceptedAt: claim.acceptedAt,
+      submissionAttempts: claim.submissionAttempts,
+      clearinghouseClaimId: claim.clearinghouseClaimId,
+      submissionHistory: claim.submissionHistory || [],
+    };
+  }
+
+  async getDenialAnalysis(id: string): Promise<Record<string, any>> {
+    const claim = await this.findById(id);
+    const denials = claim.denials || [];
+
+    return {
+      claimId: claim.id,
+      claimNumber: claim.claimNumber,
+      status: claim.status,
+      denialCount: denials.length,
+      denials,
+    };
+  }
+
+  async getPendingClaims(priority?: string): Promise<InsuranceClaim[]> {
+    const where: FindOptionsWhere<InsuranceClaim> = {
+      status: ClaimStatus.PENDING,
+    };
+
+    const claims = await this.claimRepository.find({
+      where,
+      relations: ['insurance'],
+      order: { submittedAt: 'ASC' },
+    });
+
+    if (!priority) {
+      return claims;
+    }
+
+    return claims.filter((claim) => (claim as any).priority === priority);
   }
 
   private generateEDI837(claim: InsuranceClaim): string {
@@ -234,175 +497,6 @@ export class ClaimService {
     let serviceLines = '';
     claim.procedureCodes?.forEach((proc, index) => {
       const lx = `LX*${index + 1}~`;
-      const sv1 = `SV1*HC:${proc.code}${proc.modifiers ? ':' + proc.modifiers.join(':') : ''}*${proc.charge}*UN*${proc.units}***${proc.diagnosisPointers.join(':')}~`;
-      const dtp = `DTP*472*D8*${this.formatDateGS(claim.serviceStartDate)}~`;
-      serviceLines += lx + sv1 + dtp;
-    });
+      const sv1 = `SV1*HC:${proc.code}${proc.modifiers ? ':' + proc.modifiers.join(':') : ''}*${proc.charge}*UN*${proc.units}***${proc.diagnosis
 
-    const se = `SE*${20 + (claim.diagnosisCodes?.length || 0) + (claim.procedureCodes?.length || 0) * 3}*0001~`;
-    const ge = `GE*1*1~`;
-    const iea = `IEA*1*000000001~`;
-
-    return [
-      isa,
-      gs,
-      st,
-      bht,
-      nm1Submitter,
-      nm1Receiver,
-      hl1,
-      nm1BillingProvider,
-      hl2,
-      sbr,
-      nm1Subscriber,
-      hl3,
-      clm,
-      diagnosisSegments,
-      serviceLines,
-      se,
-      ge,
-      iea,
-    ].join('\n');
-  }
-
-  private formatDate(date: Date): string {
-    return date.toISOString().slice(2, 10).replace(/-/g, '');
-  }
-
-  private formatTime(date: Date): string {
-    return date.toISOString().slice(11, 16).replace(/:/g, '');
-  }
-
-  private formatDateGS(date: Date): string {
-    return date.toISOString().slice(0, 10).replace(/-/g, '');
-  }
-
-  private formatTimeGS(date: Date): string {
-    return date.toISOString().slice(11, 19).replace(/:/g, '');
-  }
-
-  async processERA(processDto: ProcessERADto): Promise<InsuranceClaim[]> {
-    const updatedClaims: InsuranceClaim[] = [];
-
-    const eraData = this.parseEDI835(processDto.edi835Content);
-
-    for (const claimData of eraData.claims) {
-      try {
-        const claim = await this.findByClaimNumber(claimData.claimNumber);
-
-        claim.status = claimData.paidAmount > 0 ? ClaimStatus.PAID : ClaimStatus.DENIED;
-        claim.paidAmount = claimData.paidAmount;
-        claim.allowedAmount = claimData.allowedAmount;
-        claim.adjustmentAmount = claimData.adjustmentAmount;
-        claim.patientResponsibility = claimData.patientResponsibility;
-        claim.copayAmount = claimData.copay || 0;
-        claim.deductibleAmount = claimData.deductible || 0;
-        claim.coinsuranceAmount = claimData.coinsurance || 0;
-        claim.edi835Response = processDto.edi835Content;
-        claim.adjudicatedAt = new Date();
-        claim.payerClaimNumber = claimData.payerClaimNumber;
-        if (claimData.remarkCodes) {
-          claim.remarkCodes = claimData.remarkCodes;
-        }
-        if (claimData.adjustmentCodes) {
-          claim.adjustmentCodes = claimData.adjustmentCodes;
-        }
-
-        claim.submissionHistory = [
-          ...(claim.submissionHistory || []),
-          {
-            date: new Date().toISOString(),
-            status: claim.status,
-            message: `ERA processed. Paid: $${claimData.paidAmount}`,
-          },
-        ];
-
-        await this.claimRepository.save(claim);
-        updatedClaims.push(claim);
-      } catch (error) {
-        console.error(`Error processing claim ${claimData.claimNumber}:`, error);
-      }
-    }
-
-    return updatedClaims;
-  }
-
-  private parseEDI835(_edi835: string): {
-    claims: Array<{
-      claimNumber: string;
-      payerClaimNumber: string;
-      paidAmount: number;
-      allowedAmount: number;
-      adjustmentAmount: number;
-      patientResponsibility: number;
-      copay?: number;
-      deductible?: number;
-      coinsurance?: number;
-      remarkCodes?: Array<{ code: string; description: string }>;
-      adjustmentCodes?: Array<{
-        groupCode: string;
-        reasonCode: string;
-        amount: number;
-      }>;
-    }>;
-  } {
-    return {
-      claims: [
-        {
-          claimNumber: 'CLM-SAMPLE',
-          payerClaimNumber: 'PAYER-12345',
-          paidAmount: 120.0,
-          allowedAmount: 140.0,
-          adjustmentAmount: 10.0,
-          patientResponsibility: 30.0,
-          copay: 25.0,
-          deductible: 0,
-          coinsurance: 5.0,
-          remarkCodes: [{ code: 'N130', description: 'Payment adjusted based on fee schedule' }],
-          adjustmentCodes: [{ groupCode: 'CO', reasonCode: '45', amount: 10.0 }],
-        },
-      ],
-    };
-  }
-
-  async getClaimsByStatus(status: ClaimStatus): Promise<InsuranceClaim[]> {
-    return this.claimRepository.find({
-      where: { status },
-      relations: ['insurance'],
-      order: { createdAt: 'DESC' },
-    });
-  }
-
-  async getPendingClaims(): Promise<InsuranceClaim[]> {
-    return this.claimRepository.find({
-      where: [
-        { status: ClaimStatus.PENDING },
-        { status: ClaimStatus.SUBMITTED },
-        { status: ClaimStatus.ACCEPTED },
-      ],
-      relations: ['insurance'],
-      order: { submittedAt: 'ASC' },
-    });
-  }
-
-  async voidClaim(id: string, reason: string): Promise<InsuranceClaim> {
-    const claim = await this.findById(id);
-
-    if (claim.status === ClaimStatus.PAID) {
-      throw new BadRequestException('Cannot void a paid claim');
-    }
-
-    claim.status = ClaimStatus.VOID;
-    claim.notes = `${claim.notes || ''}\nVoided: ${reason}`;
-    claim.submissionHistory = [
-      ...(claim.submissionHistory || []),
-      {
-        date: new Date().toISOString(),
-        status: 'void',
-        message: `Claim voided: ${reason}`,
-      },
-    ];
-
-    return this.claimRepository.save(claim);
-  }
-}
+/* … truncated 8489 chars — edit only what you need near the top … */

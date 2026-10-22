@@ -4,6 +4,7 @@ npm-debug.log
 .gitignore
 README.md
 .env
+.env.*
 .nyc_output
 coverage
 .coverage
@@ -15,3 +16,9 @@ dist
 .docker
 docker-compose*.yml
 Dockerfile*
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+test/

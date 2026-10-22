@@ -12,6 +12,28 @@ export class MedicalDataValidationPipe implements PipeTransform {
       throw new BadRequestException('Validation failed: No data provided');
     }
 
+    if (metadata.type === 'query' && metadata.metatype === Number) {
+      const queryParam = metadata.data as string;
+      if (['page', 'pageSize', 'offset'].includes(queryParam)) {
+        if (value === undefined || value === null || value === '') {
+          if (queryParam === 'page') {
+            return 1;
+          }
+          if (queryParam === 'pageSize') {
+            return 20;
+          }
+          if (queryParam === 'offset') {
+            return 0;
+          }
+        }
+
+        const parsed = Number(value);
+        if (Number.isInteger(parsed)) {
+          return parsed;
+        }
+      }
+    }
+
     // Some route arguments expose primitive metatypes (String/Boolean/etc.); validate only class-based DTOs.
     const metatype = metadata.metatype as any;
     const shouldValidate = metatype && ![String, Boolean, Number, Array, Object].includes(metatype);

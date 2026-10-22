@@ -15,6 +15,7 @@ describe('StellarWithBreakerService', () => {
       anchorRecord: jest.fn(),
       grantAccess: jest.fn(),
       revokeAccess: jest.fn(),
+      createShareLink: jest.fn(),
       verifyAccess: jest.fn(),
     };
 
@@ -106,6 +107,19 @@ describe('StellarWithBreakerService', () => {
       expect(circuitBreaker.execute).toHaveBeenCalledWith('stellar', expect.any(Function));
       expect(stellarService.revokeAccess).toHaveBeenCalledWith('patient-1', 'doctor-1', 'record-1');
       expect(result).toEqual(mockResult);
+    });
+  });
+
+  describe('createShareLink', () => {
+    it('should execute through circuit breaker', async () => {
+      stellarService.createShareLink.mockResolvedValue('tx-share-123');
+      circuitBreaker.execute.mockImplementation((_, fn) => fn());
+
+      const result = await service.createShareLink('record-1', 'patient-1');
+
+      expect(circuitBreaker.execute).toHaveBeenCalledWith('stellar', expect.any(Function));
+      expect(stellarService.createShareLink).toHaveBeenCalledWith('record-1', 'patient-1');
+      expect(result).toBe('tx-share-123');
     });
   });
 

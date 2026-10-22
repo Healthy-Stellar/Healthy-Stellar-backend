@@ -9,13 +9,16 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
 import { TreatmentPlanService } from '../services/treatment-plan.service';
 import { MedicalProcedureService } from '../services/medical-procedure.service';
 import { CarePlanTemplateService } from '../services/care-plan-template.service';
 import { TreatmentOutcomeService } from '../services/treatment-outcome.service';
 import { DecisionSupportService } from '../services/decision-support.service';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import {
   CreateTreatmentPlanDto,
   UpdateTreatmentPlanDto,
@@ -29,7 +32,8 @@ import {
 } from '../dto/treatment-planning.dto';
 
 @ApiTags('Treatment Plans')
-@ApiBearerAuth()
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+@UseGuards(JwtAuthGuard)
 @Controller('treatment-plans')
 export class TreatmentPlanController {
   constructor(private readonly treatmentPlanService: TreatmentPlanService) {}
@@ -114,7 +118,8 @@ export class TreatmentPlanController {
 }
 
 @ApiTags('Medical Procedures')
-@ApiBearerAuth()
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+@UseGuards(JwtAuthGuard)
 @Controller('procedures')
 export class MedicalProcedureController {
   constructor(private readonly procedureService: MedicalProcedureService) {}
@@ -195,7 +200,8 @@ export class MedicalProcedureController {
 }
 
 @ApiTags('Care Plan Templates')
-@ApiBearerAuth()
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+@UseGuards(JwtAuthGuard)
 @Controller('care-templates')
 export class CarePlanTemplateController {
   constructor(private readonly templateService: CarePlanTemplateService) {}
@@ -222,140 +228,6 @@ export class CarePlanTemplateController {
 
   @Get('icd10/:code')
   @ApiOperation({ summary: 'Find templates by ICD-10 code' })
-  @ApiParam({ name: 'code', description: 'ICD-10 code' })
-  async findByIcd10Code(@Param('code') code: string) {
-    return await this.templateService.findByIcd10Code(code);
-  }
+  @ApiParam({ name: '
 
-  @Patch(':id')
-  @ApiOperation({ summary: 'Update a template' })
-  @ApiParam({ name: 'id', description: 'Template UUID' })
-  async update(@Param('id') id: string, @Body() updateDto: UpdateCarePlanTemplateDto) {
-    return await this.templateService.update(id, updateDto);
-  }
-
-  @Post('apply')
-  @ApiOperation({ summary: 'Apply template to create treatment plan' })
-  async applyTemplate(@Body() applyDto: ApplyTemplateDto) {
-    return await this.templateService.applyTemplate(applyDto);
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete a template' })
-  @ApiParam({ name: 'id', description: 'Template UUID' })
-  async delete(@Param('id') id: string) {
-    await this.templateService.delete(id);
-  }
-}
-
-@ApiTags('Treatment Outcomes')
-@ApiBearerAuth()
-@Controller('outcomes')
-export class TreatmentOutcomeController {
-  constructor(private readonly outcomeService: TreatmentOutcomeService) {}
-
-  @Post()
-  @ApiOperation({ summary: 'Record a treatment outcome' })
-  @ApiResponse({ status: 201, description: 'Outcome recorded successfully' })
-  async create(@Body() createDto: CreateTreatmentOutcomeDto) {
-    return await this.outcomeService.create(createDto);
-  }
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get outcome by ID' })
-  @ApiParam({ name: 'id', description: 'Outcome UUID' })
-  async findById(@Param('id') id: string) {
-    return await this.outcomeService.findById(id);
-  }
-
-  @Get('plan/:treatmentPlanId')
-  @ApiOperation({ summary: 'Get outcomes for a treatment plan' })
-  @ApiParam({ name: 'treatmentPlanId', description: 'Treatment plan UUID' })
-  async findByTreatmentPlanId(@Param('treatmentPlanId') treatmentPlanId: string) {
-    return await this.outcomeService.findByTreatmentPlanId(treatmentPlanId);
-  }
-
-  @Get('patient/:patientId')
-  @ApiOperation({ summary: 'Get outcomes for a patient' })
-  @ApiParam({ name: 'patientId', description: 'Patient UUID' })
-  async findByPatientId(@Param('patientId') patientId: string) {
-    return await this.outcomeService.findByPatientId(patientId);
-  }
-
-  @Get('analytics')
-  @ApiOperation({ summary: 'Get outcome analytics' })
-  async getAnalytics(
-    @Query('patientId') patientId?: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-  ) {
-    return await this.outcomeService.getAnalytics(
-      patientId,
-      startDate ? new Date(startDate) : undefined,
-      endDate ? new Date(endDate) : undefined,
-    );
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete an outcome' })
-  @ApiParam({ name: 'id', description: 'Outcome UUID' })
-  async delete(@Param('id') id: string) {
-    await this.outcomeService.delete(id);
-  }
-}
-
-@ApiTags('Decision Support')
-@ApiBearerAuth()
-@Controller('decision-support')
-export class DecisionSupportController {
-  constructor(private readonly decisionSupportService: DecisionSupportService) {}
-
-  @Get('guidelines/:diagnosisCode')
-  @ApiOperation({ summary: 'Get clinical guidelines for a diagnosis code' })
-  @ApiParam({ name: 'diagnosisCode', description: 'ICD-10 diagnosis code' })
-  async getGuidelines(@Param('diagnosisCode') diagnosisCode: string) {
-    return await this.decisionSupportService.findGuidelinesByDiagnosisCode(diagnosisCode);
-  }
-
-  @Get('alerts/:patientId')
-  @ApiOperation({ summary: 'Get decision support alerts for a patient' })
-  @ApiParam({ name: 'patientId', description: 'Patient UUID' })
-  async getPatientAlerts(
-    @Param('patientId') patientId: string,
-    @Query('includeAcknowledged') includeAcknowledged?: boolean,
-  ) {
-    return await this.decisionSupportService.getPatientAlerts(patientId, includeAcknowledged);
-  }
-
-  @Post('alerts/:alertId/acknowledge')
-  @ApiOperation({ summary: 'Acknowledge an alert' })
-  @ApiParam({ name: 'alertId', description: 'Alert UUID' })
-  async acknowledgeAlert(
-    @Param('alertId') alertId: string,
-    @Body() body: { acknowledgedBy: string; notes?: string },
-  ) {
-    return await this.decisionSupportService.acknowledgeAlert(
-      alertId,
-      body.acknowledgedBy,
-      body.notes,
-    );
-  }
-
-  @Post('alerts/:alertId/dismiss')
-  @ApiOperation({ summary: 'Dismiss an alert' })
-  @ApiParam({ name: 'alertId', description: 'Alert UUID' })
-  async dismissAlert(@Param('alertId') alertId: string, @Body() body: { reason?: string }) {
-    return await this.decisionSupportService.dismissAlert(alertId, body.reason);
-  }
-
-  @Post('evaluate')
-  @ApiOperation({ summary: 'Evaluate a treatment plan for recommendations' })
-  async evaluateTreatmentPlan(@Body() body: { treatmentPlanId: string; diagnosisIds: string[] }) {
-    return await this.decisionSupportService.evaluateTreatmentPlan(
-      body.treatmentPlanId,
-      body.diagnosisIds,
-    );
-  }
-}
+/* … truncated 4911 chars — edit only what you need near the top … */

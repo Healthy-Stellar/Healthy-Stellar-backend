@@ -11,17 +11,19 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   Req,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RecordVersionService } from './record-version.service';
 import { AmendRecordDto } from './dto/amend-record.dto';
 
-// Replace with your project's actual auth guard and user decorator
-// import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-// import { CurrentUser } from '../../auth/decorators/current-user.decorator';
-
+@ApiTags('Record Versions')
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+@UseGuards(JwtAuthGuard)
 @Controller('records/:id')
-// @UseGuards(JwtAuthGuard)
 export class RecordVersionController {
   constructor(private readonly versionService: RecordVersionService) {}
 
@@ -33,7 +35,10 @@ export class RecordVersionController {
     @UploadedFile() file: Express.Multer.File,
     @Req() req: any,
   ) {
-    const userId = req.user?.sub ?? 'stub-user';
+    const userId: string = req.user?.sub;
+    if (!userId) {
+      throw new UnauthorizedException('Authenticated user identity could not be resolved');
+    }
     const encryptedDek = dto.encryptedDek ?? '';
     return this.versionService.amend(recordId, dto, file, userId, encryptedDek);
   }
@@ -45,7 +50,10 @@ export class RecordVersionController {
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Req() req: any,
   ) {
-    const userId = req.user?.sub ?? 'stub-user';
+    const userId: string = req.user?.sub;
+    if (!userId) {
+      throw new UnauthorizedException('Authenticated user identity could not be resolved');
+    }
     return this.versionService.getVersionHistory(recordId, userId, page, limit);
   }
 
@@ -55,7 +63,10 @@ export class RecordVersionController {
     @Param('version', ParseIntPipe) version: number,
     @Req() req: any,
   ) {
-    const userId = req.user?.sub ?? 'stub-user';
+    const userId: string = req.user?.sub;
+    if (!userId) {
+      throw new UnauthorizedException('Authenticated user identity could not be resolved');
+    }
     return this.versionService.getSpecificVersion(recordId, version, userId);
   }
 
@@ -65,7 +76,10 @@ export class RecordVersionController {
     @Query('version') versionParam: string,
     @Req() req: any,
   ) {
-    const userId = req.user?.sub ?? 'stub-user';
+    const userId: string = req.user?.sub;
+    if (!userId) {
+      throw new UnauthorizedException('Authenticated user identity could not be resolved');
+    }
     const version = versionParam ? parseInt(versionParam, 10) : undefined;
     return this.versionService.getLatestOrVersion(recordId, userId, version);
   }

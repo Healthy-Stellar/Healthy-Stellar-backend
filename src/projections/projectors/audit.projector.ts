@@ -11,22 +11,13 @@ import {
   AccessRevokedEvent,
 } from './domain-events';
 import { CheckpointService } from '../checkpoint/checkpoint.service';
+import { AuditLogProjection } from '../entities/audit-log-projection.entity';
 
 type AuditableEvent =
   | RecordUploadedEvent
   | RecordAmendedEvent
   | AccessGrantedEvent
   | AccessRevokedEvent;
-
-class AuditLog {
-  id: string;
-  eventType: string;
-  entityId: string;
-  actorId: string;
-  payload: Record<string, unknown>;
-  eventVersion: number;
-  occurredAt: Date;
-}
 
 const PROJECTOR_NAME = 'AuditProjector';
 
@@ -35,16 +26,19 @@ export class AuditProjector implements IEventHandler<AuditableEvent> {
   private readonly logger = new Logger(AuditProjector.name);
 
   constructor(
-    @InjectRepository(AuditLog)
-    private readonly auditRepo: Repository<AuditLog>,
+    @InjectRepository(AuditLogProjection)
+    private readonly auditRepo: Repository<AuditLogProjection>,
     private readonly checkpoints: CheckpointService,
     @InjectQueue('projection-dlq') private readonly dlq: Queue,
   ) {}
 
   async handle(event: AuditableEvent): Promise<void> {
-    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME);
+    const aggregateId = this.extractEntityId(event);
+    const version = this.extractVersion(event);
 
-    if (event.version <= lastVersion) {
+    // Idempotency guard — scoped per aggregate, since event versions reset per aggregate
+    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME, aggregateId);
+    if (version <= lastVersion) {
       return;
     }
 
@@ -53,22 +47,21 @@ export class AuditProjector implements IEventHandler<AuditableEvent> {
       await this.auditRepo
         .createQueryBuilder()
         .insert()
-        .into(AuditLog)
+        .into(AuditLogProjection)
         .values({
-          id: () => 'gen_random_uuid()',
+          aggregateId,
+          aggregateType: this.extractAggregateType(event),
           eventType: event.constructor.name,
-          entityId: this.extractEntityId(event),
-          actorId: this.extractActorId(event),
           payload: event as unknown as Record<string, unknown>,
-          eventVersion: event.version,
+          version,
           occurredAt: event.occurredAt,
         })
-        .orIgnore() // idempotent: unique on event_version enforced at DB level
+        .orIgnore()
         .execute();
 
-      await this.checkpoints.advance(PROJECTOR_NAME, event.version);
+      await this.checkpoints.advance(PROJECTOR_NAME, aggregateId, version);
     } catch (err) {
-      this.logger.error(`${PROJECTOR_NAME}: failed on version ${event.version} — ${err.message}`);
+      this.logger.error(`${PROJECTOR_NAME}: failed on version ${version} — ${err.message}`);
       await this.dlq.add(
         'projection-failed',
         { projectorName: PROJECTOR_NAME, event, error: err.message },
@@ -88,10 +81,22 @@ export class AuditProjector implements IEventHandler<AuditableEvent> {
     return event.grantId;
   }
 
+  private extractVersion(event: AuditableEvent): number {
+    if (event instanceof RecordAmendedEvent) return event.newVersion;
+    return event.version;
+  }
+
   private extractActorId(event: AuditableEvent): string {
     if (event instanceof RecordUploadedEvent) return event.uploadedBy;
     if (event instanceof RecordAmendedEvent) return event.amendedBy;
     if (event instanceof AccessGrantedEvent) return event.grantedBy;
     return event.revokedBy;
+  }
+
+  private extractAggregateType(event: AuditableEvent): string {
+    if (event instanceof RecordUploadedEvent || event instanceof RecordAmendedEvent) {
+      return 'MedicalRecord';
+    }
+    return 'AccessGrant';
   }
 }
