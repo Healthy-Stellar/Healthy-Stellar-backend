@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, BadRequestException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthTokenService } from './auth-token.service';
 import { PasswordValidationService } from './password-validation.service';
@@ -71,6 +72,10 @@ function buildMocks() {
     log: jest.fn().mockResolvedValue(undefined),
   };
 
+  const configService = {
+    get: jest.fn((_key: string, def?: string) => def),
+  };
+
   return {
     userRepo,
     passwordValidation,
@@ -79,6 +84,7 @@ function buildMocks() {
     sessionManagementService,
     refreshTokenStore,
     auditLogService,
+    configService,
   };
 }
 
@@ -95,6 +101,7 @@ async function buildService(overrides: Partial<ReturnType<typeof buildMocks>> = 
       { provide: SessionManagementService, useValue: mocks.sessionManagementService },
       { provide: RefreshTokenStoreService, useValue: mocks.refreshTokenStore },
       { provide: AuditLogService, useValue: mocks.auditLogService },
+      { provide: ConfigService, useValue: mocks.configService },
     ],
   }).compile();
 
@@ -312,5 +319,130 @@ describe('AuthService.resetPassword (#1277)', () => {
       'Reset token has expired',
     );
     expect(mocks.userRepo.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthService.login lockout policy (#1279)', () => {
+  const makeUser = (over: Partial<User> = {}) => ({
+    ...mockUser,
+    passwordHash: 'hashed',
+    failedLoginAttempts: 0,
+    lockedUntil: null as unknown as Date,
+    ...over,
+  });
+
+  it('returns the same generic error for a locked account whether the password is correct or not', async () => {
+    const lockedUser = makeUser({
+      lockedUntil: new Date(Date.now() + 60_000),
+      failedLoginAttempts: 5,
+    });
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(lockedUser);
+
+    mocks.passwordValidation.verifyPassword.mockResolvedValue(true); // "correct" password
+    await expect(
+      service.login({ email: 'test@example.com', password: 'right-pw' }, '127.0.0.1', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+
+    mocks.passwordValidation.verifyPassword.mockResolvedValue(false); // "wrong" password
+    await expect(
+      service.login({ email: 'test@example.com', password: 'wrong-pw' }, '127.0.0.1', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+  });
+
+  it('never extends an active lock on further failed attempts', async () => {
+    const lockedUser = makeUser({
+      lockedUntil: new Date(Date.now() + 60_000),
+      failedLoginAttempts: 5,
+    });
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(lockedUser);
+    mocks.passwordValidation.verifyPassword.mockResolvedValue(false);
+
+    await expect(
+      service.login({ email: 'test@example.com', password: 'wrong' }, '127.0.0.1', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+
+    // Lock must not be extended: we short-circuit before persisting.
+    expect(mocks.userRepo.save).not.toHaveBeenCalled();
+    // A dummy hash verification runs to equalise timing.
+    expect(mocks.passwordValidation.verifyPassword).toHaveBeenCalledWith(
+      'wrong',
+      expect.any(String),
+    );
+  });
+
+  it('resets the failure counter when a prior lock has expired, so one typo does not re-lock', async () => {
+    const expiredUser = makeUser({
+      lockedUntil: new Date(Date.now() - 1000),
+      failedLoginAttempts: 6,
+    });
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(expiredUser);
+    mocks.passwordValidation.verifyPassword.mockResolvedValue(false);
+
+    await expect(
+      service.login({ email: 'test@example.com', password: 'typo' }, '127.0.0.1', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+
+    expect(mocks.userRepo.save).toHaveBeenCalledTimes(1);
+    const saved = mocks.userRepo.save.mock.calls[0][0];
+    expect(saved.failedLoginAttempts).toBe(1); // reset (0) + 1
+    expect(saved.lockedUntil).toBeNull(); // not re-locked after a single typo
+  });
+
+  it('runs a dummy hash for unknown emails and does not persist anything', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(null);
+
+    await expect(
+      service.login({ email: 'nope@example.com', password: 'whatever' }, '127.0.0.1', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+
+    // Dummy hash verification runs (timing parity) but nothing is persisted.
+    expect(mocks.passwordValidation.verifyPassword).toHaveBeenCalledWith(
+      'whatever',
+      expect.any(String),
+    );
+    expect(mocks.userRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('locks after the configured threshold of failed attempts (config-driven)', async () => {
+    const { service, mocks } = await buildService({
+      configService: {
+        get: jest.fn((key: string) => (key === 'LOCKOUT_THRESHOLD' ? '2' : '30')),
+      } as unknown as typeof mocks.configService,
+    });
+    const user = makeUser({ failedLoginAttempts: 1, lockedUntil: null });
+    mocks.userRepo.findOne.mockResolvedValue(user);
+    mocks.passwordValidation.verifyPassword.mockResolvedValue(false);
+
+    await expect(
+      service.login({ email: 'test@example.com', password: 'bad' }, '127.0.0.1', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+
+    const saved = mocks.userRepo.save.mock.calls[0][0];
+    expect(saved.failedLoginAttempts).toBe(2);
+    expect(saved.lockedUntil).not.toBeNull(); // locked after threshold (2)
+  });
+
+  it('uses safe defaults when LOCKOUT env vars are unset', async () => {
+    const { service, mocks } = await buildService({
+      configService: {
+        get: jest.fn((_k: string, def?: string) => def),
+      } as unknown as typeof mocks.configService,
+    });
+    const user = makeUser({ failedLoginAttempts: 4, lockedUntil: null });
+    mocks.userRepo.findOne.mockResolvedValue(user);
+    mocks.passwordValidation.verifyPassword.mockResolvedValue(false);
+
+    await expect(
+      service.login({ email: 'test@example.com', password: 'bad' }, '127.0.0.1', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+
+    // 4 + 1 = 5 reaches the default threshold → locked
+    const saved = mocks.userRepo.save.mock.calls[0][0];
+    expect(saved.failedLoginAttempts).toBe(5);
+    expect(saved.lockedUntil).not.toBeNull();
   });
 });

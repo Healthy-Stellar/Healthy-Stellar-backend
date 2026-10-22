@@ -6,6 +6,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -17,6 +18,12 @@ import { SessionManagementService } from './session-management.service';
 import { RefreshTokenStoreService } from './refresh-token-store.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { RegisterDto, RegisterStaffDto, LoginDto, ChangePasswordDto } from '../dto/auth.dto';
+
+// Constant argon2 hash used to equalise response timing for unknown-email logins and
+// locked-account attempts so the response time cannot leak account existence or password
+// correctness (issue #1279).
+const DUMMY_PASSWORD_HASH =
+  '$argon2id$v=19$m=65536,t=3,p=4$5exxm5pbciPf0g5i8txvCw$QJsjvI+Z6SZa0htGA/4o2Zgr5VbRr3C2Od1siZC2DCM';
 
 export interface AuthResponse {
   user: {
@@ -46,6 +53,7 @@ export class AuthService {
     private sessionManagementService: SessionManagementService,
     private refreshTokenStore: RefreshTokenStoreService,
     private auditLogService: AuditLogService,
+    private configService: ConfigService,
   ) {}
 
   /**
@@ -181,24 +189,65 @@ export class AuthService {
 
   /**
    * Login user
+   *
+   * Lockout policy (issue #1279):
+   * - The lock check runs BEFORE any password verification, so a locked account
+   *   always returns the same generic error and never reveals whether the password
+   *   was correct.
+   * - An active lock is never extended by further failures, so an attacker cannot
+   *   keep an account locked indefinitely with one request every interval.
+   * - When a prior lock has expired, the failure counter is reset so a single typo
+   *   cannot immediately re-lock the account.
+   * - Unknown-email logins run a dummy hash verification to equalise timing and
+   *   avoid leaking which emails are registered.
+   * - Threshold and duration are read from config (LOCKOUT_THRESHOLD /
+   *   LOCKOUT_DURATION_MINUTES) with the original 5 / 30-minute defaults.
    */
   async login(loginDto: LoginDto, ipAddress: string, userAgent: string): Promise<AuthResponse> {
     const { email, password } = loginDto;
 
+    const now = Date.now();
+    const threshold = this.lockoutThreshold;
+    const durationMs = this.lockoutDurationMs;
+
     // Find user
     const user = await this.userRepository.findOne({ where: { email } });
 
-    if (
-      !user ||
-      !(await this.passwordValidationService.verifyPassword(password, user.passwordHash))
-    ) {
-      // Increment failed login attempts
+    // Lock check runs FIRST — before any password work. A locked account returns the
+    // same generic error regardless of password correctness, and the lock is never
+    // extended here.
+    if (user && user.lockedUntil && user.lockedUntil.getTime() > now) {
+      await this.runDummyHash(password);
+      await this.auditLogService.log({
+        actorAddress: user.id,
+        action: 'LOGIN_FAILED',
+        ipAddress,
+        metadata: { reason: 'Account is locked', success: false },
+      });
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    // If a previous lock has expired, clear it and reset the counter so a single
+    // subsequent failure cannot immediately re-lock the account.
+    if (user && user.lockedUntil && user.lockedUntil.getTime() <= now) {
+      user.lockedUntil = null;
+      user.failedLoginAttempts = 0;
+    }
+
+    // Verify password. For an unknown email we run a dummy hash verification so the
+    // response time does not reveal whether the email is registered.
+    const passwordOk = user
+      ? await this.passwordValidationService.verifyPassword(password, user.passwordHash)
+      : await this.runDummyHash(password);
+
+    if (!user || !passwordOk) {
       if (user) {
         user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
 
-        // Lock account after 5 failed attempts
-        if (user.failedLoginAttempts >= 5) {
-          user.lockedUntil = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+        // Only lock when the threshold is reached AND the account is not already
+        // locked — never extend an active lock.
+        if (user.failedLoginAttempts >= threshold) {
+          user.lockedUntil = new Date(now + durationMs);
           await this.auditLogService.log({
             actorAddress: user.id,
             action: 'ACCOUNT_LOCKED',
@@ -218,17 +267,6 @@ export class AuthService {
       });
 
       throw new UnauthorizedException('Invalid email or password');
-    }
-
-    // Check if account is locked
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
-      await this.auditLogService.log({
-        actorAddress: user.id,
-        action: 'LOGIN_FAILED',
-        ipAddress,
-        metadata: { reason: 'Account is locked', success: false },
-      });
-      throw new UnauthorizedException('Account is locked. Try again later');
     }
 
     // Check if user is active
@@ -310,6 +348,27 @@ export class AuthService {
       },
       mfaRequired: mfaEnabled,
     };
+  }
+
+  /**
+   * Constant-work password verification used on timing-sensitive paths
+   * (unknown-email logins and locked-account attempts) so the response time cannot
+   * leak account existence or password correctness.
+   */
+  private runDummyHash(password: string): Promise<boolean> {
+    return this.passwordValidationService.verifyPassword(password, DUMMY_PASSWORD_HASH);
+  }
+
+  private get lockoutThreshold(): number {
+    const raw = this.configService.get<string>('LOCKOUT_THRESHOLD', '5');
+    const parsed = Number.parseInt(raw ?? '5', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
+  }
+
+  private get lockoutDurationMs(): number {
+    const raw = this.configService.get<string>('LOCKOUT_DURATION_MINUTES', '30');
+    const parsed = Number.parseInt(raw ?? '30', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed * 60 * 1000 : 30 * 60 * 1000;
   }
 
   private isClinicalRole(role: UserRole): boolean {
