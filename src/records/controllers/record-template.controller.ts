@@ -11,6 +11,8 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
 import { RecordTemplateService } from '../services/record-template.service';
 import { CreateTemplateDto } from '../dto/create-template.dto';
 import { CreateRecordFromTemplateDto } from '../dto/create-record-from-template.dto';
@@ -23,6 +25,8 @@ export class RecordTemplateController {
   constructor(private readonly templateService: RecordTemplateService) {}
 
   @Post('templates')
+  @UseGuards(RolesGuard)
+  @Roles('PHYSICIAN', 'NURSE', 'ADMIN')
   @ApiOperation({ summary: 'Create a record template (provider only)' })
   @ApiResponse({ status: 201, description: 'Template created successfully' })
   @ApiResponse({ status: 400, description: 'Invalid schema JSON' })
@@ -41,7 +45,9 @@ export class RecordTemplateController {
   }
 
   @Post('records/from-template/:templateId')
-  @ApiOperation({ summary: 'Create a record pre-filled from a template' })
+  @UseGuards(RolesGuard)
+  @Roles('PHYSICIAN', 'NURSE', 'ADMIN')
+  @ApiOperation({ summary: 'Create a record pre-filled from a template (provider only)' })
   @ApiResponse({ status: 201, description: 'Record created from template' })
   @ApiResponse({ status: 403, description: 'Access to template not allowed' })
   @ApiResponse({ status: 404, description: 'Template not found' })

@@ -16,9 +16,14 @@ export enum HandoffStatus {
 @Entity('care_plan_handoffs')
 @Index(['patientId', 'handoffTime'])
 @Index(['toProvider', 'status'])
+@Index(['tenantId', 'patientId'])
 export class CarePlanHandoff {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'uuid' })
+  @Index()
+  tenantId: string;
 
   @Column({ type: 'uuid' })
   @Index()

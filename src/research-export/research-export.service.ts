@@ -2,7 +2,7 @@ import {
   Injectable,
   ForbiddenException,
   Logger,
-  NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
@@ -14,11 +14,8 @@ import { MedicalRecord } from '../medical-records/entities/medical-record.entity
 import { Patient } from '../patients/entities/patient.entity';
 import { AccessGrant, GrantStatus } from '../access-control/entities/access-grant.entity';
 import { AuditService } from '../common/audit/audit.service';
-import { TenantConfigService } from '../tenant-config/services/tenant-config.service';
-import { TenantService } from '../tenant/services/tenant.service';
-import { TenantContext } from '../tenant/context/tenant.context';
-import { TenantDatabaseRoutingService } from '../database/tenant-database-routing.service';
-import { Tenant } from '../tenant/entities/tenant.entity';
+
+const RESEARCH_K_MIN_FLOOR = 5;
 import {
   ResearchExportFiltersDto,
   AnonymizedRecord,
@@ -134,6 +131,7 @@ export class ResearchExportService {
       throw new ForbiddenException('Research export requires admin approval before dispatch');
     }
 
+    this.exportSalt = uuidv4();
     const records = await this.fetchRecords(filters);
     const patientIds = [...new Set(records.map((r) => r.patientId))];
 
@@ -250,42 +248,54 @@ export class ResearchExportService {
 
   // ─── De-identification Pipeline ────────────────────────────────────────────
 
-  /**
-   * Configurable anonymisation profile.
-   *  - kAnonymity: minimum group size below which a patient's records are suppressed.
-   *  - quasiIdentifiers: which generalised quasi-identifier fields are retained;
-   *    any quasi-identifier not listed is suppressed from the export.
-   */
-  getAnonymizationProfile(): { kAnonymity: number; quasiIdentifiers: string[] } {
-    return {
-      kAnonymity: parseInt(this.config.get<string>('RESEARCH_K_ANONYMITY', '3'), 10) || 3,
-      quasiIdentifiers: this.config
-        .get<string>('RESEARCH_QUASI_IDENTIFIERS', 'ageBracket,sex,region,yearOfRecord')
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
-    };
+  private getKAnonymityThreshold(): number {
+    const configured = this.config.get<number | string>('RESEARCH_K_ANONYMITY');
+    let k = 3;
+    if (configured !== undefined && configured !== null) {
+      const parsed = typeof configured === 'string' ? parseInt(configured, 10) : configured;
+      if (!isNaN(parsed)) {
+        k = parsed;
+      }
+    }
+    if (k < RESEARCH_K_MIN_FLOOR) {
+      k = RESEARCH_K_MIN_FLOOR;
+    }
+    return k;
   }
 
   private anonymizeAndSuppress(
     records: MedicalRecord[],
     patientMap: Map<string, Patient>,
   ): AnonymizedRecord[] {
-    const profile = this.getAnonymizationProfile();
-    const byPatient = new Map<string, MedicalRecord[]>();
-    for (const r of records) {
-      const list = byPatient.get(r.patientId) ?? [];
-      list.push(r);
-      byPatient.set(r.patientId, list);
+    // First de-identify all records
+    const deIdentified = records.map((record) => {
+      const patient = patientMap.get(record.patientId);
+      return {
+        record,
+        patientId: record.patientId,
+        anon: this.deIdentifyRecord(record, patient),
+      };
+    });
+
+    // Group by quasi-identifier
+    const k = this.getKAnonymityThreshold();
+    const groups = new Map<string, typeof deIdentified>();
+    for (const item of deIdentified) {
+      const key = `${item.anon.ageBracket}|${item.anon.region}|${item.anon.recordType}|${item.anon.yearOfRecord}`;
+      const list = groups.get(key) ?? [];
+      list.push(item);
+      groups.set(key, list);
     }
 
+    // Suppress groups where number of distinct patients < k
     const suppressed: AnonymizedRecord[] = [];
-    for (const [patientId, patientRecords] of byPatient) {
-      if (patientRecords.length < profile.kAnonymity) continue; // k-anonymity floor
-
-      const patient = patientMap.get(patientId);
-      for (const record of patientRecords) {
-        suppressed.push(this.deIdentifyRecord(record, patient, profile.quasiIdentifiers));
+    for (const [, group] of groups) {
+      const distinctPatients = new Set(group.map((g) => g.patientId));
+      if (distinctPatients.size < k) {
+        continue;
+      }
+      for (const item of group) {
+        suppressed.push(item.anon);
       }
     }
 
@@ -316,39 +326,19 @@ export class ResearchExportService {
 
   // ─── HIPAA Safe Harbor Helpers ─────────────────────────────────────────────
 
-  /**
-   * Derive the 256-bit pseudonymisation key. The underlying secret is provisioned
-   * and stored via key-management / KMS (surfaced here as RESEARCH_PSEUDONYM_KEY).
-   */
-  private pseudonymKey(): Buffer {
-    const secret = this.config.get<string>('RESEARCH_PSEUDONYM_KEY');
-    if (!secret) {
-      throw new Error('RESEARCH_PSEUDONYM_KEY environment variable is required for pseudonymization');
+  private exportSalt?: string;
+
+  private getExportSalt(): string {
+    if (!this.exportSalt) {
+      this.exportSalt = uuidv4();
     }
-    return scryptSync(secret, 'research-export-pseudonym', 32);
+    return this.exportSalt;
   }
 
-  /**
-   * Reversible, keyed pseudonymisation of a direct identifier. Uses AES-256-CBC
-   * with a deterministic IV derived (HMAC) from the identifier, so the same
-   * patient always maps to the same token while remaining reversible by holders
-   * of the key (re-identification) — see {@link reIdentify}.
-   */
-  pseudonymize(patientId: string): string {
-    const key = this.pseudonymKey();
-    const iv = createHmac('sha256', key).update(patientId).digest().subarray(0, 16);
-    const cipher = createCipheriv('aes-256-cbc', key, iv);
-    const ciphertext = Buffer.concat([cipher.update(patientId, 'utf8'), cipher.final()]);
-    return `${iv.toString('hex')}${ciphertext.toString('hex')}`;
-  }
-
-  /** Reverse a pseudonymous ID back to the original identifier (authorised re-identification). */
-  reIdentify(token: string): string {
-    const key = this.pseudonymKey();
-    const iv = Buffer.from(token.slice(0, 32), 'hex');
-    const ciphertext = Buffer.from(token.slice(32), 'hex');
-    const decipher = createDecipheriv('aes-256-cbc', key, iv);
-    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+  pseudonymize(patientId: string, salt?: string): string {
+    const baseSalt = salt ?? this.config.get<string>('ANONYMIZATION_SALT', 'default-salt');
+    const exportSalt = this.exportSalt ? `${baseSalt}:${this.exportSalt}` : baseSalt;
+    return createHash('sha256').update(`${exportSalt}:${patientId}`).digest('hex').slice(0, 16);
   }
 
   toAgeBracket(dateOfBirth: string): string {

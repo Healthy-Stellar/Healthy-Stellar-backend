@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository, Between } from 'typeorm';
 import { MissedDose, MissedDoseReason, FollowUpStatus } from '../entities/missed-dose.entity';
@@ -123,7 +123,7 @@ export class MissedDoseService {
     });
 
     if (!missedDose) {
-      throw new Error('Missed dose record not found');
+      throw new NotFoundException('Missed dose record not found');
     }
 
     const updates: Partial<MissedDose> = {
@@ -147,7 +147,7 @@ export class MissedDoseService {
     });
 
     if (!missedDose) {
-      throw new Error('Missed dose record not found');
+      throw new NotFoundException('Missed dose record not found');
     }
 
     await this.missedDoseRepository.update(id, {
@@ -168,7 +168,7 @@ export class MissedDoseService {
     });
 
     if (!missedDose) {
-      throw new Error('Missed dose record not found');
+      throw new NotFoundException('Missed dose record not found');
     }
 
     await this.missedDoseRepository.update(id, {

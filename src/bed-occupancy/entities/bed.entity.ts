@@ -4,10 +4,15 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 import { BedStatus } from '../bed-status.enum';
 
 @Entity('beds')
+@Index('UQ_beds_patient_id_occupied', ['patientId'], {
+  unique: true,
+  where: `"status" = 'occupied'`,
+})
 export class Bed {
   @PrimaryGeneratedColumn('uuid')
   id: string;

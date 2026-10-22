@@ -28,6 +28,10 @@ import { TenantFieldValidationService } from './services/tenant-field-validation
 import { MedicalValidationController } from './medical-validation.controller';
 import { TenantFieldValidationController } from './controllers/tenant-field-validation.controller';
 
+// Guards
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+
 @Module({
   imports: [
     ScheduleModule.forRoot(),
@@ -52,6 +56,8 @@ import { TenantFieldValidationController } from './controllers/tenant-field-vali
     DataGovernanceService,
     MedicalMonitoringService,
     TenantFieldValidationService,
+    JwtAuthGuard,
+    RolesGuard,
   ],
   exports: [
     Icd10ValidationService,

@@ -73,14 +73,16 @@ export class DashboardService {
       alerts: systemHealth.alerts,
       performance: {
         responseTime: systemHealth.metrics.api_response_time?.current || 0,
-        throughput: Math.floor(Math.random() * 1000), // Mock data
-        errorRate: Math.random() * 5, // Mock data
+        throughput: null,
+        errorRate: null,
+        notAvailable: ['throughput', 'errorRate'],
       },
       resources: {
         cpu: systemHealth.metrics.cpu_usage?.current || 0,
         memory: systemHealth.metrics.memory_usage?.current || 0,
-        disk: Math.random() * 100, // Mock data
-        network: Math.random() * 100, // Mock data
+        disk: null,
+        network: null,
+        notAvailable: ['disk', 'network'],
       },
     };
   }
@@ -129,12 +131,14 @@ export class DashboardService {
       maintenance: {
         due: equipmentMetrics.maintenanceDue,
         overdue: Math.floor(equipmentMetrics.maintenanceDue * 0.3), // Mock calculation
-        scheduled: Math.floor(Math.random() * 20), // Mock data
+        scheduled: null,
+        notAvailable: ['scheduled'],
       },
       utilization: {
-        high: Math.floor(Math.random() * 50), // Mock data
-        medium: Math.floor(Math.random() * 30), // Mock data
-        low: Math.floor(Math.random() * 20), // Mock data
+        high: null,
+        medium: null,
+        low: null,
+        notAvailable: ['high', 'medium', 'low'],
       },
     };
   }
@@ -158,8 +162,9 @@ export class DashboardService {
       bySeverity: complianceStatus.bySeverity,
       recentViolations: complianceStatus.recentViolations,
       trends: {
-        improving: Math.random() > 0.5, // Mock data
+        improving: null,
         riskAreas: ['Data Security', 'Access Control'], // Mock data
+        notAvailable: ['improving'],
       },
     };
   }
@@ -216,10 +221,10 @@ export class DashboardService {
   }
 
   private groupAlertsByDepartment(alerts: any[]): Record<string, number> {
-    return alerts.reduce((groups, alert) => {
+    return alerts.reduce((acc, alert) => {
       const dept = alert.department || 'Unknown';
-      groups[dept] = (groups[dept] || 0) + 1;
-      return groups;
-    }, {});
+      acc[dept] = (acc[dept] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
   }
 }
