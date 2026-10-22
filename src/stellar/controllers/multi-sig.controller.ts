@@ -17,10 +17,15 @@ import {
   MultiSigTransactionResponse,
 } from '../interfaces/multi-sig.interface';
 import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @ApiTags('Stellar – Multi-Signature Payments')
 @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 @Controller('stellar/multi-sig')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class MultiSigController {
   constructor(
     private readonly multiSigService: MultiSigTransactionService,
