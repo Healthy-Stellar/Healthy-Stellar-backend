@@ -9,6 +9,7 @@ import { DoctorAvailability } from './entities/doctor-availability.entity';
 import { ConsultationNote } from './entities/consultation-note.entity';
 import { AppointmentReminder } from './entities/appointment-reminder.entity';
 import { AppointmentWaitlist } from './entities/appointment-waitlist.entity';
+import { Patient } from '../patients/entities/patient.entity';
 
 // Services
 import { AppointmentService } from './services/appointment.service';
@@ -16,6 +17,7 @@ import { ConsultationService } from './services/consultation.service';
 import { ReminderService } from './services/reminder.service';
 import { DoctorAvailabilityService } from './services/doctor-availability.service';
 import { WaitlistService } from './services/waitlist.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 // Controllers
 import { AppointmentController } from './controllers/appointment.controller';
@@ -34,7 +36,9 @@ import { AuditModule } from '../common/audit/audit.module';
       ConsultationNote,
       AppointmentReminder,
       AppointmentWaitlist,
+      Patient,
     ]),
+    NotificationsModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: '15m' },

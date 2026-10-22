@@ -2,9 +2,10 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { AppointmentWaitlist, WaitlistStatus } from '../entities/appointment-waitlist.entity';
-import { Appointment, AppointmentStatus, AppointmentType, MedicalPriority } from '../entities/appointment.entity';
+import { Appointment, AppointmentType, MedicalPriority } from '../entities/appointment.entity';
 import { JoinWaitlistDto } from '../dto/waitlist.dto';
-import { TenantContext } from '../../tenant/context/tenant.context';
+import { AppointmentService } from './appointment.service';
+import { CreateAppointmentDto } from '../dto/create-appointment.dto';
 
 const DEFAULT_RESPONSE_WINDOW_MINUTES = 30;
 
@@ -15,8 +16,8 @@ export class WaitlistService {
   constructor(
     @InjectRepository(AppointmentWaitlist)
     private readonly waitlistRepo: Repository<AppointmentWaitlist>,
-    @InjectRepository(Appointment)
-    private readonly appointmentRepo: Repository<Appointment>,
+    @Inject(forwardRef(() => AppointmentService))
+    private readonly appointmentService: AppointmentService,
   ) {}
 
   private getScopedWhere(where: Record<string, any> = {}): Record<string, any> {
@@ -134,14 +135,8 @@ export class WaitlistService {
         status: WaitlistStatus.NOTIFIED,
       }),
     });
-    if (!entry) {
-      throw new NotFoundException(`No active offer found for waitlist entry ${waitlistId}`);
-    }
 
-    const now = Date.now();
-    if (entry.notifiedAt && now - entry.notifiedAt.getTime() > entry.responseWindowMinutes * 60_000) {
-      entry.status = WaitlistStatus.EXPIRED;
-      await this.waitlistRepo.save(entry);
+    if ('expired' in result) {
       throw new NotFoundException(`Offer for waitlist entry ${waitlistId} has expired`);
     }
 

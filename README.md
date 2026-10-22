@@ -1,16 +1,17 @@
-# Healthy-Stellar-backend
+# Handsoff
 
-NestJS backend for a decentralized healthcare system built on Stellar Soroban smart contracts.
+Handsoff is a NestJS backend for clinical operations: patient records, appointments, pharmacy, laboratory, analytics, and integrations.
 
+## Getting started
 ## Table of Contents
 
 - [Project Structure](#project-structure)
 - [Local Development with Docker](#local-development-with-docker)
 - [Background Worker Process](#background-worker-process)
-- [Installation & Setup](#installation--setup)
+- [Getting Started](#getting-started)
 - [Configuration](#configuration)
 - [Scripts Reference](#scripts-reference)
-- [Core Modules](#core-modules)
+- [Security Headers](#security-headers)
 - [API Endpoints](#api-endpoints)
 - [Webhooks](#webhooks)
 - [Postman Collection](#postman-collection)
@@ -223,8 +224,20 @@ If you run the NestJS API locally using `npm run start:dev`, you **MUST** also s
 npm run start:worker:dev
 ```
 
-The application will be available at `http://localhost:3000`
-Swagger documentation will be available at `http://localhost:3000/api`
+The application will be available at `http://localhost:3000`.
+Swagger documentation will be available at `http://localhost:3000/api`.
+
+## Getting Started
+
+**Prerequisites:** Node.js v18+ and PostgreSQL v12+.
+
+1. Install dependencies with `npm install`.
+2. Copy `.env.example` to `.env` and configure the required values.
+3. Run database migrations with `npm run migration:run`.
+4. Start the API with `npm run start:dev`.
+5. In a separate terminal, start the background worker with `npm run start:worker:dev`.
+
+Run `npm run seed` only when you want to populate a development database with sample data.
 
 ## Scripts Reference
 
@@ -268,7 +281,7 @@ cp .env.example .env
 | Database (primary) | `DATABASE_URL` / `DB_HOST` … `DB_POOL_MAX` |
 | Database (read replica) | `DB_REPLICA_HOST` … `DB_REPLICA_POOL_MAX` |
 | Redis | `REDIS_URL` / `REDIS_HOST` … `REDIS_DB` |
-| JWT & Auth | `JWT_SECRET`, `JWT_EXPIRATION`, `REFRESH_TOKEN_SECRET` |
+| JWT & Auth | `JWT_SECRET`, `JWT_EXPIRATION`, `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRATION` |
 | Encryption / KMS | `ENCRYPTION_MASTER_KEY`, `MASTER_KEY`, `KMS_ENABLED`, `AWS_*` |
 | Stellar / Soroban | `STELLAR_SECRET_KEY`, `STELLAR_CONTRACT_ID`, `SOROBAN_RPC_URL` |
 | IPFS | `IPFS_NODE_URL`, `IPFS_GATEWAY`, `IPFS_FALLBACK_GATEWAY` |
@@ -282,7 +295,7 @@ cp .env.example .env
 
 ## Security Headers
 
-The API applies `helmet()` in `src/main.ts` using the shared configuration in `src/security/http-security.config.ts`.
+The API applies the shared Helmet configuration once through `applySecurityHeaders()` in `src/security/http-security.config.ts`.
 
 **Prerequisites:** Node.js v18+, PostgreSQL v12+
 
@@ -398,7 +411,7 @@ For local development, the routing service initializes SQLite-backed regional da
 | Core               | `NODE_ENV`, `PORT`, `APP_URL`, `APP_DOMAIN`                                                                               |
 | Database           | `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_NAME`                                                             |
 | Encryption / PHI   | `ENCRYPTION_KEY`, `PHI_ENCRYPTION_KEY`                                                                                    |
-| JWT & Auth         | `JWT_SECRET`, `JWT_REFRESH_SECRET`, `SESSION_SECRET`                                                                      |
+| JWT & Auth         | `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRATION`, `SESSION_SECRET` |
 | CORS & Security    | `ALLOWED_ORIGINS`, `CORS_ORIGIN`, `ADMIN_IP_ALLOWLIST`                                                                    |
 | Redis              | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`                                                                              |
 | Email              | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`                                                                    |
@@ -420,14 +433,14 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ## Security Headers
 
-Configured via `helmet()` in `src/main.ts` using `src/security/http-security.config.ts`:
+The API applies the shared Helmet configuration once through `applySecurityHeaders()` in `src/security/http-security.config.ts`:
 
-- `Content-Security-Policy` — restricts script/style/asset sources to prevent XSS
-- `X-Frame-Options: DENY` — blocks clickjacking via iframes
-- `X-Content-Type-Options: nosniff` — prevents MIME-type sniffing
-- `Strict-Transport-Security` — enforces HTTPS
-- `Referrer-Policy: no-referrer` — suppresses referrer leakage
-- `X-XSS-Protection: 0` — disables legacy browser XSS filter in favour of CSP
+- `Content-Security-Policy` — defaults to same-origin resources, blocks object embedding and framing, and uses a per-request nonce for scripts. Development additionally allows the Swagger CDN.
+- `X-Frame-Options: DENY` — blocks clickjacking through iframes.
+- `X-Content-Type-Options: nosniff` — prevents MIME-type sniffing.
+- `Strict-Transport-Security` — enables HTTPS-only access with a one-year max age, subdomains, and preload.
+- `Referrer-Policy: no-referrer` — suppresses referrer information.
+- `X-XSS-Protection: 0` — disables the legacy browser filter; CSP provides the script policy.
 
 ## API Endpoints
 
@@ -499,57 +512,42 @@ All non-FHIR errors return a consistent envelope (`statusCode`, `error`, `messag
 
 See [`docs/errors.md`](docs/errors.md) for the full error-code catalog (HTTP status, meaning, and retryability for every code), the exception-filter order, sanitization rules, and how `traceId` maps to logs and tracing for support requests.
 
+## Testing
+
 See **[docs/scripts.md](docs/scripts.md)** for the full list of test scripts and their prerequisites.
 
-### Quick reference
-
 ```bash
-npm run test        # unit
-npm run test:e2e    # e2e
-npm run test:cov    # coverage
-```
-
-# Unit tests with coverage
-npm run test:cov
-
-# E2E tests (requires Docker — starts a PostgreSQL container)
-npm run test:e2e
-
-# Full coverage (unit + e2e)
-npm run test:all:cov
-
-# HIPAA/GDPR compliance tests
-npm run test:compliance
+npm run test          # Unit tests
+npm run test:e2e      # End-to-end tests (requires Docker)
+npm run test:cov      # Unit-test coverage
+npm run test:all:cov  # Unit and end-to-end coverage
+npm run test:compliance  # HIPAA/GDPR compliance tests
 ```
 
 ## Deployment
 
 ```bash
-npm run build
-npm run start:prod
+npm install
+npm run start:dev
 ```
 
-Set `NODE_ENV=production`, configure DB credentials, CORS, HTTPS, and logging before deploying.
+The API is served under the global prefix `/api`. Swagger docs are available at `/api/docs`.
 
-For operational procedures used during deployment, recovery, and maintenance — key
-rotation, migration safety, break-glass review, reconciliation, dead-letter queue
-replay, projection rebuilds, and backup/restore — see the
-[operator runbooks](docs/runbooks/README.md).
+## Route overview
 
-## License
+Routes are grouped by module. Only routes registered in a module's `controllers` array are served; any controller not listed there is not exposed.
 
-MIT
+- `/auth` — authentication and session management
+- `/users` — user accounts and roles
+- `/patients` — patient records
+- `/appointments` — scheduling
+- `/pharmacy` — prescriptions, dispensing, and inventory
+- `/laboratory` — lab orders and results
+- `/analytics` — reporting and dashboards
+- `/integrations` — external system integrations
 
-## Handsoff notes
+## Contributing
 
-<!-- handsoff-issue-1062 -->
-- #1062: [High] `GdprProcessor.onModuleInit()` — GDPR erasure cascade omits the surgical-management-system module
-
-<!-- handsoff-issue-1064 -->
-- #1064: [High] `SurgicalService.updateSurgicalCase()` reschedule path bypasses the advisory lock, allowing double-booking on reschedule
-
-<!-- handsoff-issue-1023 -->
-- #1023: [Critical] `EhrImportProcessor.process()` — uploads imported HL7/CCD/CSV records to IPFS without encryption
-
-<!-- handsoff-issue-1039 -->
-- #1039: [Critical] `OnboardingService.activate()` persists the newly generated tenant Stellar secret key in plaintext
+- Keep controllers registered in a module and protected by `JwtAuthGuard` + `RolesGuard`.
+- Derive actor ids from `req.user`, never from request bodies.
+- Update this route list whenever a module's registered controllers change.

@@ -57,6 +57,13 @@ export class IncidentManagementQueryDto {
   limit?: number;
 }
 
+export class ReopenIncidentDto {
+  @ApiPropertyOptional({ description: 'Reason for reopening the incident' })
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
 export class IncidentSlaReportQueryDto {
   @ApiProperty({ example: '2024-01-01T00:00:00Z' })
   @IsDateString()
