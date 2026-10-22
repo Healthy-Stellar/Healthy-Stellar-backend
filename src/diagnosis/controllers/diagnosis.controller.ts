@@ -26,6 +26,7 @@ import {
   CreateDiagnosisDto,
   UpdateDiagnosisDto,
   SearchDiagnosisDto,
+  SearchIcd11Dto,
   DiagnosisResponseDto,
 } from '../dto/diagnosis.dto';
 
@@ -48,7 +49,8 @@ export class DiagnosisController {
     name: 'q',
     required: true,
     type: String,
-    description: 'Search keyword — matched against code, title, and synonyms',
+    description:
+      'Search keyword (2-100 characters) — matched against code, title, and synonyms',
     example: 'diabetes',
   })
   @ApiResponse({
@@ -56,8 +58,9 @@ export class DiagnosisController {
     description: 'Top 20 ICD-11 matches ranked by relevance',
     type: [Icd11SearchResultDto],
   })
-  async searchIcd11(@Query('q') q: string): Promise<Icd11SearchResultDto[]> {
-    return this.icd11Service.search(q ?? '');
+  @ApiResponse({ status: 400, description: 'Invalid query (q must be 2-100 characters)' })
+  async searchIcd11(@Query() query: SearchIcd11Dto): Promise<Icd11SearchResultDto[]> {
+    return this.icd11Service.search(query.q);
   }
 
   @Post()

@@ -14,8 +14,7 @@ We welcome contributions from developers of all skill levels. To maintain code q
 - [Development Workflow & Branching Strategy](#development-workflow--branching-strategy)
 - [Commit Message Format](#commit-message-format)
 - [Code Quality & Safety Checks](#code-quality--safety-checks)
-- [Multi-tenancy](#multi-tenancy)
-- [Data Retention](#data-retention)
+- [New Controller Security Checklist](#new-controller-security-checklist)
 - [Working with `@medchain/sdk`](#working-with-medchainsdk)
 - [Testing Guidelines](#testing-guidelines)
 - [Pull Request Process](#pull-request-process)
@@ -171,52 +170,17 @@ npm run test:i18n
 
 ---
 
-## Multi-tenancy
+## New Controller Security Checklist
 
-The backend is multi-tenant. The full model — how the current tenant is resolved, schema-per-tenant routing, when an entity needs a `tenantId` column, and how cron/queue jobs obtain tenant context — is documented in [docs/multi-tenancy.md](docs/multi-tenancy.md). Read it before writing any new service, controller, guard, interceptor, or entity.
+There is **no global authentication guard** in this application. Every controller is responsible for opting in to authentication and authorization. Before opening a PR that adds or modifies a controller, confirm each item below. For the full auth model (token issuance/refresh, principal shape, guard catalogue, roles, `@Public()`, API keys, MFA, SMART scopes), see [`docs/auth.md`](docs/auth.md).
 
-Contributor rules (summarised):
-
-1. **Resolve the tenant from the verified JWT.** The tenant is derived from the authenticated principal (the `organizationId`/tenant claim on the verified token) via `TenantContext` (`src/tenant/`). Never trust the `x-tenant-id` request header for authenticated requests — it is client-controlled and may be spoofed. Headers are only acceptable on explicitly public/unauthenticated routes where no JWT exists, and must be validated against the tenant registry (`src/tenant-config/`).
-2. **Use `TenantContext` in services.** Do not read the tenant from `req` directly, and do not pass tenant IDs around as ad-hoc parameters. Wrap tenant-scoped work in `TenantContext.run(...)` / read it with `TenantContext.get()` so `TenantInterceptor`/`TenantGuard` and the schema routing stay consistent.
-3. **Scope every entity.** Any table that can hold data for more than one tenant must carry a `tenantId` (or `organizationId`) column, and every query must filter on it. If you add an entity without tenant scoping, explain in the PR why it is globally shared.
-4. **Establish tenant context explicitly in background work.** Cron jobs, queue consumers, and event handlers have no request/JWT, so they must set `TenantContext` explicitly (iterating tenants where needed) before touching tenant-scoped repositories.
-
-Example service using `TenantContext` correctly:
-
-```ts
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { TenantContext } from '../tenant/tenant.context';
-import { Appointment } from './appointment.entity';
-
-@Injectable()
-export class AppointmentService {
-  constructor(
-    @InjectRepository(Appointment)
-    private readonly appointments: Repository<Appointment>,
-  ) {}
-
-  async findForCurrentTenant(): Promise<Appointment[]> {
-    // Tenant comes from the verified JWT via TenantGuard/TenantInterceptor.
-    const tenantId = TenantContext.get().tenantId;
-
-    return this.appointments.find({ where: { tenantId } });
-  }
-
-  async runForTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
-    // Background jobs / queue consumers must establish context explicitly.
-    return TenantContext.run({ tenantId }, fn);
-  }
-}
-```
-
----
-
-## Data Retention
-
-Per-entity retention defaults, actions (anonymize, archive, soft/hard delete), tenant overrides, legal holds, dry-run mode, and archive storage/restore are documented in [docs/data-retention.md](docs/data-retention.md). If your change adds a new persisted entity or changes what is stored, update the retention policy table and the entity's retention metadata in `src/data-retention/`.
+- [ ] **Opt in to guards**: Decorate the controller (or each handler) with `@UseGuards(JwtAuthGuard, RolesGuard)`. `RolesGuard` alone does **not** authenticate the request, and `AdminGuard`, `PatientPrivacyGuard` and `MedicalRbacGuard` do not authenticate on their own either — always pair them with `JwtAuthGuard`.
+- [ ] **Declare explicit roles**: Add `@Roles(...)` (or `@HipaaRoles(...)` / `@RequireAdmin()`) to every guarded handler. `RolesGuard` with no `@Roles` metadata allows **any authenticated user** through. Use only valid `UserRole` enum values.
+- [ ] **Use the correct principal fields**: The JWT principal is `{ userId, email, role, mfaEnabled, sessionId, organizationId }`. Read `req.user.userId` — there is no `id`, `sub` or `tenantId` on the principal.
+- [ ] **Enforce ownership**: For patient-scoped resources, verify the authenticated user owns (or is authorized for) the resource — do not rely on the route parameter alone. Return `403`/`404` rather than leaking existence.
+- [ ] **Mark public routes**: Any route that must be reachable without a token (login, refresh, health checks, webhooks) must be explicitly decorated with `@Public()`. Never leave a route unguarded by accident.
+- [ ] **Document roles in Swagger**: Annotate handlers with `@ApiBearerAuth()` and describe the required roles in the operation summary/description so the generated OpenAPI spec and SDK reflect the access requirements.
+- [ ] **Add e2e IDOR tests**: Include `.e2e-spec.ts` coverage proving that a user without the required role or ownership is rejected (401/403), and that cross-tenant/cross-patient access is blocked.
 
 ---
 
@@ -291,7 +255,7 @@ When adding new service logic or API endpoints, include accompanying `.spec.ts` 
    ```
 2. **Update CHANGELOG.md**: Document your additions, fixes, or breaking changes in the `[Unreleased]` section of `CHANGELOG.md`.
 3. **Submit PR**: Open a Pull Request targeting `main`.
-4. **Fill out PR Template**: Include clear summary details, linked issues (e.g., `Closes #123`), and verification steps. You must tick the PR-template checkbox confirming that `CHANGELOG.md` has been updated (or that the change is genuinely changelog-exempt); PRs with the box unticked will not be merged.
+4. **Fill out PR Template**: Include clear summary details, linked issues (e.g., `Closes #123`), and verification steps. If your PR touches a controller, confirm the [New Controller Security Checklist](#new-controller-security-checklist) in the PR template.
 5. **Address Code Review**: Resolve feedback from maintainers. Once approved and CI passes, your branch will be squash-merged into `main`.
 
 Thank you for helping build a secure, decentralized healthcare ecosystem! 🚀

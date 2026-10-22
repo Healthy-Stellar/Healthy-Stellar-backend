@@ -11,6 +11,7 @@ Handsoff is a NestJS backend for clinical operations: patient records, appointme
 - [Getting Started](#getting-started)
 - [Configuration](#configuration)
 - [Scripts Reference](#scripts-reference)
+- [Authentication & Authorization](#authentication--authorization)
 - [Security Headers](#security-headers)
 - [API Endpoints](#api-endpoints)
 - [Webhooks](#webhooks)
@@ -431,6 +432,22 @@ Generate secrets with:
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
+
+## Authentication & Authorization
+
+**There is no global auth guard.** Every controller that must be protected has to opt in explicitly with `@UseGuards(JwtAuthGuard, ...)`; anything without a guard is public. Guards such as `RolesGuard`, `AdminGuard`, `PatientPrivacyGuard` and `MedicalRbacGuard` do **not** authenticate on their own, and decorators like `@RequireAdmin()` and `@HipaaRoles()` only attach metadata — they do nothing unless the matching guard runs.
+
+The authenticated principal attached to the request is:
+
+```ts
+{ userId, email, role, mfaEnabled, sessionId, organizationId }
+```
+
+There is no `id`, `sub` or `tenantId` field — use `userId` and `organizationId`. `role` is one of the `UserRole` enum values.
+
+The full guide — token issuance and refresh, the guard catalogue (what each guard checks and what it depends on), the valid role list, `@Public()`, API keys, MFA, and SMART scopes — is in **[docs/auth.md](docs/auth.md)**.
+
+Before opening a PR that adds or changes a controller, work through the **new controller security checklist** in [CONTRIBUTING.md](CONTRIBUTING.md#new-controller-security-checklist).
 
 ## Security Headers
 

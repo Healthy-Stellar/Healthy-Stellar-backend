@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, IsNull, LessThanOrEqual } from 'typeorm';
 import {
@@ -83,7 +89,96 @@ export class ConsentService {
     });
   }
 
+  /**
+   * Ownership check for consent reads.
+   *
+   * A caller may read a consent when they are:
+   *  - the patient who owns the consent (patientId === callerId), or
+   *  - an admin, or
+   *  - a provider holding an active access grant (sharedWithUserId === callerId)
+   *    for the consent's record.
+   *
+   * Throws ForbiddenException otherwise. Returns the consent when allowed.
+   */
+  async assertCanReadConsent(
+    callerId: string,
+    role: string | undefined,
+    consent: MedicalRecordConsent,
+  ): Promise<MedicalRecordConsent> {
+    if (!callerId) {
+      throw new ForbiddenException('Unable to determine caller identity');
+    }
+
+    if (role === 'admin') {
+      return consent;
+    }
+
+    if (consent.patientId === callerId) {
+      return consent;
+    }
+
+    if (consent.sharedWithUserId && consent.sharedWithUserId === callerId) {
+      return consent;
+    }
+
+    const hasGrant = await this.hasActiveConsentForRecord(
+      consent.medicalRecordId,
+      callerId,
+    );
+    if (hasGrant) {
+      return consent;
+    }
+
+    throw new ForbiddenException('You do not have access to this consent');
+  }
+
+  /**
+   * Ownership check for consent lists (by patient or by record).
+   * Allowed when the caller is the patient, an admin, or a provider with an
+   * active access grant for the record. For record-scoped lists the record's
+   * owning patient is resolved from the consents themselves.
+   */
+  async assertCanReadConsents(
+    callerId: string,
+    role: string | undefined,
+    consents: MedicalRecordConsent[],
+    recordId?: string,
+  ): Promise<MedicalRecordConsent[]> {
+    if (!callerId) {
+      throw new ForbiddenException('Unable to determine caller identity');
+    }
+
+    if (role === 'admin') {
+      return consents;
+    }
+
+    if (consents.length === 0) {
+      // Nothing to leak; allow the empty result.
+      return consents;
+    }
+
+    if (consents.some((c) => c.patientId === callerId)) {
+      return consents;
+    }
+
+    if (consents.some((c) => c.sharedWithUserId && c.sharedWithUserId === callerId)) {
+      return consents;
+    }
+
+    const targetRecordId = recordId ?? consents[0].medicalRecordId;
+    const hasGrant = await this.hasActiveConsentForRecord(targetRecordId, callerId);
+    if (hasGrant) {
+      return consents;
+    }
+
+    throw new ForbiddenException('You do not have access to these consents');
+  }
+
   async checkConsent(recordId: string, userId: string, consentType: ConsentType): Promise<boolean> {
+    if (!userId) {
+      return false;
+    }
+
     const now = new Date();
     const consent = await this.consentRepository.findOne({
       where: [
@@ -113,6 +208,10 @@ export class ConsentService {
    * on direct record reads so the consent model is enforced, not decorative.
    */
   async hasActiveConsentForRecord(recordId: string, userId: string): Promise<boolean> {
+    if (!userId) {
+      return false;
+    }
+
     const now = new Date();
     const consent = await this.consentRepository.findOne({
       where: [
@@ -135,6 +234,10 @@ export class ConsentService {
   }
 
   async revoke(id: string, revokedBy: string, reason?: string): Promise<MedicalRecordConsent> {
+    if (!revokedBy) {
+      throw new ForbiddenException('Unable to determine caller identity');
+    }
+
     const consent = await this.findOne(id);
 
     if (consent.status !== ConsentStatus.GRANTED) {
