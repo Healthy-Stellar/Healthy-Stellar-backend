@@ -1,4 +1,10 @@
-import { Injectable, Logger, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ForbiddenException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { LessThan, FindOptionsWhere, Repository } from 'typeorm';
@@ -60,7 +66,7 @@ export class ReminderService {
       where: { id: appointmentId, tenantId } 
     });
     if (!appointment) {
-      throw new Error('Appointment not found');
+      throw new NotFoundException('Appointment not found');
     }
 
     const scheduledTime = new Date(
@@ -69,7 +75,7 @@ export class ReminderService {
 
     const patient = await this.patientRepository.findOne({ where: { id: appointment.patientId } });
     if (!patient) {
-      throw new Error(`Patient ${appointment.patientId} not found`);
+      throw new NotFoundException(`Patient ${appointment.patientId} not found`);
     }
 
     const reminder = this.reminderRepository.create({
@@ -114,7 +120,7 @@ export class ReminderService {
       where: tenantId ? { id: reminderId, tenantId } : this.getScopedWhere({ id: reminderId }),
     });
     if (!reminder) {
-      throw new Error('Reminder not found');
+      throw new NotFoundException('Reminder not found');
     }
 
     reminder.status = ReminderStatus.SENT;
@@ -132,7 +138,7 @@ export class ReminderService {
       where: tenantId ? { id: reminderId, tenantId } : this.getScopedWhere({ id: reminderId }),
     });
     if (!reminder) {
-      throw new Error('Reminder not found');
+      throw new NotFoundException('Reminder not found');
     }
 
     reminder.status = ReminderStatus.FAILED;
@@ -174,11 +180,15 @@ export class ReminderService {
       where: { id: reminder.appointmentId, tenantId: reminder.tenantId },
     });
     if (!appointment) {
-      throw new Error(`Appointment ${reminder.appointmentId} not found for reminder ${reminder.id}`);
+      throw new NotFoundException(
+        `Appointment ${reminder.appointmentId} not found for reminder ${reminder.id}`,
+      );
     }
     const patient = await this.patientRepository.findOne({ where: { id: appointment.patientId } });
     if (!patient) {
-      throw new Error(`Patient ${appointment.patientId} not found for reminder ${reminder.id}`);
+      throw new NotFoundException(
+        `Patient ${appointment.patientId} not found for reminder ${reminder.id}`,
+      );
     }
 
     switch (reminder.type) {

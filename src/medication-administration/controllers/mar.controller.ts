@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { MarService } from '../services/mar.service';
@@ -102,14 +103,22 @@ export class MarController {
 
   @Post('administer')
   @Roles(UserRole.NURSE)
-  administerMedication(@Body() administerDto: AdministerMedicationDto) {
-    return this.marService.administerMedication(administerDto);
+  administerMedication(@Body() administerDto: AdministerMedicationDto, @Req() req: any) {
+    const nurseId = req.user?.id ?? req.user?.userId;
+    const nurseName = req.user?.name ?? req.user?.fullName ?? req.user?.username;
+    return this.marService.administerMedication(administerDto, nurseId, nurseName);
   }
 
   @Post('doses/:id/administer')
   @Roles(UserRole.NURSE)
-  administerDose(@Param('id') id: string, @Body() administerDto: Omit<AdministerMedicationDto, 'marId'>) {
-    return this.marService.administerDoseById(id, administerDto);
+  administerDose(
+    @Param('id') id: string,
+    @Body() administerDto: Omit<AdministerMedicationDto, 'marId'>,
+    @Req() req: any,
+  ) {
+    const nurseId = req.user?.id ?? req.user?.userId;
+    const nurseName = req.user?.name ?? req.user?.fullName ?? req.user?.username;
+    return this.marService.administerDoseById(id, administerDto, nurseId, nurseName);
   }
 
   @Patch(':id')
