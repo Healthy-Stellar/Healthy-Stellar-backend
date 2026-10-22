@@ -11,6 +11,10 @@ import { QUEUE_NAMES, JOB_TYPES } from '../../queues/queue.constants';
 import { DlqService } from '../../dlq/dlq.service';
 import axios from 'axios';
 
+jest.mock('dns', () => ({
+  ...jest.requireActual('dns'),
+  promises: { lookup: jest.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]) },
+}));
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
