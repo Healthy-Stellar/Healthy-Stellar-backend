@@ -15,6 +15,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../common/constants/swagger.constants';
 import { Icd10ValidationService } from './services/icd10-validation.service';
 import { CptValidationService } from './services/cpt-validation.service';
 import { LoincValidationService } from './services/loinc-validation.service';
@@ -42,6 +43,7 @@ const GOVERNANCE_ROLES = ['admin', 'super_admin', 'compliance_officer'];
 @ApiTags('Medical Data Validation')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 @Controller('medical-validation')
 export class MedicalValidationController {
   constructor(
