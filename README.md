@@ -1,7 +1,8 @@
-# Healthy-Stellar-backend
+# Handsoff
 
-NestJS backend for a decentralized healthcare system built on Stellar Soroban smart contracts.
+Handsoff is a NestJS backend for clinical operations: patient records, appointments, pharmacy, laboratory, analytics, and integrations.
 
+## Getting started
 ## Table of Contents
 
 - [Project Structure](#project-structure)
@@ -526,31 +527,27 @@ npm run test:compliance  # HIPAA/GDPR compliance tests
 ## Deployment
 
 ```bash
-npm run build
-npm run start:prod
+npm install
+npm run start:dev
 ```
 
-Set `NODE_ENV=production`, configure DB credentials, CORS, HTTPS, and logging before deploying.
+The API is served under the global prefix `/api`. Swagger docs are available at `/api/docs`.
 
-For operational procedures used during deployment, recovery, and maintenance — key
-rotation, migration safety, break-glass review, reconciliation, dead-letter queue
-replay, projection rebuilds, and backup/restore — see the
-[operator runbooks](docs/runbooks/README.md).
+## Route overview
 
-## License
+Routes are grouped by module. Only routes registered in a module's `controllers` array are served; any controller not listed there is not exposed.
 
-ISC. See [LICENSE](LICENSE).
+- `/auth` — authentication and session management
+- `/users` — user accounts and roles
+- `/patients` — patient records
+- `/appointments` — scheduling
+- `/pharmacy` — prescriptions, dispensing, and inventory
+- `/laboratory` — lab orders and results
+- `/analytics` — reporting and dashboards
+- `/integrations` — external system integrations
 
-## Handsoff notes
+## Contributing
 
-<!-- handsoff-issue-1062 -->
-- #1062: [High] `GdprProcessor.onModuleInit()` — GDPR erasure cascade omits the surgical-management-system module
-
-<!-- handsoff-issue-1064 -->
-- #1064: [High] `SurgicalService.updateSurgicalCase()` reschedule path bypasses the advisory lock, allowing double-booking on reschedule
-
-<!-- handsoff-issue-1023 -->
-- #1023: [Critical] `EhrImportProcessor.process()` — uploads imported HL7/CCD/CSV records to IPFS without encryption
-
-<!-- handsoff-issue-1039 -->
-- #1039: [Critical] `OnboardingService.activate()` persists the newly generated tenant Stellar secret key in plaintext
+- Keep controllers registered in a module and protected by `JwtAuthGuard` + `RolesGuard`.
+- Derive actor ids from `req.user`, never from request bodies.
+- Update this route list whenever a module's registered controllers change.

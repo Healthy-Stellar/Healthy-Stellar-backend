@@ -25,6 +25,9 @@ import { DrugRecallService } from './services/drug-recall.service';
 import { RecallNotificationService } from './services/recall-notification.service';
 import { PharmacyInventoryService } from './services/pharmacy-inventory.service';
 
+// Guards
+import { CdsHooksAuthGuard } from './guards/cds-hooks-auth.guard';
+
 // External module required by RecallNotificationService
 import { NotificationsModule } from '../notifications/notifications.module';
 
@@ -48,6 +51,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     DrugRecallService,
     RecallNotificationService,
     PharmacyInventoryService,
+    CdsHooksAuthGuard,
   ],
   exports: [
     PharmacyService,
