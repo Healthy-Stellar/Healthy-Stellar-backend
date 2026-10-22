@@ -13,7 +13,9 @@ export class IdempotencyService {
     private readonly repo: Repository<IdempotencyKey>,
     private readonly config: ConfigService,
   ) {
-    this.defaultTtlMs = this.config.get<number>('IDEMPOTENCY_TTL_MS', 86_400_000); // 24 h
+    this.defaultTtlMs = Number(
+      this.config.get<string | number>('IDEMPOTENCY_TTL_MS', 86_400_000),
+    ); // 24 h
   }
 
   async find(key: string): Promise<IdempotencyKey | null> {

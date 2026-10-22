@@ -5,6 +5,7 @@
   "author": "",
   "private": true,
   "license": "ISC",
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "build": "nest build",
     "start": "nest start",
@@ -71,7 +72,8 @@
     "version:sdk": "node scripts/version-sdk.js",
     "publish:sdk": "bash scripts/publish-sdk.sh",
     "docs:generate": "ts-node -r tsconfig-paths/register 'src/swaggeropenapi-documentation-with-full-schema-coverage/export-openapi.ts'",
-    "docs:check": "npm run docs:generate && git diff --exit-code -- docs/openapi.json",
+    "docs:check": "pnpm run docs:generate && git diff --exit-code -- docs/openapi.json",
+    "check:env": "node scripts/check-env-example.js",
     "generate:graphql-types": "graphql-codegen --config codegen.yml"
   },
   "repository": {

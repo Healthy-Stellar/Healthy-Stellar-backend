@@ -67,7 +67,7 @@ export function buildOidcConfig(): OidcModuleConfig {
   return {
     providers,
     jwtSecret: requireEnv('JWT_SECRET'),
-    jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '8h',
+    jwtExpiresIn: process.env.JWT_EXPIRATION ?? '15m',
   };
 }
 

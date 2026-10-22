@@ -66,7 +66,7 @@ export class DataRetentionService {
         return tenantPolicy.categories[category]!;
       }
     }
-    const globalYears = this.configService.get<number>('RECORD_RETENTION_YEARS', 7);
+    const globalYears = Number(this.configService.get<string | number>('RECORD_RETENTION_YEARS', 7));
     return { ...DEFAULT_POLICIES[category], retentionYears: globalYears };
   }
 
@@ -82,7 +82,7 @@ export class DataRetentionService {
    * Returns the global medical-records cutoff date.
    */
   getRetentionCutoff(): Date {
-    const years = this.configService.get<number>('RECORD_RETENTION_YEARS', 7);
+    const years = Number(this.configService.get<string | number>('RECORD_RETENTION_YEARS', 7));
     const cutoff = new Date();
     cutoff.setFullYear(cutoff.getFullYear() - years);
     return cutoff;
