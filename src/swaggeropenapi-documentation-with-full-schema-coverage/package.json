@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "NestJS project with fully documented Swagger/OpenAPI",
   "scripts": {
-    "build": "nest build",
-    "start": "nest start",
-    "start:dev": "nest start --watch",
-    "start:staging": "NODE_ENV=staging nest start",
+    "build": "node init && nest build",
+    "start": "node init && nest start",
+    "start:dev": "node init && nest start --watch",
+    "start:staging": "node init && NODE_ENV=staging nest start",
     "docs:generate": "ts-node -r tsconfig-paths/register scripts/export-openapi.ts",
     "postbuild": "npm run docs:generate"
   },

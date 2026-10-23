@@ -15,8 +15,6 @@ test.txt
 /coverage
 
 # Environment
-.env
-.env.local
 .env.development.local
 .env.test.local
 .env.production.local
@@ -28,7 +26,6 @@ yarn-error.log*
 *.log
 
 # IDE - VSCode
-.vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
@@ -115,3 +112,4 @@ skills-lock.json
 issue.md
 vrickish.md
 somzilla.md
+config.bat
