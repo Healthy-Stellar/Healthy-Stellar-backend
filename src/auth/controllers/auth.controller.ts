@@ -14,6 +14,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { I18nContext } from 'nestjs-i18n';
 import { MAILER_SERVICE } from '../../notifications/services/notifications.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
@@ -302,56 +303,5 @@ export class AuthController {
       this.refreshTokenStore.revokeSession(id),
     ]);
     return { message: 'Session terminated' };
-  }
-
-  /**
-   * Revoke session (legacy endpoint)
-   */
-  @Post('sessions/:sessionId/revoke')
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Revoke a specific session' })
-  async revokeSession(
-    @Param('sessionId') sessionId: string,
-    @Req() req: Request,
-  ): Promise<{ message: string }> {
-    const user = req.user as JwtPayload;
-    const session = await this.sessionManagementService.getUserSessions(user.userId).then(
-      (sessions) => sessions.find((s) => s.id === sessionId),
-    );
-    if (!session) {
-      throw new NotFoundException('Session not found');
-    }
-    await Promise.all([
-      this.sessionManagementService.revokeSession(sessionId),
-      this.refreshTokenStore.revokeSession(sessionId),
-    ]);
-    return { message: 'Session revoked' };
-  }
-
-  /**
-   * Revoke all sessions (except current)
-   */
-  @Post('sessions/revoke-all')
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Revoke all sessions except current' })
-  async revokeAllSessions(@Req() req: Request): Promise<{ message: string }> {
-    const user = req.user as JwtPayload;
-    const currentSessionId = (req as any).sessionId;
-    const sessions = await this.sessionManagementService.getUserSessions(user.userId);
-
-    for (const session of sessions) {
-      if (session.id !== currentSessionId) {
-        await Promise.all([
-          this.sessionManagementService.revokeSession(session.id),
-          this.refreshTokenStore.revokeSession(session.id),
-        ]);
-      }
-    }
-
-    return { message: 'All other sessions revoked' };
-  }
-
-  private getIpAddress(req: Request): string {
-    return (req.ip || req.socket.remoteAddress || 'unknown').toString();
   }
 }
