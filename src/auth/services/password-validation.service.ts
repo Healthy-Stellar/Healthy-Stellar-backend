@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as argon2 from 'argon2';
 
@@ -22,19 +23,25 @@ export interface PasswordPolicy {
 
 @Injectable()
 export class PasswordValidationService {
-  private readonly healthcarePolicy: PasswordPolicy = {
-    minLength: 12,
+  private readonly healthcarePolicy: PasswordPolicy;
+
+  constructor(private readonly configService: ConfigService) {
+    this.healthcarePolicy = {
+      minLength: Number(this.configService.get<string | number>('PASSWORD_MIN_LENGTH', 12)),
     requireUppercase: true,
     requireLowercase: true,
     requireNumbers: true,
     requireSymbols: true,
     maxConsecutiveIdentical: 2,
     maxRepeatedCharacters: 3,
-    expirationDays: 90, // HIPAA requirement
-    historyCount: 12, // Cannot reuse last 12 passwords
-    lockoutThreshold: 5,
-    lockoutDurationMinutes: 30,
-  };
+      expirationDays: Number(this.configService.get<string | number>('PASSWORD_EXPIRATION_DAYS', 90)),
+      historyCount: Number(this.configService.get<string | number>('PASSWORD_HISTORY_COUNT', 12)),
+      lockoutThreshold: Number(this.configService.get<string | number>('LOCKOUT_THRESHOLD', 5)),
+      lockoutDurationMinutes: Number(
+        this.configService.get<string | number>('LOCKOUT_DURATION_MINUTES', 30),
+      ),
+    };
+  }
 
   /**
    * Validate password against healthcare security standards

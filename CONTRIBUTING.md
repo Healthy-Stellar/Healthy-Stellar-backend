@@ -35,7 +35,7 @@ As a healthcare application handling sensitive Medical and Patient data:
    - Stellar blockchain operations and private key handling must use KMS / secure vault mechanisms (`src/stellar`).
 
 3. **Data Integrity**:
-   - Database migrations must be down-migration safe. Never destroy non-recoverable schema or data without explicit guarded routines (`npm run check:migrations`).
+  - Database migrations must be down-migration safe. Never destroy non-recoverable schema or data without explicit guarded routines (`pnpm run check:migrations`).
 
 ---
 
@@ -44,7 +44,7 @@ As a healthcare application handling sensitive Medical and Patient data:
 ### Prerequisites
 
 - **Node.js**: v20.x or later
-- **npm** or **pnpm**
+- **pnpm** (version pinned in `package.json`)
 - **Docker & Docker Compose**: For local PostgreSQL and Redis services
 - **Git**
 
@@ -58,31 +58,38 @@ As a healthcare application handling sensitive Medical and Patient data:
 
 2. **Install Dependencies**:
    ```bash
-   npm install
+  corepack enable
+  pnpm install --frozen-lockfile
    ```
 
 3. **Configure Environment Variables**:
    ```bash
    cp .env.example .env
    ```
-   *Adjust local database credentials and Redis connection details in `.env` if needed.*
+  *Adjust local database credentials, Redis connection details, and the required secret values in `.env`.*
 
 4. **Start Infrastructure Services**:
    ```bash
-   docker-compose -f docker-compose.local.yml up -d
+  docker compose -f docker-compose.local.yml up -d
    ```
 
 5. **Run Database Migrations & Seed Data**:
    ```bash
-   npm run migration:run
-   npm run seed
+  pnpm run migration:run
+  pnpm run seed
    ```
 
 6. **Start the Development Server**:
    ```bash
-   npm run start:dev
+  pnpm run start:dev
    ```
    The backend API will be available at `http://localhost:3000`.
+
+7. **Check environment documentation**:
+  ```bash
+  pnpm run check:env
+  ```
+  This checks statically referenced environment keys against `.env.example`.
 
 ---
 
@@ -156,16 +163,16 @@ Before submitting a Pull Request, verify that your changes pass all local safety
 
 ```bash
 # 1. Check for circular dependencies
-npm run check:circular
+pnpm run check:circular
 
 # 2. Check for directory/file naming conventions
-npm run check:no-spaces
+pnpm run check:no-spaces
 
 # 3. Verify migration safety
-npm run check:migrations
+pnpm run check:migrations
 
 # 4. Check i18n translation completeness (if modifying messages)
-npm run test:i18n
+pnpm run test:i18n
 ```
 
 ---
@@ -192,26 +199,26 @@ The TypeScript SDK lives under `packages/sdk` and is built automatically from th
 
 - **Generate SDK from backend endpoints**:
   ```bash
-  npm run generate:sdk
+  pnpm run generate:sdk
   ```
 - **Build the SDK package**:
   ```bash
-  npm run build:sdk
+  pnpm run build:sdk
   ```
 - **Run SDK tests**:
   ```bash
-  npm run test:sdk
+  pnpm run test:sdk
   ```
 - **Check for OpenAPI vs SDK drift**:
   ```bash
-  npm run check:sdk-drift
+  pnpm run check:sdk-drift
   ```
 - **Bump SDK Version**:
   ```bash
-  npm run version:sdk 1.1.0
+  pnpm run version:sdk 1.1.0
   ```
 
-> **Note**: Changes to API controller endpoints or DTOs should always be checked for SDK drift (`npm run check:sdk-drift`) before merging.
+> **Note**: Changes to API controller endpoints or DTOs should always be checked for SDK drift (`pnpm run check:sdk-drift`) before merging.
 
 ---
 
@@ -223,23 +230,23 @@ We enforce high test coverage for clinical workflows and payment integrity.
 
 - **Unit Tests**:
   ```bash
-  npm run test:unit
+  pnpm run test:unit
   ```
 - **End-to-End (E2E) Tests**:
   ```bash
-  npm run test:e2e
+  pnpm run test:e2e
   ```
 - **Compliance & Security Tests**:
   ```bash
-  npm run test:compliance
+  pnpm run test:compliance
   ```
 - **Performance & Load Tests (k6)**:
   ```bash
-  npm run load-test:smoke
+  pnpm run load-test:smoke
   ```
 - **All Tests**:
   ```bash
-  npm run test:all
+  pnpm run test:all
   ```
 
 When adding new service logic or API endpoints, include accompanying `.spec.ts` (unit) and `.e2e-spec.ts` (E2E) files.

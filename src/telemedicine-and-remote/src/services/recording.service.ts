@@ -27,7 +27,7 @@ export class RecordingService {
     const encryptedDekId = crypto.randomUUID();
 
     // Compute retention expiry from config (default 7 years = 2555 days)
-    const retentionDays = this.config.get<number>('RECORDING_RETENTION_DAYS', 2555);
+    const retentionDays = Number(this.config.get<string | number>('RECORDING_RETENTION_DAYS', 2555));
     const retentionExpiresAt = new Date(Date.now() + retentionDays * 24 * 60 * 60 * 1000);
 
     const recording = this.recordingRepo.create({

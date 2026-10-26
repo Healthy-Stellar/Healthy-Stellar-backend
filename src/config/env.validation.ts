@@ -25,6 +25,21 @@ export const envValidationSchema = Joi.object({
   JWT_REFRESH_SECRET: Joi.string().min(32).required(),
   JWT_REFRESH_EXPIRATION: Joi.string().default('7d'),
 
+  // Break-glass access windows (milliseconds)
+  BREAK_GLASS_TTL_MS: Joi.number().integer().positive().default(4 * 60 * 60 * 1000),
+  BREAK_GLASS_REVIEW_SLA_MS: Joi.number().integer().positive().default(24 * 60 * 60 * 1000),
+  IDEMPOTENCY_TTL_MS: Joi.number().integer().positive().default(86_400_000),
+  RECORDING_RETENTION_DAYS: Joi.number().integer().positive().default(2555),
+  KEK_ROTATION_INTERVAL_DAYS: Joi.number().integer().positive().default(90),
+  RECORD_RETENTION_YEARS: Joi.number().integer().positive().default(7),
+
+  // Password and account lockout policy
+  PASSWORD_MIN_LENGTH: Joi.number().integer().min(8).default(12),
+  PASSWORD_EXPIRATION_DAYS: Joi.number().integer().positive().default(90),
+  PASSWORD_HISTORY_COUNT: Joi.number().integer().min(0).default(12),
+  LOCKOUT_THRESHOLD: Joi.number().integer().positive().default(5),
+  LOCKOUT_DURATION_MINUTES: Joi.number().integer().positive().default(30),
+
   // Redis — required
   REDIS_HOST: Joi.string().required(),
   REDIS_PORT: Joi.number().integer().default(6379),

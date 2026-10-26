@@ -196,9 +196,11 @@ export class AuthService {
       if (user) {
         user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
 
-        // Lock account after 5 failed attempts
-        if (user.failedLoginAttempts >= 5) {
-          user.lockedUntil = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+        const passwordPolicy = this.passwordValidationService.getPolicy();
+        if (user.failedLoginAttempts >= passwordPolicy.lockoutThreshold) {
+          user.lockedUntil = new Date(
+            Date.now() + passwordPolicy.lockoutDurationMinutes * 60 * 1000,
+          );
           await this.auditLogService.log({
             actorAddress: user.id,
             action: 'ACCOUNT_LOCKED',

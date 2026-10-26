@@ -54,8 +54,8 @@ describe('BreakGlassService', () => {
           provide: ConfigService,
           useValue: {
             get: jest.fn().mockImplementation((key: string) => {
-              if (key === 'BREAK_GLASS_TTL_MS') return 4 * 60 * 60 * 1000;
-              if (key === 'BREAK_GLASS_REVIEW_SLA_MS') return 24 * 60 * 60 * 1000;
+              if (key === 'BREAK_GLASS_TTL_MS') return '14400000';
+              if (key === 'BREAK_GLASS_REVIEW_SLA_MS') return '86400000';
               return null;
             }),
           },
@@ -87,6 +87,10 @@ describe('BreakGlassService', () => {
         'Emergency — patient unconscious, needs immediate critical care access.',
       );
       expect(result).toBeDefined();
+      const createdAccess = (repo.create as jest.Mock).mock.calls[0][0];
+      expect(createdAccess.expiresAt).toBeInstanceOf(Date);
+      expect(createdAccess.expiresAt.getTime()).toBeGreaterThan(Date.now());
+      expect(Number.isNaN(createdAccess.expiresAt.getTime())).toBe(false);
       expect(mockAuditLogService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'BREAK_GLASS_GRANTED' }),
       );

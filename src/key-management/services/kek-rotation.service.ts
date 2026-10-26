@@ -42,7 +42,7 @@ export class KekRotationService {
   // Runs every day at midnight; checks if rotation interval has elapsed
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async scheduledRotation(): Promise<void> {
-    const intervalDays = this.config.get<number>('KEK_ROTATION_INTERVAL_DAYS', 90);
+    const intervalDays = Number(this.config.get<string | number>('KEK_ROTATION_INTERVAL_DAYS', 90));
     if (this.lastRotatedAt) {
       const diffDays = (Date.now() - this.lastRotatedAt.getTime()) / (1000 * 60 * 60 * 24);
       if (diffDays < intervalDays) return;
