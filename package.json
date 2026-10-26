@@ -19,6 +19,7 @@
     "test:cov": "jest --selectProjects unit --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand --selectProjects unit",
     "test:unit": "jest --selectProjects unit",
+    "test:hs": "jest --selectProjects hs-unit",
     "test:unit:watch": "jest --selectProjects unit --watch",
     "test:unit:cov": "jest --selectProjects unit --coverage",
     "test:e2e": "jest --selectProjects e2e --runInBand",

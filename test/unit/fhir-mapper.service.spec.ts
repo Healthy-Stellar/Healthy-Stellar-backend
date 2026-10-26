@@ -4,6 +4,12 @@ import { PatientMapper } from '../../src/fhir/mappers/patient.mapper';
 import { DocumentReferenceMapper } from '../../src/fhir/mappers/document-reference.mapper';
 import { ProvenanceMapper } from '../../src/fhir/mappers/provenance.mapper';
 import { ConsentMapper } from '../../src/fhir/mappers/consent.mapper';
+import { ObservationMapper } from '../../src/fhir/mappers/observation.mapper';
+import { MedicationAdministrationMapper } from '../../src/fhir/mappers/medication-administration.mapper';
+import { EncounterMapper } from '../../src/fhir/mappers/encounter.mapper';
+import { DiagnosticReportMapper } from '../../src/fhir/mappers/diagnostic-report.mapper';
+import { ConditionMapper } from '../../src/fhir/mappers/condition.mapper';
+import { ProcedureMapper } from '../../src/fhir/mappers/procedure.mapper';
 
 describe('FhirMapperService', () => {
   let service: FhirMapperService;
@@ -16,6 +22,12 @@ describe('FhirMapperService', () => {
         DocumentReferenceMapper,
         ProvenanceMapper,
         ConsentMapper,
+        ObservationMapper,
+        MedicationAdministrationMapper,
+        EncounterMapper,
+        DiagnosticReportMapper,
+        ConditionMapper,
+        ProcedureMapper,
       ],
     }).compile();
 
