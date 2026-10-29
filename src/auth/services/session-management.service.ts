@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,6 +11,19 @@ import { ConfigService } from '@nestjs/config';
 import { SessionEntity } from '../entities/session.entity';
 import { User } from '../entities/user.entity';
 import { SessionRevocationService } from './session-revocation.service';
+
+/** HIPAA §164.312(a)(2)(iii): sessions must lock after at most 15 minutes of inactivity. */
+export const DEFAULT_SESSION_INACTIVITY_TIMEOUT_MINUTES = 15;
+
+/**
+ * Session activity is coalesced into at most one write per session per minute so
+ * that authenticated requests do not each issue a redundant `UPDATE`. Set
+ * `SESSION_ACTIVITY_WRITE_THROTTLE_SECONDS=0` to disable coalescing.
+ */
+export const DEFAULT_SESSION_ACTIVITY_THROTTLE_SECONDS = 60;
+
+/** Hard cap on the in-process activity-write cache so it cannot grow without bound. */
+const MAX_ACTIVITY_CACHE_ENTRIES = 10_000;
 
 export interface SessionInfo {
   id: string;
@@ -23,6 +37,15 @@ export interface SessionInfo {
 
 @Injectable()
 export class SessionManagementService {
+  private readonly logger = new Logger(SessionManagementService.name);
+
+  /**
+   * Last time this process issued an activity write per session. Purely an
+   * optimisation: the write itself is still guarded by an `updatedAt` predicate,
+   * so a stale/missing entry can never move the activity clock backwards.
+   */
+  private readonly activityWriteCache = new Map<string, number>();
+
   constructor(
     @InjectRepository(SessionEntity)
     private sessionRepository: Repository<SessionEntity>,
@@ -139,6 +162,13 @@ export class SessionManagementService {
       throw new UnauthorizedException('Session is not active');
     }
 
+    // A long-lived refresh token must not resurrect a session that already
+    // exceeded the HIPAA inactivity window.
+    if (this.isIdle(session, this.getInactivityTimeoutMinutes())) {
+      await this.revokeForInactivity(session);
+      throw new UnauthorizedException('Session expired due to inactivity');
+    }
+
     if (new Date() > session.refreshTokenExpiresAt) {
       throw new UnauthorizedException('Refresh token expired');
     }
@@ -192,7 +222,12 @@ export class SessionManagementService {
   }
 
   /**
-   * Check if session is valid.
+   * Check if session is valid — including the inactivity timeout.
+   *
+   * A session that has been idle for longer than
+   * `SESSION_INACTIVITY_TIMEOUT_MINUTES` (default 15, HIPAA) is revoked here so
+   * every caller (HTTP guards, GraphQL, WebSocket) rejects it and it can never
+   * be revived by a refresh.
    */
   async isSessionValid(sessionId: string): Promise<boolean> {
     const session = await this.sessionRepository.findOne({ where: { id: sessionId } });
@@ -208,6 +243,11 @@ export class SessionManagementService {
     if (new Date() > session.expiresAt) {
       session.isActive = false;
       await this.sessionRepository.save(session);
+      return false;
+    }
+
+    if (this.isIdle(session, this.getInactivityTimeoutMinutes())) {
+      await this.revokeForInactivity(session);
       return false;
     }
 
@@ -243,26 +283,90 @@ export class SessionManagementService {
 
   /**
    * Enforce session timeout (HIPAA requirement: 15 minutes of inactivity).
+   *
+   * The window defaults to `SESSION_INACTIVITY_TIMEOUT_MINUTES`; pass
+   * `inactivityMinutes` to override it for a specific check.
    */
-  async enforceSessionTimeout(sessionId: string, inactivityMinutes: number = 15): Promise<boolean> {
+  async enforceSessionTimeout(sessionId: string, inactivityMinutes?: number): Promise<boolean> {
     const session = await this.sessionRepository.findOne({ where: { id: sessionId } });
 
     if (!session) {
       return false;
     }
 
-    const lastActivityTime = session.updatedAt;
-    const now = new Date();
-    const minutesSinceLastActivity = (now.getTime() - lastActivityTime.getTime()) / (1000 * 60);
+    if (!session.isActive) {
+      return false;
+    }
 
-    if (minutesSinceLastActivity > inactivityMinutes) {
-      session.isActive = false;
-      session.revokedAt = new Date();
-      await this.sessionRepository.save(session);
+    if (this.isIdle(session, this.getInactivityTimeoutMinutes(inactivityMinutes))) {
+      await this.revokeForInactivity(session);
       return false;
     }
 
     return true;
+  }
+
+  /** Resolve the inactivity window, tolerating strings from env and bad values. */
+  private getInactivityTimeoutMinutes(overrideMinutes?: number): number {
+    const configured = Number(
+      overrideMinutes ??
+        this.configService.get<string | number>(
+          'SESSION_INACTIVITY_TIMEOUT_MINUTES',
+          DEFAULT_SESSION_INACTIVITY_TIMEOUT_MINUTES,
+        ),
+    );
+
+    return Number.isFinite(configured) && configured > 0
+      ? configured
+      : DEFAULT_SESSION_INACTIVITY_TIMEOUT_MINUTES;
+  }
+
+  /** Resolve the activity-write throttle window (0 disables throttling). */
+  private getActivityThrottleSeconds(): number {
+    const configured = Number(
+      this.configService.get<string | number>(
+        'SESSION_ACTIVITY_WRITE_THROTTLE_SECONDS',
+        DEFAULT_SESSION_ACTIVITY_THROTTLE_SECONDS,
+      ),
+    );
+
+    return Number.isFinite(configured) && configured >= 0
+      ? configured
+      : DEFAULT_SESSION_ACTIVITY_THROTTLE_SECONDS;
+  }
+
+  /**
+   * True when the session has gone longer than the allowed window without
+   * activity. `updatedAt` is the activity clock maintained by
+   * `updateSessionActivity()`; `createdAt` covers rows written before it existed.
+   */
+  private isIdle(session: SessionEntity, inactivityMinutes: number): boolean {
+    const lastActivity = session.updatedAt ?? session.createdAt;
+
+    if (!lastActivity) {
+      return false;
+    }
+
+    const idleMs = Date.now() - new Date(lastActivity).getTime();
+    return idleMs > inactivityMinutes * 60 * 1000;
+  }
+
+  /** Revoke a session that exceeded the inactivity window and drop its sockets. */
+  private async revokeForInactivity(session: SessionEntity): Promise<void> {
+    session.isActive = false;
+    session.revokedAt = new Date();
+    await this.sessionRepository.save(session);
+    this.activityWriteCache.delete(session.id);
+
+    // The session is already revoked in the database; a failing socket
+    // notification must not turn the rejection into a server error.
+    try {
+      await this.sessionRevocationService.notifySessionRevoked(session.id);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to notify revocation of idle session ${session.id}: ${(error as Error)?.message}`,
+      );
+    }
   }
 
   /**
@@ -287,9 +391,69 @@ export class SessionManagementService {
   }
 
   /**
-   * Update session activity timestamp.
+   * Record session activity, coalescing writes to at most one per throttle
+   * window (default 60s) per session.
+   *
+   * Two layers keep this cheap without ever letting the clock drift:
+   *   1. An in-process cache skips the round trip entirely for requests that
+   *      arrive inside the throttle window.
+   *   2. The `UPDATE` carries an `updatedAt < now - window` predicate, so a
+   *      cold/stale cache (or another instance writing concurrently) cannot
+   *      move the activity clock backwards.
+   *
+   * Activity tracking is best-effort: a failure here must never reject an
+   * otherwise valid request. Activity is also stamped by every successful
+   * `refreshSession()`.
    */
   async updateSessionActivity(sessionId: string): Promise<void> {
-    await this.sessionRepository.update({ id: sessionId }, { updatedAt: new Date() });
+    const throttleMs = this.getActivityThrottleSeconds() * 1000;
+    const now = Date.now();
+
+    if (throttleMs > 0) {
+      const lastWrite = this.activityWriteCache.get(sessionId);
+
+      if (lastWrite !== undefined && now - lastWrite < throttleMs) {
+        return;
+      }
+
+      this.rememberActivityWrite(sessionId, now, throttleMs);
+    }
+
+    try {
+      await this.sessionRepository.update(
+        throttleMs > 0
+          ? { id: sessionId, updatedAt: LessThan(new Date(now - throttleMs)) }
+          : { id: sessionId },
+        { updatedAt: new Date(now) },
+      );
+    } catch (error) {
+      // Do not leave a cache entry behind for a write that never landed.
+      this.activityWriteCache.delete(sessionId);
+      this.logger.warn(
+        `Failed to record activity for session ${sessionId}: ${(error as Error)?.message}`,
+      );
+    }
+  }
+
+  /** Store a cache entry, pruning expired entries when the cache is full. */
+  private rememberActivityWrite(sessionId: string, now: number, throttleMs: number): void {
+    if (this.activityWriteCache.size >= MAX_ACTIVITY_CACHE_ENTRIES) {
+      const cutoff = now - throttleMs;
+
+      for (const [key, writtenAt] of this.activityWriteCache) {
+        if (writtenAt <= cutoff) {
+          this.activityWriteCache.delete(key);
+        }
+      }
+
+      if (this.activityWriteCache.size >= MAX_ACTIVITY_CACHE_ENTRIES) {
+        const oldestKey = this.activityWriteCache.keys().next().value;
+        if (oldestKey !== undefined) {
+          this.activityWriteCache.delete(oldestKey);
+        }
+      }
+    }
+
+    this.activityWriteCache.set(sessionId, now);
   }
 }

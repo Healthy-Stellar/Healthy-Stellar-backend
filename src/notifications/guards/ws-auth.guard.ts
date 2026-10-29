@@ -30,6 +30,9 @@ export class WsAuthGuard implements CanActivate {
         throw new WsException('Session expired');
       }
 
+      // Record activity so an active socket session does not idle out.
+      await this.sessionManagementService.updateSessionActivity(payload.sessionId);
+
       client.data.user = payload;
       return true;
     } catch {

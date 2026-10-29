@@ -41,6 +41,9 @@ export class GqlAuthGuard implements CanActivate {
     const isValid = await this.sessionManagementService.isSessionValid(payload.sessionId);
     if (!isValid) throw new UnauthorizedException('Session expired or revoked');
 
+    // Record activity so an actively-used GraphQL session does not idle out.
+    await this.sessionManagementService.updateSessionActivity(payload.sessionId);
+
     req.user = payload;
     return true;
   }
