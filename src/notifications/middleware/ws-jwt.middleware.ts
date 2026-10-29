@@ -48,6 +48,9 @@ export class WsJwtMiddleware {
           return next(new Error('Session expired'));
         }
 
+        // Record the handshake as session activity (throttled in the service).
+        await this.sessionMgr.updateSessionActivity(payload.sessionId);
+
         // Attach decoded user for downstream handlers / guards
         socket.data.user = payload;
         next();

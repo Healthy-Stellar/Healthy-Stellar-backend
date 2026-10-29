@@ -22,7 +22,7 @@ describe('WsJwtMiddleware', () => {
 
   beforeEach(() => {
     authToken = { verifyAccessToken: jest.fn() } as any;
-    sessionMgr = { isSessionValid: jest.fn() } as any;
+    sessionMgr = { isSessionValid: jest.fn(), updateSessionActivity: jest.fn() } as any;
     middleware = new WsJwtMiddleware(authToken, sessionMgr);
   });
 

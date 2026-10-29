@@ -20,7 +20,7 @@ describe('WsAuthGuard', () => {
         },
         {
           provide: SessionManagementService,
-          useValue: { isSessionValid: jest.fn() },
+          useValue: { isSessionValid: jest.fn(), updateSessionActivity: jest.fn() },
         },
       ],
     }).compile();
