@@ -8,7 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { DataResidencyService } from '../services/data-residency.service';
-import { TenantService } from '../../tenant/tenant.service';
+import { TenantService } from '../../tenant/services/tenant.service';
 
 /**
  * Guard to enforce data residency compliance
@@ -35,11 +35,23 @@ export class DataResidencyGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    const tenantId = request.user?.tenantId;
+    const user = request.user;
+    // The authenticated principal carries the tenant as `organizationId`
+    // (see JwtStrategy.validate which spreads the JWT payload). Fall back to
+    // `tenantId` for backwards compatibility, but the strict residency path must
+    // resolve the real claim rather than reading a field that never exists.
+    const tenantId = user?.organizationId ?? user?.tenantId;
 
-    // Skip if no tenant context (public endpoints)
-    if (!tenantId) {
+    // Public endpoints (no authenticated principal) are not subject to residency.
+    if (!user) {
       return true;
+    }
+
+    // Fail closed: an authenticated request we cannot attribute to a tenant must
+    // not silently bypass regional enforcement.
+    if (!tenantId) {
+      this.logger.warn('Data residency: authenticated request has no resolvable tenant');
+      throw new ForbiddenException('Request tenant could not be resolved');
     }
 
     try {
