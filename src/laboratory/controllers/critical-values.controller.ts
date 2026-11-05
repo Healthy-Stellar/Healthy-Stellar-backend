@@ -1,11 +1,16 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { CriticalValueDefinitionsService } from '../services/critical-value-definitions.service';
 import { CriticalAlertsService } from '../services/critical-alerts.service';
 import { CreateCriticalValueDefinitionDto } from '../dto/create-critical-value-definition.dto';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @ApiTags('Laboratory - Critical Values')
 @Controller('laboratory/critical-values')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class CriticalValuesController {
   constructor(
     private readonly definitionsService: CriticalValueDefinitionsService,
