@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ApiKeyStrategy } from '../../../src/auth/strategies/api-key.strategy';
-import { ApiKeyService } from '../../../src/auth/services/api-key.service';
-import { ApiKey } from '../../../src/auth/entities/api-key.entity';
+import { ApiKeyStrategy } from '../../src/auth/strategies/api-key.strategy';
+import { ApiKeyService } from '../../src/auth/services/api-key.service';
+import { ApiKey } from '../../src/auth/entities/api-key.entity';
 
 describe('ApiKeyStrategy', () => {
   let strategy: ApiKeyStrategy;

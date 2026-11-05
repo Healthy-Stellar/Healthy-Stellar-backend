@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { InternalServerErrorException } from '@nestjs/common';
-import { EnvelopeEncryptionService } from '../../src/encryption/envelope-encryption.service';
+import { EnvelopeEncryptionService } from '../src/encryption/envelope-encryption.service';
 
 // ─── KMS mock ─────────────────────────────────────────────────────────────────
 

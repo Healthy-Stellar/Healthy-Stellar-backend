@@ -1,6 +1,7 @@
 module.exports = {
   // Separate projects for unit and e2e tests
-  projects: [
+  projects: (() => {
+    const projects = [
     {
       displayName: 'unit',
       testMatch: ['<rootDir>/src/**/*.spec.ts'],
@@ -91,7 +92,82 @@ module.exports = {
         },
       },
     },
-  ],
+    {
+      // Orphan specs that previously matched no project (issue #1283).
+      // Covers test/unit, test/security, test/auth and the top-level service
+      // specs (envelope-encryption, kek-rotation, rate-limiting).
+      displayName: 'hs-unit',
+      testMatch: [
+        '<rootDir>/test/unit/**/*.spec.ts',
+        '<rootDir>/test/security/**/*.spec.ts',
+        '<rootDir>/test/auth/**/*.spec.ts',
+        '<rootDir>/test/envelope-encryption.service.spec.ts',
+        '<rootDir>/test/kek-rotation.service.spec.ts',
+        '<rootDir>/test/rate-limiting.spec.ts',
+      ],
+      moduleFileExtensions: ['js', 'json', 'ts'],
+      rootDir: '.',
+      transform: {
+        '^.+\\.(t|j)s$': 'ts-jest',
+      },
+      testEnvironment: 'node',
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+        '^@test/(.*)$': '<rootDir>/test/$1',
+        '^uuid$': 'uuid',
+        '^@nestjs/bullmq$': '<rootDir>/test/__mocks__/@nestjs/bullmq.js',
+        '^ipfs-http-client$': '<rootDir>/test/__mocks__/ipfs-http-client.js',
+        '^bull$': '<rootDir>/test/__mocks__/bull.js',
+        '^@nestjs-modules/mailer$': '<rootDir>/test/__mocks__/@nestjs-modules/mailer.js',
+      },
+      setupFilesAfterEnv: ['<rootDir>/test/setup-unit.ts'],
+      globals: {
+        'ts-jest': {
+          isolatedModules: true,
+        },
+      },
+    },
+    ];
+
+    // Infrastructure-dependent specs (Postgres / live Redis / Stellar RPC).
+    // Disabled by default; opt in with RUN_INTEGRATION=1 so they don't break
+    // unit CI (issue #1283). They require external services that are not
+    // available in the standard test runner.
+    if (process.env.RUN_INTEGRATION === '1') {
+      projects.push({
+        displayName: 'integration',
+        testMatch: [
+          '<rootDir>/test/integration/**/*.spec.ts',
+          '<rootDir>/test/migrations/**/*.spec.ts',
+          '<rootDir>/test/stellar.integration.spec.ts',
+        ],
+        moduleFileExtensions: ['js', 'json', 'ts'],
+        rootDir: '.',
+        transform: {
+          '^.+\\.(t|j)s$': 'ts-jest',
+        },
+        testEnvironment: 'node',
+        moduleNameMapper: {
+          '^@/(.*)$': '<rootDir>/src/$1',
+          '^@test/(.*)$': '<rootDir>/test/$1',
+          '^uuid$': 'uuid',
+          '^@nestjs/bullmq$': '<rootDir>/test/__mocks__/@nestjs/bullmq.js',
+          '^ipfs-http-client$': '<rootDir>/test/__mocks__/ipfs-http-client.js',
+          '^bull$': '<rootDir>/test/__mocks__/bull.js',
+          '^@nestjs-modules/mailer$': '<rootDir>/test/__mocks__/@nestjs-modules/mailer.js',
+        },
+        setupFilesAfterEnv: ['<rootDir>/test/setup-unit.ts'],
+        testTimeout: 60000,
+        globals: {
+          'ts-jest': {
+            isolatedModules: true,
+          },
+        },
+      });
+    }
+
+    return projects;
+  })(),
   // Global coverage thresholds
   coverageThreshold: {
     global: {
