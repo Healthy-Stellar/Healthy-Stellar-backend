@@ -1,4 +1,9 @@
 import * as Joi from 'joi';
+import { Networks } from '@stellar/stellar-sdk';
+
+export function getNetworkPassphrase(network: string): string {
+  return network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET;
+}
 
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'test', 'staging', 'production').default('development'),
@@ -51,6 +56,35 @@ export const envValidationSchema = Joi.object({
   STELLAR_CONTRACT_ID: Joi.string().required(),
   STELLAR_FEE_BUDGET: Joi.number().integer().default(10000000),
   STELLAR_MAX_RETRIES: Joi.number().integer().default(3),
+
+  ACCESS_CONTROL_ENABLED: Joi.string().valid('true', 'false').default('true'),
+  SOROBAN_RPC_URL: Joi.string().uri().when('ACCESS_CONTROL_ENABLED', {
+    is: 'true',
+    then: Joi.required(),
+  }),
+  SOROBAN_SOURCE_SECRET: Joi.string().when('ACCESS_CONTROL_ENABLED', {
+    is: 'true',
+    then: Joi.required(),
+  }),
+  SOROBAN_ACCESS_CONTRACT_ID: Joi.string().when('ACCESS_CONTROL_ENABLED', {
+    is: 'true',
+    then: Joi.required(),
+  }),
+
+  STELLAR_NETWORK_PASSPHRASE: Joi.string()
+    .trim()
+    .empty('')
+    .custom((value, helpers) => {
+      const network = helpers.state.ancestors[0]?.STELLAR_NETWORK ?? 'testnet';
+      if (value !== getNetworkPassphrase(network)) {
+        return helpers.error('any.invalid');
+      }
+      return value;
+    })
+    .messages({
+      'any.invalid':
+        'STELLAR_NETWORK_PASSPHRASE does not match STELLAR_NETWORK; omit it to derive the correct passphrase automatically',
+    }),
 
   // Encryption — required
   ENCRYPTION_KEY: Joi.string().min(64).required(),
