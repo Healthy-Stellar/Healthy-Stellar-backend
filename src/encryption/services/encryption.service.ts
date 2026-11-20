@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { KeyManagementService } from './key-management.service';
+import { DekWrapper } from './dek-wrapper.interface';
 import { EncryptedRecord } from '../interfaces';
 import { 
   EncryptionError, 
@@ -33,7 +34,7 @@ export class EncryptionService {
    * 
    * @param kms - The Key Management Service for DEK wrapping/unwrapping operations
    */
-  constructor(private readonly kms: KeyManagementService) {}
+  constructor(@Inject(KeyManagementService) private readonly kms: DekWrapper) {}
 
   /**
    * Encrypts a medical record payload using envelope encryption
