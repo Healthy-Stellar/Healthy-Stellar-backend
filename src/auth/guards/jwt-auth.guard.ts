@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { AuthTokenService, JwtPayload } from '../services/auth-token.service';
 import { SessionManagementService } from '../services/session-management.service';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
+import { setRequestContextUser } from '../../common/middleware/request-context.middleware';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -49,6 +50,11 @@ export class JwtAuthGuard implements CanActivate {
       // Attach user info to request
       request.user = payload;
       request.sessionId = payload.sessionId;
+
+      // Propagate the verified identity to the AsyncLocalStorage request
+      // context so services (appointment / consultation scoping, audit
+      // actorId) see the real caller rather than undefined.
+      setRequestContextUser(payload);
 
       return true;
     } catch (error) {

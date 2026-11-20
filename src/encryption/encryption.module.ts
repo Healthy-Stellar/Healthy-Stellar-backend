@@ -3,6 +3,8 @@ import { EncryptionService } from './services/encryption.service';
 import { KeyManagementService } from './services/key-management.service';
 import { PhiColumnEncryptionService } from './services/phi-column-encryption.service';
 import { DeterministicEncryptionService } from './services/deterministic-encryption.service';
+import { PersistentKeyManagementService } from './services/persistent-key-management.service';
+import { KeyStoreModule } from '../key-management/key-store.module';
 
 /**
  * Encryption Module
@@ -19,9 +21,13 @@ import { DeterministicEncryptionService } from './services/deterministic-encrypt
  * Requirements: 8.1, 8.2, 8.3, 8.4
  */
 @Module({
+  imports: [KeyStoreModule],
   providers: [
     EncryptionService,
-    KeyManagementService,
+    // KEKs are persisted through the key-management KeyStore (DB or AWS KMS).
+    // The in-memory KeyManagementService class is only the DI token here and
+    // is used directly in unit tests.
+    { provide: KeyManagementService, useClass: PersistentKeyManagementService },
     PhiColumnEncryptionService,
     DeterministicEncryptionService,
   ],
