@@ -13,7 +13,7 @@ export class ClinicalTemplatesController {
   @ApiOperation({ summary: 'Create a new clinical note template' })
   @ApiResponse({ status: 201, description: 'Template created successfully' })
   async create(@Body() createDto: CreateClinicalTemplateDto, @Req() req: any) {
-    const userId = req.user?.id || '00000000-0000-0000-0000-000000000000';
+    const userId = req.user?.userId || '00000000-0000-0000-0000-000000000000';
     return this.templatesService.create(createDto, userId);
   }
 

@@ -1,4 +1,5 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import type { JwtPayload } from '../../auth/services/auth-token.service';
 
 export interface AuditContext {
   userId: string;
@@ -12,7 +13,7 @@ export const AuditCtx = createParamDecorator(
   (data: keyof AuditContext | undefined, ctx: ExecutionContext): AuditContext | any => {
     const request = ctx.switchToHttp().getRequest();
     const auditContext: AuditContext = request.auditContext || {
-      userId: request.user?.id || 'anonymous',
+      userId: request.user?.userId || 'anonymous',
       ipAddress: request.ip || request.connection?.remoteAddress,
       userAgent: request.headers['user-agent'] || 'unknown',
       requestId:
@@ -26,11 +27,9 @@ export const AuditCtx = createParamDecorator(
 );
 
 export const CurrentUser = createParamDecorator(
-  (data: string | undefined, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest();
-    const user = request.user;
-
-    return data ? user?.[data] : user;
+  (_data: unknown, ctx: ExecutionContext): JwtPayload | undefined => {
+    const request = ctx.switchToHttp().getRequest<{ user?: JwtPayload }>();
+    return request.user;
   },
 );
 

@@ -63,11 +63,11 @@ export class FeatureFlagController {
 
   @Post()
   upsert(@Body() dto: UpsertFeatureFlagDto, @Req() req: any) {
-    return this.service.upsert(dto, req.user?.id ?? 'system');
+    return this.service.upsert(dto, req.user?.userId ?? 'system');
   }
 
   @Patch(':key/rollback')
   rollback(@Param('key') key: string, @Req() req: any) {
-    return this.service.rollback(key, req.user?.id ?? 'system');
+    return this.service.rollback(key, req.user?.userId ?? 'system');
   }
 }

@@ -16,26 +16,26 @@ export class WaitlistController {
   @ApiOperation({ summary: 'Join the waitlist for an earlier slot with a given provider' })
   @ApiResponse({ status: 201, description: 'Waitlist entry created' })
   join(@Req() req: any, @Body() dto: JoinWaitlistDto) {
-    return this.waitlistService.join(req.user.id, dto);
+    return this.waitlistService.join(req.user.userId, dto);
   }
 
   @Get()
   @ApiOperation({ summary: 'List your active waitlist entries' })
   list(@Req() req: any) {
-    return this.waitlistService.listForPatient(req.user.id);
+    return this.waitlistService.listForPatient(req.user.userId);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Leave a waitlist entry' })
   @ApiResponse({ status: 200, description: 'Removed from waitlist' })
   leave(@Req() req: any, @Param('id') id: string) {
-    return this.waitlistService.leave(req.user.id, id);
+    return this.waitlistService.leave(req.user.userId, id);
   }
 
   @Post(':id/accept')
   @ApiOperation({ summary: 'Accept a slot offer from the waitlist' })
   @ApiResponse({ status: 200, description: 'Offer accepted' })
   accept(@Req() req: any, @Param('id') id: string) {
-    return this.waitlistService.acceptOffer(req.user.id, id);
+    return this.waitlistService.acceptOffer(req.user.userId, id);
   }
 }

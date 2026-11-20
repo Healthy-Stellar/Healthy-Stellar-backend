@@ -14,7 +14,7 @@ export const HIPAA_ROLES_KEY = 'hipaa_roles';
 export const MINIMUM_NECESSARY_KEY = 'minimum_necessary';
 
 interface AuthenticatedRequest extends Request {
-  user?: { id: string; role: string; permissions?: string[] };
+  user?: { userId: string; role: string; permissions?: string[] };
   correlationId?: string;
 }
 
@@ -59,7 +59,7 @@ export class HipaaAccessGuard implements CanActivate {
 
   private async denyAccess(req: AuthenticatedRequest, reason: string): Promise<void> {
     await this.auditService.log({
-      userId: req.user?.id,
+      userId: req.user?.userId,
       userRole: req.user?.role,
       action: AuditAction.PERMISSION_DENIED,
       severity: AuditSeverity.WARNING,

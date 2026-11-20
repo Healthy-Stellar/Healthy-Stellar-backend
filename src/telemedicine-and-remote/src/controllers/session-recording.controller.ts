@@ -45,7 +45,7 @@ export class SessionRecordingController {
       throw new BadRequestException('Recording file is required');
     }
 
-    const uploadedBy = req.medicalUser?.id ?? req.user?.id;
+    const uploadedBy = req.medicalUser?.id ?? req.user?.userId;
     const recording = await this.sessionRecordingService.uploadRecording(id, file, uploadedBy);
     return {
       id: recording.id,

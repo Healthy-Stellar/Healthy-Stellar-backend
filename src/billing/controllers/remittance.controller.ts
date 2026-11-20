@@ -34,7 +34,7 @@ export class RemittanceController {
   @ApiOperation({ summary: 'Ingest a remittance (ERA/835) payload and auto-match to claims' })
   @ApiResponse({ status: 201, description: 'Remittance ingested successfully' })
   async ingestRemittance(@Body() dto: IngestRemittanceDto, @Request() req: any) {
-    const operatorId: string = req.user?.sub ?? req.user?.id ?? 'unknown';
+    const operatorId: string = req.user?.userId ?? 'unknown';
     return this.remittanceService.ingestRemittance(dto, operatorId);
   }
 

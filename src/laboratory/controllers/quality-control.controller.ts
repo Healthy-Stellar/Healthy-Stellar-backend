@@ -28,7 +28,7 @@ export class QualityControlController {
   @ApiOperation({ summary: 'Log QC activity' })
   @ApiResponse({ status: 201, description: 'QC log created successfully' })
   create(@Body() createDto: CreateQualityControlDto, @Request() req: any) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.qcService.create(createDto, userId);
   }
 
@@ -101,7 +101,7 @@ export class QualityControlController {
     @Body() updateDto: Partial<CreateQualityControlDto>,
     @Request() req: any,
   ) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.qcService.update(id, updateDto, userId);
   }
 }

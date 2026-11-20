@@ -61,7 +61,7 @@ export class RecordTemplateController {
   }
 
   private extractProviderId(req: any): string {
-    const userId = req.user?.userId || req.user?.id;
+    const userId = req.user?.userId;
     if (!userId) throw new UnauthorizedException('Provider ID not found in token');
     return userId;
   }
