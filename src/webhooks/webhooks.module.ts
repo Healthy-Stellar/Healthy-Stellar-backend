@@ -3,7 +3,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { WebhooksController } from './webhooks.controller';
 import { WebhookSignatureMiddleware } from '../common/middleware/webhook-signature.middleware';
-import { RawBodyMiddleware } from '../common/middleware/raw-body.middleware';
 import { IpfsService } from '../stellar/services/ipfs.service';
 import { QueueService } from '../queues/queue.service';
 import { WebhookSubscription } from './entities/webhook-subscription.entity';
@@ -32,9 +31,6 @@ import { DlqModule } from '../dlq/dlq.module';
 })
 export class WebhooksModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    // Raw body must run first on all webhook routes so HMAC has the original bytes
-    consumer.apply(RawBodyMiddleware).forRoutes(WebhooksController);
-
     // IPFS webhook — verified with IPFS_WEBHOOK_SECRET
     consumer
       .apply(new WebhookSignatureMiddleware('IPFS_WEBHOOK_SECRET') as any)
