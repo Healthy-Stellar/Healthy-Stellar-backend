@@ -72,6 +72,8 @@ const mailerProvider = buildMailerProvider();
   ],
   exports: [
     NotificationsService,
+    // Used by StellarModule's MultiSigTransactionService to notify signers.
+    NotificationsGateway,
     NotificationPreferencesService,
     NotificationPreferenceCenterService,
     OnChainEventListenerService,

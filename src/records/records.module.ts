@@ -8,7 +8,7 @@ import { RecordEvent } from './entities/record-event.entity';
 import { RecordSnapshot } from './entities/record-snapshot.entity';
 import { RecordTemplate } from './entities/record-template.entity';
 import { RecordAttachment } from './entities/record-attachment.entity';
-import { RecordVersion } from './versions/record-version.entity';
+import { RecordVersion } from './entities/record-version.entity';
 import { RecordsController } from './controllers/records.controller';
 import { RecordTemplateController } from './controllers/record-template.controller';
 import { RecordVersionController } from './versions/record-version.controller';
@@ -20,7 +20,7 @@ import { StellarService } from './services/stellar.service';
 import { IpfsWithBreakerService } from './services/ipfs-with-breaker.service';
 import { RecordEventStoreService } from './services/record-event-store.service';
 import { RecordSyncService } from './services/record-sync.service';
-import { RecordVersionService } from './versions/record-version.service';
+import { RecordVersionService } from './services/record-version.service';
 import { RecordDiffService } from './services/record-diff.service';
 import { RecordDownloadService } from './services/record-download.service';
 import { RecordAttachmentUploadService } from './services/record-attachment-upload.service';
@@ -31,6 +31,7 @@ import { AccessControlModule } from '../access-control/access-control.module';
 import { MedicalRbacModule } from '../roles/medical-rbac.module';
 import { EncryptionModule } from '../encryption/encryption.module';
 import { AuditModule } from '../common/audit/audit.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { RecordAccessGuard } from './guards/record-access.guard';
 
 @Module({
@@ -51,6 +52,8 @@ import { RecordAccessGuard } from './guards/record-access.guard';
     MedicalRbacModule,
     forwardRef(() => EncryptionModule),
     AuditModule,
+    // NotificationsService is used by RecordVersionService to notify grantees of amendments.
+    NotificationsModule,
   ],
   controllers: [
     RecordsController,

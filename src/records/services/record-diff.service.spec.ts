@@ -13,7 +13,8 @@ import { RecordType } from '../dto/create-record.dto';
 
 const redisStore: Record<string, string> = {};
 jest.mock('ioredis', () => {
-  return jest.fn().mockImplementation(() => ({
+  // The service uses `import Redis from 'ioredis'`, so the mock needs a default export.
+  const Redis = jest.fn().mockImplementation(() => ({
     get: jest.fn().mockImplementation((key: string) => Promise.resolve(redisStore[key] ?? null)),
     set: jest.fn().mockImplementation((key: string, value: string) => {
       redisStore[key] = value;
@@ -21,6 +22,7 @@ jest.mock('ioredis', () => {
     }),
     disconnect: jest.fn(),
   }));
+  return { __esModule: true, default: Redis };
 });
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -236,6 +238,16 @@ describe('RecordDiffService', () => {
   });
 
   // ── Access control ───────────────────────────────────────────────────────────
+
+  it('lets a grantee diff, checking the grant against the record\'s patient', async () => {
+    mocks.versionRepo.findOne
+      .mockResolvedValueOnce(V1)
+      .mockResolvedValueOnce(V2);
+
+    await service.computeDiff(RECORD_ID, 1, 2, OTHER_USER);
+
+    expect(mocks.accessControl.verifyAccess).toHaveBeenCalledWith(OTHER_USER, RECORD_ID, PATIENT_ID);
+  });
 
   it('throws ForbiddenException when requester has no access', async () => {
     mocks.accessControl.verifyAccess.mockResolvedValue(false);

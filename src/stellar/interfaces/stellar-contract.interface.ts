@@ -75,3 +75,25 @@ export interface ContractEvent {
 
 /** Active Stellar network. */
 export type StellarNetwork = 'testnet' | 'mainnet';
+
+// ── Classic payments (multi-sig execution, Issue #1328) ───────────────────
+
+/** Parameters for a classic Stellar payment from the platform source account. */
+export interface SendPaymentParams {
+  /** Destination account (G… public key). */
+  destination: string;
+  /** Amount in asset units as a decimal string (max 7 decimal places). */
+  amount: string;
+  /** 'XLM' / 'native', or 'CODE:ISSUER' for issued assets. Defaults to XLM. */
+  asset?: string;
+  /** Optional text memo (max 28 bytes). */
+  memo?: string;
+}
+
+/** A signed, not-yet-submitted payment transaction. */
+export interface SignedPaymentTransaction {
+  /** Base64 transaction envelope XDR. */
+  xdr: string;
+  /** Hex transaction hash — identical for every submission of this envelope. */
+  hash: string;
+}

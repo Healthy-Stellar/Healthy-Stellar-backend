@@ -87,12 +87,19 @@ export class RecordDownloadService {
   async download(recordId: string, requesterId: string, ip: string, ua: string): Promise<DownloadResult> {
     // ── 1. Load record ────────────────────────────────────────────────────────
     const record = await this.recordRepo.findOne({ where: { id: recordId } });
-    if (!record) throw new NotFoundException(`Record ${recordId} not found`);
+    if (!record || record.isDeleted) throw new NotFoundException(`Record ${recordId} not found`);
 
-    // ── 2. Verify access grant ────────────────────────────────────────────────
-    const hasAccess = await this.accessControl.verifyAccess(requesterId, recordId);
-    if (!hasAccess) {
-      throw new ForbiddenException('No active access grant for this record');
+    // ── 2. Owner, or an active grant from the owner ───────────────────────────
+    const isOwner = !!requesterId && record.patientId === requesterId;
+    if (!isOwner) {
+      const hasAccess = await this.accessControl.verifyAccess(
+        requesterId,
+        recordId,
+        record.patientId,
+      );
+      if (!hasAccess) {
+        throw new ForbiddenException('No active access grant for this record');
+      }
     }
 
     // ── 3. Fetch encrypted bytes from IPFS (in-memory, no disk write) ─────────
@@ -184,7 +191,8 @@ export class RecordDownloadService {
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
   private inferContentType(recordType: string): string {
-    const map: Record<string, string> = {
+    // `Record` is the entity imported above, so the TS utility type is spelled out.
+    const map: { [recordType: string]: string } = {
       imaging: 'application/dicom',
       lab_result: 'application/pdf',
       prescription: 'application/pdf',

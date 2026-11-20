@@ -198,13 +198,17 @@ describe('RelatedRecordsService — scoring', () => {
         makeRecord({ id: 'denied', recordType: RecordType.LAB_RESULT, createdAt: new Date('2026-01-17T00:00:00Z') }),
       ];
       mockRepo.find.mockResolvedValue(candidates);
+      // The requester holds grants for the source record and 'allowed' only.
       mockAccessControl.verifyAccess
         .mockImplementation((_requesterId: string, recordId: string) =>
-          Promise.resolve(recordId === 'allowed'),
+          Promise.resolve(recordId === 'src' || recordId === 'allowed'),
         );
 
       const result = await service.findRelated('src', 'requester-1');
       expect(result.map((r) => r.id)).toEqual(['allowed']);
+      // Grants are checked against each record's patient.
+      expect(mockAccessControl.verifyAccess).toHaveBeenCalledWith('requester-1', 'src', 'patient-1');
+      expect(mockAccessControl.verifyAccess).toHaveBeenCalledWith('requester-1', 'denied', 'patient-1');
     });
 
     it('returns results sorted by score descending', async () => {
