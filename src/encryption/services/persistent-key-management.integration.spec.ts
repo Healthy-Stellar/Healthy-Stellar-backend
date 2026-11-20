@@ -109,4 +109,42 @@ describe('EncryptionService with persistent KEKs (#1326)', () => {
     expect(table.rows.size).toBe(1);
     await mod.close();
   });
+
+  describe('GCM auth tag length is enforced (no truncated-tag forgeries)', () => {
+    it('decryptRecord rejects a record whose auth tag was truncated', async () => {
+      const mod = await bootEncryption(new FakeDekTable());
+      const enc = mod.get(EncryptionService);
+      const record = await enc.encryptRecord(Buffer.from('secret'), 'patient-t');
+
+      for (const len of [4, 8, 12, 15]) {
+        await expect(
+          enc.decryptRecord({ ...record, authTag: record.authTag.subarray(0, len) }, 'patient-t'),
+        ).rejects.toThrow(/authTag must be 16 bytes/);
+      }
+      await mod.close();
+    });
+
+    it('unwrapDek rejects a wrapped DEK with a truncated auth tag', async () => {
+      const mod = await bootEncryption(new FakeDekTable());
+      const enc = mod.get(EncryptionService);
+      const kms = mod.get(KeyManagementService) as unknown as PersistentKeyManagementService;
+      const record = await enc.encryptRecord(Buffer.from('secret'), 'patient-t');
+
+      // Drop the last 12 bytes of the 16-byte tag: a 4-byte "tag" would be
+      // accepted by GCM if the expected length were not pinned.
+      const truncated = record.encryptedDek.subarray(0, record.encryptedDek.length - 12);
+      await expect(kms.unwrapDek(truncated, 'patient-t')).rejects.toThrow(/Failed to unwrap DEK/);
+      await expect(kms.unwrapDek(Buffer.alloc(10), 'patient-t')).rejects.toThrow(/malformed/);
+      await mod.close();
+    });
+
+    it('round-trips normally with full-length tags', async () => {
+      const mod = await bootEncryption(new FakeDekTable());
+      const enc = mod.get(EncryptionService);
+      const record = await enc.encryptRecord(Buffer.from('secret'), 'patient-t');
+      expect(record.authTag.length).toBe(16);
+      expect((await enc.decryptRecord(record, 'patient-t')).toString()).toBe('secret');
+      await mod.close();
+    });
+  });
 });

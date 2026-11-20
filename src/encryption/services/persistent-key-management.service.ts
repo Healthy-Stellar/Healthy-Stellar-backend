@@ -9,6 +9,8 @@ import { DekWrapper } from './dek-wrapper.interface';
 const KEK_BYTES = 32;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
+/** IV + at least one ciphertext byte + full-length auth tag. */
+const MIN_WRAPPED_DEK_BYTES = IV_BYTES + 1 + TAG_BYTES;
 const KEK_KEY_PREFIX = 'encryption-kek:patient:';
 const MAX_CACHED_KEKS = 1000;
 
@@ -43,7 +45,9 @@ export class PersistentKeyManagementService implements DekWrapper {
       const kek = await this.resolveKek(patientId, true);
       try {
         const iv = crypto.randomBytes(IV_BYTES);
-        const cipher = crypto.createCipheriv('aes-256-gcm', kek, iv);
+        const cipher = crypto.createCipheriv('aes-256-gcm', kek, iv, {
+          authTagLength: TAG_BYTES,
+        });
         const encryptedDek = Buffer.concat([cipher.update(dek), cipher.final()]);
         return Buffer.concat([iv, encryptedDek, cipher.getAuthTag()]);
       } catch (error) {
@@ -58,11 +62,21 @@ export class PersistentKeyManagementService implements DekWrapper {
     return this.circuitBreaker.execute('kms', async () => {
       // Never create a KEK on decrypt: a missing KEK means the data is unrecoverable.
       const kek = await this.resolveKek(patientId, false);
+      // Reject truncated input up front so a short auth tag can never be
+      // sliced out of it and accepted (GCM tag-truncation forgery).
+      if (!Buffer.isBuffer(encryptedDek) || encryptedDek.length < MIN_WRAPPED_DEK_BYTES) {
+        throw new KeyManagementError(
+          `Failed to unwrap DEK for patient ${patientId}: wrapped DEK is malformed`,
+        );
+      }
       try {
         const iv = encryptedDek.subarray(0, IV_BYTES);
         const authTag = encryptedDek.subarray(encryptedDek.length - TAG_BYTES);
         const ciphertext = encryptedDek.subarray(IV_BYTES, encryptedDek.length - TAG_BYTES);
-        const decipher = crypto.createDecipheriv('aes-256-gcm', kek, iv);
+        // Pin the expected tag length so Node refuses any shorter tag.
+        const decipher = crypto.createDecipheriv('aes-256-gcm', kek, iv, {
+          authTagLength: TAG_BYTES,
+        });
         decipher.setAuthTag(authTag);
         return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
       } catch (error) {
