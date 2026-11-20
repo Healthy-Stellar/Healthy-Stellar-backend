@@ -50,6 +50,11 @@ export class WebhookSignatureMiddleware implements NestMiddleware {
       throw new UnauthorizedException('Webhook signature expired');
     }
 
+    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+    if (!Buffer.isBuffer(rawBody)) {
+      throw new UnauthorizedException('Raw webhook body unavailable');
+    }
+
     // 2. Redis-backed nonce replay check (SET NX EX — atomic, distributed, TTL-aware)
     const nonceKey = `webhook:nonce:${nonce}`;
     const isNew = await this.redis.set(nonceKey, '1', 'EX', this.maxAgeSec, 'NX');
@@ -58,8 +63,7 @@ export class WebhookSignatureMiddleware implements NestMiddleware {
     }
 
     // 3. HMAC verification — payload includes nonce to prevent replay bypass
-    const rawBody = (req as any).rawBody ?? '';
-    const payload = `${timestamp}.${nonce}.${rawBody}`;
+    const payload = Buffer.concat([Buffer.from(`${timestamp}.${nonce}.`), rawBody]);
     const expectedHex = crypto
       .createHmac('sha256', this.secret)
       .update(payload)
