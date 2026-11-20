@@ -49,7 +49,7 @@ export class GdprController {
   @ApiResponse({ status: 409, description: 'A pending or in-progress request already exists' })
   @AuditLog('GDPR_EXPORT_REQUEST', 'GdprRequest')
   async requestDataExport(@Req() req) {
-    const userId = req.user.id;
+    const userId = req.user.userId;
     return this.gdprService.createExportRequest(userId);
   }
 
@@ -61,7 +61,7 @@ export class GdprController {
   @ApiResponse({ status: 409, description: 'A pending or in-progress request already exists' })
   @AuditLog('GDPR_ERASURE_REQUEST', 'GdprRequest')
   async requestErasure(@Req() req, @Body() dto?: CreateErasureRequestDto) {
-    const userId = req.user.id;
+    const userId = req.user.userId;
     return this.gdprService.createErasureRequest(userId, dto);
   }
 
@@ -69,7 +69,7 @@ export class GdprController {
   @ApiOperation({ summary: 'List all submitted GDPR requests and their status' })
   @ApiResponse({ status: 200, description: 'List of GDPR requests' })
   async getRequests(@Req() req) {
-    const userId = req.user.id;
+    const userId = req.user.userId;
     return this.gdprService.getRequestsByUser(userId);
   }
 
@@ -81,7 +81,7 @@ export class GdprController {
   })
   @ApiResponse({ status: 200, description: 'Per-module deletion preview' })
   async previewErasure(@Req() req) {
-    const userId = req.user.id;
+    const userId = req.user.userId;
     return this.gdprService.previewErasure(userId);
   }
 
@@ -100,7 +100,7 @@ export class GdprController {
     @Req() req,
     @Res() res: Response,
   ) {
-    const userId = req.user.id;
+    const userId = req.user.userId;
 
     const request = await this.gdprRequestRepository.findOne({
       where: { id: requestId },

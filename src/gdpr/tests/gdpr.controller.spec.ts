@@ -64,7 +64,7 @@ describe('GdprController', () => {
 
   describe('requestDataExport', () => {
     it('should call gdprService.createExportRequest', async () => {
-      const req = { user: { id: 'user1' } };
+      const req = { user: { userId: 'user1' } };
       const res = await controller.requestDataExport(req);
       expect(mockGdprService.createExportRequest).toHaveBeenCalledWith('user1');
       expect(res.id).toEqual('1');
@@ -73,7 +73,7 @@ describe('GdprController', () => {
 
   describe('requestErasure', () => {
     it('should call gdprService.createErasureRequest', async () => {
-      const req = { user: { id: 'user1' } };
+      const req = { user: { userId: 'user1' } };
       const payload: CreateErasureRequestDto = {
         patientId: 'patient-1',
         requestorIdentity: 'operator-1',
@@ -86,7 +86,7 @@ describe('GdprController', () => {
 
   describe('getRequests', () => {
     it('should return list of requests for the user', async () => {
-      const req = { user: { id: 'user1' } };
+      const req = { user: { userId: 'user1' } };
       const res = await controller.getRequests(req);
       expect(mockGdprService.getRequestsByUser).toHaveBeenCalledWith('user1');
       expect(res.length).toBe(1);

@@ -10,7 +10,7 @@ export class AuditContextGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
 
-    const userId = request.user?.id || 'anonymous';
+    const userId = request.user?.userId || 'anonymous';
     const ipAddress = request.ip || request.connection?.remoteAddress;
     const userAgent = request.headers['user-agent'];
     const requestId = request.headers['x-request-id'];

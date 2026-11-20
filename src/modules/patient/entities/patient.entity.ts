@@ -1097,14 +1097,14 @@ export class PatientController {
   @ApiResponse({ status: HttpStatus.CREATED, description: 'Patient successfully created' })
   @ApiResponse({ status: HttpStatus.CONFLICT, description: 'Potential duplicate detected' })
   async create(@Body() createPatientDto: CreatePatientDto, @Request() req) {
-    return this.patientService.create(createPatientDto, req.user.id);
+    return this.patientService.create(createPatientDto, req.user.userId);
   }
 
   @Get('search')
   @ApiOperation({ summary: 'Search patients with privacy controls' })
   @ApiResponse({ status: HttpStatus.OK, description: 'Search results returned' })
   async search(@Query() searchDto: SearchPatientDto, @Request() req) {
-    return this.patientService.search(searchDto, req.user.id);
+    return this.patientService.search(searchDto, req.user.userId);
   }
 
   @Get(':mrn')
@@ -1113,7 +1113,7 @@ export class PatientController {
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Patient not found' })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Access denied' })
   async findByMrn(@Param('mrn') mrn: string, @Request() req) {
-    return this.patientService.findByMrn(mrn, req.user.id);
+    return this.patientService.findByMrn(mrn, req.user.userId);
   }
 
   @Put(':id')
@@ -1124,14 +1124,14 @@ export class PatientController {
     @Body() updateDto: Partial<CreatePatientDto>,
     @Request() req,
   ) {
-    return this.patientService.update(id, updateDto, req.user.id);
+    return this.patientService.update(id, updateDto, req.user.userId);
   }
 
   @Post('merge')
   @ApiOperation({ summary: 'Merge duplicate patients' })
   @ApiResponse({ status: HttpStatus.OK, description: 'Patients merged successfully' })
   async merge(@Body() mergeDto: MergePatientsDto, @Request() req) {
-    return this.patientService.mergePatients(mergeDto, req.user.id);
+    return this.patientService.mergePatients(mergeDto, req.user.userId);
   }
 }
 

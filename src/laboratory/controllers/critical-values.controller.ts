@@ -18,7 +18,7 @@ export class CriticalValuesController {
   @ApiOperation({ summary: 'Create a critical value threshold definition' })
   @ApiResponse({ status: 201 })
   createDefinition(@Body() dto: CreateCriticalValueDefinitionDto, @Request() req: any) {
-    return this.definitionsService.create(dto, req.user?.id || 'system');
+    return this.definitionsService.create(dto, req.user?.userId || 'system');
   }
 
   @Get('definitions')
@@ -61,7 +61,7 @@ export class CriticalValuesController {
     @Body('followUpActions') followUpActions: string,
     @Request() req: any,
   ) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     const userName = req.user?.name;
     return this.alertsService.acknowledge(id, userId, userName, notes, followUpActions);
   }

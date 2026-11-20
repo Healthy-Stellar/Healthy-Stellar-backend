@@ -18,7 +18,7 @@ export class HospitalRegistryController {
   @Post()
   @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
   create(@Body() dto: CreateHospitalRegistryDto, @Req() req: any) {
-    return this.service.create(dto, req.user?.userId ?? req.user?.id ?? 'system');
+    return this.service.create(dto, req.user?.userId ?? 'system');
   }
 
   @Get()
@@ -42,12 +42,12 @@ export class HospitalRegistryController {
   @Put(':id')
   @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
   update(@Param('id') id: string, @Body() dto: UpdateHospitalRegistryDto, @Req() req: any) {
-    return this.service.update(id, dto, req.user?.userId ?? req.user?.id ?? 'system');
+    return this.service.update(id, dto, req.user?.userId ?? 'system');
   }
 
   @Delete(':id')
   @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
   remove(@Param('id') id: string, @Req() req: any) {
-    return this.service.remove(id, req.user?.userId ?? req.user?.id ?? 'system');
+    return this.service.remove(id, req.user?.userId ?? 'system');
   }
 }
