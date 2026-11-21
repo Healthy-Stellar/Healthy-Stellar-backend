@@ -70,6 +70,10 @@ export class FeatureFlagService {
   }
 
   async upsert(dto: UpsertFeatureFlagDto, actorId: string): Promise<FeatureFlag> {
+    if (!actorId) {
+      throw new Error('actorId is required for upsert operation');
+    }
+
     let flag = await this.repo.findOne({ where: { key: dto.key } });
     const wasEnabled = flag?.enabled;
 
@@ -90,18 +94,26 @@ export class FeatureFlagService {
 
     const saved = await this.repo.save(flag);
     this.logger.log(
-      `Feature flag [${dto.key}] ${wasEnabled ? 'was' : 'was not'} enabled → now ${dto.enabled} (strategy: ${saved.strategy}) by ${actorId}`,
+      `Feature flag [${dto.key}] ${wasEnabled ? 'was' : 'was not'} enabled → now ${dto.enabled} ` +
+      `(strategy: ${saved.strategy}) by user ${actorId}`,
     );
     return saved;
   }
 
   async rollback(key: string, actorId: string): Promise<FeatureFlag> {
+    if (!actorId) {
+      throw new Error('actorId is required for rollback operation');
+    }
+
     const flag = await this.repo.findOne({ where: { key } });
     if (!flag) throw new NotFoundException(`Feature flag '${key}' not found`);
+    
     flag.enabled = false;
     flag.updatedBy = actorId;
     const saved = await this.repo.save(flag);
-    this.logger.warn(`Feature flag [${key}] ROLLED BACK (disabled) by ${actorId}`);
+    this.logger.warn(
+      `Feature flag [${key}] ROLLED BACK (disabled) by user ${actorId}`,
+    );
     return saved;
   }
 
