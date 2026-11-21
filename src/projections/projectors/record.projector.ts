@@ -22,11 +22,15 @@ export class RecordProjector implements IEventHandler<RecordUploadedEvent | Reco
   ) {}
 
   async handle(event: RecordUploadedEvent | RecordAmendedEvent): Promise<void> {
-    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME);
+    const aggregateId = event.recordId;
+    const version = event instanceof RecordUploadedEvent ? event.version : event.newVersion;
 
-    // Idempotency guard — skip already-processed versions
-    if (event.version <= lastVersion) {
-      this.logger.debug(`${PROJECTOR_NAME}: skipping already-projected version ${event.version}`);
+    // Idempotency guard — scoped per aggregate, since event versions reset per aggregate
+    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME, aggregateId);
+    if (version <= lastVersion) {
+      this.logger.debug(
+        `${PROJECTOR_NAME}: skipping already-projected version ${version} for ${aggregateId}`,
+      );
       return;
     }
 
@@ -37,9 +41,9 @@ export class RecordProjector implements IEventHandler<RecordUploadedEvent | Reco
         await this.projectAmended(event);
       }
 
-      await this.checkpoints.advance(PROJECTOR_NAME, event.version);
+      await this.checkpoints.advance(PROJECTOR_NAME, aggregateId, version);
     } catch (err) {
-      this.logger.error(`${PROJECTOR_NAME}: failed on version ${event.version} — ${err.message}`);
+      this.logger.error(`${PROJECTOR_NAME}: failed on version ${version} — ${err.message}`);
       await this.dlq.add(
         'projection-failed',
         { projectorName: PROJECTOR_NAME, event, error: err.message },

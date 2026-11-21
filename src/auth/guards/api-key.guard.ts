@@ -49,9 +49,7 @@ export class ApiKeyGuard implements CanActivate {
 
     // Update last used IP
     if (request.ip) {
-      await this.apiKeyService['apiKeyRepository'].update(validatedKey.id, {
-        lastUsedByIp: request.ip,
-      });
+      await this.apiKeyService.recordLastUsedIp(validatedKey.id, request.ip);
     }
 
     // Attach API key info to request

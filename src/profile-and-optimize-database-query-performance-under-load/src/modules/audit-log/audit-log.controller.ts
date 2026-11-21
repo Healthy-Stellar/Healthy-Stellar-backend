@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Body, Query, HttpCode, Param } from '@nestjs/common';
 import { AuditLogService } from './audit-log.service';
 import { AuditLog } from './entities/audit-log.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('audit-logs')
 @Controller('audit-logs')
 export class AuditLogController {
   constructor(private readonly auditLogService: AuditLogService) {}

@@ -44,7 +44,53 @@ export class I18nService {
    * Get supported languages
    */
   getSupportedLanguages(): string[] {
-    return ['en', 'fr', 'es', 'ar'];
+    return ['en', 'fr', 'es', 'ar', 'he'];
+  }
+
+  /**
+   * RTL locale codes
+   */
+  private readonly rtlLocales = new Set(['ar', 'he']);
+
+  /**
+   * Returns true if the given (or current) locale is a right-to-left language.
+   */
+  isRtlLocale(lang?: string): boolean {
+    const locale = (lang || this.getCurrentLanguage()).toLowerCase();
+    return this.rtlLocales.has(locale);
+  }
+
+  /**
+   * Returns the HTML `dir` attribute value for the given (or current) locale.
+   */
+  getTextDirection(lang?: string): 'rtl' | 'ltr' {
+    return this.isRtlLocale(lang) ? 'rtl' : 'ltr';
+  }
+
+  /**
+   * Format a date according to the current locale.
+   * Falls back to en-US if the Intl formatter is unavailable.
+   */
+  formatDate(date: Date | string | number, options?: Intl.DateTimeFormatOptions): string {
+    try {
+      const lang = this.getCurrentLanguage();
+      const locale = this.rtlLocales.has(lang) ? `${lang}-${lang.toUpperCase()}` : lang;
+      return new Intl.DateTimeFormat(locale, options).format(new Date(date));
+    } catch {
+      return new Date(date).toLocaleDateString('en-US', options);
+    }
+  }
+
+  /**
+   * Format a number according to the current locale.
+   */
+  formatNumber(value: number, options?: Intl.NumberFormatOptions): string {
+    try {
+      const lang = this.getCurrentLanguage();
+      return new Intl.NumberFormat(lang, options).format(value);
+    } catch {
+      return value.toLocaleString('en-US', options);
+    }
   }
 
   /**

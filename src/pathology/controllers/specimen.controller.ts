@@ -2,7 +2,9 @@ import { Controller, Get, Post, Patch, Body, Param, UseGuards, Request } from '@
 import { SpecimenProcessingService } from '../services/specimen-processing.service';
 import { CreateSpecimenDto } from '../dto/create-specimen.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pathology/specimens')
 @Controller('pathology/specimens')
 @UseGuards(JwtAuthGuard)
 export class SpecimenController {

@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { LedgerReconciliationService } from './ledger-reconciliation.service';
 import { ReconciliationRun, ReconciliationRunStatus } from './reconciliation-run.entity';
 import { Record } from '../records/entities/record.entity';
+import { QueueService } from '../queues/queue.service';
+import { JOB_TYPES } from '../queues/queue.constants';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -46,6 +48,7 @@ function buildModule(
 
   const recordRepo = {
     find: jest.fn().mockResolvedValue(records),
+    save: jest.fn().mockImplementation((rec) => Promise.resolve(rec)),
   };
 
   const runRepo = {
@@ -75,6 +78,14 @@ function buildModule(
           {
             provide: 'PROM_METRIC_MEDCHAIN_RECONCILIATION_DISCREPANCIES_TOTAL',
             useValue: discrepanciesCounter,
+          },
+          {
+            provide: QueueService,
+            useValue: {
+              dispatchStellarTransaction: jest
+                .fn()
+                .mockResolvedValue({ jobId: 'job-1', correlationId: 'corr-1' }),
+            },
           },
         ],
       }).compile(),
@@ -161,6 +172,28 @@ describe('LedgerReconciliationService', () => {
 
       await service.run();
       expect(discrepanciesCounter.inc).toHaveBeenCalledWith({ type: 'missing' });
+    });
+
+    it('re-queues the anchor through the Stellar transaction queue', async () => {
+      const { discrepanciesCounter, moduleFactory } = buildModule([makeRecord()], 'not_found');
+      const module: TestingModule = await moduleFactory();
+      service = module.get(LedgerReconciliationService);
+      const queueService = module.get(QueueService);
+      const recordRepo = module.get(getRepositoryToken(Record));
+      jest.spyOn(service, '_queryHorizon').mockResolvedValue('not_found');
+
+      await service.run();
+
+      expect(queueService.dispatchStellarTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operationType: JOB_TYPES.ANCHOR_RECORD,
+          initiatedBy: 'ledger-reconciliation',
+          params: expect.objectContaining({ recordId: 'rec-1', patientId: 'p1', cid: 'Qm1' }),
+          correlationId: expect.any(String),
+        }),
+      );
+      expect(recordRepo.save).toHaveBeenCalled();
+      expect(discrepanciesCounter.inc).toHaveBeenCalledWith({ type: 'requeued' });
     });
   });
 

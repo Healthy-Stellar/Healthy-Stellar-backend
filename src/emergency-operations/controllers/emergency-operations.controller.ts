@@ -1,5 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { EmergencyOperationsService } from '../services/emergency-operations.service';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 import {
   CreateDisasterIncidentDto,
   CreateEmergencyChartNoteDto,
@@ -15,8 +19,11 @@ import {
 } from '../dto/emergency-operations.dto';
 import { EmergencyResourceStatus } from '../entities/emergency-resource.entity';
 import { TriageQueueStatus } from '../entities/emergency-triage.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('emergency')
 @Controller('emergency')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class EmergencyOperationsController {
   constructor(private emergencyService: EmergencyOperationsService) {}
 

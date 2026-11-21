@@ -1,14 +1,19 @@
 // src/queue/email-queue.consumer.ts
-import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
+import { Processor, WorkerHost, OnWorkerEvent, InjectQueue } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bullmq';
-import { EMAIL_QUEUE } from './email-queue.module';
+import { Job, Queue } from 'bullmq';
+import { EMAIL_QUEUE, EMAIL_DIGEST_QUEUE } from './email-queue.module';
 import { MailService } from './mail.service';
 import { EmailLookupService } from './email-lookup.service';
-import {
-  EmailJobData,
-  EmailJobType,
-} from './email-queue.producer';
+import { EmailJobData, EmailJobType } from './email-queue.producer';
+
+// Non-critical event types are eligible for digest batching. Suspicious-access
+// alerts are always critical and must always send immediately.
+const DIGESTIBLE_JOB_TYPES: ReadonlySet<EmailJobType> = new Set([
+  EmailJobType.ACCESS_GRANTED,
+  EmailJobType.ACCESS_REVOKED,
+  EmailJobType.RECORD_UPLOADED,
+]);
 
 @Processor(EMAIL_QUEUE, { concurrency: 5 })
 export class EmailQueueConsumer extends WorkerHost {
@@ -17,12 +22,24 @@ export class EmailQueueConsumer extends WorkerHost {
   constructor(
     private readonly mailService: MailService,
     private readonly lookup: EmailLookupService,
+    @InjectQueue(EMAIL_DIGEST_QUEUE) private readonly digestQueue: Queue,
   ) {
     super();
   }
 
   async process(job: Job<EmailJobData>): Promise<void> {
     this.logger.log(`Processing job ${job.id} [${job.name}] attempt ${job.attemptsMade + 1}`);
+
+    if (
+      DIGESTIBLE_JOB_TYPES.has(job.data.type) &&
+      (await this.lookup.prefersDigestDelivery(job.data.patientId))
+    ) {
+      await this.digestQueue.add(job.data.type, job.data);
+      this.logger.log(
+        `Queued ${job.data.type} for digest delivery to patient ${job.data.patientId}`,
+      );
+      return;
+    }
 
     switch (job.data.type) {
       case EmailJobType.ACCESS_GRANTED: {

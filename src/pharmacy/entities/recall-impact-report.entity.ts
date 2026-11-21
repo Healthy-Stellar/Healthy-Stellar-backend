@@ -1,50 +1,98 @@
 import {
   Entity,
-  Column,
   PrimaryGeneratedColumn,
+  Column,
   CreateDateColumn,
+  UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { DrugRecall } from './drug-recall.entity';
 
+export enum NotificationStatus {
+  PENDING = 'pending',
+  SENT = 'sent',
+  FAILED = 'failed',
+  SKIPPED = 'skipped',
+}
+
+/**
+ * RecallImpactReport
+ *
+ * One row per prescription affected by a drug recall.
+ * Tracks whether the patient and prescriber were notified and the
+ * outcome of each notification attempt.
+ *
+ * Used by:
+ *  - RecallNotificationService   (writes rows, updates status)
+ *  - GET /pharmacy/recalls/:id/impact  (reads rows for the admin dashboard)
+ */
 @Entity('recall_impact_reports')
 export class RecallImpactReport {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
-  recallId: string;
-
   @ManyToOne(() => DrugRecall, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'recall_id' })
   recall: DrugRecall;
 
-  @Column({ type: 'int', default: 0 })
-  affectedPrescriptionCount: number;
+  @Column({ type: 'uuid', name: 'recall_id' })
+  @Index()
+  recallId: string;
 
-  @Column({ type: 'int', default: 0 })
-  affectedPatientsCount: number;
+  @Column({ type: 'uuid' })
+  prescriptionId: string;
 
-  @Column({ type: 'int', default: 0 })
-  affectedPrescribersCount: number;
+  @Column({ type: 'uuid' })
+  @Index()
+  patientId: string;
 
-  @Column({ type: 'simple-array', nullable: true })
-  affectedPatientIds: string[];
+  @Column({ type: 'uuid', nullable: true })
+  @Index()
+  prescriberId: string;
 
-  @Column({ type: 'simple-array', nullable: true })
-  affectedPrescriberIds: string[];
+  @Column({ nullable: true })
+  matchedNdcCode: string;
 
-  @Column({ type: 'simple-json', nullable: true })
-  notificationSummary: Array<{
-    recipientId: string;
-    recipientType: 'patient' | 'provider';
-    method: string;
-    status: 'queued' | 'sent' | 'failed';
-    note?: string;
-    attemptedAt: string;
-  }>;
+  @Column({ nullable: true })
+  matchedLotNumber: string;
 
-  @CreateDateColumn()
+  // ── Patient notification ──────────────────────────────────────────────────
+
+  @Column({
+    type: 'enum',
+    enum: NotificationStatus,
+    default: NotificationStatus.PENDING,
+    name: 'patient_notification_status',
+  })
+  patientNotificationStatus: NotificationStatus;
+
+  @Column({ type: 'timestamp', nullable: true, name: 'patient_notified_at' })
+  patientNotifiedAt: Date | null;
+
+  @Column({ type: 'text', nullable: true, name: 'patient_notification_error' })
+  patientNotificationError: string | null;
+
+  // ── Prescriber notification ───────────────────────────────────────────────
+
+  @Column({
+    type: 'enum',
+    enum: NotificationStatus,
+    default: NotificationStatus.PENDING,
+    name: 'prescriber_notification_status',
+  })
+  prescriberNotificationStatus: NotificationStatus;
+
+  @Column({ type: 'timestamp', nullable: true, name: 'prescriber_notified_at' })
+  prescriberNotifiedAt: Date | null;
+
+  @Column({ type: 'text', nullable: true, name: 'prescriber_notification_error' })
+  prescriberNotificationError: string | null;
+
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
 }

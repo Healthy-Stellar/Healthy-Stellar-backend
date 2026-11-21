@@ -38,6 +38,10 @@ export interface EncryptedRecord {
   /**
    * The version identifier for the DEK encryption scheme
    * Supports key rotation and cryptographic agility
+   *
+   * Serialized into the attachment envelope as a length-prefixed UTF-8 string
+   * ([verLen:2 little-endian][dekVersion:verLen bytes]) so that
+   * RecordDownloadService.unpackEnvelope() can parse it symmetrically.
    */
   dekVersion: string;
 }

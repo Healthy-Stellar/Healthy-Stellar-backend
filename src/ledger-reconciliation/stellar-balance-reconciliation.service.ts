@@ -4,6 +4,7 @@ import { Repository, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { LedgerReconciliationReport } from './ledger-reconciliation-report.entity';
+import { StellarLedgerEntry } from './stellar-ledger-entry.entity';
 import { NotificationsService } from '../notifications/services/notifications.service';
 
 interface AccountDetail {
@@ -26,6 +27,8 @@ export class StellarBalanceReconciliationService {
   constructor(
     @InjectRepository(LedgerReconciliationReport)
     private readonly reportRepo: Repository<LedgerReconciliationReport>,
+    @InjectRepository(StellarLedgerEntry)
+    private readonly ledgerEntryRepo: Repository<StellarLedgerEntry>,
     private readonly dataSource: DataSource,
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
@@ -40,9 +43,7 @@ export class StellarBalanceReconciliationService {
     if (!this._horizon) {
       const isMainnet = this.config.get('STELLAR_NETWORK') === 'mainnet';
       this._horizon = new StellarSdk.Horizon.Server(
-        isMainnet
-          ? 'https://horizon.stellar.org'
-          : 'https://horizon-testnet.stellar.org',
+        isMainnet ? 'https://horizon.stellar.org' : 'https://horizon-testnet.stellar.org',
         { allowHttp: false },
       );
     }
@@ -144,20 +145,19 @@ export class StellarBalanceReconciliationService {
           status: 'not_found',
         };
       }
+      const fallbackDiscrepancy = (this.thresholdXlm + 1).toFixed(7);
       this.logger.error(`Horizon fetch failed for ${accountId}: ${(err as Error).message}`);
       return {
         accountId,
         horizonBalance: '0',
         internalBalance: '0',
-        discrepancy: '0',
+        discrepancy: fallbackDiscrepancy,
         status: 'unmatched',
       };
     }
 
     const internalBalance = await this.getInternalBalance(accountId);
-    const discrepancy = (
-      parseFloat(horizonBalance) - parseFloat(internalBalance)
-    ).toFixed(7);
+    const discrepancy = (parseFloat(horizonBalance) - parseFloat(internalBalance)).toFixed(7);
     const isMatched = Math.abs(parseFloat(discrepancy)) <= 0.0000001;
 
     return {
@@ -171,17 +171,19 @@ export class StellarBalanceReconciliationService {
 
   /**
    * Retrieves the internal ledger total for a Stellar account.
-   * Returns the sum of net confirmed payment amounts tracked in the database.
+   * Returns the sum of all confirmed payment amounts tracked in the database.
    */
   private async getInternalBalance(accountId: string): Promise<string> {
     // Query the internal ledger: sum of all confirmed incoming payments minus outgoing
     // for this Stellar account. Falls back to '0' when no ledger entries exist.
-    const result: Array<{ total: string }> = await this.dataSource.query(
-      `SELECT COALESCE(SUM(amount), 0)::text AS total
+    const result: Array<{ total: string }> = await this.dataSource
+      .query(
+        `SELECT COALESCE(SUM(amount), 0)::text AS total
        FROM stellar_ledger_entries
        WHERE account_id = $1 AND status = 'confirmed'`,
-      [accountId],
-    ).catch(() => [{ total: '0' }]);
+        [accountId],
+      )
+      .catch(() => [{ total: '0' }]);
 
     return result[0]?.total ?? '0';
   }

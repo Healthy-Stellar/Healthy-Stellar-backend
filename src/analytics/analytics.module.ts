@@ -12,9 +12,12 @@ import { Patient } from '../patients/entities/patient.entity';
 
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsCohortsController } from './analytics-cohorts.controller';
+import { OperationalDashboardController } from './operational-dashboard.controller';
 import { AnalyticsService } from './analytics.service';
 import { CohortQueryService } from './cohort-query.service';
 import { CohortReportsService } from './cohort-reports.service';
+import { OperationalDashboardService } from './services/operational-dashboard.service';
+import { OperationalDashboardGateway } from './gateways/operational-dashboard.gateway';
 import { TenantModule } from '../tenant/tenant.module';
 import { DatabaseModule } from '../database/database.module';
 
@@ -36,8 +39,14 @@ import { DatabaseModule } from '../database/database.module';
     TenantModule,
     DatabaseModule,
   ],
-  controllers: [AnalyticsController, AnalyticsCohortsController],
-  providers: [AnalyticsService, CohortQueryService, CohortReportsService],
-  exports: [AnalyticsService, CohortQueryService, CohortReportsService],
+  controllers: [AnalyticsController, AnalyticsCohortsController, OperationalDashboardController],
+  providers: [
+    AnalyticsService,
+    CohortQueryService,
+    CohortReportsService,
+    OperationalDashboardService,
+    OperationalDashboardGateway,
+  ],
+  exports: [AnalyticsService, CohortQueryService, CohortReportsService, OperationalDashboardService],
 })
 export class AnalyticsModule {}

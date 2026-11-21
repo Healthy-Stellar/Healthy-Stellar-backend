@@ -1,52 +1,36 @@
-/**
- * Multi-signature transaction support for high-value Stellar payments.
- *
- * When a payment amount exceeds a configurable threshold per tenant,
- * it enters a pending_signatures state. Authorised signers must approve
- * (quorum) before the transaction is submitted to Stellar.
- */
+import { ApiProperty, ApiOperation, ApiTag, Body} from '@nestjs/swagger';
 
 export enum MultiSigTransactionStatus {
-  PENDING_SIGNATURES = 'pending_signatures',
-  APPROVED = 'approved',
-  REJECTED = 'rejected',
-  EXPIRED = 'expired',
-  SUBMITTED = 'submitted',
+  PENDING_SIGNATURES = 'PENDING_SIGNATURES',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  EXPIRED = 'EXPIRED',
+  EXECUTED = 'EXECUTED',
+  EXECUTION_FAILED = 'EXECUTION_FAILED',
 }
 
 export enum SignatureStatus {
-  PENDING = 'pending',
-  APPROVED = 'approved',
-  REJECTED = 'rejected',
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
 }
 
 export interface SignerEntry {
   signerId: string;
   status: SignatureStatus;
-  signedAt?: string; // ISO-8601
-  reason?: string;   // rejection reason
+  signedAt?: string;
+  reason?: string;
 }
 
-export interface MultiSigConfig {
-  /** Amount threshold in XLM (or asset units) above which multi-sig is required */
-  thresholdAmount: string;
-  /** Number of signers required for quorum (e.g. 2 for 2-of-3) */
-  quorumSize: number;
-  /** Total authorised signer public keys */
-  signers: string[];
-  /** Time-to-live in minutes for pending transactions */
-  ttlMinutes: number;
-}
-
-export interface CreateMultiSigPaymentDto {
+export class CreateMultiSigPaymentDto {
   tenantId: string;
-  destination: string;  // Stellar public key
-  amount: string;       // Amount as string to avoid precision issues
-  asset?: string;       // Default 'XLM'
+  destination: string;
+  amount: string;
+  asset?: string;
   memo?: string;
 }
 
-export interface ApproveRejectDto {
+export class ApproveRejectDto {
   signerId: string;
   reason?: string;
 }

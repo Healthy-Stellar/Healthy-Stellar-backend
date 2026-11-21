@@ -5,6 +5,8 @@ import { ReportJob, ReportFormat, ReportStatus } from './entities/report-job.ent
 import { ConfigService } from '@nestjs/config';
 import { NotificationsService } from '../notifications/services/notifications.service';
 import { EntityManager } from 'typeorm';
+import { I18nService } from '../i18n/i18n.service';
+import * as ExcelJS from 'exceljs';
 
 jest.mock(
   'ipfs-http-client',
@@ -23,6 +25,7 @@ describe('ReportsService', () => {
   let mockEntityManager;
   let mockConfigService;
   let mockNotificationsService;
+  let mockI18nService;
 
   beforeEach(async () => {
     mockReportJobRepo = {
@@ -45,6 +48,11 @@ describe('ReportsService', () => {
       sendEmail: jest.fn(),
     };
 
+    mockI18nService = {
+      isRtlLocale: jest.fn().mockReturnValue(false),
+      formatDate: jest.fn().mockReturnValue('2026-01-01'),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReportsService,
@@ -63,6 +71,10 @@ describe('ReportsService', () => {
         {
           provide: NotificationsService,
           useValue: mockNotificationsService,
+        },
+        {
+          provide: I18nService,
+          useValue: mockI18nService,
         },
       ],
     }).compile();
@@ -142,6 +154,96 @@ describe('ReportsService', () => {
       await expect(service.getJobStatus('job-1', 'patient-123')).rejects.toThrow(
         'Download link has expired',
       );
+    });
+  });
+
+  describe('generateXlsxBuffer (XLSX export)', () => {
+    const patient = { id: 'patient-123', firstName: 'Jane', lastName: 'Doe' } as any;
+
+    const records = [
+      {
+        createdAt: new Date('2026-01-05T10:00:00Z'),
+        recordType: 'consultation',
+        title: 'Annual Checkup',
+        metadata: { transactionHash: '0xabc' },
+      },
+    ] as any[];
+
+    const grants = [
+      {
+        granteeId: 'dr-smith',
+        status: 'ACTIVE',
+        accessLevel: 'READ',
+        expiresAt: new Date('2026-06-01T00:00:00Z'),
+        sorobanTxHash: '0xdef',
+      },
+    ] as any[];
+
+    const logs = [
+      {
+        timestamp: new Date('2026-01-06T12:00:00Z'),
+        action: 'DATA_ACCESS',
+        description: 'Viewed record',
+        details: { transactionHash: '0xghi' },
+      },
+    ] as any[];
+
+    const billings = [
+      {
+        invoiceNumber: 'INV-001',
+        serviceDate: new Date('2026-01-04T00:00:00Z'),
+        providerName: 'Dr. Smith',
+        totalCharges: 250.5,
+        totalPayments: 200,
+        balance: 50.5,
+        status: 'open',
+        dueDate: new Date('2026-02-04T00:00:00Z'),
+      },
+    ] as any[];
+
+    it('generates a multi-sheet workbook with the expected sheet names and columns', async () => {
+      const buffer = await service['generateXlsxBuffer'](patient, records, grants, logs, billings);
+
+      expect(Buffer.isBuffer(buffer)).toBe(true);
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+
+      const sheetNames = workbook.worksheets.map((ws) => ws.name);
+      expect(sheetNames).toEqual([
+        'Summary',
+        'Medical Records',
+        'Access Grants',
+        'Audit Logs',
+        'Billing Summary',
+      ]);
+
+      const recordsSheet = workbook.getWorksheet('Medical Records');
+      expect(recordsSheet.getRow(1).values.slice(1)).toEqual([
+        'Date',
+        'Type',
+        'Title',
+        'Transaction Hash',
+      ]);
+      expect(recordsSheet.getRow(2).getCell(1).value).toBeInstanceOf(Date);
+
+      const billingSheet = workbook.getWorksheet('Billing Summary');
+      expect(billingSheet.getRow(1).values.slice(1)).toEqual([
+        'Invoice Number',
+        'Service Date',
+        'Provider',
+        'Total Charges',
+        'Total Payments',
+        'Balance',
+        'Status',
+        'Due Date',
+      ]);
+
+      // Currency and date columns should carry native Excel number formats,
+      // not just be stringified in the cell value.
+      expect(billingSheet.getColumn('totalCharges' as any).numFmt).toBe('"$"#,##0.00');
+      expect(billingSheet.getColumn('serviceDate' as any).numFmt).toBe('yyyy-mm-dd');
+      expect(billingSheet.getRow(2).getCell(4).value).toBe(250.5);
     });
   });
 });

@@ -1,9 +1,12 @@
 import {
   Injectable,
+  Inject,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
   ConflictException,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
@@ -12,17 +15,25 @@ import {
   Not,
   FindOptionsWhere,
   EntityManager,
+  IsNull,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  Or,
 } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { Appointment, AppointmentStatus, MedicalPriority } from '../entities/appointment.entity';
-import { DoctorAvailability } from '../entities/doctor-availability.entity';
+import {
+  AvailabilityStatus,
+  DoctorAvailability,
+} from '../entities/doctor-availability.entity';
 import { CreateAppointmentDto } from '../dto/create-appointment.dto';
 import { AuditService } from '../../common/audit/audit.service';
 import { TenantContext } from '../../tenant/context/tenant.context';
 import { getRequestContext } from '../../common/middleware/request-context.middleware';
 import { UserRole } from '../../auth/entities/user.entity';
+import { WaitlistService } from './waitlist.service';
 
 /** How many minutes before the appointment start a join token becomes valid. */
 const TOKEN_VALID_BEFORE_MINUTES = 15;
@@ -38,11 +49,55 @@ const TOKEN_VALID_BEFORE_MINUTES = 15;
  */
 const DEFAULT_APPOINTMENT_BUFFER_MINUTES = 15;
 
+const APPOINTMENT_STATUS_TRANSITIONS: Record<
+  AppointmentStatus,
+  readonly AppointmentStatus[]
+> = {
+  [AppointmentStatus.SCHEDULED]: [
+    AppointmentStatus.CONFIRMED,
+    AppointmentStatus.CANCELLED,
+    AppointmentStatus.RESCHEDULED,
+  ],
+  [AppointmentStatus.CONFIRMED]: [
+    AppointmentStatus.IN_PROGRESS,
+    AppointmentStatus.CANCELLED,
+    AppointmentStatus.NO_SHOW,
+    AppointmentStatus.RESCHEDULED,
+  ],
+  [AppointmentStatus.IN_PROGRESS]: [AppointmentStatus.COMPLETED],
+  [AppointmentStatus.COMPLETED]: [],
+  [AppointmentStatus.CANCELLED]: [],
+  [AppointmentStatus.NO_SHOW]: [],
+  [AppointmentStatus.RESCHEDULED]: [],
+};
+
 /** Lock-namespace prefix for transactional advisory locks. */
 const ADVISORY_LOCK_NAMESPACE = 'appt';
 
+/** Wall-clock fields of an instant as seen in a specific timezone. */
+interface ZonedParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}
+
+/** A calendar day in a specific timezone, with its UTC bounds and ISO weekday. */
+interface ZonedDayBounds {
+  year: number;
+  month: number;
+  day: number;
+  dayOfWeek: number;
+  start: Date;
+  end: Date;
+}
+
 @Injectable()
 export class AppointmentService {
+  private readonly logger = new Logger(AppointmentService.name);
+
   constructor(
     @InjectRepository(Appointment)
     private appointmentRepository: Repository<Appointment>,
@@ -51,6 +106,8 @@ export class AppointmentService {
     private readonly jwtService: JwtService,
     private readonly auditService: AuditService,
     private readonly configService: ConfigService,
+    @Inject(forwardRef(() => WaitlistService))
+    private readonly waitlistService: WaitlistService,
   ) {}
 
   /**
@@ -80,10 +137,21 @@ export class AppointmentService {
     return scopedWhere;
   }
 
-  async create(createAppointmentDto: CreateAppointmentDto): Promise<Appointment> {
+  async create(
+    createAppointmentDto: CreateAppointmentDto,
+    transactionManager?: EntityManager,
+  ): Promise<Appointment> {
     const tenantId = TenantContext.getTenantId();
     if (!tenantId) {
       throw new ForbiddenException('Tenant context missing');
+    }
+
+    // Ownership check: patients may only book for themselves. Staff roles
+    // (admins, physicians, etc.) may book on behalf of any patient in the
+    // tenant.
+    const context = getRequestContext();
+    if (context?.role === UserRole.PATIENT && createAppointmentDto.patientId !== context.userId) {
+      throw new ForbiddenException('Patients can only book appointments for themselves');
     }
 
     const appointmentDate = new Date(createAppointmentDto.appointmentDate);
@@ -130,8 +198,9 @@ export class AppointmentService {
     //     in depth so that, on engines without advisory locks, AFTER the
     //     transaction starts we still serialise updates of any existing
     //     matching rows.
-    await this.appointmentRepository.manager.transaction(
-      async (transactionalEntityManager) => {
+    const createWithinTransaction = async (
+      transactionalEntityManager: EntityManager,
+    ): Promise<Appointment> => {
         await this.acquireBookingLocks(
           transactionalEntityManager,
           providerLockKey,
@@ -219,10 +288,11 @@ export class AppointmentService {
 
         const saved = await transactionalEntityManager.save(Appointment, appointment);
 
-        // Audit log: APPOINTMENT_CREATED (non-blocking).
+        // Audit log: APPOINTMENT_CREATED (non-blocking). Attribute the action
+        // to the real caller when known, falling back to the patient id.
         await this.auditService
           .log({
-            actorId: createAppointmentDto.patientId,
+            actorId: context?.userId ?? createAppointmentDto.patientId,
             action: 'APPOINTMENT_CREATED',
             resourceId: saved.id,
             resourceType: 'Appointment',
@@ -234,8 +304,11 @@ export class AppointmentService {
           });
 
         return saved;
-      },
-    );
+      };
+
+    return transactionManager
+      ? createWithinTransaction(transactionManager)
+      : this.appointmentRepository.manager.transaction(createWithinTransaction);
   }
 
   /**
@@ -394,7 +467,11 @@ export class AppointmentService {
     });
   }
 
-  async updateStatus(id: string, status: AppointmentStatus): Promise<Appointment> {
+  async updateStatus(
+    id: string,
+    status: AppointmentStatus,
+    actorId: string,
+  ): Promise<Appointment> {
     const appointment = await this.appointmentRepository.findOne({ 
       where: this.getScopedWhere({ id }) 
     });
@@ -402,17 +479,25 @@ export class AppointmentService {
       throw new NotFoundException(`Appointment with ID ${id} not found`);
     }
 
+    // Ownership check: patients may only change the status of their own
+    // appointments. Staff roles may change any appointment in the tenant.
+    const context = getRequestContext();
+    if (context?.role === UserRole.PATIENT && appointment.patientId !== context.userId) {
+      throw new ForbiddenException('Patients can only modify their own appointments');
+    }
+
     appointment.status = status;
     const updated = await this.appointmentRepository.save(appointment);
 
-    // Audit log appropriate action based on status change
+    // Audit log appropriate action based on status change. Attribute the
+    // action to the real caller when known, falling back to the patient id.
     const auditAction =
       status === AppointmentStatus.CANCELLED
         ? 'APPOINTMENT_CANCELLED'
         : 'APPOINTMENT_UPDATED';
 
     await this.auditService.log({
-      actorId: appointment.patientId,
+      actorId: context?.userId ?? appointment.patientId,
       action: auditAction,
       resourceId: id,
       resourceType: 'Appointment',
@@ -421,6 +506,12 @@ export class AppointmentService {
     }).catch((err) => {
       console.error(`Failed to log appointment status change audit event: ${err.message}`);
     });
+
+    if (status === AppointmentStatus.CANCELLED && previousStatus !== status) {
+      this.waitlistService.notifyNextEligible(updated).catch((err) => {
+        this.logger.error(`Waitlist notification failed for appointment ${id}: ${err.message}`);
+      });
+    }
 
     return updated;
   }
@@ -431,35 +522,25 @@ export class AppointmentService {
       throw new ForbiddenException('Tenant context missing');
     }
 
-    const dayOfWeek = date.getDay() || 7; // Convert Sunday (0) to 7
+    const timezone = this.getHospitalTimezone();
+    const day = this.getZonedDayBounds(date, timezone);
 
-    const availability = await this.availabilityRepository.findOne({
-      where: {
-        doctorId,
-        dayOfWeek,
-        isActive: true,
-      },
-    });
+    const availability = await this.findActiveAvailability(doctorId, day);
 
-    if (!availability) {
+    if (availability.length === 0) {
       return [];
     }
 
     // Get existing appointments for the day
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-
     const existingAppointments = await this.appointmentRepository.find({
       where: this.getScopedWhere({
         doctorId,
-        appointmentDate: Between(startOfDay, endOfDay),
+        appointmentDate: Between(day.start, day.end),
         status: Not(AppointmentStatus.CANCELLED),
       }),
     });
 
-    return this.calculateAvailableSlots(availability, existingAppointments, date);
+    return this.calculateAvailableSlots(availability, existingAppointments, day, timezone);
   }
 
   async getProviderAvailability(providerId: string, date: Date): Promise<{
@@ -495,27 +576,25 @@ export class AppointmentService {
     appointmentDate: Date,
     duration: number,
   ): Promise<boolean> {
-    const tenantId = TenantContext.getTenantId();
-    const dayOfWeek = appointmentDate.getDay() || 7;
+    const timezone = this.getHospitalTimezone();
+    const day = this.getZonedDayBounds(appointmentDate, timezone);
 
-    const availability = await this.availabilityRepository.findOne({
-      where: {
-        doctorId,
-        dayOfWeek,
-        isActive: true,
-      },
+    const availability = await this.findActiveAvailability(doctorId, day);
+
+    if (availability.length === 0) return false;
+
+    // Check if appointment time falls within any of the doctor's availability windows
+    const { hour, minute } = this.getZonedParts(appointmentDate, timezone);
+    const appointmentTime = hour * 60 + minute;
+    const fitsWindow = availability.some((window) => {
+      const [startHour, startMin] = window.startTime.split(':').map(Number);
+      const [endHour, endMin] = window.endTime.split(':').map(Number);
+      const startTime = startHour * 60 + startMin;
+      const endTime = endHour * 60 + endMin;
+      return appointmentTime >= startTime && appointmentTime + duration <= endTime;
     });
 
-    if (!availability) return false;
-
-    // Check if appointment time falls within availability hours
-    const appointmentTime = appointmentDate.getHours() * 60 + appointmentDate.getMinutes();
-    const [startHour, startMin] = availability.startTime.split(':').map(Number);
-    const [endHour, endMin] = availability.endTime.split(':').map(Number);
-    const startTime = startHour * 60 + startMin;
-    const endTime = endHour * 60 + endMin;
-
-    if (appointmentTime < startTime || appointmentTime + duration > endTime) {
+    if (!fitsWindow) {
       return false;
     }
 
@@ -542,40 +621,143 @@ export class AppointmentService {
     return availability?.specialties?.includes(specialty) || false;
   }
 
-  private calculateAvailableSlots(
-    availability: DoctorAvailability,
-    existingAppointments: Appointment[],
-    date: Date,
-  ): string[] {
-    const slots: string[] = [];
-    const [startHour, startMin] = availability.startTime.split(':').map(Number);
-    const [endHour, endMin] = availability.endTime.split(':').map(Number);
-
-    let currentTime = startHour * 60 + startMin;
-    const endTime = endHour * 60 + endMin;
-
-    while (currentTime + availability.slotDuration <= endTime) {
-      const slotStart = new Date(date);
-      slotStart.setHours(Math.floor(currentTime / 60), currentTime % 60, 0, 0);
-
-      const slotEnd = new Date(slotStart.getTime() + availability.slotDuration * 60000);
-
-      const hasConflict = existingAppointments.some((apt) => {
-        const aptStart = new Date(apt.appointmentDate);
-        const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
-        return slotStart < aptEnd && slotEnd > aptStart;
-      });
-
-      if (!hasConflict) {
-        slots.push(
-          `${String(Math.floor(currentTime / 60)).padStart(2, '0')}:${String(currentTime % 60).padStart(2, '0')}`,
-        );
-      }
-
-      currentTime += availability.slotDuration;
+  /**
+   * Loads every active, AVAILABLE schedule row for the doctor that applies to `day`.
+   * A doctor may have several rows per weekday (e.g. morning and afternoon sessions),
+   * and rows are filtered by their effective date range so expired or future schedules
+   * are ignored. Tenant scoping is taken from the request context.
+   */
+  private async findActiveAvailability(
+    doctorId: string,
+    day: ZonedDayBounds,
+  ): Promise<DoctorAvailability[]> {
+    const tenantId = TenantContext.getTenantId();
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context missing');
     }
 
-    return slots;
+    return this.availabilityRepository.find({
+      where: {
+        tenantId,
+        doctorId,
+        dayOfWeek: day.dayOfWeek,
+        status: AvailabilityStatus.AVAILABLE,
+        isActive: true,
+        effectiveFrom: LessThanOrEqual(day.end),
+        effectiveTo: Or(IsNull(), MoreThanOrEqual(day.start)),
+      },
+    });
+  }
+
+  private calculateAvailableSlots(
+    availability: DoctorAvailability[],
+    existingAppointments: Appointment[],
+    day: ZonedDayBounds,
+    timezone: string,
+  ): string[] {
+    const slots = new Set<number>();
+
+    for (const window of availability) {
+      const [startHour, startMin] = window.startTime.split(':').map(Number);
+      const [endHour, endMin] = window.endTime.split(':').map(Number);
+
+      let currentTime = startHour * 60 + startMin;
+      const endTime = endHour * 60 + endMin;
+
+      while (currentTime + window.slotDuration <= endTime) {
+        const slotStart = this.zonedToUtc(
+          day.year,
+          day.month,
+          day.day,
+          Math.floor(currentTime / 60),
+          currentTime % 60,
+          timezone,
+        );
+
+        const slotEnd = new Date(slotStart.getTime() + window.slotDuration * 60000);
+
+        const hasConflict = existingAppointments.some((apt) => {
+          const aptStart = new Date(apt.appointmentDate);
+          const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
+          return slotStart < aptEnd && slotEnd > aptStart;
+        });
+
+        if (!hasConflict) {
+          slots.add(currentTime);
+        }
+
+        currentTime += window.slotDuration;
+      }
+    }
+
+    return [...slots]
+      .sort((a, b) => a - b)
+      .map(
+        (minutes) =>
+          `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`,
+      );
+  }
+
+  /** Hospital/tenant IANA timezone used to interpret schedules. Defaults to UTC. */
+  private getHospitalTimezone(): string {
+    return this.configService.get<string>('HOSPITAL_TIMEZONE', 'UTC');
+  }
+
+  /** Calendar day containing `instant` in `timezone`, with its UTC bounds and ISO weekday (1 = Mon … 7 = Sun). */
+  private getZonedDayBounds(instant: Date, timezone: string): ZonedDayBounds {
+    const { year, month, day } = this.getZonedParts(instant, timezone);
+    return {
+      year,
+      month,
+      day,
+      dayOfWeek: new Date(Date.UTC(year, month - 1, day)).getUTCDay() || 7,
+      start: this.zonedToUtc(year, month, day, 0, 0, timezone),
+      end: new Date(this.zonedToUtc(year, month, day + 1, 0, 0, timezone).getTime() - 1),
+    };
+  }
+
+  /** Wall-clock fields of `instant` as observed in the IANA `timezone`. */
+  private getZonedParts(instant: Date, timezone: string): ZonedParts {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(instant);
+    const field = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+
+    return {
+      year: field('year'),
+      month: field('month'),
+      day: field('day'),
+      hour: field('hour'),
+      minute: field('minute'),
+      second: field('second'),
+    };
+  }
+
+  /** Converts a wall-clock time in `timezone` into the matching UTC instant (DST-aware). */
+  private zonedToUtc(
+    year: number,
+    month: number,
+    day: number,
+    hour: number,
+    minute: number,
+    timezone: string,
+  ): Date {
+    const wallClock = Date.UTC(year, month - 1, day, hour, minute);
+    const firstGuess = new Date(wallClock - this.getTimezoneOffsetMs(new Date(wallClock), timezone));
+    return new Date(wallClock - this.getTimezoneOffsetMs(firstGuess, timezone));
+  }
+
+  private getTimezoneOffsetMs(instant: Date, timezone: string): number {
+    const p = this.getZonedParts(instant, timezone);
+    const zonedAsUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+    return zonedAsUtc - (instant.getTime() - instant.getUTCMilliseconds());
   }
 
   /**

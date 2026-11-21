@@ -1,6 +1,7 @@
 import { Controller, Get, Query, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { StellarFeeService } from '../services/stellar-fee.service';
 import { FeeEstimateResponse } from '../interfaces/fee-estimate.interface';
+import { ApiTags } from '@nestjs/swagger';
 
 /**
  * Stellar Controller
@@ -8,6 +9,7 @@ import { FeeEstimateResponse } from '../interfaces/fee-estimate.interface';
  * Provides endpoints for Stellar blockchain operations including
  * fee estimation for transactions.
  */
+@ApiTags('stellar')
 @Controller('stellar')
 export class StellarController {
   constructor(private readonly stellarFeeService: StellarFeeService) {}

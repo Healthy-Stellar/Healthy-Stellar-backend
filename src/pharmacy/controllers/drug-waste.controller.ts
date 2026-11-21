@@ -2,7 +2,9 @@ import { Controller, Get, Post, Body, Param, Patch, Query } from '@nestjs/common
 import { DrugWasteService } from '../services/drug-waste.service';
 import { WasteReason } from '../entities/drug-waste.entity';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pharmacy/waste')
 @Controller('pharmacy/waste')
 export class DrugWasteController {
   constructor(private wasteService: DrugWasteService) {}

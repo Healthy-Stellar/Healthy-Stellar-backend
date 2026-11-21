@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
+import { JwtPayload } from '../services/auth-token.service';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 
 @Injectable()
@@ -35,7 +36,7 @@ export class ClinicalMfaGuard implements CanActivate {
       return true;
     }
 
-    const user = request.user as { userId?: string; role?: string } | undefined;
+    const user = request.user as JwtPayload | undefined;
     if (!user?.userId) {
       throw new UnauthorizedException('Authentication required');
     }
@@ -50,7 +51,10 @@ export class ClinicalMfaGuard implements CanActivate {
       return true;
     }
 
-    if (!dbUser.mfaEnabled) {
+    // `user.mfaEnabled` is the JWT's session-scoped claim (set only once MFA has
+    // been verified for this login), not the account-level DB flag — a clinical
+    // user must have completed MFA for the current session's token.
+    if (!user.mfaEnabled) {
       throw new UnauthorizedException('MFA verification required');
     }
 

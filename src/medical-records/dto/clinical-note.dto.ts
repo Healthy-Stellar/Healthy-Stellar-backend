@@ -84,11 +84,7 @@ export class UpdateClinicalNoteDto extends PartialType(CreateClinicalNoteDto) {
   updatedBy?: string;
 }
 
-export class SignClinicalNoteDto {
-  @ApiProperty()
-  @IsUUID()
-  signedBy: string;
-}
+export class SignClinicalNoteDto {}
 
 export class SearchClinicalNotesDto {
   @ApiPropertyOptional()

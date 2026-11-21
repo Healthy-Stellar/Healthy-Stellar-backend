@@ -6,9 +6,12 @@ import {
   UpdateDateColumn,
   OneToMany,
   Index,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { BillingLineItem } from './billing-line-item.entity';
 import { Payment } from './payment.entity';
+import { PatientSubscription } from './patient-subscription.entity';
 
 @Entity('billings')
 export class Billing {
@@ -97,6 +100,14 @@ export class Billing {
 
   @OneToMany(() => Payment, (payment) => payment.billing)
   payments: Payment[];
+
+  @ManyToOne(() => PatientSubscription, (subscription) => subscription.invoices, { nullable: true })
+  @JoinColumn({ name: 'subscriptionId' })
+  subscription: PatientSubscription;
+
+  @Column({ type: 'uuid', nullable: true })
+  @Index()
+  subscriptionId: string;
 
   @CreateDateColumn()
   createdAt: Date;

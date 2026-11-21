@@ -33,4 +33,17 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
+  {
+    files: ['**/*.service.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "ThrowStatement > NewExpression[callee.name='Error']",
+          message:
+            'Do not throw plain Error in services. Use NotFoundException (or an AppErrorCode-based exception) so the GlobalExceptionFilter maps it to the correct HTTP status.',
+        },
+      ],
+    },
+  },
 );

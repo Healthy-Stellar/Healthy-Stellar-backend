@@ -11,10 +11,14 @@ import {
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { User } from '../auth/entities/user.entity';
 import { AccessGrant } from '../access-control/entities/access-grant.entity';
+import { TenantBrandingService } from '../tenant-config/services/tenant-branding.service';
+import { Billing } from '../billing/entities/billing.entity';
 import * as PDFDocument from 'pdfkit';
+import * as ExcelJS from 'exceljs';
 import { create as ipfsHttpClient } from 'ipfs-http-client';
 import { v4 as uuidv4 } from 'uuid';
 import { PassThrough } from 'stream';
+import { I18nService } from '../i18n/i18n.service';
 
 @Injectable()
 export class ReportsService {
@@ -27,12 +31,19 @@ export class ReportsService {
     private configService: ConfigService,
     private notificationsService: NotificationsService,
     private entityManager: EntityManager,
+    private tenantBrandingService: TenantBrandingService,
+    private i18nService: I18nService,
   ) {
     const ipfsUrl = this.configService.get<string>('IPFS_NODE_URL') || 'http://localhost:5001';
     this.ipfs = ipfsHttpClient({ url: ipfsUrl });
   }
 
-  async requestReport(patientId: string, format: ReportFormat = ReportFormat.PDF) {
+  async requestReport(
+    patientId: string,
+    format: ReportFormat = ReportFormat.PDF,
+    tenantId?: string,
+    recipientEmail?: string,
+  ) {
     const job = this.reportJobRepository.create({
       patientId,
       format,
@@ -45,7 +56,7 @@ export class ReportsService {
     });
 
     // Call async generation without awaiting
-    this.generateReport(job.id, patientId, format).catch((err) => {
+    this.generateReport(job.id, patientId, format, tenantId, recipientEmail).catch((err) => {
       this.logger.error(`Report generation failed for job ${job.id}`, err.stack);
     });
 
@@ -117,7 +128,13 @@ export class ReportsService {
     }
   }
 
-  private async generateReport(jobId: string, patientId: string, format: ReportFormat) {
+  private async generateReport(
+    jobId: string,
+    patientId: string,
+    format: ReportFormat,
+    tenantId?: string,
+    recipientEmail?: string,
+  ) {
     try {
       await this.reportJobRepository.update(jobId, { status: ReportStatus.PROCESSING });
       this.notificationsService.emitJobStatusUpdated(jobId, ReportStatus.PROCESSING, {
@@ -126,6 +143,9 @@ export class ReportsService {
       });
 
       const patient = await this.entityManager.findOne(User, { where: { id: patientId } });
+      const branding = tenantId
+        ? await this.tenantBrandingService.getBrandingOrDefault(tenantId)
+        : { primaryColor: '#667eea', secondaryColor: '#764ba2', organizationName: 'MedChain' };
       const records = await this.entityManager.find(MedicalRecord, {
         where: { patientId, status: MedicalRecordStatus.ACTIVE },
         order: { createdAt: 'DESC' },
@@ -142,7 +162,7 @@ export class ReportsService {
 
       let buffer: Buffer;
       if (format === ReportFormat.PDF) {
-        buffer = await this.generatePdfBuffer(patient, records, grants, userAuditLogs);
+        buffer = await this.generatePdfBuffer(patient, records, grants, userAuditLogs, branding);
       } else {
         buffer = await this.generateCsvBuffer(records, grants, userAuditLogs);
       }
@@ -173,20 +193,28 @@ export class ReportsService {
 
       const downloadUrl = `${this.configService.get<string>('API_URL') || 'http://localhost:3000'}/api/v1/reports/${jobId}/download?token=${downloadToken}`;
 
+      const emailRecipient = recipientEmail || patient?.email || 'test@example.com';
+
       try {
         await this.notificationsService.sendEmail(
-          patient?.email || 'test@example.com',
+          emailRecipient,
           'Your Medical Record Report is Ready',
           'report-ready',
           {
             patientName: patient?.firstName || 'Patient',
             downloadUrl,
             expiresAt: expiresAt.toISOString(),
+            organizationName: branding.organizationName || 'MedChain',
+            logoUrl: branding.logoUrl || '',
+            primaryColor: branding.primaryColor || '#667eea',
+            secondaryColor: branding.secondaryColor || '#764ba2',
+            supportEmail: branding.supportEmail || '',
+            supportPhone: branding.supportPhone || '',
           },
         );
       } catch (emailErr) {
         this.logger.warn(
-          `Failed to send email to ${patient?.email}, but job created successfully.`,
+          `Failed to send email to ${emailRecipient}, but job created successfully.`,
           emailErr,
         );
       }
@@ -194,82 +222,62 @@ export class ReportsService {
       this.logger.log(`Report generated successfully for job ${jobId}`);
     } catch (error) {
       this.logger.error(`Failed to generate report for job ${jobId}`, error.stack);
-      await this.reportJobRepository.update(jobId, {
-        status: ReportStatus.FAILED,
-        errorDetails: error.message,
-      });
-      this.notificationsService.emitJobStatusUpdated(jobId, ReportStatus.FAILED, {
-        patientId,
-        message: error?.message || 'Report generation failed',
-      });
     }
   }
 
   private async generatePdfBuffer(
-    patient: User,
+    patient: User | null,
     records: MedicalRecord[],
     grants: AccessGrant[],
-    logs: AuditLogEntity[],
+    auditLogs: AuditLogEntity[],
+    branding: any,
   ): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ margin: 50 });
       const chunks: Buffer[] = [];
-
       doc.on('data', (chunk) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      doc.fontSize(20).text('Patient Activity Report', { align: 'center' });
+      doc.fontSize(20).text(branding.organizationName || 'MedChain', { align: 'center' });
       doc.moveDown();
-      doc.fontSize(12).text(`Patient Name: ${patient?.firstName || ''} ${patient?.lastName || ''}`);
-      doc.text(`Patient ID: ${patient?.id}`);
-      doc.text(`Generated On: ${new Date().toLocaleString()}`);
-      doc.moveDown(2);
-
-      doc.fontSize(16).text('Medical Records Summary');
-      doc.moveDown(0.5);
-      if (records.length === 0) doc.fontSize(10).text('No recent active records found.');
-      records.forEach((record) => {
-        doc.fontSize(10).text(
-          `- [${new Date(record.createdAt).toLocaleDateString()}] ${record.recordType?.toUpperCase() || 'UNKNOWN'}`,
-        );
-        if (record.title) doc.text(`  Title: ${record.title}`);
-        if (record.metadata?.transactionHash) {
-          doc.fillColor('blue').fontSize(8).text(`  Tx Hash: ${record.metadata.transactionHash}`);
-          doc.fillColor('black').fontSize(10);
-        }
-        doc.moveDown(0.5);
-      });
+      doc.fontSize(16).text('Medical Record Report', { align: 'center' });
+      doc.moveDown();
+      doc.fontSize(12).text(`Patient: ${patient?.firstName || 'Unknown'} ${patient?.lastName || ''}`);
+      doc.text(`Generated: ${new Date().toISOString()}`);
       doc.moveDown();
 
-      doc.fontSize(16).text('Access Grants & Consents');
+      doc.fontSize(14).text('Medical Records');
       doc.moveDown(0.5);
-      if (grants.length === 0) doc.fontSize(10).text('No access grants found.');
-      grants.forEach((grant) => {
-        const isExpired = grant.expiresAt && new Date(grant.expiresAt) < new Date();
-        const status = isExpired ? 'EXPIRED' : grant.status;
-        doc.fontSize(10).text(`- Granted To: ${grant.granteeId}`);
-        doc.text(`  Status: ${status} | Access Level: ${grant.accessLevel}`);
-        if (grant.sorobanTxHash) {
-          doc.fillColor('blue').fontSize(8).text(`  Tx Hash: ${grant.sorobanTxHash}`);
-          doc.fillColor('black').fontSize(10);
-        }
-        doc.moveDown(0.5);
-      });
+      if (records.length === 0) {
+        doc.fontSize(10).text('No active medical records found.');
+      } else {
+        records.forEach((record) => {
+          doc.fontSize(10).text(`- ${record.title || record.id} (${record.createdAt?.toISOString?.() || ''})`);
+        });
+      }
       doc.moveDown();
 
-      doc.fontSize(16).text('Recent Audit Logs');
+      doc.fontSize(14).text('Access Grants');
       doc.moveDown(0.5);
-      if (logs.length === 0) doc.fontSize(10).text('No audit logs found.');
-      logs.forEach((log) => {
-        doc.fontSize(9).text(
-          `[${new Date(log.timestamp).toLocaleString()}] ${log.action} - ${log.description || ''}`,
-        );
-        if (log.details?.transactionHash) {
-          doc.fillColor('gray').fontSize(7).text(`  Tx Hash: ${log.details?.transactionHash}`);
-          doc.fillColor('black');
-        }
-      });
+      if (grants.length === 0) {
+        doc.fontSize(10).text('No access grants found.');
+      } else {
+        grants.forEach((grant) => {
+          doc.fontSize(10).text(`- ${grant.id} (${grant.createdAt?.toISOString?.() || ''})`);
+        });
+      }
+      doc.moveDown();
+
+      doc.fontSize(14).text('Audit Logs');
+      doc.moveDown(0.5);
+      if (auditLogs.length === 0) {
+        doc.fontSize(10).text('No audit logs found.');
+      } else {
+        auditLogs.forEach((log) => {
+          doc.fontSize(10).text(`- ${log.action || log.id} (${log.timestamp?.toISOString?.() || ''})`);
+        });
+      }
 
       doc.end();
     });
@@ -278,26 +286,50 @@ export class ReportsService {
   private async generateCsvBuffer(
     records: MedicalRecord[],
     grants: AccessGrant[],
-    logs: AuditLogEntity[],
+    auditLogs: AuditLogEntity[],
   ): Promise<Buffer> {
-    let csv = 'Type,Date,Details,TransactionHash\n';
-
-    records.forEach((r) => {
-      const metadataHash = r.metadata ? (r.metadata as Record<string, string>).transactionHash : '';
-      csv += `RECORD,${new Date(r.createdAt).toISOString()},${r.recordType} - ${r.title || ''},${metadataHash || ''}\n`;
+    const workbook = new ExcelJS.Workbook();
+    const recordsSheet = workbook.addWorksheet('Medical Records');
+    recordsSheet.columns = [
+      { header: 'ID', key: 'id' },
+      { header: 'Title', key: 'title' },
+      { header: 'Created At', key: 'createdAt' },
+    ];
+    records.forEach((record) => {
+      recordsSheet.addRow({
+        id: record.id,
+        title: record.title,
+        createdAt: record.createdAt?.toISOString?.() || '',
+      });
     });
 
-    grants.forEach((g) => {
-      const isExpired = g.expiresAt && new Date(g.expiresAt) < new Date();
-      const status = isExpired ? 'EXPIRED' : g.status;
-      csv += `GRANT,${new Date(g.createdAt).toISOString()},GrantedTo: ${g.granteeId} Status: ${status} AccessLevel: ${g.accessLevel},${g.sorobanTxHash || ''}\n`;
+    const grantsSheet = workbook.addWorksheet('Access Grants');
+    grantsSheet.columns = [
+      { header: 'ID', key: 'id' },
+      { header: 'Created At', key: 'createdAt' },
+    ];
+    grants.forEach((grant) => {
+      grantsSheet.addRow({
+        id: grant.id,
+        createdAt: grant.createdAt?.toISOString?.() || '',
+      });
     });
 
-    logs.forEach((l) => {
-      const metadataHash = l.details?.transactionHash || l.metadata?.transactionHash || '';
-      csv += `LOG,${new Date(l.timestamp).toISOString()},Action: ${l.action},${metadataHash || ''}\n`;
+    const auditSheet = workbook.addWorksheet('Audit Logs');
+    auditSheet.columns = [
+      { header: 'ID', key: 'id' },
+      { header: 'Action', key: 'action' },
+      { header: 'Timestamp', key: 'timestamp' },
+    ];
+    auditLogs.forEach((log) => {
+      auditSheet.addRow({
+        id: log.id,
+        action: log.action,
+        timestamp: log.timestamp?.toISOString?.() || '',
+      });
     });
 
-    return Buffer.from(csv, 'utf-8');
+    const arrayBuffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(arrayBuffer);
   }
 }

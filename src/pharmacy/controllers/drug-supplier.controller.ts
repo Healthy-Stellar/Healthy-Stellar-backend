@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Body, Param, Patch, Delete, Query } from '@nestjs/common';
 import { DrugSupplierService } from '../services/drug-supplier.service';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pharmacy/suppliers')
 @Controller('pharmacy/suppliers')
 export class DrugSupplierController {
   constructor(private supplierService: DrugSupplierService) {}

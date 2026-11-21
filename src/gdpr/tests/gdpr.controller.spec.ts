@@ -4,8 +4,9 @@ import { GdprService } from '../services/gdpr.service';
 import { ExecutionContext } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ThrottlerBehindProxyGuard } from '../../common/throttler/throttler-behind-proxy.guard';
-import { GdprRequestType, GdprRequestStatus } from '../entities/gdpr-request.entity';
+import { GdprRequestType, GdprRequestStatus, GdprRequest } from '../entities/gdpr-request.entity';
 import { CreateErasureRequestDto } from '../dto/create-erasure-request.dto';
+import { getRepositoryToken } from '@nestjs/typeorm';
 
 describe('GdprController', () => {
   let controller: GdprController;
@@ -25,6 +26,10 @@ describe('GdprController', () => {
     getRequestsByUser: jest.fn().mockResolvedValue([{ id: '1' }]),
   };
 
+  const mockGdprRequestRepository = {
+    findOne: jest.fn().mockResolvedValue(null),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [GdprController],
@@ -32,6 +37,10 @@ describe('GdprController', () => {
         {
           provide: GdprService,
           useValue: mockGdprService,
+        },
+        {
+          provide: getRepositoryToken(GdprRequest),
+          useValue: mockGdprRequestRepository,
         },
       ],
     })

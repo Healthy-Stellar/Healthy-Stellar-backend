@@ -1,11 +1,11 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Inject } from '@nestjs/common';
 import { Queue, Job } from 'bullmq';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { safePost } from '../../common/utils/safe-outbound-url';
 import { createHmac } from 'crypto';
 import { WebhookDelivery, WebhookDeliveryStatus } from '../entities/webhook-delivery.entity';
 import { WebhookSubscription } from '../entities/webhook-subscription.entity';
@@ -67,6 +67,15 @@ export class WebhookDeliveryService {
     try {
       // Find active subscriptions interested in this event type
       const subscriptions = await this.subscriptionRepository.find({
+        select: {
+          id: true,
+          tenantId: true,
+          url: true,
+          events: true,
+          secret: true,
+          maxRetries: true,
+          metadata: true,
+        },
         where: {
           isActive: true,
           ...(tenantId ? { tenantId } : {}),
@@ -170,7 +179,7 @@ export class WebhookDeliveryService {
 
       // Perform HTTP POST to subscriber endpoint
       const startTime = Date.now();
-      const response = await axios.post(data.subscriptionUrl, data.eventPayload, {
+      const response = await safePost(data.subscriptionUrl, data.eventPayload, {
         headers,
         timeout: 30000, // 30 second timeout
         validateStatus: (status) => status < 500, // Don't throw on 4xx
@@ -399,6 +408,11 @@ export class WebhookDeliveryService {
 
     await this.deliveryRepository.save(delivery);
 
+    const secret = await this.subscriptionRepository.findOne({
+      where: { id: delivery.subscription.id },
+      select: { id: true, secret: true },
+    });
+
     // Re-queue the job
     await this.webhookQueue.add(
       JOB_TYPES.WEBHOOK_DELIVER,
@@ -408,7 +422,7 @@ export class WebhookDeliveryService {
         subscriptionUrl: delivery.subscription.url,
         eventType: delivery.eventType,
         eventPayload: delivery.eventPayload,
-        subscriptionSecret: delivery.subscription.secret,
+        subscriptionSecret: secret?.secret ?? undefined,
         customHeaders: delivery.subscription.metadata.customHeaders as Record<string, string>,
         tenantId: delivery.tenantId,
       } as WebhookDeliveryJobData,

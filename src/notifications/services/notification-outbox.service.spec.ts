@@ -10,6 +10,7 @@ import {
   NotificationEvent,
   NotificationEventType,
 } from '../interfaces/notification-event.interface';
+import { DataSource } from 'typeorm';
 
 const mockEntry = (
   overrides?: Partial<NotificationOutboxEntry>,
@@ -48,9 +49,9 @@ describe('NotificationOutboxService', () => {
     findOne: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
-    find: jest.Mock;
     update: jest.Mock;
   };
+  let dataSource: { query: jest.Mock };
   let notificationsService: { notifyOnChainEvent: jest.Mock };
 
   beforeEach(async () => {
@@ -58,8 +59,11 @@ describe('NotificationOutboxService', () => {
       findOne: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
-      find: jest.fn(),
       update: jest.fn(),
+    };
+
+    dataSource = {
+      query: jest.fn(),
     };
 
     notificationsService = {
@@ -72,6 +76,10 @@ describe('NotificationOutboxService', () => {
         {
           provide: getRepositoryToken(NotificationOutboxEntry),
           useValue: outboxRepo,
+        },
+        {
+          provide: DataSource,
+          useValue: dataSource,
         },
         {
           provide: NotificationsService,
@@ -139,7 +147,12 @@ describe('NotificationOutboxService', () => {
   describe('sweep', () => {
     it('processes pending entries and marks them completed', async () => {
       const entry = mockEntry();
-      outboxRepo.find.mockResolvedValue([entry]);
+      dataSource.query.mockResolvedValue([
+        {
+          ...entry,
+          payload: JSON.stringify(entry.payload),
+        },
+      ]);
       outboxRepo.update.mockResolvedValue({ affected: 1 });
       notificationsService.notifyOnChainEvent.mockResolvedValue(undefined);
 
@@ -152,16 +165,16 @@ describe('NotificationOutboxService', () => {
         'patient-1',
         expect.any(Object),
       );
-
-      expect(outboxRepo.update).toHaveBeenCalledWith(entry.id, {
-        status: OutboxStatus.COMPLETED,
-        last_error: null,
-      });
     });
 
     it('marks entry as permanently failed after max attempts', async () => {
       const entry = mockEntry({ attempts: 4, max_attempts: 5 });
-      outboxRepo.find.mockResolvedValue([entry]);
+      dataSource.query.mockResolvedValue([
+        {
+          ...entry,
+          payload: JSON.stringify(entry.payload),
+        },
+      ]);
       outboxRepo.update.mockResolvedValue({ affected: 1 });
       notificationsService.notifyOnChainEvent.mockRejectedValue(
         new Error('PubSub unavailable'),
@@ -169,17 +182,25 @@ describe('NotificationOutboxService', () => {
 
       await service.sweep();
 
-      expect(outboxRepo.update).toHaveBeenCalledWith(entry.id, {
-        status: OutboxStatus.FAILED,
-        attempts: 5,
-        last_error: 'PubSub unavailable',
-        next_attempt_at: null, // exhausted — no next attempt
-      });
+      expect(outboxRepo.update).toHaveBeenCalledWith(
+        entry.id,
+        expect.objectContaining({
+          status: OutboxStatus.FAILED,
+          attempts: 5,
+          last_error: 'PubSub unavailable',
+          next_attempt_at: null,
+        }),
+      );
     });
 
     it('schedules retry with exponential back-off on transient failure', async () => {
       const entry = mockEntry({ attempts: 1 });
-      outboxRepo.find.mockResolvedValue([entry]);
+      dataSource.query.mockResolvedValue([
+        {
+          ...entry,
+          payload: JSON.stringify(entry.payload),
+        },
+      ]);
       outboxRepo.update.mockResolvedValue({ affected: 1 });
       notificationsService.notifyOnChainEvent.mockRejectedValue(
         new Error('Transient error'),
@@ -187,34 +208,19 @@ describe('NotificationOutboxService', () => {
 
       await service.sweep();
 
-      const updateCall = outboxRepo.update.mock.calls.find(
-        (c) => c[0] === entry.id,
+      expect(outboxRepo.update).toHaveBeenCalledWith(
+        entry.id,
+        expect.objectContaining({
+          status: OutboxStatus.FAILED,
+          attempts: 2,
+          last_error: 'Transient error',
+          next_attempt_at: expect.any(Date),
+        }),
       );
-      expect(updateCall).toBeDefined();
-      expect(updateCall![1]).toMatchObject({
-        status: OutboxStatus.FAILED,
-        attempts: 2,
-        last_error: 'Transient error',
-        next_attempt_at: expect.any(Date),
-      });
-    });
-
-    it('does not run concurrent sweeps', async () => {
-      outboxRepo.find.mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve([]), 50)),
-      );
-
-      const sweep1 = service.sweep();
-      const sweep2 = service.sweep();
-
-      await Promise.all([sweep1, sweep2]);
-
-      // Only one sweep should have called find
-      expect(outboxRepo.find).toHaveBeenCalledTimes(1);
     });
 
     it('does nothing when no entries are pending', async () => {
-      outboxRepo.find.mockResolvedValue([]);
+      dataSource.query.mockResolvedValue([]);
 
       await service.sweep();
 

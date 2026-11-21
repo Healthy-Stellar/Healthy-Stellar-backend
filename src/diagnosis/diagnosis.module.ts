@@ -8,11 +8,13 @@ import { Icd11Service } from './services/icd11.service';
 import { DiagnosisController } from './controllers/diagnosis.controller';
 import { BillingModule } from '../billing/billing.module';
 import { TreatmentPlan } from '../treatment-planning/entities/treatment-plan.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Diagnosis, DiagnosisHistory, Icd11Code, TreatmentPlan]),
     BillingModule, // For MedicalCodeService
+    NotificationsModule,
   ],
   controllers: [DiagnosisController],
   providers: [DiagnosisService, Icd11Service],

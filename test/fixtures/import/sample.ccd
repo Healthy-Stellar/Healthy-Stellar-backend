@@ -18,6 +18,24 @@
           <text>Hypertension, Type 2 Diabetes</text>
         </section>
       </component>
+      <component>
+        <section>
+          <title>Medications</title>
+          <text>Metformin 500mg twice daily, Lisinopril 10mg once daily</text>
+        </section>
+      </component>
+      <component>
+        <section>
+          <title>Allergies</title>
+          <text>Penicillin - anaphylaxis</text>
+        </section>
+      </component>
+      <component>
+        <section>
+          <title>Results</title>
+          <text>HbA1c 7.2%, Basic Metabolic Panel within normal limits</text>
+        </section>
+      </component>
     </structuredBody>
   </component>
 </ClinicalDocument>

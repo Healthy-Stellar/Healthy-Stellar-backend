@@ -23,7 +23,9 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { UserRole } from '../../auth/entities/user.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('admin/tenants')
 @Controller('admin/tenants')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Throttle({ default: { limit: 100, ttl: 60000 } }) // 100 requests per minute

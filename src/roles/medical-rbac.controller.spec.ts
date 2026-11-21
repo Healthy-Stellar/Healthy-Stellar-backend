@@ -1,6 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { MedicalRbacController } from '../controllers/medical-rbac.controller';
+import { MedicalRbacController } from './medical-rbac.controller';
 import { MedicalDepartment, MedicalPermission, MedicalRole } from '../enums/medical-roles.enum';
 import { MedicalUser } from '../interfaces/medical-rbac.interface';
 import { EmergencyOverrideService } from '../services/emergency-override.service';

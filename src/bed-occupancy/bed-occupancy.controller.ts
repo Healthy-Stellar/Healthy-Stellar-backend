@@ -18,7 +18,9 @@ import {
   CreateWardDto,
   UpdateBedStatusDto,
 } from './dto/bed-occupancy.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('bed-occupancy')
 @UseGuards(JwtAuthGuard)
 @Controller('bed-occupancy')
 export class BedOccupancyController {

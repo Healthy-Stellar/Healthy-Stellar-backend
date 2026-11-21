@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -12,6 +13,8 @@ import { PatientTransfer, TransferStatus, ReceiptStatus } from '../entities/pati
 import { HospitalRegistry } from '../entities/hospital-registry.entity';
 import { CreateTransferDto } from '../dto/create-transfer.dto';
 import { AcceptTransferDto } from '../dto/accept-transfer.dto';
+import { RejectTransferDto } from '../dto/reject-transfer.dto';
+import { CancelTransferDto } from '../dto/cancel-transfer.dto';
 import { MedicalRecordsService } from '../../medical-records/services/medical-records.service';
 import { AccessControlService } from '../../access-control/services/access-control.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
@@ -83,7 +86,12 @@ export class TransferService {
     return saved;
   }
 
-  async acceptTransfer(transferId: string, dto: AcceptTransferDto): Promise<PatientTransfer> {
+  async acceptTransfer(
+    transferId: string,
+    dto: AcceptTransferDto,
+    actorHospitalId: string,
+    actorId: string,
+  ): Promise<PatientTransfer> {
     const transfer = await this.transferRepo.findOne({
       where: { id: transferId },
       relations: ['fromHospital', 'toHospital'],
@@ -93,49 +101,50 @@ export class TransferService {
       throw new NotFoundException('Transfer not found');
     }
 
+    this.assertHospitalAccess(transfer, actorHospitalId, 'toHospitalId');
+
     if (transfer.status !== TransferStatus.PENDING) {
       throw new BadRequestException('Transfer is not in pending status');
     }
 
     transfer.status = TransferStatus.ACCEPTED;
     transfer.acceptedAt = new Date();
-    transfer.acceptedBy = dto.acceptedBy;
+    transfer.acceptedBy = actorId;
 
-    if (transfer.sharedRecordIds.length > 0) {
-      for (const recordId of transfer.sharedRecordIds) {
-        try {
-          await this.medicalRecordsService.shareWithHospital(recordId, transfer.toHospitalId);
-        } catch (err) {
-          this.logger.warn('Failed to share record ' + recordId + ': ' + (err instanceof Error ? err.message : String(err)));
+    let saved: PatientTransfer;
+    try {
+      saved = await this.transferRepo.manager.transaction(async (manager) => {
+        if (transfer.sharedRecordIds.length > 0) {
+          for (const recordId of transfer.sharedRecordIds) {
+            await this.medicalRecordsService.shareWithHospital(
+              recordId,
+              transfer.toHospitalId,
+              manager,
+            );
+          }
         }
-      }
-    }
 
-    try {
-      await this.accessControlService.revokeAccessByPatient(transfer.patientId, transfer.fromHospitalId);
+        await this.accessControlService.revokeAccessByPatient(
+          transfer.patientId,
+          transfer.fromHospitalId,
+          manager,
+        );
+
+        transfer.status = TransferStatus.COMPLETED;
+        transfer.completedAt = new Date();
+        transfer.stellarTxHash = await this.writeStellarTransferReceipt(transfer);
+
+        return manager.save(PatientTransfer, transfer);
+      });
     } catch (err) {
-      this.logger.warn('Failed to revoke access: ' + (err instanceof Error ? err.message : String(err)));
+      this.logger.error(
+        'Transfer ' +
+          transferId +
+          ' failed during acceptance, rolled back: ' +
+          (err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
     }
-
-    transfer.status = TransferStatus.COMPLETED;
-    transfer.completedAt = new Date();
-    
-    // Anchor transfer receipt on Stellar (or mark as NOT_ANCHORED until implemented)
-    try {
-      transfer.receiptStatus = ReceiptStatus.ANCHORING;
-      const result = await this.anchorTransferReceipt(transfer);
-      transfer.stellarTxHash = result;
-      transfer.receiptStatus = ReceiptStatus.ANCHORED;
-    } catch (err) {
-      // If anchoring fails, store null with error status
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      this.logger.warn('Failed to anchor transfer receipt: ' + errorMsg);
-      transfer.stellarTxHash = null;
-      transfer.receiptStatus = ReceiptStatus.NOT_ANCHORED;
-      transfer.receiptError = errorMsg;
-    }
-
-    const saved = await this.transferRepo.save(transfer);
 
     await this.sendTransferNotifications(saved);
 
@@ -157,17 +166,127 @@ export class TransferService {
     return transfer;
   }
 
-  async listTransfers(filters?: {
-    patientId?: string;
-    fromHospitalId?: string;
-    toHospitalId?: string;
-    status?: TransferStatus;
-  }): Promise<PatientTransfer[]> {
-    return this.transferRepo.find({
-      where: filters ?? {},
+  async rejectTransfer(
+    transferId: string,
+    dto: RejectTransferDto,
+    actorHospitalId: string,
+    actorId: string,
+  ): Promise<PatientTransfer> {
+    const transfer = await this.transferRepo.findOne({
+      where: { id: transferId },
+      relations: ['fromHospital', 'toHospital'],
+    });
+
+    if (!transfer) {
+      throw new NotFoundException('Transfer not found');
+    }
+
+    this.assertHospitalAccess(transfer, actorHospitalId, 'toHospitalId');
+
+    if (transfer.status !== TransferStatus.PENDING) {
+      throw new BadRequestException('Transfer is not in pending status');
+    }
+
+    transfer.status = TransferStatus.REJECTED;
+    transfer.rejectedAt = new Date();
+    transfer.rejectedBy = actorId;
+    transfer.rejectionReason = dto.reason;
+
+    const saved = await this.transferRepo.save(transfer);
+
+    try {
+      await this.sendRejectNotification(saved);
+    } catch (err) {
+      this.logger.warn('Failed to send rejection notification: ' + (err instanceof Error ? err.message : String(err)));
+    }
+
+    this.logger.log('Transfer ' + transferId + ' rejected by ' + actorId);
+    return saved;
+  }
+
+  async cancelTransfer(
+    transferId: string,
+    dto: CancelTransferDto,
+    actorHospitalId: string,
+    actorId: string,
+  ): Promise<PatientTransfer> {
+    const transfer = await this.transferRepo.findOne({
+      where: { id: transferId },
+      relations: ['fromHospital', 'toHospital'],
+    });
+
+    if (!transfer) {
+      throw new NotFoundException('Transfer not found');
+    }
+
+    this.assertHospitalAccess(transfer, actorHospitalId, 'fromHospitalId');
+
+    if (transfer.status !== TransferStatus.PENDING) {
+      throw new BadRequestException('Transfer is not in pending status');
+    }
+
+    transfer.status = TransferStatus.CANCELLED;
+    transfer.cancelledAt = new Date();
+    transfer.cancelledBy = actorId;
+    transfer.cancellationReason = dto.reason;
+
+    const saved = await this.transferRepo.save(transfer);
+
+    try {
+      await this.sendCancellationNotification(saved);
+    } catch (err) {
+      this.logger.warn('Failed to send cancellation notification: ' + (err instanceof Error ? err.message : String(err)));
+    }
+
+    this.logger.log('Transfer ' + transferId + ' cancelled by ' + actorId);
+    return saved;
+  }
+
+  async listTransfers(
+    tenantHospitalId: string,
+    filters?: {
+      patientId?: string;
+      fromHospitalId?: string;
+      toHospitalId?: string;
+      status?: TransferStatus;
+    },
+  ): Promise<PatientTransfer[]> {
+    if (!tenantHospitalId) {
+      throw new ForbiddenException('Caller is not associated with a hospital');
+    }
+
+    const base = filters ?? {};
+
+    // Tenant scope: the caller's hospital must be either the source or the
+    // destination of every transfer returned.
+    const scoped = await this.transferRepo.find({
+      where: [
+        { ...base, fromHospitalId: tenantHospitalId },
+        { ...base, toHospitalId: tenantHospitalId },
+      ],
       relations: ['fromHospital', 'toHospital'],
       order: { createdAt: 'DESC' },
     });
+
+    // De-duplicate in case a transfer somehow matches both branches.
+    const seen = new Set<string>();
+    return scoped.filter((t) => {
+      if (seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
+    });
+  }
+
+  private assertHospitalAccess(
+    transfer: PatientTransfer,
+    actorHospitalId: string,
+    requiredSide: 'fromHospitalId' | 'toHospitalId',
+  ): void {
+    if (!actorHospitalId || transfer[requiredSide] !== actorHospitalId) {
+      throw new ForbiddenException(
+        'Caller is not authorized to act on this transfer',
+      );
+    }
   }
 
   /**
@@ -245,6 +364,42 @@ export class TransferService {
         );
       } catch (err) {
         this.logger.warn('Failed to send notification to ' + email + ': ' + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+  }
+
+  private async sendRejectNotification(transfer: PatientTransfer): Promise<void> {
+    if (transfer.fromHospital?.email) {
+      try {
+        this.notificationsService.emitRecordUploaded(
+          'system', transfer.id, {
+            targetUserId: transfer.fromHospital.email,
+            transferId: transfer.id,
+            patientName: transfer.patientName,
+            type: 'transfer_rejected',
+            rejectionReason: transfer.rejectionReason,
+          },
+        );
+      } catch (err) {
+        this.logger.warn('Failed to send rejection notification to ' + transfer.fromHospital.email + ': ' + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+  }
+
+  private async sendCancellationNotification(transfer: PatientTransfer): Promise<void> {
+    if (transfer.toHospital?.email) {
+      try {
+        this.notificationsService.emitRecordUploaded(
+          'system', transfer.id, {
+            targetUserId: transfer.toHospital.email,
+            transferId: transfer.id,
+            patientName: transfer.patientName,
+            type: 'transfer_cancelled',
+            cancellationReason: transfer.cancellationReason,
+          },
+        );
+      } catch (err) {
+        this.logger.warn('Failed to send cancellation notification to ' + transfer.toHospital.email + ': ' + (err instanceof Error ? err.message : String(err)));
       }
     }
   }

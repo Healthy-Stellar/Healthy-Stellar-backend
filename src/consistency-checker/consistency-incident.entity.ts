@@ -1,5 +1,5 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Index,
+  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index,
 } from 'typeorm';
 
 export enum IncidentSeverity {
@@ -16,6 +16,7 @@ export enum IncidentStatus {
 
 @Entity('consistency_incidents')
 @Index(['status', 'createdAt'])
+@Index(['checkName', 'status'])
 export class ConsistencyIncident {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -36,6 +37,18 @@ export class ConsistencyIncident {
   @Column({ type: 'int', default: 0 })
   affectedCount: number;
 
+  @Column({ type: 'timestamp', nullable: true })
+  resolvedAt: Date;
+
+  @Column({ type: 'uuid', nullable: true })
+  resolvedBy: string;
+
+  @Column({ type: 'text', nullable: true })
+  resolutionReason: string;
+
   @CreateDateColumn()
   createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

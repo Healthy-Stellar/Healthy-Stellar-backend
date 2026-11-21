@@ -15,7 +15,9 @@ import { CreatePathologyCaseDto } from '../dto/create-pathology-case.dto';
 import { UpdatePathologyCaseDto } from '../dto/update-pathology-case.dto';
 import { SearchPathologyDto } from '../dto/search-pathology.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pathology/cases')
 @Controller('pathology/cases')
 @UseGuards(JwtAuthGuard)
 export class PathologyCaseController {

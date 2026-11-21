@@ -9,6 +9,8 @@ import { LabTestParameter } from './entities/lab-test-parameter.entity';
 import { Specimen } from './entities/specimen.entity';
 import { CriticalValueAlert } from './entities/critical-value-alert.entity';
 import { CriticalValueDefinition } from './entities/critical-value-definition.entity';
+import { OrderSetTemplate } from './entities/order-set-template.entity';
+import { OrderSetTemplateItem } from './entities/order-set-template-item.entity';
 import { LaboratoryController } from './controllers/laboratory.controller';
 import { LaboratoryService } from './services/laboratory.service';
 import { LabResultsService } from './services/lab-results.service';
@@ -17,6 +19,8 @@ import { CriticalValueDefinitionsService } from './services/critical-value-defin
 import { CriticalValueEventHandler } from './handlers/critical-value.handler';
 import { LabResultsController } from './controllers/lab-results.controller';
 import { CriticalValuesController } from './controllers/critical-values.controller';
+import { OrderSetTemplatesController } from './controllers/order-set-templates.controller';
+import { OrderSetTemplatesService } from './services/order-set-templates.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
@@ -31,17 +35,25 @@ import { NotificationsModule } from '../notifications/notifications.module';
       Specimen,
       CriticalValueAlert,
       CriticalValueDefinition,
+      OrderSetTemplate,
+      OrderSetTemplateItem,
     ]),
     NotificationsModule,
   ],
-  controllers: [LaboratoryController, LabResultsController, CriticalValuesController],
+  controllers: [
+    LaboratoryController,
+    LabResultsController,
+    CriticalValuesController,
+    OrderSetTemplatesController,
+  ],
   providers: [
     LaboratoryService,
     LabResultsService,
     CriticalAlertsService,
     CriticalValueDefinitionsService,
     CriticalValueEventHandler,
+    OrderSetTemplatesService,
   ],
-  exports: [LaboratoryService, CriticalAlertsService],
+  exports: [LaboratoryService, CriticalAlertsService, OrderSetTemplatesService],
 })
 export class LaboratoryModule {}

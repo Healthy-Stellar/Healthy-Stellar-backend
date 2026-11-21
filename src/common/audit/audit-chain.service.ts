@@ -13,6 +13,13 @@ const AUDIT_ANCHOR_KEY = 'audit_root';
 const ANCHOR_INTERVAL_ENTRIES = 1000;
 const ANCHOR_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
+/**
+ * Maximum number of audit entries that may be walked and re-hashed in a single
+ * verification request. This bounds the cost of `verifyChain` so an anonymous or
+ * authenticated caller cannot force an unbounded full-log scan (cheap DoS).
+ */
+export const MAX_VERIFY_RANGE_ENTRIES = 1000;
+
 @Injectable()
 export class AuditChainService {
   private readonly logger = new Logger(AuditChainService.name);
@@ -66,10 +73,21 @@ export class AuditChainService {
       .where('audit.createdAt >= :fromDate', { fromDate: fromEntry.createdAt })
       .andWhere('audit.createdAt <= :toDate', { toDate: toEntry.createdAt })
       .orderBy('audit.createdAt', 'ASC')
+      .take(MAX_VERIFY_RANGE_ENTRIES + 1)
       .getMany();
 
     if (entries.length === 0) {
       return { valid: false, fromId, toId, totalEntries: 0, error: 'No entries found in range' };
+    }
+
+    if (entries.length > MAX_VERIFY_RANGE_ENTRIES) {
+      return {
+        valid: false,
+        fromId,
+        toId,
+        totalEntries: entries.length,
+        error: `Requested range exceeds the maximum of ${MAX_VERIFY_RANGE_ENTRIES} entries per verification request`,
+      };
     }
 
     let previousHash: string | null = null;

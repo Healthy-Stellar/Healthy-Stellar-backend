@@ -1,0 +1,27 @@
+name: No Branch-Name Debris
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  check-branch-debris:
+    name: Detect leftover branch-name tokens in source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fail on stray branch-name lines
+        # Matches lines that consist solely of a git branch name token
+        # (e.g. "feat/idempotency-ttl-cleanup", "main", "fix/some-bug").
+        # This is the 6th recurrence of merge debris reaching main
+        # (#914, #916, #917, #922, #929, #1021) — this step prevents a 7th.
+        run: |
+          if grep -rnE '^\s*(feat|fix|chore|refactor|test|docs|style|perf|ci|build|revert|main|develop)(/[A-Za-z0-9._-]+)?\s*$' src/; then
+            echo "ERROR: Stray branch-name token(s) found in src/. Remove the lines above before merging."
+            exit 1
+          fi
+          echo "No branch-name debris found."
