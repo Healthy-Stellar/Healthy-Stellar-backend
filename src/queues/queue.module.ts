@@ -20,6 +20,7 @@ import { BlockchainModule } from '../blockchain/blockchain.module';
 import { QueueEventsListener } from './queue-events.listener';
 import { RecordsModule } from '../records/records.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { AuthModule } from '../auth/auth.module';
 
 /**
  * QueueModule
@@ -55,6 +56,10 @@ export class QueueModule {
     return {
       module: QueueModule,
       imports: [
+        // AuthModule provides AuthTokenService and SessionManagementService
+        // required by BullBoardAuthMiddleware
+        AuthModule,
+
         // BlockchainModule provides StellarContractService used by ContractWritesProcessor.
         BlockchainModule,
 
