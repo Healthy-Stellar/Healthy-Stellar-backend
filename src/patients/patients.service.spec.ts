@@ -1,16 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import {
-  ConflictException,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PatientsService } from './patients.service';
 import { Patient } from './entities/patient.entity';
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
 import { RedisLockService } from '../common/utils/redis-lock.service';
 import { StellarService } from '../stellar/services/stellar.service';
+import { TenantFieldValidationService } from '../data-validation-integrity/services/tenant-field-validation.service';
 import { aPatient } from '../../test/fixtures/test-data-builder';
 
 // ─── Blockchain mock (Stellar SDK is mocked globally in setup-unit.ts) ────────
@@ -62,6 +59,11 @@ const mockRedisLock = {
   releaseLock: jest.fn().mockResolvedValue(undefined),
 };
 
+// ─── Tenant field validation mock ────────────────────────────────────────────
+const mockTenantFieldValidationService = {
+  validateFields: jest.fn().mockResolvedValue(undefined),
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function makeValidDto(overrides: Record<string, any> = {}) {
   return {
@@ -84,6 +86,7 @@ describe('PatientsService', () => {
         { provide: DataSource, useValue: mockDataSource },
         { provide: RedisLockService, useValue: mockRedisLock },
         { provide: StellarService, useValue: { invokeContract: mockStellarInvokeContract } },
+        { provide: TenantFieldValidationService, useValue: mockTenantFieldValidationService },
       ],
     }).compile();
 
@@ -102,6 +105,7 @@ describe('PatientsService', () => {
     mockQR.commitTransaction.mockResolvedValue(undefined);
     mockQR.rollbackTransaction.mockResolvedValue(undefined);
     mockQR.release.mockResolvedValue(undefined);
+    mockTenantFieldValidationService.validateFields.mockResolvedValue(undefined);
     mockQR.manager.findOne.mockResolvedValue(null);
     mockQR.manager.update.mockResolvedValue(undefined);
     mockQR.manager.save.mockImplementation(async (_entity: any, data: any) => data);
@@ -117,7 +121,7 @@ describe('PatientsService', () => {
       const saved = { ...dto, id: 'uuid-1', mrn: 'MRN-001', isActive: true, isAdmitted: false };
 
       mockRepo.findOneBy.mockResolvedValue(null); // no MRN conflict
-      mockRepo.findOne.mockResolvedValue(null);   // no duplicate
+      mockRepo.findOne.mockResolvedValue(null); // no duplicate
       mockRepo.create.mockReturnValue(saved);
       mockRepo.save.mockResolvedValue(saved);
 
@@ -140,7 +144,12 @@ describe('PatientsService', () => {
     });
 
     it('flags similar names as likely duplicates when the fuzzy score is above threshold', async () => {
-      const dto = makeValidDto({ firstName: 'John', lastName: 'Smith', dateOfBirth: '1985-03-12', sex: 'male' as const });
+      const dto = makeValidDto({
+        firstName: 'John',
+        lastName: 'Smith',
+        dateOfBirth: '1985-03-12',
+        sex: 'male' as const,
+      });
 
       mockRepo.findOneBy.mockResolvedValue(null);
       mockRepo.findOne.mockResolvedValue(null);
@@ -231,7 +240,7 @@ describe('PatientsService', () => {
 
     it('authorized — updates mutable fields for the matching stellarAddress', async () => {
       const existing = aPatient().build();
-      (existing as any).stellarAddress = stellarAddress;
+      existing.stellarAddress = stellarAddress;
       const profileData = { phone: '555-9999', email: 'new@example.com' };
       const updated = { ...existing, ...profileData };
 
@@ -249,17 +258,17 @@ describe('PatientsService', () => {
     it('unauthorized — throws NotFoundException when stellarAddress has no match', async () => {
       mockRepo.findOne.mockResolvedValue(null);
 
-      await expect(
-        service.updateProfile('INVALID_STELLAR', { phone: '555-0000' }),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.updateProfile('INVALID_STELLAR', { phone: '555-0000' })).rejects.toThrow(
+        NotFoundException,
+      );
 
       expect(mockRepo.save).not.toHaveBeenCalled();
     });
 
     it('does not overwrite immutable fields (stellarAddress, nationalIdHash)', async () => {
       const existing = aPatient().build();
-      (existing as any).stellarAddress = stellarAddress;
-      (existing as any).nationalIdHash = 'original-hash';
+      existing.stellarAddress = stellarAddress;
+      existing.nationalIdHash = 'original-hash';
 
       mockRepo.findOne.mockResolvedValue(existing);
       mockRepo.save.mockImplementation(async (p: any) => p);
@@ -272,7 +281,7 @@ describe('PatientsService', () => {
 
     it('blockchain mock is never called during profile update', async () => {
       const existing = aPatient().build();
-      (existing as any).stellarAddress = stellarAddress;
+      existing.stellarAddress = stellarAddress;
 
       mockRepo.findOne.mockResolvedValue(existing);
       mockRepo.save.mockResolvedValue(existing);
@@ -326,9 +335,7 @@ describe('PatientsService', () => {
       const primary = aPatient().withId('primary-id').build();
       const secondary = aPatient().withId('secondary-id').build();
 
-      mockQR.manager.findOne
-        .mockResolvedValueOnce(primary)
-        .mockResolvedValueOnce(secondary);
+      mockQR.manager.findOne.mockResolvedValueOnce(primary).mockResolvedValueOnce(secondary);
       mockStellarInvokeContract.mockResolvedValue({ txHash: 'tx-hash' });
 
       const result = await service.adminMergePatients(
@@ -392,10 +399,7 @@ describe('PatientsService', () => {
       mockRedisLock.acquireLock.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
 
       await expect(
-        service.adminMergePatients(
-          { primaryAddress: 'a', secondaryAddress: 'b' },
-          'admin-id',
-        ),
+        service.adminMergePatients({ primaryAddress: 'a', secondaryAddress: 'b' }, 'admin-id'),
       ).rejects.toThrow(ConflictException);
 
       expect(mockRedisLock.releaseLock).toHaveBeenCalledTimes(2);
@@ -406,10 +410,7 @@ describe('PatientsService', () => {
       mockQR.manager.findOne.mockRejectedValueOnce(new Error('DB Error'));
 
       await expect(
-        service.adminMergePatients(
-          { primaryAddress: 'a', secondaryAddress: 'b' },
-          'admin-id',
-        ),
+        service.adminMergePatients({ primaryAddress: 'a', secondaryAddress: 'b' }, 'admin-id'),
       ).rejects.toThrow('DB Error');
 
       expect(mockQR.rollbackTransaction).toHaveBeenCalled();
@@ -419,9 +420,7 @@ describe('PatientsService', () => {
 
     it('throws BadRequestException when merging a patient with itself', async () => {
       const patient = aPatient().withId('same-id').build();
-      mockQR.manager.findOne
-        .mockResolvedValueOnce(patient)
-        .mockResolvedValueOnce(patient);
+      mockQR.manager.findOne.mockResolvedValueOnce(patient).mockResolvedValueOnce(patient);
 
       await expect(
         service.adminMergePatients(
@@ -434,9 +433,7 @@ describe('PatientsService', () => {
     });
 
     it('throws NotFoundException when one patient is missing', async () => {
-      mockQR.manager.findOne
-        .mockResolvedValueOnce(aPatient().build())
-        .mockResolvedValueOnce(null);
+      mockQR.manager.findOne.mockResolvedValueOnce(aPatient().build()).mockResolvedValueOnce(null);
 
       await expect(
         service.adminMergePatients(
@@ -464,7 +461,10 @@ describe('PatientsService', () => {
           action: 'PATIENT_MERGED',
           entity: 'Patient',
           entityId: 'primary-id',
-          details: expect.objectContaining({ primaryId: 'primary-id', secondaryId: 'secondary-id' }),
+          details: expect.objectContaining({
+            primaryId: 'primary-id',
+            secondaryId: 'secondary-id',
+          }),
         }),
       );
     });

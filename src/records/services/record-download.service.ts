@@ -28,6 +28,43 @@ const AUTH_TAG_BYTES = 16;
 const DEK_LEN_BYTES = 4;
 const VER_LEN_BYTES = 2;
 
+/**
+ * Pack an {@link EncryptedRecord} into the on-the-wire IPFS envelope.
+ *
+ * Layout (all length prefixes little-endian):
+ * [iv:12][authTag:16][dekLen:4LE][encryptedDek:dekLen][verLen:2LE][dekVersion:verLen utf8][ciphertext:rest]
+ *
+ * This is the exact inverse of {@link RecordDownloadService.unpackEnvelope}.
+ * `dekVersion` is a string, so it is length-prefixed and written as UTF-8
+ * bytes rather than passed to a numeric Buffer writer.
+ */
+export function packEnvelope(record: EncryptedRecord): Buffer {
+  const dekVersionBuf = Buffer.from(record.dekVersion ?? '', 'utf8');
+
+  const header = Buffer.allocUnsafe(
+    IV_BYTES + AUTH_TAG_BYTES + DEK_LEN_BYTES + VER_LEN_BYTES,
+  );
+  let offset = 0;
+
+  record.iv.copy(header, offset);
+  offset += IV_BYTES;
+
+  record.authTag.copy(header, offset);
+  offset += AUTH_TAG_BYTES;
+
+  header.writeUInt32LE(record.encryptedDek.length, offset);
+  offset += DEK_LEN_BYTES;
+
+  header.writeUInt16LE(dekVersionBuf.length, offset);
+
+  return Buffer.concat([
+    header,
+    record.encryptedDek,
+    dekVersionBuf,
+    record.ciphertext,
+  ]);
+}
+
 @Injectable()
 export class RecordDownloadService {
   private readonly logger = new Logger(RecordDownloadService.name);
@@ -110,9 +147,13 @@ export class RecordDownloadService {
     return Buffer.concat(chunks);
   }
 
-  // ─── Envelope unpacking ────────────────────────────────────────────────────
+  // ─── Envelope packing / unpacking ──────────────────────────────────────────
   // Layout written by EncryptionService.encryptRecord + upload pipeline:
   // [iv:12][authTag:16][dekLen:4LE][encryptedDek:dekLen][verLen:2LE][dekVersion:verLen][ciphertext:rest]
+
+  packEnvelope(record: EncryptedRecord): Buffer {
+    return packEnvelope(record);
+  }
 
   unpackEnvelope(buf: Buffer): EncryptedRecord {
     let offset = 0;

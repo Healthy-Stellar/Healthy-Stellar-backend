@@ -16,9 +16,10 @@ import {
   ApproveRejectDto,
   MultiSigTransactionResponse,
 } from '../interfaces/multi-sig.interface';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
 
 @ApiTags('Stellar – Multi-Signature Payments')
-@ApiBearerAuth()
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 @Controller('stellar/multi-sig')
 export class MultiSigController {
   constructor(
@@ -32,7 +33,7 @@ export class MultiSigController {
     @Body() dto: CreateMultiSigPaymentDto,
     @Req() req: any,
   ): Promise<MultiSigTransactionResponse> {
-    const requesterId = req.user?.userId || 'system';
+    const requesterId = req.user?.userId;
     return this.multiSigService.createMultiSigPayment(dto, requesterId);
   }
 
@@ -56,6 +57,13 @@ export class MultiSigController {
     return this.multiSigService.rejectTransaction(id, dto);
   }
 
+  @Post('payments/sweep')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Sweep approved multi-sig payments to execute on-chain' })
+  async sweepApprovedPayments(): Promise<{ processed: number }> {
+    return this.multiSigService.sweepApprovedTransactions();
+  }
+
   @Get('payments/:id')
   @ApiOperation({ summary: 'Get multi-sig payment status' })
   async getPaymentStatus(
@@ -69,7 +77,7 @@ export class MultiSigController {
   async listPending(
     @Req() req: any,
   ): Promise<MultiSigTransactionResponse[]> {
-    const tenantId = req.query?.tenantId || 'default';
+    const tenantId = req.user?.tenantId;
     return this.multiSigService.listPendingTransactions(tenantId);
   }
 }

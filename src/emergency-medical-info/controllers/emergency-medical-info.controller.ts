@@ -1,11 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { EmergencyMedicalInfoService } from '../services/emergency-medical-info.service';
 import {
   CreateEmergencyMedicalInfoDto,
   UpdateEmergencyMedicalInfoDto,
 } from '../dto/emergency-medical-info.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('emergency-medical-info')
 @UseGuards(JwtAuthGuard)
 @Controller('emergency-medical-info')
 export class EmergencyMedicalInfoController {
@@ -27,8 +29,17 @@ export class EmergencyMedicalInfoController {
   }
 
   @Put('patient/:patientId')
-  update(@Param('patientId') patientId: string, @Body() dto: UpdateEmergencyMedicalInfoDto) {
-    return this.service.update(patientId, dto);
+  update(
+    @Param('patientId') patientId: string, 
+    @Body() dto: UpdateEmergencyMedicalInfoDto,
+    @Req() req: any
+  ) {
+    return this.service.update(patientId, dto, req.user.id);
+  }
+
+  @Get('patient/:patientId/history')
+  getHistory(@Param('patientId') patientId: string) {
+    return this.service.getHistory(patientId);
   }
 
   @Delete('patient/:patientId')

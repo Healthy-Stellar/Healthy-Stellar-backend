@@ -27,7 +27,7 @@ export class RecordingService {
     const encryptedDekId = crypto.randomUUID();
 
     // Compute retention expiry from config (default 7 years = 2555 days)
-    const retentionDays = this.config.get<number>('RECORDING_RETENTION_DAYS', 2555);
+    const retentionDays = Number(this.config.get<string | number>('RECORDING_RETENTION_DAYS', 2555));
     const retentionExpiresAt = new Date(Date.now() + retentionDays * 24 * 60 * 60 * 1000);
 
     const recording = this.recordingRepo.create({
@@ -57,6 +57,10 @@ export class RecordingService {
     if (!recording) {
       throw new NotFoundException(`No recording found for session ${sessionId}`);
     }
+    // Check session ownership
+    if (recording.uploadedBy !== userId) {
+      throw new ForbiddenException('You do not have permission to access this recording');
+    }
     // Generate a time-limited signed token (in production: presign from S3/GCS)
     const expiresAt = new Date(Date.now() + SIGNED_URL_TTL_SECONDS * 1000);
     const token = crypto
@@ -64,7 +68,7 @@ export class RecordingService {
       .update(`${recording.storageKey}:${expiresAt.getTime()}:${userId}`)
       .digest('hex');
     const baseUrl = this.config.get<string>('APP_BASE_URL', 'http://localhost:3000');
-    const url = `${baseUrl}/recordings/stream/${recording.id}?token=${token}&expires=${expiresAt.getTime()}`;
+    const url = `${baseUrl}/telemedicine/sessions/${sessionId}/recording/stream?token=${token}&expires=${expiresAt.getTime()}`;
     return { url, expiresAt };
   }
 

@@ -81,10 +81,13 @@ export class OidcService {
           `Existing OIDC identity: provider=${profile.provider} user=${identity.user.id}`,
         );
       } else {
-        // 2. Try to link to existing user by email
+        // 2. Try to link to existing user by email.
+        //    Only auto-link when the IdP asserts the email is verified;
+        //    otherwise an attacker could register a victim's email at a
+        //    self-service IdP and be silently linked to the victim's account.
         let user: User | null = null;
 
-        if (profile.email) {
+        if (profile.email && profile.emailVerified) {
           user = await userRepo.findOne({
             where: { email: profile.email },
           });
@@ -104,7 +107,7 @@ export class OidcService {
           this.logger.log(`Created new user ${user.id} via OIDC`);
         } else {
           this.logger.log(
-            `Linked OIDC identity to existing user ${user.id} by email`,
+            `Linked OIDC identity to existing user ${user.id} by verified email`,
           );
         }
 
@@ -256,84 +259,6 @@ export class OidcService {
         network,
       );
 
-      const keypair = StellarSdk.Keypair.fromPublicKey(stellarAddress);
-      const hash = (tx as any).hash();
+      const keypair = StellarSdk.Keypair.fromPublicKe
 
-      // Verify that at least one signature on the envelope belongs to the claimed address
-      const valid = (tx as any).signatures.some((sig: StellarSdk.xdr.DecoratedSignature) => {
-        try {
-          return keypair.verify(hash, sig.signature());
-        } catch {
-          return false;
-        }
-      });
-
-      if (!valid) {
-        throw new UnauthorizedException(
-          'Stellar challenge signature verification failed',
-        );
-      }
-    } catch (err) {
-      if (err instanceof UnauthorizedException) throw err;
-      throw new UnauthorizedException('Invalid Stellar challenge XDR');
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
-  private issueJwt(user: User, provider: string): string {
-    const payload: OidcJwtPayload = {
-      sub: user.id,
-      email: user.email,
-      stellarAddress: user.stellarAddress ?? null,
-      oidcProvider: provider,
-    };
-    return this.jwtService.sign(payload);
-  }
-
-  private parseExpiresIn(): number {
-    const raw = process.env.JWT_EXPIRES_IN ?? '8h';
-    const match = raw.match(/^(\d+)([smhd])$/);
-    if (!match) return 28800; // 8 h default
-    const value = parseInt(match[1], 10);
-    const unit = match[2];
-    const multipliers: Record<string, number> = {
-      s: 1,
-      m: 60,
-      h: 3600,
-      d: 86400,
-    };
-    return value * (multipliers[unit] ?? 1);
-  }
-
-  async getLinkedIdentities(userId: string): Promise<OidcIdentity[]> {
-    return this.oidcIdentityRepo.find({
-      where: { user: { id: userId } },
-      select: ['id', 'provider', 'email', 'givenName', 'familyName', 'lastUsedAt', 'createdAt'],
-    });
-  }
-
-  async unlinkOidcIdentity(userId: string, identityId: string): Promise<void> {
-    const identity = await this.oidcIdentityRepo.findOne({
-      where: { id: identityId, user: { id: userId } },
-    });
-    if (!identity) throw new NotFoundException('OIDC identity not found');
-
-    const count = await this.oidcIdentityRepo.count({
-      where: { user: { id: userId } },
-    });
-    const user = await this.userRepo.findOne({ where: { id: userId } });
-    const hasStellar = !!user?.stellarAddress;
-
-    // Prevent locking out: at least one auth method must remain
-    if (count === 1 && !hasStellar) {
-      throw new BadRequestException(
-        'Cannot unlink last authentication method. Link a Stellar address first.',
-      );
-    }
-
-    await this.oidcIdentityRepo.remove(identity);
-  }
-}
+/* … truncated 2602 chars — edit only what you need near the top … */

@@ -23,6 +23,7 @@ export enum UserRole {
   SUPER_ADMIN = 'super_admin',
   COMPLIANCE_OFFICER = 'compliance_officer',
   SURGEON = 'surgeon',
+  PHARMACIST = 'pharmacist',
 }
 
 export enum UserStatus {
@@ -147,7 +148,12 @@ export class User {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @Column({ nullable: true, length: 128, select: false })
+  /**
+   * SHA-256 hash of the password-reset token. The raw token is only ever
+   * sent to the user via email; only its hash is persisted so that a leaked
+   * database/backup/replica does not expose usable reset tokens.
+   */
+  @Column({ nullable: true, length: 64, select: false })
   passwordResetToken: string;
 
   @Column({ type: 'timestamp', nullable: true })

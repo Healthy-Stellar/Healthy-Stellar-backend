@@ -20,7 +20,7 @@
       overflow: hidden;
     }
     .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, {{primaryColor}} 0%, {{secondaryColor}} 100%);
       color: white;
       padding: 30px 20px;
       text-align: center;
@@ -54,7 +54,7 @@
     .code-box .code {
       font-size: 32px;
       font-weight: 700;
-      color: #667eea;
+      color: {{primaryColor}};
       letter-spacing: 4px;
       font-family: monospace;
     }
@@ -65,7 +65,7 @@
     }
     .cta-button {
       display: inline-block;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, {{primaryColor}} 0%, {{secondaryColor}} 100%);
       color: white;
       text-decoration: none;
       padding: 12px 30px;
@@ -95,7 +95,7 @@
       border-top: 1px solid #eeeeee;
     }
     .footer a {
-      color: #667eea;
+      color: {{primaryColor}};
       text-decoration: none;
     }
   </style>
@@ -103,10 +103,11 @@
 <body>
   <div class="container">
     <div class="header">
+      {{#if logoUrl}}<img src="{{logoUrl}}" alt="{{organizationName}}" style="max-height:48px;margin-bottom:10px;"><br>{{/if}}
       <h1>Verify Your Email</h1>
     </div>
     <div class="content">
-      <h2>Welcome to MedChain, {{userName}}!</h2>
+      <h2>Welcome to {{organizationName}}, {{userName}}!</h2>
       <p>Thank you for signing up. To get started, please verify your email address by entering the code below or clicking the verification link.</p>
 
       <div class="code-box">
@@ -119,14 +120,15 @@
       <a href="{{verificationLink}}" class="cta-button">Verify Email Address</a>
 
       <div class="warning">
-        <strong>Security Notice:</strong> If you did not sign up for a MedChain account, please disregard this email. Do not share this verification code with anyone.
+        <strong>Security Notice:</strong> If you did not sign up for a {{organizationName}} account, please disregard this email. Do not share this verification code with anyone.
       </div>
 
       <p>If the button above doesn't work, copy and paste this link into your browser:<br>
       <a href="{{verificationLink}}">{{verificationLink}}</a></p>
     </div>
     <div class="footer">
-      <p>© 2024 MedChain. All rights reserved.</p>
+      <p>© 2024 {{organizationName}}. All rights reserved.</p>
+      {{#if supportEmail}}<p>Support: <a href="mailto:{{supportEmail}}">{{supportEmail}}</a>{{#if supportPhone}} | {{supportPhone}}{{/if}}</p>{{/if}}
       <p><a href="{{privacyUrl}}">Privacy Policy</a> | <a href="{{termsUrl}}">Terms of Service</a></p>
     </div>
   </div>

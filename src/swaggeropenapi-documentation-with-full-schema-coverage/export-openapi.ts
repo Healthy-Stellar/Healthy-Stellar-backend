@@ -41,7 +41,7 @@ async function exportOpenApi() {
     deepScanRoutes: true,
   });
 
-  const outputDir = resolve(__dirname, '..', 'docs');
+  const outputDir = resolve(__dirname, '..', '..', 'docs');
   const outputPath = resolve(outputDir, 'openapi.json');
 
   mkdirSync(outputDir, { recursive: true });

@@ -1,298 +1,77 @@
-import {
-  Injectable,
-  BadRequestException,
-  NotFoundException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
-import { ApiKey, ApiKeyScope } from '../entities/api-key.entity';
-import { User } from '../entities/user.entity';
-import { AuditService } from '../../common/audit/audit.service';
-import { AuditAction } from '../../common/audit/audit-log.entity';
+import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
-
-export interface CreateApiKeyDto {
-  name: string;
-  description: string;
-  scopes: ApiKeyScope[];
-  expiresAt?: Date;
-}
-
-export interface ExpiringSoonApiKeyResponse extends ApiKeyResponse {
-  expiresAt: Date;
-  daysUntilExpiry: number;
-}
-
-export interface ApiKeyResponse {
-  id: string;
-  name: string;
-  description: string;
-  scopes: ApiKeyScope[];
-  isActive: boolean;
-  createdAt: Date;
-  lastUsedAt?: Date;
-  lastUsedByIp?: string;
-  createdBy: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-  };
-}
-
-export interface CreateApiKeyResponse extends ApiKeyResponse {
-  key: string; // Only returned once during creation
-}
+import { ApiKey, ApiKeyScope } from '../entities/api-key.entity';
 
 @Injectable()
 export class ApiKeyService {
   constructor(
     @InjectRepository(ApiKey)
-    private apiKeyRepository: Repository<ApiKey>,
-    @InjectRepository(User)
-    private userRepository: Repository<User>,
-    private auditService: AuditService,
+    private readonly apiKeyRepo: Repository<ApiKey>,
   ) {}
 
   /**
-   * Generate a secure random API key
+   * Validates an API key by:
+   *  1. Hashing the incoming raw key and looking it up.
+   *  2. Checking isActive.
+   *  3. Checking expiresAt — rejects keys whose expiry has passed.
    */
-  private generateApiKey(): string {
-    return crypto.randomBytes(32).toString('hex');
-  }
+  async validateApiKey(rawKey: string): Promise<ApiKey> {
+    const keyHash = this.hashKey(rawKey);
 
-  /**
-   * Hash an API key using SHA-256
-   */
-  private hashApiKey(apiKey: string): string {
-    return crypto.createHash('sha256').update(apiKey).digest('hex');
-  }
-
-  /**
-   * Create a new API key
-   */
-  async createApiKey(
-    createDto: CreateApiKeyDto,
-    createdById: string,
-    ipAddress: string,
-    userAgent: string,
-  ): Promise<CreateApiKeyResponse> {
-    // Validate scopes
-    if (!createDto.scopes || createDto.scopes.length === 0) {
-      throw new BadRequestException('At least one scope must be specified');
-    }
-
-    // Check for duplicate name
-    const existingKey = await this.apiKeyRepository.findOne({
-      where: { name: createDto.name },
-    });
-
-    if (existingKey) {
-      throw new ConflictException('API key with this name already exists');
-    }
-
-    // Get the creator
-    const creator = await this.userRepository.findOne({
-      where: { id: createdById },
-    });
-
-    if (!creator) {
-      throw new NotFoundException('Creator user not found');
-    }
-
-    // Generate the key
-    const rawKey = this.generateApiKey();
-    const keyHash = this.hashApiKey(rawKey);
-
-    // Create the API key entity
-    const apiKey = this.apiKeyRepository.create({
-      name: createDto.name,
-      description: createDto.description,
-      keyHash,
-      scopes: createDto.scopes,
-      createdBy: creator,
-      createdById,
-      expiresAt: createDto.expiresAt ?? null,
-    });
-
-    const savedKey = await this.apiKeyRepository.save(apiKey);
-
-    // Audit the creation
-    await this.auditService.logAction(
-      AuditAction.API_KEY_CREATED,
-      creator.id,
-      `API key "${createDto.name}" created with scopes: ${createDto.scopes.join(', ')}`,
-      { apiKeyId: savedKey.id, scopes: createDto.scopes },
-      ipAddress,
-      userAgent,
-    );
-
-    return {
-      id: savedKey.id,
-      name: savedKey.name,
-      description: savedKey.description,
-      scopes: savedKey.scopes,
-      isActive: savedKey.isActive,
-      createdAt: savedKey.createdAt,
-      createdBy: {
-        id: creator.id,
-        email: creator.email,
-        firstName: creator.firstName,
-        lastName: creator.lastName,
-      },
-      key: rawKey, // Only returned once
-    };
-  }
-
-  /**
-   * List all API keys (without the actual key values)
-   */
-  async listApiKeys(): Promise<ApiKeyResponse[]> {
-    const keys = await this.apiKeyRepository.find({
-      relations: ['createdBy'],
-      order: { createdAt: 'DESC' },
-    });
-
-    return keys.map(key => ({
-      id: key.id,
-      name: key.name,
-      description: key.description,
-      scopes: key.scopes,
-      isActive: key.isActive,
-      createdAt: key.createdAt,
-      lastUsedAt: key.lastUsedAt,
-      lastUsedByIp: key.lastUsedByIp,
-      createdBy: {
-        id: key.createdBy.id,
-        email: key.createdBy.email,
-        firstName: key.createdBy.firstName,
-        lastName: key.createdBy.lastName,
-      },
-    }));
-  }
-
-  /**
-   * Revoke (deactivate) an API key
-   */
-  async revokeApiKey(
-    apiKeyId: string,
-    revokedById: string,
-    ipAddress: string,
-    userAgent: string,
-  ): Promise<void> {
-    const apiKey = await this.apiKeyRepository.findOne({
-      where: { id: apiKeyId },
-      relations: ['createdBy'],
-    });
-
-    if (!apiKey) {
-      throw new NotFoundException('API key not found');
-    }
-
-    if (!apiKey.isActive) {
-      throw new BadRequestException('API key is already revoked');
-    }
-
-    // Update the key
-    await this.apiKeyRepository.update(apiKeyId, {
-      isActive: false,
-      updatedAt: new Date(),
-    });
-
-    // Audit the revocation
-    await this.auditService.logAction(
-      AuditAction.API_KEY_REVOKED,
-      revokedById,
-      `API key "${apiKey.name}" revoked`,
-      { apiKeyId },
-      ipAddress,
-      userAgent,
-    );
-  }
-
-  /**
-   * Validate an API key and return the key entity if valid
-   */
-  async validateApiKey(apiKey: string): Promise<ApiKey | null> {
-    const keyHash = this.hashApiKey(apiKey);
-
-    const apiKeyEntity = await this.apiKeyRepository.findOne({
+    const record = await this.apiKeyRepo.findOne({
       where: { keyHash, isActive: true },
     });
 
-    if (!apiKeyEntity) {
-      return null;
+    if (!record) {
+      throw new UnauthorizedException('Invalid or inactive API key');
     }
 
-    // Update last used timestamp
-    await this.apiKeyRepository.update(apiKeyEntity.id, {
-      lastUsedAt: new Date(),
-    });
+    if (record.expiresAt !== null && record.expiresAt <= new Date()) {
+      throw new UnauthorizedException('API key has expired');
+    }
 
-    return apiKeyEntity;
+    return record;
   }
 
   /**
-   * Check if an API key has a specific scope
+   * Returns true if the given API key has at least one of the required scopes.
    */
-  hasScope(apiKey: ApiKey, requiredScope: ApiKeyScope): boolean {
-    return apiKey.scopes.includes(requiredScope);
+  hasAnyScope(apiKey: ApiKey, requiredScopes: ApiKeyScope[]): boolean {
+    return requiredScopes.some((scope) => apiKey.scopes?.includes(scope));
   }
 
   /**
-   * Record the last used IP address for an API key
+   * Records the IP address that most recently used this API key.
    */
   async recordLastUsedIp(id: string, ip: string): Promise<void> {
-    await this.apiKeyRepository.update(id, {
+    await this.apiKeyRepo.update(id, {
       lastUsedByIp: ip,
       lastUsedAt: new Date(),
     });
   }
 
   /**
-   * Check if an API key has any of the required scopes
+   * Deactivates all keys whose expiresAt is in the past and isActive is still true.
+   * Called by the expiry task on a schedule.
+   * Returns the count of deactivated keys.
    */
-  hasAnyScope(apiKey: ApiKey, requiredScopes: ApiKeyScope[]): boolean {
-    return requiredScopes.some(scope => apiKey.scopes.includes(scope));
+  async deactivateExpiredKeys(): Promise<number> {
+    const result = await this.apiKeyRepo
+      .createQueryBuilder()
+      .update()
+      .set({ isActive: false })
+      .where('isActive = :active AND expiresAt IS NOT NULL AND expiresAt <= :now', {
+        active: true,
+        now: new Date(),
+      })
+      .execute();
+
+    return result.affected ?? 0;
   }
 
-  /**
-   * Return active keys expiring within the given number of days
-   */
-  async getExpiringSoon(withinDays: number): Promise<ExpiringSoonApiKeyResponse[]> {
-    const now = new Date();
-    const cutoff = new Date(now.getTime() + withinDays * 24 * 60 * 60 * 1000);
-
-    const keys = await this.apiKeyRepository.find({
-      where: { isActive: true, expiresAt: Between(now, cutoff) },
-      relations: ['createdBy'],
-      order: { expiresAt: 'ASC' },
-    });
-
-    return keys.map(key => ({
-      id: key.id,
-      name: key.name,
-      description: key.description,
-      scopes: key.scopes,
-      isActive: key.isActive,
-      createdAt: key.createdAt,
-      lastUsedAt: key.lastUsedAt,
-      lastUsedByIp: key.lastUsedByIp,
-      expiresAt: key.expiresAt,
-      daysUntilExpiry: Math.ceil((key.expiresAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)),
-      createdBy: {
-        id: key.createdBy.id,
-        email: key.createdBy.email,
-        firstName: key.createdBy.firstName,
-        lastName: key.createdBy.lastName,
-      },
-    }));
-  }
-
-  async markExpiryNotified(id: string, days: 30 | 14 | 7): Promise<void> {
-    const field =
-      days === 30 ? 'expiryNotified30d' : days === 14 ? 'expiryNotified14d' : 'expiryNotified7d';
-    await this.apiKeyRepository.update(id, { [field]: true });
+  private hashKey(rawKey: string): string {
+    return crypto.createHash('sha256').update(rawKey).digest('hex');
   }
 }

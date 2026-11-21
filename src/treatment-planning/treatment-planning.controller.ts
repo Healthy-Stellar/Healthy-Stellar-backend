@@ -1,6 +1,12 @@
-import { Controller, Get, Post, Body, Param, ParseIntPipe, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, ParseIntPipe, Request, UseGuards } from '@nestjs/common';
 import { TreatmentPlanningService } from './treatment-planning.service';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 
+@ApiTags('treatment-plans')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('treatment-plans')
 export class TreatmentPlanningController {
   constructor(private readonly planningService: TreatmentPlanningService) {}
@@ -10,9 +16,9 @@ export class TreatmentPlanningController {
   async updatePlan(
     @Param('id') id: string,
     @Body() updateData: any,
-    @Request() req: any // Assumes authentication guard injects user identity
+    @Request() req: any
   ) {
-    const authorId = req.user?.id || 'system-user'; 
+    const authorId = req.user?.userId || req.user?.id || req.user?.sub || 'system-user'; 
     return this.planningService.savePlan(id, updateData, authorId);
   }
 
@@ -39,7 +45,7 @@ export class TreatmentPlanningController {
     @Param('version', ParseIntPipe) version: number,
     @Request() req: any
   ) {
-    const authorId = req.user?.id || 'system-user';
+    const authorId = req.user?.userId || req.user?.id || req.user?.sub || 'system-user';
     return this.planningService.revertToVersion(id, version, authorId);
   }
 }

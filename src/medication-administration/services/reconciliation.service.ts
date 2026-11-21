@@ -8,6 +8,8 @@ import {
 } from '../entities/medication-reconciliation.entity';
 import { CreateReconciliationDto } from '../dto/create-reconciliation.dto';
 import { AlertService } from './alert.service';
+import { DrugInteractionService } from '../../pharmacy/services/drug-interaction.service';
+import { SafetyAlertService } from '../../pharmacy/services/safety-alert.service';
 
 @Injectable()
 export class ReconciliationService {
@@ -15,6 +17,8 @@ export class ReconciliationService {
     @InjectRepository(MedicationReconciliation)
     private reconciliationRepository: Repository<MedicationReconciliation>,
     private alertService: AlertService,
+    private drugInteractionService: DrugInteractionService,
+    private safetyAlertService: SafetyAlertService,
   ) {}
 
   async create(
@@ -166,48 +170,136 @@ export class ReconciliationService {
   }
 
   async checkAllergies(id: string): Promise<MedicationReconciliation> {
+    const reconciliation = await this.findOne(id);
+    const medications = this.getActiveMedications(reconciliation);
+
+    const findings: any[] = [];
+    for (const medication of medications) {
+      const alerts = await this.safetyAlertService.checkAllergies(
+        reconciliation.patientId,
+        medication,
+      );
+      if (alerts && alerts.length > 0) {
+        findings.push(...alerts);
+      }
+    }
+
     await this.reconciliationRepository.update(id, {
       allergiesReviewed: true,
+      allergyFindings: findings,
     });
+
+    if (findings.length > 0) {
+      await this.alertService.sendDrugInteractionAlert(reconciliation.patientId, findings);
+    }
 
     return await this.findOne(id);
   }
 
   async checkDrugInteractions(id: string, interactions?: any[]): Promise<MedicationReconciliation> {
     const reconciliation = await this.findOne(id);
+    const medications = this.getActiveMedications(reconciliation);
+
+    let findings: any[] = interactions ?? [];
+    if (!interactions) {
+      findings = await this.drugInteractionService.checkInteractions(medications);
+    }
 
     await this.reconciliationRepository.update(id, {
       drugInteractionsChecked: true,
+      drugInteractionFindings: findings,
     });
 
     // Send alert if interactions found
-    if (interactions && interactions.length > 0) {
-      await this.alertService.sendDrugInteractionAlert(reconciliation.patientId, interactions);
+    if (findings && findings.length > 0) {
+      await this.alertService.sendDrugInteractionAlert(reconciliation.patientId, findings);
     }
 
     return await this.findOne(id);
   }
 
   async checkDuplicateTherapy(id: string): Promise<MedicationReconciliation> {
+    const reconciliation = await this.findOne(id);
+    const medications = this.getActiveMedications(reconciliation);
+
+    const findings = await this.drugInteractionService.checkDuplicateTherapy(medications);
+
     await this.reconciliationRepository.update(id, {
       duplicateTherapyChecked: true,
+      duplicateTherapyFindings: findings,
     });
+
+    if (findings && findings.length > 0) {
+      await this.alertService.sendDrugInteractionAlert(reconciliation.patientId, findings);
+    }
 
     return await this.findOne(id);
   }
 
   async checkRenalDosing(id: string): Promise<MedicationReconciliation> {
+    const reconciliation = await this.findOne(id);
+    const medications = this.getActiveMedications(reconciliation);
+
+    const renalFunction = this.getRenalFunction(reconciliation);
+    const findings: any[] = [];
+
+    if (renalFunction !== null) {
+      for (const medication of medications) {
+        const threshold = this.getRenalDosingThreshold(medication);
+        if (threshold !== null && renalFunction < threshold) {
+          findings.push({
+            type: 'RENAL_DOSING',
+            medication: medication.name,
+            renalFunction,
+            threshold,
+            description: `${medication.name} may require renal dose adjustment (renal function ${renalFunction} below threshold ${threshold})`,
+          });
+        }
+      }
+    }
+
     await this.reconciliationRepository.update(id, {
       renalDosingChecked: true,
+      renalDosingFindings: findings,
     });
+
+    if (findings.length > 0) {
+      await this.alertService.sendDrugInteractionAlert(reconciliation.patientId, findings);
+    }
 
     return await this.findOne(id);
   }
 
   async checkHepaticDosing(id: string): Promise<MedicationReconciliation> {
+    const reconciliation = await this.findOne(id);
+    const medications = this.getActiveMedications(reconciliation);
+
+    const hepaticFunction = this.getHepaticFunction(reconciliation);
+    const findings: any[] = [];
+
+    if (hepaticFunction !== null) {
+      for (const medication of medications) {
+        const threshold = this.getHepaticDosingThreshold(medication);
+        if (threshold !== null && hepaticFunction < threshold) {
+          findings.push({
+            type: 'HEPATIC_DOSING',
+            medication: medication.name,
+            hepaticFunction,
+            threshold,
+            description: `${medication.name} may require hepatic dose adjustment (hepatic function ${hepaticFunction} below threshold ${threshold})`,
+          });
+        }
+      }
+    }
+
     await this.reconciliationRepository.update(id, {
       hepaticDosingChecked: true,
+      hepaticDosingFindings: findings,
     });
+
+    if (findings.length > 0) {
+      await this.alertService.sendDrugInteractionAlert(reconciliation.patientId, findings);
+    }
 
     return await this.findOne(id);
   }
@@ -236,6 +328,52 @@ export class ReconciliationService {
     return await this.findOne(id);
   }
 
+  private getActiveMedications(reconciliation: MedicationReconciliation): any[] {
+    const current = reconciliation.currentMedications ?? [];
+    const reconciled = reconciliation.reconciledMedications ?? [];
+    const combined = [...current, ...reconciled];
+
+    const seen = new Set<string>();
+    return combined.filter((medication) => {
+      if (!medication || !medication.name) {
+        return false;
+      }
+      if (medication.active === false || medication.status === 'DISCONTINUED') {
+        return false;
+      }
+      const key = medication.name.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private getRenalFunction(reconciliation: MedicationReconciliation): number | null {
+    const value =
+      reconciliation.renalFunction ??
+      reconciliation.egfr ??
+      reconciliation.creatinineClearance ??
+      null;
+    return typeof value === 'number' ? value : null;
+  }
+
+  private getHepaticFunction(reconciliation: MedicationReconciliation): number | null {
+    const value = reconciliation.hepaticFunction ?? reconciliation.childPughScore ?? null;
+    return typeof value === 'number' ? value : null;
+  }
+
+  private getRenalDosingThreshold(medication: any): number | null {
+    const threshold = medication.renalThreshold ?? medication.minRenalFunction ?? null;
+    return typeof threshold === 'number' ? threshold : null;
+  }
+
+  private getHepaticDosingThreshold(medication: any): number | null {
+    const threshold = medication.hepaticThreshold ?? medication.minHepaticFunction ?? null;
+    return typeof threshold === 'number' ? threshold : null;
+  }
+
   private findDiscrepancies(homeMedications: any[], currentMedications: any[]): any[] {
     const discrepancies = [];
 
@@ -261,20 +399,10 @@ export class ReconciliationService {
             description: `Dosage difference for ${homeMed.name}: home ${homeMed.dosage} vs current ${currentMed.dosage}`,
           });
         }
-
-        // Check for frequency differences
-        if (homeMed.frequency !== currentMed.frequency) {
-          discrepancies.push({
-            type: 'FREQUENCY_DIFFERENCE',
-            medication: homeMed,
-            currentMedication: currentMed,
-            description: `Frequency difference for ${homeMed.name}: home ${homeMed.frequency} vs current ${currentMed.frequency}`,
-          });
-        }
       }
     });
 
-    // Check for new medications in current list
+    // Check for medications in current list but not in home list
     currentMedications.forEach((currentMed) => {
       const homeMed = homeMedications.find(
         (home) => home.name.toLowerCase() === currentMed.name.toLowerCase(),
@@ -282,9 +410,9 @@ export class ReconciliationService {
 
       if (!homeMed) {
         discrepancies.push({
-          type: 'NEW_MEDICATION',
+          type: 'MISSING_FROM_HOME',
           medication: currentMed,
-          description: `${currentMed.name} is a new medication not in home medications`,
+          description: `${currentMed.name} is in current medications but not in home medications`,
         });
       }
     });
@@ -297,71 +425,18 @@ export class ReconciliationService {
     currentMedications: any[],
     discrepancies: any[],
   ): any[] {
-    const reconciled = [];
+    const reconciled = [...currentMedications];
 
-    // Start with current medications as base
-    currentMedications.forEach((currentMed) => {
-      reconciled.push({
-        ...currentMed,
-        action: 'CONTINUE',
-        source: 'CURRENT',
-      });
-    });
-
-    // Add home medications that are missing from current
-    homeMedications.forEach((homeMed) => {
-      const existsInCurrent = currentMedications.find(
-        (curr) => curr.name.toLowerCase() === homeMed.name.toLowerCase(),
-      );
-
-      if (!existsInCurrent) {
+    discrepancies.forEach((discrepancy) => {
+      if (discrepancy.type === 'MISSING_FROM_CURRENT') {
         reconciled.push({
-          ...homeMed,
-          action: 'ADD',
+          ...discrepancy.medication,
           source: 'HOME',
+          requiresReview: true,
         });
       }
     });
 
     return reconciled;
-  }
-
-  async getReconciliationStats(startDate: string, endDate: string) {
-    const reconciliations = await this.reconciliationRepository.find({
-      where: {
-        createdAt: Between(new Date(startDate), new Date(endDate)),
-      },
-    });
-
-    const stats = {
-      total: reconciliations.length,
-      completed: reconciliations.filter((r) => r.status === ReconciliationStatus.COMPLETED).length,
-      pending: reconciliations.filter((r) => r.status === ReconciliationStatus.PENDING).length,
-      inProgress: reconciliations.filter((r) => r.status === ReconciliationStatus.IN_PROGRESS)
-        .length,
-      requiresReview: reconciliations.filter(
-        (r) => r.status === ReconciliationStatus.REQUIRES_REVIEW,
-      ).length,
-      withDiscrepancies: reconciliations.filter(
-        (r) => r.discrepanciesFound && r.discrepanciesFound.length > 0,
-      ).length,
-      typeBreakdown: {} as Record<string, number>,
-      averageDiscrepancies: 0,
-    };
-
-    // Calculate type breakdown
-    reconciliations.forEach((r) => {
-      stats.typeBreakdown[r.reconciliationType] =
-        (stats.typeBreakdown[r.reconciliationType] || 0) + 1;
-    });
-
-    // Calculate average discrepancies
-    const totalDiscrepancies = reconciliations.reduce((sum, r) => {
-      return sum + (r.discrepanciesFound ? r.discrepanciesFound.length : 0);
-    }, 0);
-    stats.averageDiscrepancies =
-      reconciliations.length > 0 ? totalDiscrepancies / reconciliations.length : 0;
-
-    return stats;
   }
 }

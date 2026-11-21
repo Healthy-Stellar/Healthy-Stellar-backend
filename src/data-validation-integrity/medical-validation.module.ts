@@ -11,6 +11,7 @@ import {
   GovernanceComplianceLog,
   ReferenceDataUpdateLog,
 } from './entities/medical-validation.entities';
+import { TenantFieldValidationRule } from './entities/tenant-field-validation-rule.entity';
 
 // Services
 import { Icd10ValidationService } from './services/icd10-validation.service';
@@ -21,9 +22,15 @@ import { ClinicalDecisionSupportService } from './services/clinical-decision-sup
 import { ReferenceDataService } from './services/reference-data.service';
 import { DataGovernanceService } from './services/data-governance.service';
 import { MedicalMonitoringService } from '../medical-monitoring/medical-monitoring.service';
+import { TenantFieldValidationService } from './services/tenant-field-validation.service';
 
 // Controller
 import { MedicalValidationController } from './medical-validation.controller';
+import { TenantFieldValidationController } from './controllers/tenant-field-validation.controller';
+
+// Guards
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 
 @Module({
   imports: [
@@ -35,9 +42,10 @@ import { MedicalValidationController } from './medical-validation.controller';
       GovernancePolicyEntity,
       GovernanceComplianceLog,
       ReferenceDataUpdateLog,
+      TenantFieldValidationRule,
     ]),
   ],
-  controllers: [MedicalValidationController],
+  controllers: [MedicalValidationController, TenantFieldValidationController],
   providers: [
     Icd10ValidationService,
     CptValidationService,
@@ -47,6 +55,9 @@ import { MedicalValidationController } from './medical-validation.controller';
     ReferenceDataService,
     DataGovernanceService,
     MedicalMonitoringService,
+    TenantFieldValidationService,
+    JwtAuthGuard,
+    RolesGuard,
   ],
   exports: [
     Icd10ValidationService,
@@ -57,6 +68,7 @@ import { MedicalValidationController } from './medical-validation.controller';
     ReferenceDataService,
     DataGovernanceService,
     MedicalMonitoringService,
+    TenantFieldValidationService,
   ],
 })
 export class MedicalValidationModule {}

@@ -24,15 +24,17 @@ export class AnalyticsProjector implements IEventHandler<AnalyticsEvent> {
   ) {}
 
   async handle(event: AnalyticsEvent): Promise<void> {
-    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME);
+    const aggregateId = event instanceof RecordUploadedEvent ? event.recordId : event.grantId;
 
+    // Idempotency guard — scoped per aggregate, since event versions reset per aggregate
+    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME, aggregateId);
     if (event.version <= lastVersion) {
       return;
     }
 
     try {
       await this.upsertSnapshot(event);
-      await this.checkpoints.advance(PROJECTOR_NAME, event.version);
+      await this.checkpoints.advance(PROJECTOR_NAME, aggregateId, event.version);
     } catch (err) {
       this.logger.error(`${PROJECTOR_NAME}: failed on version ${event.version} — ${err.message}`);
       await this.dlq.add(

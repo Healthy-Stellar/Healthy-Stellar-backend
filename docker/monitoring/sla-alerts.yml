@@ -2,7 +2,7 @@
 #
 # Covers the SLA-critical request paths (patient record reads, auth, billing/queues).
 # Each alert carries a `runbook_url` annotation linking to the operator runbook
-# (src/operator-runbook/, served at /operator/runbooks/<slug>) and is labelled
+# (docs/runbooks/, served at /operator/runbooks/<slug>) and is labelled
 # `notify: sla-critical` so Alertmanager routes it to the email + Slack receivers.
 #
 # Metric sources (src/metrics/custom-metrics.service.ts):

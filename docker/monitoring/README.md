@@ -21,8 +21,8 @@ in `prometheus.yml`. Alerts are dispatched through Alertmanager (`alertmanager.y
 | `BullMQQueueDepthHigh` | BullMQ `queue_depth` > 1000 | 10m |
 
 Each alert is labelled `notify: sla-critical` and includes a `runbook_url`
-annotation linking to the matching operator runbook (`src/operator-runbook/`,
-served at `/operator/runbooks/<slug>`).
+annotation linking to the matching operator runbook (`docs/runbooks/`, served at
+`/operator/runbooks/<slug>`).
 
 ## Notification routing
 

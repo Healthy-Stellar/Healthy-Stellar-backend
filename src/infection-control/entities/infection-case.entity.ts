@@ -10,6 +10,7 @@ export enum InfectionStatus {
   ACTIVE = 'active',
   RESOLVED = 'resolved',
   DECEASED = 'deceased',
+  CONFIRMED = 'confirmed',
 }
 
 @Entity('infection_cases')

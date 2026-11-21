@@ -2,7 +2,9 @@ import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@
 import { DigitalPathologyService } from '../services/digital-pathology.service';
 import { UploadDigitalImageDto } from '../dto/upload-digital-image.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pathology/images')
 @Controller('pathology/images')
 @UseGuards(JwtAuthGuard)
 export class DigitalPathologyController {

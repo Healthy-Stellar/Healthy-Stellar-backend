@@ -2,7 +2,9 @@ import { Controller, Get, Post, Body, Param, Patch, Delete, Query } from '@nestj
 import { DrugFormularyService } from '../services/drug-formulary.service';
 import { FormularyTier } from '../entities/drug-formulary.entity';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pharmacy/formulary')
 @Controller('pharmacy/formulary')
 export class DrugFormularyController {
   constructor(private formularyService: DrugFormularyService) {}

@@ -5,7 +5,9 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { MedicalEmergencyErrorFilter } from '../../common/errors/medical-emergency-error.filter';
 import { MedicalOperationAuditService } from '../../common/audit/medical-operation-audit.service';
 import { MedicalDataValidationPipe } from '../../common/validation/medical-data.validator.pipe';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('medical-records')
 @Controller('medical-records')
 @UseGuards(JwtAuthGuard)
 @UseFilters(MedicalEmergencyErrorFilter)

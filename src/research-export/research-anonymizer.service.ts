@@ -34,7 +34,10 @@ export class ResearchAnonymizerService {
    * k-anonymity purposes, but not reversible to the source identifier.
    */
   hashIdentifier(value: string): string {
-    const secret = this.config.get<string>('RESEARCH_EXPORT_HASH_SALT', 'research-export-default-salt');
+    const secret = this.config.get<string>('RESEARCH_EXPORT_HASH_SALT');
+    if (!secret) {
+      throw new Error('RESEARCH_EXPORT_HASH_SALT environment variable is required for anonymization');
+    }
     return createHmac('sha256', secret).update(value).digest('hex');
   }
 

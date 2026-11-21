@@ -14,7 +14,10 @@ import { NotificationOutboxService } from './services/notification-outbox.servic
 import { NotificationPreference } from './entities/notification-preference.entity';
 import { NotificationOutboxEntry } from './entities/notification-outbox.entity';
 import { NotificationCategoryPreference } from './entities/notification-category-preference.entity';
+import { DeviceToken } from './entities/device-token.entity';
 import { NotificationPreferencesController } from './controllers/notification-preferences.controller';
+import { DeviceTokenController } from './controllers/device-token.controller';
+import { PushNotificationService } from './services/push-notification.service';
 import { EventListenerHealthIndicator } from './event-listener.health';
 import { EventListenerUpGauge, MissedEventsTotalCounter } from './notifications.metrics';
 import { AuthModule } from '../auth/auth.module';
@@ -46,9 +49,10 @@ const mailerProvider = buildMailerProvider();
       NotificationPreference,
       NotificationOutboxEntry,
       NotificationCategoryPreference,
+      DeviceToken,
     ]),
   ],
-  controllers: [NotificationPreferencesController],
+  controllers: [NotificationPreferencesController, DeviceTokenController],
   providers: [
     NotificationsGateway,
     WsJwtMiddleware,
@@ -60,6 +64,7 @@ const mailerProvider = buildMailerProvider();
     OnChainEventListenerService,
     NotificationTemplateService,
     NotificationOutboxService,
+    PushNotificationService,
     EventListenerHealthIndicator,
     EventListenerUpGauge,
     MissedEventsTotalCounter,
@@ -72,6 +77,7 @@ const mailerProvider = buildMailerProvider();
     OnChainEventListenerService,
     NotificationTemplateService,
     NotificationOutboxService,
+    PushNotificationService,
     EventListenerHealthIndicator,
   ],
 })

@@ -1,26 +1,13 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Brackets } from 'typeorm';
 import { DrugRecall, RecallStatus } from '../entities/drug-recall.entity';
 import { RecallImpactReport } from '../entities/recall-impact-report.entity';
 import { PharmacyInventoryService } from './pharmacy-inventory.service';
-import { NotificationsService } from '../../notifications/services/notifications.service';
+import { RecallNotificationService } from './recall-notification.service';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
 import { PaginationUtil } from '../../common/utils/pagination.util';
-import { RemotePrescription, PrescriptionStatus } from '../Telemedicine and Remote/src/telemedicine/entities/remote-prescription.entity';
-
-interface RecallImpactSummary {
-  affectedPrescriptionCount: number;
-  affectedPatientIds: string[];
-  affectedPrescriberIds: string[];
-  affectedPatientsCount: number;
-  affectedPrescribersCount: number;
-}
-
-interface NotificationSummaryItem {
-  type: 'patient' | 'provider';
-  recipientId: string;
-}
 
 @Injectable()
 export class DrugRecallService {
@@ -28,13 +15,13 @@ export class DrugRecallService {
 
   constructor(
     @InjectRepository(DrugRecall)
-    private recallRepository: Repository<DrugRecall>,
-    @InjectRepository(RemotePrescription)
-    private prescriptionRepository: Repository<RemotePrescription>,
+    private readonly recallRepository: Repository<DrugRecall>,
+
     @InjectRepository(RecallImpactReport)
-    private recallImpactReportRepository: Repository<RecallImpactReport>,
-    private inventoryService: PharmacyInventoryService,
-    private notificationsService: NotificationsService,
+    private readonly impactReportRepository: Repository<RecallImpactReport>,
+
+    private readonly inventoryService: PharmacyInventoryService,
+    private readonly recallNotificationService: RecallNotificationService,
   ) {}
 
   async create(createDto: Partial<DrugRecall>): Promise<DrugRecall> {
@@ -46,11 +33,22 @@ export class DrugRecallService {
       initiationDate: new Date(),
     });
 
-    return this.recallRepository.save(recall);
+    const saved = await this.recallRepository.save(recall);
+
+    // Fire-and-forget: notify affected patients and prescribers asynchronously
+    if (saved.requiresPatientNotification) {
+      this.recallNotificationService.notifyAffectedParties(saved).catch((err: unknown) => {
+        this.logger.error(
+          `Recall notification failed for ${saved.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    }
+
+    return saved;
   }
 
-  async findAll(paginationDto: PaginationDto = new PaginationDto()) {
-    return PaginationUtil.paginate(this.recallRepository, paginationDto, {
+  async findAll(pagination: PaginationDto): Promise<PaginatedResponseDto<DrugRecall>> {
+    return PaginationUtil.paginate(this.recallRepository, pagination, {
       relations: ['drug'],
       order: { initiationDate: 'DESC' },
     });
@@ -77,21 +75,24 @@ export class DrugRecallService {
     const recall = await this.findOne(id);
     recall.status = RecallStatus.ONGOING;
 
+    // Mark affected inventory lots as recalled
     const affectedInventory = await this.inventoryService.getInventoryByDrug(recall.drugId);
-
     for (const inventory of affectedInventory) {
       if (recall.affectedLotNumbers?.includes(inventory.lotNumber)) {
         await this.inventoryService.markAsRecalled(inventory.id, recall.reason);
       }
     }
 
-    const savedRecall = await this.recallRepository.save(recall);
-    const impact = await this.computeRecallImpact(savedRecall.id);
-    const notificationSummary = await this.notifyAffectedUsers(savedRecall, impact);
+    const saved = await this.recallRepository.save(recall);
 
-    await this.createOrUpdateRecallImpactReport(savedRecall, impact, notificationSummary);
+    // Trigger patient/prescriber notifications on initiation
+    this.recallNotificationService.notifyAffectedParties(saved).catch((err: unknown) => {
+      this.logger.error(
+        `Recall notification failed for ${saved.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
 
-    return savedRecall;
+    return saved;
   }
 
   async completeRecall(id: string): Promise<DrugRecall> {
@@ -101,119 +102,22 @@ export class DrugRecallService {
     return this.recallRepository.save(recall);
   }
 
-  async getActiveRecalls(paginationDto: PaginationDto = new PaginationDto()) {
-    const query = this.recallRepository.createQueryBuilder('recall')
-      .leftJoinAndSelect('recall.drug', 'drug')
-      .where('recall.status = :status', { status: RecallStatus.ONGOING })
-      .orderBy('recall.initiationDate', 'DESC');
-
-    return PaginationUtil.paginateQueryBuilder(query, paginationDto);
-  }
-
-  async getRecallsByDrug(drugId: string, paginationDto: PaginationDto = new PaginationDto()) {
-    const query = this.recallRepository.createQueryBuilder('recall')
-      .leftJoinAndSelect('recall.drug', 'drug')
-      .where('recall.drugId = :drugId', { drugId })
-      .orderBy('recall.initiationDate', 'DESC');
-
-    return PaginationUtil.paginateQueryBuilder(query, paginationDto);
-  }
-
-  async computeRecallImpact(id: string) {
-    const recall = await this.findOne(id);
-    const prescriptions = await this.findImpactedPrescriptions(recall);
-
-    const affectedPatientIds = [...new Set(prescriptions.map((prescription) => prescription.patientId))];
-    const affectedPrescriberIds = [...new Set(prescriptions.map((prescription) => prescription.providerId))];
-
-    recall.affectedPatientsCount = affectedPatientIds.length;
-    await this.recallRepository.save(recall);
-
-    return {
-      affectedPrescriptionCount: prescriptions.length,
-      affectedPatientIds,
-      affectedPrescriberIds,
-      affectedPatientsCount: affectedPatientIds.length,
-      affectedPrescribersCount: affectedPrescriberIds.length,
-    };
-  }
-
-  async notifyAffectedUsers(recall: DrugRecall, impact: RecallImpactSummary): Promise<NotificationSummaryItem[]> {
-    const subject = `Recall alert: ${recall.drug.name} (${recall.recallNumber})`;
-    const patientMessage = `A recall has been initiated for ${recall.drug.name}. Please review any prescriptions you are currently taking and contact your care team if this medication was dispensed to you.`;
-    const providerMessage = `A recall has been initiated for ${recall.drug.name}. ${impact.affectedPatientsCount} unique patients and ${impact.affectedPrescribersCount} providers are affected by ${impact.affectedPrescriptionCount} prescriptions.`;
-
-    const notifications: Array<{
-      item: NotificationSummaryItem;
-      promise: Promise<void>;
-    }> = [];
-
-    if (recall.requiresPatientNotification && impact.affectedPatientIds.length) {
-      for (const patientId of impact.affectedPatientIds) {
-        notifications.push({
-          item: { type: 'patient', recipientId: patientId },
-          promise: this.notificationsService.sendPatientEmailNotification(patientId, subject, patientMessage),
-        });
-      }
-    }
-
-    if (impact.affectedPrescriberIds.length) {
-      for (const providerId of impact.affectedPrescriberIds) {
-        notifications.push({
-          item: { type: 'provider', recipientId: providerId },
-          promise: this.notificationsService.sendProviderEmailNotification(providerId, subject, providerMessage),
-        });
-      }
-    }
-
-    if (!notifications.length) {
-      this.logger.debug(`No affected users were identified for recall ${recall.id}`);
-      return [];
-    }
-
-    const results = await Promise.allSettled(notifications.map((notification) => notification.promise));
-
-    return notifications.map((notification, index) => {
-      const settled = results[index];
-      return {
-        ...notification.item,
-        method: 'email',
-        status: settled.status === 'fulfilled' ? 'sent' : 'failed',
-        note: settled.status === 'rejected' ? String(settled.reason) : undefined,
-        attemptedAt: new Date().toISOString(),
-      };
+  async getActiveRecalls(pagination: PaginationDto): Promise<PaginatedResponseDto<DrugRecall>> {
+    return PaginationUtil.paginate(this.recallRepository, pagination, {
+      where: { status: RecallStatus.ONGOING },
+      relations: ['drug'],
+      order: { initiationDate: 'DESC' },
     });
   }
 
-  async createOrUpdateRecallImpactReport(
-    recall: DrugRecall,
-    impact: RecallImpactSummary,
-    notifications: NotificationSummaryItem[],
-  ): Promise<RecallImpactReport> {
-    const report = await this.recallImpactReportRepository.findOne({ where: { recallId: recall.id } })
-      || this.recallImpactReportRepository.create({ recallId: recall.id, recall });
-
-    report.affectedPrescriptionCount = impact.affectedPrescriptionCount;
-    report.affectedPatientsCount = impact.affectedPatientsCount;
-    report.affectedPrescribersCount = impact.affectedPrescribersCount;
-    report.affectedPatientIds = impact.affectedPatientIds;
-    report.affectedPrescriberIds = impact.affectedPrescriberIds;
-    report.notificationSummary = notifications.map((item) => ({
-      recipientType: item.type,
-      recipientId: item.recipientId,
-      method: item.method,
-      status: item.status,
-      note: item.note,
-      attemptedAt: item.attemptedAt,
-    }));
-
-    return this.recallImpactReportRepository.save(report);
-  }
-
-  async getRecallImpact(recallId: string): Promise<RecallImpactReport> {
-    const report = await this.recallImpactReportRepository.findOne({
-      where: { recallId },
-      relations: ['recall'],
+  async getRecallsByDrug(
+    drugId: string,
+    pagination: PaginationDto,
+  ): Promise<PaginatedResponseDto<DrugRecall>> {
+    return PaginationUtil.paginate(this.recallRepository, pagination, {
+      where: { drugId },
+      relations: ['drug'],
+      order: { initiationDate: 'DESC' },
     });
 
     if (!report) {
@@ -276,17 +180,25 @@ export class DrugRecallService {
 
   async addActionTaken(id: string, action: string, performedBy: string): Promise<DrugRecall> {
     const recall = await this.findOne(id);
-    const actionEntry = {
-      date: new Date().toISOString(),
-      action,
-      performedBy,
-    };
-
-    if (!recall.actionsTaken) {
-      recall.actionsTaken = [];
-    }
-
-    recall.actionsTaken.push(actionEntry);
+    if (!recall.actionsTaken) recall.actionsTaken = [];
+    recall.actionsTaken.push({ date: new Date().toISOString(), action, performedBy });
     return this.recallRepository.save(recall);
+  }
+
+  /**
+   * GET /pharmacy/recalls/:id/impact
+   * Returns paginated RecallImpactReport rows showing which patients and
+   * prescribers were notified and whether delivery succeeded.
+   */
+  async getImpactReport(
+    id: string,
+    pagination: PaginationDto,
+  ): Promise<PaginatedResponseDto<RecallImpactReport>> {
+    await this.findOne(id); // throws NotFoundException if recall doesn't exist
+
+    return PaginationUtil.paginate(this.impactReportRepository, pagination, {
+      where: { recallId: id },
+      order: { createdAt: 'ASC' },
+    });
   }
 }

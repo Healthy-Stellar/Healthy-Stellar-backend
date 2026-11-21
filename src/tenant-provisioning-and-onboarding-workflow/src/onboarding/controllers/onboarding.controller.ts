@@ -13,7 +13,9 @@ import {
   RegisterHospitalDto,
   VerifyEmailDto,
 } from '../dto/onboarding.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('onboarding')
 @Controller('onboarding')
 export class OnboardingController {
   constructor(private readonly service: OnboardingService) {}

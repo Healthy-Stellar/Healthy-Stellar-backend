@@ -2,9 +2,10 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
 import { Bed } from './entities/bed.entity';
 import { Room } from './entities/room.entity';
 import { Ward } from './entities/ward.entity';
@@ -17,6 +18,17 @@ import {
   CreateWardDto,
   UpdateBedStatusDto,
 } from './dto/bed-occupancy.dto';
+
+/** Lock-namespace prefix for transactional advisory locks. */
+const ADVISORY_LOCK_NAMESPACE = 'bed_occupancy';
+
+export const ALLOWED_BED_STATUS_TRANSITIONS: Record<BedStatus, BedStatus[]> = {
+  [BedStatus.AVAILABLE]: [BedStatus.MAINTENANCE, BedStatus.CLEANING, BedStatus.RESERVED],
+  [BedStatus.CLEANING]: [BedStatus.AVAILABLE, BedStatus.MAINTENANCE],
+  [BedStatus.MAINTENANCE]: [BedStatus.AVAILABLE, BedStatus.CLEANING],
+  [BedStatus.RESERVED]: [BedStatus.AVAILABLE, BedStatus.MAINTENANCE, BedStatus.CLEANING],
+  [BedStatus.OCCUPIED]: [],
+};
 
 @Injectable()
 export class BedOccupancyService {
@@ -68,15 +80,104 @@ export class BedOccupancyService {
     return bed;
   }
 
-  async assignBed(dto: AssignBedDto): Promise<Bed> {
-    const bed = await this.getBedById(dto.bedId);
-    if (bed.status !== BedStatus.AVAILABLE) {
-      throw new BadRequestException(`Bed ${dto.bedId} is not available`);
+  private async acquireBedLock(
+    transactionalEntityManager: EntityManager,
+    bedId: string,
+  ): Promise<void> {
+    const dbType = (transactionalEntityManager.connection.options as { type?: string }).type;
+    if (dbType !== 'postgres') {
+      // Other engines rely on database-level write locks
+      return;
     }
-    bed.patientId = dto.patientId;
-    bed.status = BedStatus.OCCUPIED;
-    bed.assignedAt = new Date();
-    return this.bedRepo.save(bed);
+
+    const lockKey = `${ADVISORY_LOCK_NAMESPACE}:bed:${bedId}`;
+    const lockResult = (await transactionalEntityManager.query(
+      `SELECT pg_try_advisory_xact_lock(hashtext($1)) AS acquired`,
+      [lockKey],
+    )) as Array<{ acquired?: boolean }>;
+
+    const acquired = Array.isArray(lockResult) && lockResult[0]?.acquired === true;
+    if (!acquired) {
+      throw new ConflictException({
+        message:
+          'Another assignment is currently being processed for this bed. Please retry in a moment.',
+        code: 'BED_ASSIGNMENT_LOCK_BUSY',
+      });
+    }
+  }
+
+  private async acquirePatientLock(
+    transactionalEntityManager: EntityManager,
+    patientId: string,
+  ): Promise<void> {
+    const dbType = (transactionalEntityManager.connection.options as { type?: string }).type;
+    if (dbType !== 'postgres') {
+      // Other engines rely on database-level write locks
+      return;
+    }
+
+    const lockKey = `${ADVISORY_LOCK_NAMESPACE}:patient:${patientId}`;
+    const lockResult = await transactionalEntityManager.query(
+      `SELECT pg_try_advisory_xact_lock(hashtext($1)) AS acquired`,
+      [lockKey],
+    );
+
+    const acquired = Array.isArray(lockResult) && lockResult[0]?.acquired === true;
+    if (!acquired) {
+      throw new ConflictException({
+        message: 'Another assignment is currently being processed for this patient. Please retry in a moment.',
+        code: 'PATIENT_ASSIGNMENT_LOCK_BUSY',
+      });
+    }
+  }
+
+  async assignBed(dto: AssignBedDto): Promise<Bed> {
+    // Wrap in transaction with advisory locking to prevent concurrent double-booking
+    return this.bedRepo.manager.transaction(
+      async (transactionalEntityManager: EntityManager): Promise<Bed> => {
+        // Acquire advisory lock to serialize concurrent assignments for this bed
+        await this.acquireBedLock(transactionalEntityManager, dto.bedId);
+        // Acquire advisory lock to serialize concurrent assignments for this patient
+        await this.acquirePatientLock(transactionalEntityManager, dto.patientId);
+
+        // Load bed within transaction with pessimistic lock
+        const bed: Bed | null = await transactionalEntityManager
+          .createQueryBuilder(Bed, 'bed')
+          .useLock('pessimistic_write')
+          .where('bed.id = :id', { id: dto.bedId })
+          .getOne();
+
+        if (!bed) {
+          throw new NotFoundException(`Bed ${dto.bedId} not found`);
+        }
+
+        if (bed.status !== BedStatus.AVAILABLE) {
+          throw new BadRequestException(`Bed ${dto.bedId} is not available`);
+        }
+
+        // Reject if the patient already occupies another bed
+        const existingBed = await transactionalEntityManager
+          .createQueryBuilder(Bed, 'bed')
+          .useLock('pessimistic_write')
+          .where('bed.patientId = :patientId', { patientId: dto.patientId })
+          .andWhere('bed.status = :status', { status: BedStatus.OCCUPIED })
+          .andWhere('bed.id != :bedId', { bedId: dto.bedId })
+          .getOne();
+
+        if (existingBed) {
+          throw new ConflictException({
+            message: `Patient ${dto.patientId} is already assigned to bed ${existingBed.id}. Release that bed before assigning a new one.`,
+            code: 'PATIENT_ALREADY_ASSIGNED',
+          });
+        }
+
+        bed.patientId = dto.patientId;
+        bed.status = BedStatus.OCCUPIED;
+        bed.assignedAt = new Date();
+
+        return transactionalEntityManager.save(Bed, bed);
+      },
+    );
   }
 
   async releaseBed(bedId: string): Promise<Bed> {
@@ -91,13 +192,50 @@ export class BedOccupancyService {
   }
 
   async updateBedStatus(bedId: string, dto: UpdateBedStatusDto): Promise<Bed> {
-    const bed = await this.getBedById(bedId);
-    bed.status = dto.status;
-    return this.bedRepo.save(bed);
+    return this.bedRepo.manager.transaction(
+      async (transactionalEntityManager: EntityManager): Promise<Bed> => {
+        await this.acquireBedLock(transactionalEntityManager, bedId);
+
+        const bed: Bed | null = await transactionalEntityManager
+          .createQueryBuilder(Bed, 'bed')
+          .useLock('pessimistic_write')
+          .where('bed.id = :id', { id: bedId })
+          .getOne();
+
+        if (!bed) {
+          throw new NotFoundException(`Bed ${bedId} not found`);
+        }
+
+        if (dto.status === BedStatus.OCCUPIED) {
+          throw new BadRequestException(
+            'Cannot transition to OCCUPIED status via updateBedStatus; use assignBed instead',
+          );
+        }
+
+        if (bed.status === BedStatus.OCCUPIED || bed.patientId) {
+          throw new BadRequestException(
+            `Bed ${bedId} is currently occupied and must be released via releaseBed`,
+          );
+        }
+
+        const allowedTransitions = ALLOWED_BED_STATUS_TRANSITIONS[bed.status] || [];
+        if (!allowedTransitions.includes(dto.status)) {
+          throw new BadRequestException(
+            `Invalid bed status transition from ${bed.status} to ${dto.status}`,
+          );
+        }
+
+        bed.status = dto.status;
+        return transactionalEntityManager.save(Bed, bed);
+      },
+    );
   }
 
-  async getOccupancySummary(wardId?: string): Promise<Record<BedStatus, number> & { total: number }> {
-    const qb = this.bedRepo.createQueryBuilder('bed')
+  async getOccupancySummary(
+    wardId?: string,
+  ): Promise<Record<BedStatus, number> & { total: number }> {
+    const qb = this.bedRepo
+      .createQueryBuilder('bed')
       .select('bed.status', 'status')
       .addSelect('COUNT(*)', 'count')
       .where('bed.isActive = true');

@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Body, Query, Param, Patch } from '@nestjs/common';
 import { RecordsService } from './records.service';
 import { Record } from './entities/record.entity';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('records')
 @Controller('records')
 export class RecordsController {
   constructor(private readonly recordsService: RecordsService) {}

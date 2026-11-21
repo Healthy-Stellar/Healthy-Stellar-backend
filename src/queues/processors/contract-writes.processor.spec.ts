@@ -205,7 +205,7 @@ describe('ContractWritesProcessor', () => {
         patientId: 'pat-123',
         granteeId: 'grantee-456',
         recordId: 'rec-789',
-        expirationTime: undefined, // No expiration provided
+        expiresAt: undefined, // No expiration provided
       };
 
       mockStellarContractService.grantAccess.mockResolvedValue({
@@ -214,11 +214,12 @@ describe('ContractWritesProcessor', () => {
 
       await processor.process(mockJob);
 
+      // GrantAccessArgs.expiresAt is milliseconds since epoch (#967) — the
+      // default should be a bigint ms timestamp in the future, not seconds.
       const callArgs = mockStellarContractService.grantAccess.mock.calls[0][0];
-      expect(callArgs.expirationTime).toBeDefined();
-      expect(callArgs.expirationTime).toBeGreaterThan(
-        Math.floor(Date.now() / 1000),
-      );
+      expect(callArgs.expiresAt).toBeDefined();
+      expect(typeof callArgs.expiresAt).toBe('bigint');
+      expect(callArgs.expiresAt).toBeGreaterThan(BigInt(Date.now()));
     });
 
     it('should return correct timestamp format', async () => {

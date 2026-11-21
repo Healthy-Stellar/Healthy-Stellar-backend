@@ -35,6 +35,7 @@ export class CreateReportScheduleDto {
   @IsEmail({}, { each: true })
   recipients: string[];
 
+  /** Output format for delivered reports: 'pdf' | 'csv' | 'xlsx'. */
   @IsEnum(ReportFormat)
   @IsOptional()
   format?: ReportFormat;
@@ -66,6 +67,7 @@ export class UpdateReportScheduleDto {
   @IsOptional()
   recipients?: string[];
 
+  /** Output format for delivered reports: 'pdf' | 'csv' | 'xlsx'. */
   @IsEnum(ReportFormat)
   @IsOptional()
   format?: ReportFormat;

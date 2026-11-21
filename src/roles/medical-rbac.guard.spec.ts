@@ -7,13 +7,13 @@ import {
   MEDICAL_PERMISSIONS_KEY,
   MEDICAL_ROLES_KEY,
   MEDICAL_SPECIALTY_KEY,
-} from '../decorators/medical-rbac.decorator';
+} from './medical-rbac.decorator';
 import { MedicalDepartment, MedicalPermission, MedicalRole } from '../enums/medical-roles.enum';
-import { MedicalRbacGuard } from '../guards/medical-rbac.guard';
+import { MedicalRbacGuard } from './medical-rbac.guard';
 import { MedicalUser } from '../interfaces/medical-rbac.interface';
-import { EmergencyOverrideService } from '../services/emergency-override.service';
-import { MedicalAuditService } from '../services/medical-audit.service';
-import { MedicalPermissionsService } from '../services/medical-permissions.service';
+import { EmergencyOverrideService } from './emergency-override.service';
+import { MedicalAuditService } from './medical-audit.service';
+import { MedicalPermissionsService } from './medical-permissions.service';
 
 const makeContext = (
   user: MedicalUser | null,

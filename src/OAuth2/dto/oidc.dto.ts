@@ -83,6 +83,10 @@ export class OAuth2AuthorizeQueryDto {
 
 /** Body for POST /oauth2/token */
 export class OAuth2TokenDto {
+  @IsOptional()
+  @IsString()
+  refresh_token?: string;
+
   @IsString()
   grant_type: string;
 

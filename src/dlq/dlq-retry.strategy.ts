@@ -24,3 +24,15 @@ export const DLQ_BASE_DELAY_MS = 1_000;
 export function dlqBackoffStrategy(attemptsMade: number): number {
   return DLQ_BASE_DELAY_MS * Math.pow(4, attemptsMade - 1);
 }
+
+/**
+ * Shared Worker settings that register the `dlq-exponential` backoff strategy.
+ *
+ * Import and spread this into any @Processor's options object so that
+ * custom backoff strategies are consistently available across all workers:
+ *
+ *   @Processor(QUEUE_NAMES.MY_QUEUE, DLQ_WORKER_SETTINGS)
+ */
+export const DLQ_WORKER_SETTINGS = {
+  settings: { backoffStrategies: { [DLQ_BACKOFF_TYPE]: dlqBackoffStrategy } },
+};

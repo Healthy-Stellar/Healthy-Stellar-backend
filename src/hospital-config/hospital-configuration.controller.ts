@@ -8,7 +8,12 @@ import {
   Param,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../auth/entities/user.entity';
 import { DepartmentDto } from './src/hospital-configuration/dto/department.dto';
 import { MedicalEquipmentDto } from './src/hospital-configuration/dto/medical-equipment.dto';
 import { ResourceDto } from './src/hospital-configuration/dto/medical-equipment.dto';
@@ -20,8 +25,12 @@ import { InsuranceProviderDto } from './src/hospital-configuration/dto/insurance
 import { BillingConfigDto } from './src/hospital-configuration/dto/insurance-billing.dto';
 import { EmergencyProtocolDto } from './src/hospital-configuration/dto/emergency-protocol.dto';
 import { HospitalConfigurationService } from './hospital-configuration.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('hospital-configuration')
 @Controller('hospital-configuration')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN)
 export class HospitalConfigurationController {
   constructor(private readonly configService: HospitalConfigurationService) {}
 

@@ -1,15 +1,37 @@
-import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Param,
+  Query,
+  Req,
+  NotImplementedException,
+  UseGuards,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
 import { CreateDrugDto, FillPrescriptionDto } from '../dto/pharmacy.dto';
 import { CreatePrescriptionDto } from '../dto/create-prescription.dto';
 import { DispensePrescriptionRequestDto } from '../dto/dispense-prescription-request.dto';
 import { PrescriptionService } from '../services/prescription.service';
+import { PharmacyInventoryService } from '../services/pharmacy-inventory.service';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @ApiTags('Pharmacy Management')
-@ApiBearerAuth('medical-auth')
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('pharmacy')
 export class PharmacyController {
-  constructor(private readonly prescriptionService: PrescriptionService) {}
+  constructor(
+    private readonly prescriptionService: PrescriptionService,
+    private readonly inventoryService: PharmacyInventoryService,
+  ) {}
 
   @Post('drugs')
   @ApiOperation({
@@ -48,10 +70,11 @@ export class PharmacyController {
   })
   @ApiResponse({ status: 200, description: 'Stock updated' })
   async updateStock(@Param('id') id: string, @Body() body: { quantity: number; type: string }) {
-    return { id, newQuantity: body.quantity };
+    return this.inventoryService.adjustStock(id, body.quantity, body.type);
   }
 
   @Post('prescriptions')
+  @Roles(UserRole.PHYSICIAN, UserRole.SURGEON, UserRole.ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Create prescription',
     description:
@@ -63,7 +86,8 @@ export class PharmacyController {
   @ApiResponse({ status: 201, description: 'Prescription created' })
   @ApiResponse({ status: 403, description: "Prescribing doctor's license is not active" })
   @ApiResponse({ status: 422, description: 'Blocked by a critical drug interaction' })
-  async createPrescription(@Body() dto: CreatePrescriptionDto) {
+  async createPrescription(@Body() dto: CreatePrescriptionDto, @Req() req: any) {
+    dto.prescriberId = req.user.id;
     return this.prescriptionService.create(dto);
   }
 
@@ -73,7 +97,10 @@ export class PharmacyController {
     description: 'Retrieve all prescriptions for a patient',
   })
   @ApiResponse({ status: 200, description: 'Prescriptions retrieved' })
-  async getPatientPrescriptions(@Param('patientId') patientId: string) {
+  async getPatientPrescriptions(@Param('patientId') patientId: string, @Req() req: any) {
+    if (req.user.role === UserRole.PATIENT && req.user.id !== patientId) {
+      throw new ForbiddenException('Patients may only access their own prescriptions');
+    }
     return this.prescriptionService.getPatientPrescriptions(patientId);
   }
 
@@ -89,6 +116,7 @@ export class PharmacyController {
   }
 
   @Post('prescriptions/:id/dispense')
+  @Roles(UserRole.MEDICAL_RECORDS, UserRole.NURSE, UserRole.PHYSICIAN, UserRole.ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Dispense prescription',
     description:
@@ -102,7 +130,9 @@ export class PharmacyController {
   async dispensePrescription(
     @Param('id') id: string,
     @Body() dto: DispensePrescriptionRequestDto,
+    @Req() req: any,
   ) {
+    dto.pharmacistId = req.user.id;
     return this.prescriptionService.dispensePrescription(id, dto);
   }
 
@@ -113,7 +143,7 @@ export class PharmacyController {
   })
   @ApiResponse({ status: 200, description: 'Prescription filled' })
   async fillPrescription(@Param('id') id: string, @Body() dto: FillPrescriptionDto) {
-    return { id, status: 'filled', filledBy: dto.pharmacistId };
+    return this.prescriptionService.fillPrescription(id, dto);
   }
 
   @Post('prescriptions/:id/verify')
@@ -122,8 +152,8 @@ export class PharmacyController {
     description: 'Pharmacist verification before dispensing',
   })
   @ApiResponse({ status: 200, description: 'Prescription verified' })
-  async verifyPrescription(@Param('id') id: string, @Body() body: { pharmacistId: string }) {
-    return { id, status: 'verified', verifiedBy: body.pharmacistId };
+  async verifyPrescription(@Param('id') id: string, @Req() req: any) {
+    return this.prescriptionService.verifyPrescription(id, req.user);
   }
 
   @Post('safety-check')

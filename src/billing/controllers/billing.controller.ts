@@ -12,6 +12,7 @@ import {
   DefaultValuePipe,
   ParseIntPipe,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import {
@@ -23,6 +24,11 @@ import {
   ApiBearerAuth,
   ApiBody,
 } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 import { BillingService } from '../services/billing.service';
 import { InvoicePdfService } from '../services/invoice-pdf.service';
 import {
@@ -33,8 +39,10 @@ import {
 } from '../dto/billing.dto';
 
 @ApiTags('Billing & Invoicing')
-@ApiBearerAuth('medical-auth')
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 @Controller('billing')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.BILLING_STAFF)
 export class BillingController {
   constructor(
     private readonly billingService: BillingService,

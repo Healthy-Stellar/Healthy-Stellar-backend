@@ -8,6 +8,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 // Entities
 import { User } from './entities/user.entity';
 import { MfaEntity } from './entities/mfa.entity';
+import { MfaRecoveryCode } from './entities/mfa-recovery-code.entity';
 import { SessionEntity } from './entities/session.entity';
 import { ApiKey } from './entities/api-key.entity';
 import { ProviderAvailability } from './entities/provider-availability.entity';
@@ -25,6 +26,7 @@ import { AuditService } from '../common/audit/audit.service';
 
 // Strategies
 import { ApiKeyStrategy } from './strategies/api-key.strategy';
+import { JwtStrategy } from './strategies/jwt.strategy';
 
 // Controllers
 import { AuthController } from './controllers/auth.controller';
@@ -61,7 +63,7 @@ const mailerProvider = buildMailerProvider();
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, MfaEntity, SessionEntity, ApiKey, ProviderAvailability, AuditLogEntity]),
+    TypeOrmModule.forFeature([User, MfaEntity, MfaRecoveryCode, SessionEntity, ApiKey, ProviderAvailability, AuditLogEntity]),
     PassportModule,
     EventEmitterModule.forRoot(),
     JwtModule.registerAsync({
@@ -90,6 +92,7 @@ const mailerProvider = buildMailerProvider();
     RefreshTokenStoreService,
     SessionRevocationService,
     ApiKeyStrategy,
+    JwtStrategy,
     JwtAuthGuard,
     OptionalJwtAuthGuard,
     RolesGuard,
@@ -117,6 +120,7 @@ const mailerProvider = buildMailerProvider();
     RolesGuard,
     MfaVerifiedGuard,
     ApiKeyGuard,
+    JwtStrategy,
   ],
 })
 export class AuthModule { }

@@ -39,6 +39,7 @@ const FLAG = {
 @Injectable()
 export class ConsistencyCheckerService {
   private readonly logger = new Logger(ConsistencyCheckerService.name);
+  private lastReport: ConsistencyReport | null = null;
 
   constructor(
     @InjectRepository(MedicalRecord)
@@ -93,10 +94,18 @@ export class ConsistencyCheckerService {
         ),
       );
     } else {
+      // Auto-resolve previously open incidents for all checks since no drift was found
+      await this.autoResolveIncidents();
       this.logger.log('Consistency check passed — no integrity issues detected');
     }
 
-    return { healthy: drifts.length === 0, drifts, checkedAt: new Date() };
+    this.lastReport = { healthy: drifts.length === 0, drifts, checkedAt: new Date() };
+    return this.lastReport;
+  }
+
+  /** Most recent report from any run (manual or scheduled), or null if none yet */
+  getLastReport(): ConsistencyReport | null {
+    return this.lastReport;
   }
 
   async listOpenIncidents(): Promise<ConsistencyIncident[]> {
@@ -104,6 +113,22 @@ export class ConsistencyCheckerService {
       where: { status: IncidentStatus.OPEN },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  async resolveIncident(incidentId: string, resolvedBy: string, reason?: string): Promise<ConsistencyIncident> {
+    const incident = await this.incidentRepo.findOne({ where: { id: incidentId } });
+    if (!incident) {
+      throw new Error(`Incident ${incidentId} not found`);
+    }
+
+    incident.status = IncidentStatus.RESOLVED;
+    incident.resolvedAt = new Date();
+    incident.resolvedBy = resolvedBy;
+    incident.resolutionReason = reason || null;
+
+    const saved = await this.incidentRepo.save(incident);
+    this.logger.log(`Incident ${incidentId} manually resolved by ${resolvedBy}`);
+    return saved;
   }
 
   // ── Individual checks ──────────────────────────────────────────────────────
@@ -223,18 +248,47 @@ export class ConsistencyCheckerService {
   }
 
   private async persistIncidents(drifts: DriftResult[]): Promise<void> {
-    const incidents = drifts.map((d) =>
-      this.incidentRepo.create({
-        checkName: d.table,
-        description: `source=${d.sourceCount} readModel=${d.readModelCount} drift=${d.drift}`,
-        severity: (d as any).severity ?? IncidentSeverity.MEDIUM,
-        status: IncidentStatus.OPEN,
-        affectedCount: d.drift,
-      }),
-    );
-    await this.incidentRepo.save(incidents).catch((err) =>
-      this.logger.error(`Failed to persist consistency incidents: ${err.message}`),
-    );
+    for (const drift of drifts) {
+      // Try to find an existing OPEN incident for this checkName
+      const existing = await this.incidentRepo.findOne({
+        where: {
+          checkName: drift.table,
+          status: IncidentStatus.OPEN,
+        },
+      });
+
+      const incident = existing || this.incidentRepo.create();
+      incident.checkName = drift.table;
+      incident.description = `source=${drift.sourceCount} readModel=${drift.readModelCount} drift=${drift.drift}`;
+      incident.severity = (drift as any).severity ?? IncidentSeverity.MEDIUM;
+      incident.status = IncidentStatus.OPEN;
+      incident.affectedCount = drift.drift;
+
+      await this.incidentRepo.save(incident).catch((err) =>
+        this.logger.error(`Failed to upsert consistency incident for ${drift.table}: ${err.message}`),
+      );
+    }
+  }
+
+  private async autoResolveIncidents(): Promise<void> {
+    const openIncidents = await this.incidentRepo.find({
+      where: { status: IncidentStatus.OPEN },
+    });
+
+    for (const incident of openIncidents) {
+      incident.status = IncidentStatus.RESOLVED;
+      incident.resolvedAt = new Date();
+      incident.resolvedBy = 'system';
+      incident.resolutionReason = 'Auto-resolved: drift resolved in subsequent check run';
+
+      await this.incidentRepo.save(incident).catch((err) =>
+        this.logger.error(`Failed to auto-resolve incident ${incident.id}: ${err.message}`),
+      );
+    }
+
+    if (openIncidents.length > 0) {
+      this.logger.log(`Auto-resolved ${openIncidents.length} open incident(s)`);
+    }
   }
 
   private buildResult(

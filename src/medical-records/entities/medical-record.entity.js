@@ -40,10 +40,6 @@ var __setFunctionName = (this && this.__setFunctionName) || function (f, name, p
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MedicalRecord = exports.RecordType = exports.MedicalRecordStatus = void 0;
 var typeorm_1 = require("typeorm");
-var medical_record_version_entity_1 = require("./medical-record-version.entity");
-var medical_history_entity_1 = require("./medical-history.entity");
-var medical_attachment_entity_1 = require("./medical-attachment.entity");
-var medical_record_consent_entity_1 = require("./medical-record-consent.entity");
 var MedicalRecordStatus;
 (function (MedicalRecordStatus) {
     MedicalRecordStatus["ACTIVE"] = "active";
@@ -171,16 +167,16 @@ var MedicalRecord = function () {
         _createdAt_decorators = [(0, typeorm_1.CreateDateColumn)()];
         _updatedAt_decorators = [(0, typeorm_1.UpdateDateColumn)()];
         _updatedBy_decorators = [(0, typeorm_1.Column)({ type: 'uuid', nullable: true })];
-        _versions_decorators = [(0, typeorm_1.OneToMany)(function () { return medical_record_version_entity_1.MedicalRecordVersion; }, function (version) { return version.medicalRecord; }, {
+        _versions_decorators = [(0, typeorm_1.OneToMany)('MedicalRecordVersion', 'medicalRecord', {
                 cascade: true,
             })];
-        _history_decorators = [(0, typeorm_1.OneToMany)(function () { return medical_history_entity_1.MedicalHistory; }, function (history) { return history.medicalRecord; }, {
+        _history_decorators = [(0, typeorm_1.OneToMany)('MedicalHistory', 'medicalRecord', {
                 cascade: true,
             })];
-        _attachments_decorators = [(0, typeorm_1.OneToMany)(function () { return medical_attachment_entity_1.MedicalAttachment; }, function (attachment) { return attachment.medicalRecord; }, {
+        _attachments_decorators = [(0, typeorm_1.OneToMany)('MedicalAttachment', 'medicalRecord', {
                 cascade: true,
             })];
-        _consents_decorators = [(0, typeorm_1.OneToMany)(function () { return medical_record_consent_entity_1.MedicalRecordConsent; }, function (consent) { return consent.medicalRecord; }, {
+        _consents_decorators = [(0, typeorm_1.OneToMany)('MedicalRecordConsent', 'medicalRecord', {
                 cascade: true,
             })];
         __esDecorate(null, null, _id_decorators, { kind: "field", name: "id", static: false, private: false, access: { has: function (obj) { return "id" in obj; }, get: function (obj) { return obj.id; }, set: function (obj, value) { obj.id = value; } }, metadata: _metadata }, _id_initializers, _id_extraInitializers);

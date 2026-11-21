@@ -10,3 +10,5 @@ export * from './claim-appeal.entity';
 export * from './revenue-report.entity';
 export * from './remittance.entity';
 export * from './billing-dispute.entity';
+export * from './subscription-plan.entity';
+export * from './patient-subscription.entity';

@@ -249,7 +249,7 @@ function main() {
     console.error('');
   }
 
-  console.error('Fix all violations before merging. See src/operator-runbook/migration-safety.md\n');
+  console.error('Fix all violations before merging. See docs/runbooks/migration-safety.md\n');
   process.exit(1);
 }
 
