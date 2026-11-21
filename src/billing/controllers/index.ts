@@ -7,3 +7,4 @@ export * from './denial.controller';
 export * from './report.controller';
 export * from './remittance.controller';
 export * from './dispute.controller';
+export * from './subscription.controller';

@@ -13,13 +13,26 @@ import { UpdateOutbreakIncidentDto } from './dto/update-outbreak-incident.dto';
 import { CreateHandHygieneAuditDto } from './dto/create-hand-hygiene-audit.dto';
 import { CreateOutbreakThresholdDto } from './dto/create-outbreak-threshold.dto';
 import { UpdateOutbreakThresholdDto } from './dto/update-outbreak-threshold.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../common/constants/swagger.constants';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+@ApiTags('infection-control')
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+@UseGuards(JwtAuthGuard)
 @Controller('infection-control')
 export class InfectionControlController {
   constructor(
     private readonly infectionControlService: InfectionControlService,
     private readonly outbreakAlertsService: OutbreakAlertsService,
   ) {}
+
+
+  // Dashboard AC
+  @Get('dashboard/missing-precautions')
+  getCasesMissingPrecautions() {
+    return this.infectionControlService.getCasesMissingPrecautions();
+  }
 
   // Infection Cases
   @Post('cases')

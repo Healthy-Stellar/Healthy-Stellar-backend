@@ -64,12 +64,12 @@ export class StellarContractService {
     this.sourceKeypair = StellarSdk.Keypair.fromSecret(secretKey);
 
     const contractId = this.configService.get<string>('STELLAR_CONTRACT_ID', '');
+    if (!contractId || !contractId.trim()) {
+      throw new Error('STELLAR_CONTRACT_ID is required for StellarContractService');
+    }
     this.contract = new StellarSdk.Contract(contractId);
 
-    this.feeBudget = parseInt(
-      this.configService.get<string>('STELLAR_FEE_BUDGET', '10000000'),
-      10,
-    );
+    this.feeBudget = parseInt(this.configService.get<string>('STELLAR_FEE_BUDGET', '10000000'), 10);
     this.maxRetries = parseInt(this.configService.get<string>('STELLAR_MAX_RETRIES', '3'), 10);
 
     this.logger.log(
@@ -79,6 +79,9 @@ export class StellarContractService {
 
   // ── Public typed API ──────────────────────────────────────────────────────
 
+   /** Anchor a medical record's IPFS CID on-chain. */
+  a/** Grant time-limited access to a medical record. */
+ 
   /** Anchor a medical record's IPFS CID on-chain. */
   async anchorRecord(args: AnchorRecordArgs): Promise<AnchorRecordResult> {
     this.logger.log(`[anchorRecord] patientId=${args.patientId} cid=${args.cid}`);
@@ -112,14 +115,13 @@ export class StellarContractService {
    * Read-only simulation — does not submit a transaction.
    */
   async verifyAccess(args: VerifyAccessArgs): Promise<VerifyAccessResult> {
-    this.logger.log(
-      `[verifyAccess] requesterId=${args.requesterId} recordId=${args.recordId}`,
-    );
+    this.logger.log(`[verifyAccess] requesterId=${args.requesterId} recordId=${args.recordId}`);
     return this.withRetry('verifyAccess', () => this.simulateVerifyAccess(args));
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
+  //Helper function to call contract
   private async invokeContract(
     method: string,
     args: StellarSdk.xdr.ScVal[],
@@ -166,7 +168,9 @@ export class StellarContractService {
     const simResult = await this.sorobanServer.simulateTransaction(tx);
 
     if (StellarSdk.SorobanRpc.Api.isSimulationError(simResult)) {
-      this.logger.warn(`[verifyAccess] simulation error — treating as no access: ${simResult.error}`);
+      this.logger.warn(
+        `[verifyAccess] simulation error — treating as no access: ${simResult.error}`,
+      );
       return { hasAccess: false, expiresAt: null };
     }
 
@@ -208,8 +212,10 @@ export class StellarContractService {
         return await fn();
       } catch (err: unknown) {
         lastError = err instanceof Error ? err : new Error(String(err));
+        const shouldRetry =
+          attempt < this.maxRetries && !lastError.message.includes('did not confirm within');
 
-        if (attempt < this.maxRetries) {
+        if (shouldRetry) {
           const delay = this.BASE_DELAY_MS * Math.pow(2, attempt - 1);
           this.logger.warn(
             `[${operationName}] attempt ${attempt}/${this.maxRetries} failed — retrying in ${delay}ms`,

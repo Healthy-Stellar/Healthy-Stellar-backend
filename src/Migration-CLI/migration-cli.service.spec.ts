@@ -1,5 +1,5 @@
 import { MigrationCliService } from './migration-cli.service';
-import { MigrationStatus } from './entities/migration-history.entity';
+import { MigrationStatus } from './migration-history.entity';
 
 // ─── Helpers / Factories ──────────────────────────────────────────────────────
 

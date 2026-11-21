@@ -62,6 +62,12 @@ export class MultiSigTransactionEntity {
   @Column({ nullable: true })
   memo: string;
 
+  @Column({ name: 'execution_attempts', default: 0 })
+  executionAttempts: number;
+
+  @Column({ name: 'last_error', type: 'text', nullable: true })
+  lastError: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

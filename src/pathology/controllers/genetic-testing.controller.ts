@@ -2,7 +2,9 @@ import { Controller, Get, Post, Patch, Body, Param, UseGuards, Request } from '@
 import { GeneticTestingService } from '../services/genetic-testing.service';
 import { CreateGeneticTestDto, UpdateGeneticTestResultDto } from '../dto/create-genetic-test.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('pathology/genetic')
 @Controller('pathology/genetic')
 @UseGuards(JwtAuthGuard)
 export class GeneticTestingController {

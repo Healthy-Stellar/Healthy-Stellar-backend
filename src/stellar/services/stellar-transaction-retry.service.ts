@@ -93,6 +93,7 @@ export class StellarTransactionRetryService {
     let currentTx = transaction;
     let lastError: Error | undefined;
     let errorType: TransactionErrorType = TransactionErrorType.UNKNOWN;
+    let submittedTxHash: string | undefined;
 
     this.logger.log(`[${context.operation}] Starting transaction submission with retry logic`);
 
@@ -113,6 +114,8 @@ export class StellarTransactionRetryService {
             `Transaction submission error: ${JSON.stringify(sendResult.errorResult)}`,
           );
         }
+
+        submittedTxHash = sendResult.hash;
 
         // Poll for confirmation
         const confirmed = await this.pollForConfirmation(
@@ -193,6 +196,7 @@ export class StellarTransactionRetryService {
 
     return {
       success: false,
+      txHash: submittedTxHash,
       attempts: this.config.maxRetries,
       totalDurationMs: totalDuration,
       error: lastError?.message || 'Unknown error',

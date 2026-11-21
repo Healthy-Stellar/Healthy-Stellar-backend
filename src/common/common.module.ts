@@ -12,6 +12,7 @@ import { QueryPerformanceSubscriber } from './subscribers/query-performance.subs
 import { RequestContextMiddleware } from './middleware/request-context.middleware';
 import { AuditContextGuard } from './guards/audit-context.guard';
 import { DatabaseQueryGuard } from './guards/database-query.guard';
+import { TenantQuotaGuard } from './guards/tenant-quota.guard';
 import { RedisLockService } from './utils/redis-lock.service';
 import { QueryPerformanceController } from './controllers/query-performance.controller';
 import { ErrorDocumentationController } from './controllers/error-documentation.controller';
@@ -37,6 +38,7 @@ import { PhiAuditInterceptor } from './interceptors/phi-audit.interceptor';
     QueryPerformanceSubscriber,
     AuditContextGuard,
     DatabaseQueryGuard,
+    TenantQuotaGuard,
     RedisLockService,
   ],
   exports: [
@@ -49,6 +51,7 @@ import { PhiAuditInterceptor } from './interceptors/phi-audit.interceptor';
     QueryPerformanceSubscriber,
     AuditContextGuard,
     DatabaseQueryGuard,
+    TenantQuotaGuard,
     RedisLockService,
   ],
 })

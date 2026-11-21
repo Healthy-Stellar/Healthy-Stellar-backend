@@ -17,10 +17,10 @@ export class TenantQuotaGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    
+
     // Extract tenant context (Assumes tenant context is populated by an upstream Auth/Tenant Guard)
     const tenantId = request.user?.tenantId || request.headers['x-tenant-id'];
-    
+
     if (!tenantId) {
       return true; // Bypass or throw 400 depending on multi-tenancy strategy
     }
@@ -41,7 +41,7 @@ export class TenantQuotaGuard implements CanActivate {
     }
 
     // 3. Asynchronously evaluate warning thresholds
-    this.evaluateThresholdWarnings(tenantId, currentUsage, maxQuota);
+    void this.evaluateThresholdWarnings(tenantId, currentUsage, maxQuota);
 
     return true;
   }

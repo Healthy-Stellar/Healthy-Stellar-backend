@@ -10,6 +10,7 @@ import { OidcController } from './oidc.controller';
 import { OAuth2Controller } from './oauth2.controller';
 import { SmartConfigController } from './smart.controller';
 import { PkceService } from './pkce.service';
+import { OAuth2ClientRegistryService } from './oauth2-client-registry.service';
 import { buildOidcConfig } from './oidc.config';
 import { UsersModule } from '../users/users.module';
 import { User } from '../auth/entities/user.entity';
@@ -60,8 +61,9 @@ import { Patient } from '../users/entities/patient.entity';
     OidcStrategy,
     OidcService,
     PkceService,
+    OAuth2ClientRegistryService,
   ],
   controllers: [OidcController, OAuth2Controller, SmartConfigController],
-  exports: [OidcService, OidcClientRegistry, PkceService],
+  exports: [OidcService, OidcClientRegistry, PkceService, OAuth2ClientRegistryService],
 })
 export class OidcModule {}

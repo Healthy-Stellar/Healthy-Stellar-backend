@@ -1,18 +1,39 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateUserDto } from './create-user.dto';
-import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
-import { UserStatus } from '../../auth/entities/user.entity';
+import { IsBoolean, IsDateString, IsOptional, IsString } from 'class-validator';
 
-export class UpdateUserDto extends PartialType(CreateUserDto) {
-  @IsEnum(UserStatus)
+export class UpdateUserDto {
+  @IsString()
   @IsOptional()
-  status?: UserStatus;
-
-  @IsBoolean()
-  @IsOptional()
-  isLicenseVerified?: boolean;
+  firstName?: string;
 
   @IsString()
   @IsOptional()
-  revocationReason?: string;
+  lastName?: string;
+
+  @IsString()
+  @IsOptional()
+  displayName?: string;
+
+  @IsString()
+  @IsOptional()
+  country?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isAcceptingPatients?: boolean;
+
+  @IsString()
+  @IsOptional()
+  medicalLicenseNumber?: string;
+
+  @IsDateString()
+  @IsOptional()
+  licenseExpiryDate?: string;
+
+  @IsString()
+  @IsOptional()
+  specialization?: string;
+
+  @IsString()
+  @IsOptional()
+  department?: string;
 }

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ClinicalGuideline } from '../entities/clinical-guideline.entity';
@@ -74,7 +74,7 @@ export class DecisionSupportService {
     const alert = await this.alertRepository.findOne({ where: { id: alertId } });
 
     if (!alert) {
-      throw new Error('Alert not found');
+      throw new NotFoundException('Alert not found');
     }
 
     alert.acknowledged = true;
@@ -89,7 +89,7 @@ export class DecisionSupportService {
     const alert = await this.alertRepository.findOne({ where: { id: alertId } });
 
     if (!alert) {
-      throw new Error('Alert not found');
+      throw new NotFoundException('Alert not found');
     }
 
     alert.dismissed = true;

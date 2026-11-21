@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, Repository } from 'typeorm';
 import {
@@ -12,9 +17,25 @@ import {
   CreateIncidentDto,
   IncidentManagementQueryDto,
   IncidentSlaReportQueryDto,
+  ReopenIncidentDto,
   ResolveIncidentManagementDto,
 } from '../dto/incident-management.dto';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+
+/**
+ * Valid state transitions for the incident state machine:
+ *   OPEN → ACKNOWLEDGED
+ *   ACKNOWLEDGED → RESOLVED
+ *   RESOLVED → OPEN  (reopen)
+ *
+ * IN_PROGRESS is a legacy value kept in the enum for backward compatibility
+ * but is not part of the enforced flow.
+ */
+const ALLOWED_TRANSITIONS: Partial<Record<IncidentState, IncidentState>> = {
+  [IncidentState.OPEN]: IncidentState.ACKNOWLEDGED,
+  [IncidentState.ACKNOWLEDGED]: IncidentState.RESOLVED,
+  [IncidentState.RESOLVED]: IncidentState.OPEN, // reopen
+};
 
 @Injectable()
 export class IncidentManagementService {
@@ -25,6 +46,28 @@ export class IncidentManagementService {
     private readonly repo: Repository<Incident>,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Assert that transitioning `incident` to `next` is permitted.
+   * Throws ConflictException (HTTP 409) when the transition is illegal.
+   */
+  private assertTransition(incident: Incident, next: IncidentState): void {
+    const allowed = ALLOWED_TRANSITIONS[incident.state];
+    if (allowed !== next) {
+      throw new ConflictException(
+        `Cannot transition incident from '${incident.state}' to '${next}'. ` +
+          `Allowed transition from '${incident.state}': '${allowed ?? 'none'}'.`,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
 
   async create(dto: CreateIncidentDto): Promise<Incident> {
     const incident = this.repo.create({
@@ -42,12 +85,20 @@ export class IncidentManagementService {
     return saved;
   }
 
+  /**
+   * Acknowledge an incident.
+   * Only valid when the incident is currently OPEN.
+   * Sets firstResponseAt on the first call (idempotent for subsequent calls
+   * on the same incident if re-tried before a transition away).
+   */
   async acknowledge(
     id: string,
     dto: AcknowledgeIncidentDto,
     responderId: string,
   ): Promise<Incident> {
     const incident = await this.findOneOrFail(id);
+    this.assertTransition(incident, IncidentState.ACKNOWLEDGED);
+
     if (!incident.firstResponseAt) {
       incident.firstResponseAt = new Date();
     }
@@ -62,15 +113,26 @@ export class IncidentManagementService {
     return saved;
   }
 
+  /**
+   * Resolve an incident.
+   * Only valid when the incident is currently ACKNOWLEDGED.
+   * Sets resolvedAt exactly once — it is NOT overwritten on a re-resolve
+   * attempt because that attempt will be rejected by assertTransition before
+   * reaching this point.
+   */
   async resolve(
     id: string,
     dto: ResolveIncidentManagementDto,
     responderId: string,
   ): Promise<Incident> {
     const incident = await this.findOneOrFail(id);
+    this.assertTransition(incident, IncidentState.RESOLVED);
+
     incident.state = IncidentState.RESOLVED;
     incident.resolvedAt = new Date();
     if (!incident.firstResponseAt) {
+      // safety net: should never reach here without firstResponseAt set, but
+      // record it anyway to avoid null in analytics queries.
       incident.firstResponseAt = new Date();
     }
     incident.metadata = {
@@ -78,7 +140,39 @@ export class IncidentManagementService {
       resolveNotes: dto.notes,
       resolvedBy: responderId,
     };
-    return this.repo.save(incident);
+    const saved = await this.repo.save(incident);
+    this.logger.log(`[incident] ${id} resolved by ${responderId}`);
+    return saved;
+  }
+
+  /**
+   * Reopen a resolved incident.
+   * Only valid when the incident is currently RESOLVED.
+   * Clears resolvedAt so it does not re-enter the SLA escalation loop with
+   * stale timestamps.
+   */
+  async reopen(
+    id: string,
+    dto: ReopenIncidentDto,
+    responderId: string,
+  ): Promise<Incident> {
+    const incident = await this.findOneOrFail(id);
+    this.assertTransition(incident, IncidentState.OPEN);
+
+    incident.state = IncidentState.OPEN;
+    incident.resolvedAt = null;
+    // Reset SLA tracking so the escalation scheduler treats it as a fresh incident.
+    incident.slaBreach = false;
+    incident.escalationLevel = 0;
+    incident.lastEscalatedAt = null;
+    incident.metadata = {
+      ...incident.metadata,
+      reopenNotes: dto.notes,
+      reopenedBy: responderId,
+    };
+    const saved = await this.repo.save(incident);
+    this.logger.warn(`[incident] ${id} reopened by ${responderId}`);
+    return saved;
   }
 
   async list(query: IncidentManagementQueryDto): Promise<Incident[]> {

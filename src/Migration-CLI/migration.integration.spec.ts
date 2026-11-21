@@ -12,7 +12,7 @@
  */
 
 import { DataSource, MigrationInterface, QueryRunner } from 'typeorm';
-import { MigrationHistory, MigrationStatus } from '../entities/migration-history.entity';
+import { MigrationHistory, MigrationStatus } from '../migration-history.entity';
 import { CreateMigrationHistoryTable1700000000000 } from '../migrations/1700000000000-CreateMigrationHistoryTable';
 
 // Skip entire suite unless integration flag is set

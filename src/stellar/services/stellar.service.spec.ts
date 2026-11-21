@@ -466,6 +466,18 @@ describe('StellarService', () => {
       );
       expect(result.txHash).toBe(MOCK_TX_HASH);
     });
+
+    it('encodes expiresAt as seconds since epoch, not milliseconds (#967)', async () => {
+      const { nativeToScVal } = jest.requireMock('@stellar/stellar-sdk');
+      const expiresAt = new Date(Date.now() + 86_400_000); // +1 day
+
+      await service.grantAccess('patient-001', 'doctor-007', 'record-abc', expiresAt);
+
+      // grantAccess() calls nativeToScVal for patientId, granteeId, recordId,
+      // then expires_at, in that order — the 4th call is the one under test.
+      const expiresAtArg = nativeToScVal.mock.calls[3][0];
+      expect(expiresAtArg).toBe(Math.floor(expiresAt.getTime() / 1000));
+    });
   });
 
   describe('revokeAccess', () => {
@@ -486,12 +498,24 @@ describe('StellarService', () => {
   describe('verifyAccess', () => {
     it('returns hasAccess=true when simulation succeeds', async () => {
       const { scValToNative } = jest.requireMock('@stellar/stellar-sdk');
-      scValToNative.mockReturnValueOnce({ has_access: true, expires_at: BigInt(9999999999000) });
+      // expires_at is Soroban seconds-since-epoch, e.g. +1h from now.
+      const expiresAtSecs = Math.floor(Date.now() / 1000) + 3600;
+      scValToNative.mockReturnValueOnce({ has_access: true, expires_at: BigInt(expiresAtSecs) });
 
       const result = await service.verifyAccess('doctor-007', 'record-abc');
       expect(result.hasAccess).toBe(true);
       expect(result.expiresAt).not.toBeNull();
       expect(mockSendTransaction).not.toHaveBeenCalled();
+    });
+
+    it('decodes expires_at as seconds since epoch, not milliseconds (#967)', async () => {
+      const { scValToNative } = jest.requireMock('@stellar/stellar-sdk');
+      const expiresAtSecs = Math.floor(Date.now() / 1000) + 3600; // +1h, seconds
+      scValToNative.mockReturnValueOnce({ has_access: true, expires_at: BigInt(expiresAtSecs) });
+
+      const result = await service.verifyAccess('doctor-007', 'record-abc');
+
+      expect(result.expiresAt).toBe(new Date(expiresAtSecs * 1000).toISOString());
     });
 
     it('returns hasAccess=false when simulation returns an error', async () => {

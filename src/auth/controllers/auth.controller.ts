@@ -9,8 +9,14 @@ import {
   Param,
   BadRequestException,
   NotFoundException,
+  Inject,
+  Optional,
+  Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { MAILER_SERVICE } from '../../notifications/services/notifications.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
 import { Request } from 'express';
 import { AuthService, AuthResponse } from '../services/auth.service';
 import { MfaService } from '../services/mfa.service';
@@ -18,8 +24,10 @@ import { SessionManagementService } from '../services/session-management.service
 import { AuthTokenService } from '../services/auth-token.service';
 import { RefreshTokenStoreService } from '../services/refresh-token-store.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { RolesGuard } from '../guards/roles.guard';
+import { Roles } from '../decorators/roles.decorator';
 import { JwtPayload } from '../services/auth-token.service';
-import { RegisterDto, LoginDto, ChangePasswordDto, ResetPasswordDto, ResetPasswordConfirmDto } from '../dto/auth.dto';
+import { RegisterDto, RegisterStaffDto, LoginDto, ChangePasswordDto, ResetPasswordDto, ResetPasswordConfirmDto } from '../dto/auth.dto';
 import { RefreshTokenDto } from '../dto/session.dto';
 import { User, UserRole } from '../entities/user.entity';
 import { AuthRateLimit } from '../../common/throttler/throttler.decorator';
@@ -27,12 +35,16 @@ import { AuthRateLimit } from '../../common/throttler/throttler.decorator';
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private authService: AuthService,
     private mfaService: MfaService,
     private sessionManagementService: SessionManagementService,
     private authTokenService: AuthTokenService,
     private refreshTokenStore: RefreshTokenStoreService,
+    @Optional() private configService?: ConfigService,
+    @Optional() @Inject(MAILER_SERVICE) private mailerService?: any,
   ) {}
 
   /**
@@ -54,34 +66,22 @@ export class AuthController {
   }
 
   /**
-   * Register healthcare staff
+   * Register healthcare staff (admin / super admin only)
    */
   @Post('register/staff')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @AuthRateLimit() // 10 requests per minute
-  @ApiOperation({ summary: 'Register healthcare staff with role' })
+  @ApiOperation({ summary: 'Register healthcare staff with role (admin only)' })
   @ApiResponse({ status: 201, description: 'Staff registered successfully' })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 403, description: 'Caller may not create this role' })
   async registerStaff(
-    @Body()
-    body: RegisterDto & { role: UserRole; npi?: string; licenseNumber?: string },
+    @Body() body: RegisterStaffDto,
     @Req() req: Request,
-  ): Promise<AuthResponse> {
-    if (!body.role || !Object.values(UserRole).includes(body.role)) {
-      throw new BadRequestException(I18nContext.current()?.t('errors.INVALID_ROLE') || 'Invalid role');
-    }
-
-    if (body.role === UserRole.PATIENT) {
-      throw new BadRequestException(I18nContext.current()?.t('errors.USE_REGISTER_ENDPOINT_FOR_PATIENT_REGISTRATION') || 'Use /register endpoint for patient registration');
-    }
-
-    const result = await this.authService.register(
-      body,
-      body.role,
-      this.getIpAddress(req),
-      req.get('user-agent'),
-    );
-
-    // Staff requires MFA setup immediately
-    return result;
+  ): Promise<{ user: AuthResponse['user'] }> {
+    return this.authService.registerStaff(body, req.user as JwtPayload, this.getIpAddress(req));
   }
 
   /**
@@ -150,7 +150,7 @@ export class AuthController {
    */
   @Delete('sessions')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({ summary: 'Revoke all sessions (logout everywhere)' })
   @ApiResponse({ status: 200, description: 'All sessions revoked' })
   async revokeAllSessionsDelete(@Req() req: Request): Promise<{ message: string }> {
@@ -175,7 +175,29 @@ export class AuthController {
   @ApiOperation({ summary: 'Request a password reset email' })
   @ApiResponse({ status: 200, description: 'Reset email sent if account exists' })
   async forgotPassword(@Body() { email }: ResetPasswordDto): Promise<{ message: string }> {
-    await this.authService.forgotPassword(email);
+    const result = await this.authService.forgotPassword(email);
+    if (result) {
+      const frontendUrl =
+        this.configService?.get<string>('FRONTEND_URL') ||
+        process.env.FRONTEND_URL ||
+        'http://localhost:3000';
+      const resetLink = `${frontendUrl.replace(/\/$/, '')}/reset-password?token=${result.token}`;
+
+      if (this.mailerService) {
+        try {
+          await this.mailerService.sendMail({
+            to: email,
+            subject: 'Password Reset Request',
+            text: `You requested a password reset. Please use the following link to reset your password: ${resetLink}\n\nThis link expires in 15 minutes. If you did not request this, please ignore this email.`,
+            html: `<p>You requested a password reset.</p><p><a href="${resetLink}">Click here to reset your password</a></p><p>This link expires in 15 minutes. If you did not request this, please ignore this email.</p>`,
+          });
+        } catch (err: any) {
+          this.logger.error(`Failed to send password reset email to ${email}: ${err?.message}`);
+        }
+      } else {
+        this.logger.log(`[Security Email] Password reset requested for ${email}`);
+      }
+    }
     return { message: 'If that email is registered, a reset link has been sent' };
   }
 
@@ -260,7 +282,7 @@ export class AuthController {
    */
   @Delete('sessions/:id')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({ summary: 'Terminate a specific session' })
   @ApiResponse({ status: 200, description: 'Session terminated' })
   @ApiResponse({ status: 404, description: 'Session not found' })

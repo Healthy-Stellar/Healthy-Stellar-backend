@@ -10,6 +10,8 @@ import { RecordTemplate } from '../entities/record-template.entity';
 import { Record } from '../entities/record.entity';
 import { CreateTemplateDto } from '../dto/create-template.dto';
 import { CreateRecordFromTemplateDto } from '../dto/create-record-from-template.dto';
+import { RecordsService } from './records.service';
+import { PatientAccessService } from '../../patient-access/patient-access.service';
 
 @Injectable()
 export class RecordTemplateService {
@@ -18,6 +20,8 @@ export class RecordTemplateService {
     private readonly templateRepository: Repository<RecordTemplate>,
     @InjectRepository(Record)
     private readonly recordRepository: Repository<Record>,
+    private readonly recordsService: RecordsService,
+    private readonly patientAccessService: PatientAccessService,
   ) {}
 
   async create(providerId: string, dto: CreateTemplateDto): Promise<RecordTemplate> {
@@ -60,19 +64,27 @@ export class RecordTemplateService {
       throw new ForbiddenException('Access to this template is not allowed');
     }
 
+    const hasAccess = await this.patientAccessService.hasAccess(
+      providerId,
+      dto.patientId,
+    );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this patient\'s records',
+      );
+    }
+
     const mergedSchema = dto.fieldValues
       ? { ...template.schemaJson, ...dto.fieldValues }
       : { ...template.schemaJson };
 
-    const record = this.recordRepository.create({
+    return this.recordsService.create(providerId, {
       patientId: dto.patientId,
       recordType: template.recordType,
       description: dto.description ?? `Created from template: ${template.name}`,
-      cid: '',
-      stellarTxHash: '',
+      content: mergedSchema,
     });
-
-    return this.recordRepository.save(record);
   }
 
   private validateSchemaJson(schema: Record<string, any>): void {

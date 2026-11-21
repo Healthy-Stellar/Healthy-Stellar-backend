@@ -1,6 +1,6 @@
 import { Controller, Get, Query, Res, HttpStatus } from '@nestjs/common';
 import { Response } from 'express';
-import { I18nService } from '../i18n.service';
+import { I18nService } from './i18n.service';
 import { ApiOperation, ApiResponse, ApiTags, ApiQuery } from '@nestjs/swagger';
 
 @ApiTags('i18n')
@@ -15,7 +15,7 @@ export class I18nController {
     description: 'List of supported language codes',
     schema: {
       example: {
-        languages: ['en', 'fr', 'es', 'ar'],
+        languages: ['en', 'fr', 'es', 'ar', 'he'],
         default: 'en',
       },
     },

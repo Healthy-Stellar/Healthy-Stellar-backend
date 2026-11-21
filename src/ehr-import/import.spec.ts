@@ -6,6 +6,7 @@ import { ImportService } from './import.service';
 import { ImportJob, ImportJobStatus, ImportFormat } from './entities/import-job.entity';
 import { ImportError } from './entities/import-error.entity';
 import { Record as RecordEntity } from '../records/entities/record.entity';
+import { RecordType } from '../records/dto/create-record.dto';
 import { Hl7Parser } from './parsers/hl7.parser';
 import { CcdParser } from './parsers/ccd.parser';
 import { CsvParser } from './parsers/csv.parser';
@@ -35,9 +36,11 @@ function buildMocks() {
       if (!j) throw new Error('Not found');
       return Promise.resolve(j);
     }),
-    create: jest.fn().mockImplementation((data) =>
-      Object.assign(new ImportJob(), { id: `job-${++jobIdCounter}`, ...data }),
-    ),
+    create: jest
+      .fn()
+      .mockImplementation((data) =>
+        Object.assign(new ImportJob(), { id: `job-${++jobIdCounter}`, ...data }),
+      ),
     save: jest.fn().mockImplementation((job) => {
       savedJobs.push(job);
       return Promise.resolve(job);
@@ -50,12 +53,12 @@ function buildMocks() {
   };
 
   const errorRepo = {
-    find: jest.fn().mockImplementation(({ where: { jobId } }) =>
-      Promise.resolve(savedErrors.filter((e) => e.jobId === jobId)),
-    ),
-    create: jest.fn().mockImplementation((data) =>
-      Object.assign(new ImportError(), data),
-    ),
+    find: jest
+      .fn()
+      .mockImplementation(({ where: { jobId } }) =>
+        Promise.resolve(savedErrors.filter((e) => e.jobId === jobId)),
+      ),
+    create: jest.fn().mockImplementation((data) => Object.assign(new ImportError(), data)),
     save: jest.fn().mockImplementation((e) => {
       savedErrors.push(e);
       return Promise.resolve(e);
@@ -63,9 +66,7 @@ function buildMocks() {
   };
 
   const recordRepo = {
-    create: jest.fn().mockImplementation((data) =>
-      Object.assign(new RecordEntity(), data),
-    ),
+    create: jest.fn().mockImplementation((data) => Object.assign(new RecordEntity(), data)),
     save: jest.fn().mockImplementation((r) => {
       savedRecords.push(r);
       return Promise.resolve(r);
@@ -121,7 +122,7 @@ describe('ImportService — HL7 format', () => {
     const { jobId } = await svc.enqueue(hl7Buffer, 'sample.hl7');
     await waitForJob(mocks, jobId);
 
-    const job = mocks.savedJobs.find((j) => j.id === jobId)!;
+    const job = mocks.savedJobs.find((j) => j.id === jobId);
     expect(job.status).toBe(ImportJobStatus.COMPLETED);
     expect(job.succeeded).toBeGreaterThan(0);
     expect(job.failed).toBe(0);
@@ -136,7 +137,7 @@ describe('ImportService — HL7 format', () => {
     const svc = await buildService(mocks);
     const { jobId } = await svc.enqueue(hl7Buffer, 'data.hl7');
     await waitForJob(mocks, jobId);
-    const job = mocks.savedJobs.find((j) => j.id === jobId)!;
+    const job = mocks.savedJobs.find((j) => j.id === jobId);
     expect(job.format).toBe(ImportFormat.HL7);
   });
 });
@@ -149,9 +150,10 @@ describe('ImportService — CCD format', () => {
     const { jobId } = await svc.enqueue(ccdBuffer, 'sample.ccd');
     await waitForJob(mocks, jobId);
 
-    const job = mocks.savedJobs.find((j) => j.id === jobId)!;
+    const job = mocks.savedJobs.find((j) => j.id === jobId);
     expect(job.status).toBe(ImportJobStatus.COMPLETED);
-    expect(job.succeeded).toBe(1);
+    // One record per CCD section: Problems, Medications, Allergies, Results
+    expect(job.succeeded).toBe(4);
     expect(mocks.savedRecords[0].patientId).toBe('PAT-002');
   });
 
@@ -160,7 +162,7 @@ describe('ImportService — CCD format', () => {
     const svc = await buildService(mocks);
     const { jobId } = await svc.enqueue(ccdBuffer, 'record.ccd');
     await waitForJob(mocks, jobId);
-    const job = mocks.savedJobs.find((j) => j.id === jobId)!;
+    const job = mocks.savedJobs.find((j) => j.id === jobId);
     expect(job.format).toBe(ImportFormat.CCD);
   });
 });
@@ -173,7 +175,7 @@ describe('ImportService — CSV format', () => {
     const { jobId } = await svc.enqueue(csvBuffer, 'sample.csv');
     await waitForJob(mocks, jobId);
 
-    const job = mocks.savedJobs.find((j) => j.id === jobId)!;
+    const job = mocks.savedJobs.find((j) => j.id === jobId);
     expect(job.status).toBe(ImportJobStatus.COMPLETED);
     expect(job.total).toBe(3); // 3 data rows in fixture
     expect(job.succeeded).toBe(3);
@@ -187,7 +189,7 @@ describe('ImportService — CSV format', () => {
     const svc = await buildService(mocks);
     const { jobId } = await svc.enqueue(csvBuffer, 'patients.csv');
     await waitForJob(mocks, jobId);
-    const job = mocks.savedJobs.find((j) => j.id === jobId)!;
+    const job = mocks.savedJobs.find((j) => j.id === jobId);
     expect(job.format).toBe(ImportFormat.CSV);
   });
 });
@@ -201,9 +203,7 @@ describe('ImportService — idempotency', () => {
     await waitForJob(mocks, first.jobId);
 
     // Second upload: findOne returns the completed job
-    mocks.jobRepo.findOne.mockResolvedValue(
-      mocks.savedJobs.find((j) => j.id === first.jobId),
-    );
+    mocks.jobRepo.findOne.mockResolvedValue(mocks.savedJobs.find((j) => j.id === first.jobId));
 
     const second = await svc.enqueue(csvBuffer, 'sample.csv');
     expect(second.jobId).toBe(first.jobId);
@@ -220,7 +220,7 @@ describe('ImportService — dry-run mode', () => {
     const { jobId } = await svc.enqueue(csvBuffer, 'sample.csv', true);
     await waitForJob(mocks, jobId);
 
-    const job = mocks.savedJobs.find((j) => j.id === jobId)!;
+    const job = mocks.savedJobs.find((j) => j.id === jobId);
     expect(job.dryRun).toBe(true);
     expect(job.status).toBe(ImportJobStatus.COMPLETED);
     expect(job.succeeded).toBe(3);
@@ -236,14 +236,12 @@ describe('ImportService — error logging', () => {
     const svc = await buildService(mocks);
 
     // Make IPFS fail on the first call only
-    mocks.ipfs.upload
-      .mockRejectedValueOnce(new Error('IPFS timeout'))
-      .mockResolvedValue('QmOk');
+    mocks.ipfs.upload.mockRejectedValueOnce(new Error('IPFS timeout')).mockResolvedValue('QmOk');
 
     const { jobId } = await svc.enqueue(csvBuffer, 'sample.csv');
     await waitForJob(mocks, jobId);
 
-    const job = mocks.savedJobs.find((j) => j.id === jobId)!;
+    const job = mocks.savedJobs.find((j) => j.id === jobId);
     expect(job.failed).toBe(1);
     expect(job.succeeded).toBe(2);
     expect(mocks.savedErrors).toHaveLength(1);
@@ -301,8 +299,32 @@ describe('CcdParser', () => {
   it('extracts patientId PAT-002 from sample CCD', async () => {
     const parser = new CcdParser();
     const results = await parser.parse(ccdBuffer.toString());
-    expect(results).toHaveLength(1);
     expect(results[0].patientId).toBe('PAT-002');
+  });
+
+  it('maps each CCD section (problems, medications, allergies, results) to a record', async () => {
+    const parser = new CcdParser();
+    const results = await parser.parse(ccdBuffer.toString());
+
+    expect(results).toHaveLength(4);
+    expect(results.every((r) => r.patientId === 'PAT-002')).toBe(true);
+
+    expect(results[0].description).toContain('Problems');
+    expect(results[0].recordType).toBe(RecordType.MEDICAL_REPORT);
+
+    expect(results[1].description).toContain('Medications');
+    expect(results[1].recordType).toBe(RecordType.PRESCRIPTION);
+
+    expect(results[2].description).toContain('Allergies');
+    expect(results[2].recordType).toBe(RecordType.MEDICAL_REPORT);
+
+    expect(results[3].description).toContain('Results');
+    expect(results[3].recordType).toBe(RecordType.LAB_RESULT);
+  });
+
+  it('throws a validation error for a malformed CCD document', async () => {
+    const parser = new CcdParser();
+    await expect(parser.parse('<NotClinicalDocument></NotClinicalDocument>')).rejects.toThrow();
   });
 });
 
@@ -319,7 +341,11 @@ describe('CsvParser', () => {
   it('respects custom column mapping', () => {
     const parser = new CsvParser();
     const csv = 'pid,type,notes\nP1,LAB_RESULT,test note';
-    const results = parser.parse(csv, { patientId: 'pid', recordType: 'type', description: 'notes' });
+    const results = parser.parse(csv, {
+      patientId: 'pid',
+      recordType: 'type',
+      description: 'notes',
+    });
     expect(results[0].patientId).toBe('P1');
     expect(results[0].description).toBe('test note');
   });

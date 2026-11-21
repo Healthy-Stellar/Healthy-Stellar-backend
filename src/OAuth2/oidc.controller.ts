@@ -22,7 +22,9 @@ import { LinkStellarAddressDto, OidcInitiateQueryDto } from './dto/oidc.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OidcJwtPayload } from './oidc.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('auth/oidc')
 @Controller('auth/oidc')
 export class OidcController {
   constructor(

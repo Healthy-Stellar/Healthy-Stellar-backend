@@ -8,7 +8,9 @@ import {
   IsEnum,
   IsNotEmpty,
 } from 'class-validator';
+import { OmitType } from '@nestjs/mapped-types';
 import { MedicalRole } from '../../users/enums/medical-role.enum';
+import { UserRole } from '../entities/user.entity';
 
 export class RegisterDto {
   @IsEmail()
@@ -42,6 +44,21 @@ export class RegisterDto {
   @IsOptional()
   @IsEnum(MedicalRole)
   role?: MedicalRole;
+}
+
+export class RegisterStaffDto extends OmitType(RegisterDto, ['role'] as const) {
+  @IsEnum(UserRole)
+  role: UserRole;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  npi?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  licenseNumber?: string;
 }
 
 export class LoginDto {

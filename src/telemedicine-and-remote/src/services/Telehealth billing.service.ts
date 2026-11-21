@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
-import { TelehealthBilling, BillingStatus, PayerType } from '../entities/telehealth-billing.entity';
+import { TelehealthBilling, BillingStatus, PayerType } from '../entity/Telehealth billing.entity';
 
 export interface CreateBillingDto {
   patientId: string;
@@ -136,8 +136,11 @@ export class TelehealthBillingService {
     });
 
     billing.paymentHistory = paymentHistory;
-    billing.amountPaid += amount;
-    billing.balanceDue -= amount;
+
+    const currentAmountPaid = Number(billing.amountPaid ?? 0);
+    const currentBalanceDue = Number(billing.balanceDue ?? 0);
+    billing.amountPaid = currentAmountPaid + amount;
+    billing.balanceDue = currentBalanceDue - amount;
 
     if (billing.balanceDue <= 0) {
       billing.status = BillingStatus.PAID;

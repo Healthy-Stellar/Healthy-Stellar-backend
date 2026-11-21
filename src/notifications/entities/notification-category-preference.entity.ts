@@ -11,6 +11,7 @@ export enum NotificationChannel {
   EMAIL = 'email',
   IN_APP = 'in_app',
   WEBSOCKET = 'websocket',
+  PUSH = 'push',
 }
 
 export enum NotificationFrequency {

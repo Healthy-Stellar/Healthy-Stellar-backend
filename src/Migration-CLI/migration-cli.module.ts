@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { MigrationHistory } from './entities/migration-history.entity';
+import { MigrationHistory } from './migration-history.entity';
 import { MigrationCliService } from './migration-cli.service';
 import { SafetyChecksService } from './safety-checks.service';
 import { DryRunService } from './dry-run.service';

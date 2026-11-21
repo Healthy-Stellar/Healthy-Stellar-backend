@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '../common/audit/audit.module';
 
 import {
   MedicalCode,
@@ -14,6 +15,8 @@ import {
   RevenueReport,
   Remittance,
   BillingDispute,
+  SubscriptionPlan,
+  PatientSubscription,
 } from './entities';
 
 import {
@@ -27,6 +30,7 @@ import {
   InvoicePdfService,
   RemittanceService,
   DisputeService,
+  SubscriptionService,
 } from './services';
 
 import {
@@ -40,10 +44,12 @@ import {
   ReportController,
   RemittanceController,
   DisputeController,
+  SubscriptionController,
 } from './controllers';
 
 @Module({
   imports: [
+    AuditModule,
     TypeOrmModule.forFeature([
       MedicalCode,
       Insurance,
@@ -57,7 +63,10 @@ import {
       RevenueReport,
       Remittance,
       BillingDispute,
+      SubscriptionPlan,
+      PatientSubscription,
     ]),
+    AuthModule,
   ],
   controllers: [
     MedicalCodeController,
@@ -70,6 +79,7 @@ import {
     ReportController,
     RemittanceController,
     DisputeController,
+    SubscriptionController,
   ],
   providers: [
     MedicalCodeService,
@@ -82,6 +92,7 @@ import {
     InvoicePdfService,
     RemittanceService,
     DisputeService,
+    SubscriptionService,
   ],
   exports: [
     MedicalCodeService,
@@ -94,6 +105,7 @@ import {
     InvoicePdfService,
     RemittanceService,
     DisputeService,
+    SubscriptionService,
   ],
 })
-export class BillingModule {}
+export class BillingModule { }

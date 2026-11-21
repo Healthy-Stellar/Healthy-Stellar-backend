@@ -33,9 +33,12 @@ export class AuditProjector implements IEventHandler<AuditableEvent> {
   ) {}
 
   async handle(event: AuditableEvent): Promise<void> {
-    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME);
+    const aggregateId = this.extractEntityId(event);
+    const version = this.extractVersion(event);
 
-    if (event.version <= lastVersion) {
+    // Idempotency guard — scoped per aggregate, since event versions reset per aggregate
+    const lastVersion = await this.checkpoints.getVersion(PROJECTOR_NAME, aggregateId);
+    if (version <= lastVersion) {
       return;
     }
 
@@ -46,19 +49,19 @@ export class AuditProjector implements IEventHandler<AuditableEvent> {
         .insert()
         .into(AuditLogProjection)
         .values({
-          aggregateId: this.extractEntityId(event),
+          aggregateId,
           aggregateType: this.extractAggregateType(event),
           eventType: event.constructor.name,
           payload: event as unknown as Record<string, unknown>,
-          version: event.version,
+          version,
           occurredAt: event.occurredAt,
         })
         .orIgnore()
         .execute();
 
-      await this.checkpoints.advance(PROJECTOR_NAME, event.version);
+      await this.checkpoints.advance(PROJECTOR_NAME, aggregateId, version);
     } catch (err) {
-      this.logger.error(`${PROJECTOR_NAME}: failed on version ${event.version} — ${err.message}`);
+      this.logger.error(`${PROJECTOR_NAME}: failed on version ${version} — ${err.message}`);
       await this.dlq.add(
         'projection-failed',
         { projectorName: PROJECTOR_NAME, event, error: err.message },
@@ -76,6 +79,11 @@ export class AuditProjector implements IEventHandler<AuditableEvent> {
       return event.recordId;
     }
     return event.grantId;
+  }
+
+  private extractVersion(event: AuditableEvent): number {
+    if (event instanceof RecordAmendedEvent) return event.newVersion;
+    return event.version;
   }
 
   private extractActorId(event: AuditableEvent): string {

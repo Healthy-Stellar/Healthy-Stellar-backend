@@ -9,14 +9,17 @@ import { DataLoaderService } from '../dataloaders/dataloader.service';
 @Resolver(() => MedicalRecordType)
 @UseGuards(GqlAuthGuard)
 export class RecordsResolver {
-  constructor(private readonly recordsService: RecordsService) {}
+  constructor(
+    private readonly recordsService: RecordsService,
+    private readonly dataLoaderService: DataLoaderService,
+  ) {}
 
   @Query(() => MedicalRecordType, { nullable: true })
   async record(
     @Args('id', { type: () => ID }) id: string,
     @Context() ctx: any,
   ): Promise<MedicalRecordType> {
-    const loader: DataLoaderService = ctx.loaders;
+    const loader: DataLoaderService = ctx.loaders ?? this.dataLoaderService;
     return loader.records.load(id) as any;
   }
 

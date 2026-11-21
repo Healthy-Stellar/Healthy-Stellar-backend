@@ -18,7 +18,8 @@ import {
  * StellarService
  *
  * Injectable NestJS provider that abstracts all Stellar/Soroban SDK interactions.
- * Supports runtime switching between Testnet and Mainnet via STELLAR_NETWORK env var.
+ * Supports runtime switching between Testnet and
+ * Mainnet via STELLAR_NETWORK env var.
  *
  * Required methods (Issue #234):
  *  • submitTransaction  — sign & submit a pre-built XDR transaction
@@ -75,6 +76,9 @@ export class StellarService {
     this.sourceKeypair = StellarSdk.Keypair.fromSecret(secretKey);
 
     this.contractId = this.configService.get<string>('STELLAR_CONTRACT_ID', '');
+    if (!this.contractId || !this.contractId.trim()) {
+      throw new Error('STELLAR_CONTRACT_ID is required for StellarService');
+    }
     this.feeBudget = parseInt(this.configService.get<string>('STELLAR_FEE_BUDGET', '10000000'), 10);
     this.maxRetries = parseInt(this.configService.get<string>('STELLAR_MAX_RETRIES', '3'), 10);
 
@@ -91,7 +95,8 @@ export class StellarService {
   // ── Issue #234 — Required public API ─────────────────────────────────────
 
   /**
-   * Submit a pre-built, XDR-encoded transaction to the network.
+   * Submit a pre-built, 
+   * XDR-encoded transaction to the network.
    * Signs with the configured source keypair, submits, and polls for confirmation.
    *
    * @param xdr  Base64-encoded XDR transaction envelope.
@@ -206,6 +211,7 @@ export class StellarService {
       const confirmed = await this.pollForConfirmation(sendResult.hash);
 
       // Decode the return value — never leak raw ScVal
+      // To ensure successful result
       const successSim =
         simResult as StellarSdk.SorobanRpc.Api.SimulateTransactionSuccessResponse;
       const returnValue = successSim.result?.retval
@@ -291,13 +297,6 @@ export class StellarService {
       });
       throw error;
     }
-
-    return this.withRetry('anchorRecord', () =>
-      this.invokeContractInternal('anchor_record', [
-        StellarSdk.nativeToScVal(patientId, { type: 'string' }),
-        StellarSdk.nativeToScVal(cid, { type: 'string' }),
-      ]),
-    );
   }
 
   /**
@@ -315,7 +314,12 @@ export class StellarService {
     recordId: string,
     expiresAt: Date,
   ): Promise<StellarTxResult> {
-    const expiresAtMs = expiresAt.getTime();
+    // #967: the contract's expires_at is Soroban seconds-since-epoch
+    // (env.ledger().timestamp()'s unit), not the millisecond epoch Date
+    // uses — encoding expiresAt.getTime() directly wrote a value ~1000x
+    // too large on-chain. Convert here, at the wire boundary, so every
+    // caller of this method keeps working in plain JS Dates.
+    const expiresAtSecs = Math.floor(expiresAt.getTime() / 1000);
     this.logger.log(
       `[grantAccess] patientId=${patientId} granteeId=${granteeId} recordId=${recordId} expiresAt=${expiresAt.toISOString()}`,
     );
@@ -333,7 +337,7 @@ export class StellarService {
           StellarSdk.nativeToScVal(patientId, { type: 'string' }),
           StellarSdk.nativeToScVal(granteeId, { type: 'string' }),
           StellarSdk.nativeToScVal(recordId, { type: 'string' }),
-          StellarSdk.nativeToScVal(expiresAtMs, { type: 'u64' }),
+          StellarSdk.nativeToScVal(expiresAtSecs, { type: 'u64' }),
         ]),
       );
 
@@ -396,6 +400,45 @@ export class StellarService {
     }
   }
 
+  async createShareLink(recordId: string, patientId: string): Promise<string> {
+    const expiresAtMs = Date.now() + 24 * 60 * 60 * 1000;
+    // #967: same seconds-vs-milliseconds boundary as grantAccess — the
+    // contract's expiry field is Soroban seconds-since-epoch, so the u64
+    // sent on-chain must be seconds, even though expiresAtMs (used for
+    // logging above) stays in the millisecond epoch.
+    const expiresAtSecs = Math.floor(expiresAtMs / 1000);
+    this.logger.log(
+      `[createShareLink] recordId=${recordId} patientId=${patientId} expiresAt=${new Date(expiresAtMs).toISOString()}`,
+    );
+
+    this.stellarTracing.addSpanEvent('stellar.createShareLink.started', {
+      recordId,
+      patientId,
+      network: this.network,
+    });
+
+    try {
+      const result = await this.withRetry('createShareLink', () =>
+        this.invokeContractInternal('create_share_link', [
+          StellarSdk.nativeToScVal(recordId, { type: 'string' }),
+          StellarSdk.nativeToScVal(patientId, { type: 'string' }),
+          StellarSdk.nativeToScVal(expiresAtSecs, { type: 'u64' }),
+        ]),
+      );
+
+      this.stellarTracing.addSpanEvent('stellar.createShareLink.completed', {
+        txHash: result.txHash,
+      });
+
+      return result.txHash;
+    } catch (error) {
+      this.stellarTracing.addSpanEvent('stellar.createShareLink.error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
   /**
    * Check whether a requester currently has valid access to a record.
    * This is a read-only simulation — it does not submit a transaction.
@@ -434,7 +477,8 @@ export class StellarService {
 
   /**
    * Build, simulate, sign, submit, and await a Soroban contract invocation.
-   * Used internally by the legacy domain methods (anchorRecord, grantAccess, revokeAccess).
+   * Used internally by the legacy domain methods 
+   * (anchorRecord, grantAccess, revokeAccess).
    */
   private async invokeContractInternal(
     method: string,
@@ -541,7 +585,10 @@ export class StellarService {
 
     const hasAccess = Boolean(native?.has_access);
     const expiresAtRaw = native?.expires_at;
-    const expiresAt = expiresAtRaw != null ? new Date(Number(expiresAtRaw)).toISOString() : null;
+    // #967: expiresAtRaw is Soroban seconds-since-epoch — scale to
+    // milliseconds before handing it to Date, or every expiry decodes to a
+    // date near the Unix epoch instead of the real grant expiry.
+    const expiresAt = expiresAtRaw != null ? new Date(Number(expiresAtRaw) * 1000).toISOString() : null;
 
     this.logger.log(
       `[verifyAccess] requesterId=${requesterId} recordId=${recordId} hasAccess=${hasAccess}`,

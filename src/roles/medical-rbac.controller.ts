@@ -15,19 +15,21 @@ import {
   DepartmentAccess,
   MedicalRoles,
   RequirePermissions,
-} from '../decorators/medical-rbac.decorator';
+} from './medical-rbac.decorator';
 import {
   EmergencyOverrideRequestDto,
   QueryAuditLogsDto,
   ReviewEmergencyOverrideDto,
 } from '../dto/medical-rbac.dto';
 import { MedicalDepartment, MedicalPermission, MedicalRole } from '../enums/medical-roles.enum';
-import { MedicalRbacGuard } from '../guards/medical-rbac.guard';
+import { MedicalRbacGuard } from './medical-rbac.guard';
 import { MedicalUser } from '../interfaces/medical-rbac.interface';
 import { EmergencyOverrideService } from '../services/emergency-override.service';
 import { MedicalAuditService } from '../services/medical-audit.service';
 import { MedicalPermissionsService } from '../services/medical-permissions.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('medical-rbac')
 @Controller('medical-rbac')
 @UseGuards(MedicalRbacGuard)
 export class MedicalRbacController {

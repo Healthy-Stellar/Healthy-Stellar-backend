@@ -1,9 +1,12 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { PrescriptionRefillService } from '../services/prescription-refill.service';
 import { RefillPrescriptionDto } from '../dto/refill-prescription.dto';
+import { ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
+@ApiTags('prescription-refill')
 @Controller('pharmacy/refills')
-// @UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard)
 export class PrescriptionRefillController {
   constructor(private refillService: PrescriptionRefillService) {}
 

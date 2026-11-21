@@ -1,0 +1,352 @@
+# ------------------------------------------------------------
+# docs/schema.graphql
+#
+# Auto-generated from NestJS resolver decorators.
+# Regenerate with:  npm run export:schema
+# Keep this file committed and up to date in CI:
+#   npm run export:schema && git diff --exit-code docs/schema.graphql
+# ------------------------------------------------------------
+
+# ─── Scalars ────────────────────────────────────────────────
+
+scalar Upload
+scalar DateTime
+
+# ─── Enums ──────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  PATIENT
+  PROVIDER
+}
+
+enum RecordType {
+  CLINICAL_NOTE
+  DISCHARGE_SUMMARY
+  IMAGING
+  LAB_RESULT
+  OTHER
+  PRESCRIPTION
+  VACCINATION
+}
+
+enum MedicalRecordStatus {
+  active
+  archived
+  deleted
+}
+
+enum GrantStatus {
+  ACTIVE
+  EXPIRED
+  PENDING
+  REVOKED
+}
+
+enum JobStatus {
+  COMPLETED
+  FAILED
+  PROCESSING
+  QUEUED
+}
+
+enum GdprRequestType {
+  ACCESS
+  ERASURE
+  PORTABILITY
+  RECTIFICATION
+}
+
+enum AuditAction {
+  DELETE
+  DOWNLOAD
+  GRANT_ACCESS
+  REVOKE_ACCESS
+  UPLOAD
+  VIEW
+}
+
+# ─── Pagination types ────────────────────────────────────────
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+# ─── User ────────────────────────────────────────────────────
+
+type User {
+  avatarUrl: String
+  createdAt: DateTime!
+  displayName: String
+  email: String!
+  firstName: String!
+  id: ID!
+  lastName: String!
+  licenseNumber: String
+  phoneNumber: String
+  role: UserRole!
+  specialty: String
+  updatedAt: DateTime!
+}
+
+# ─── MedicalRecord ───────────────────────────────────────────
+
+type MedicalRecord {
+  accessGrants: [AccessGrant!]!
+  auditLog(pagination: PaginationInput): AuditLogConnection
+  createdAt: DateTime!
+  description: String
+  id: ID!
+  patient: User!
+  patientId: String!
+  recordType: RecordType!
+  status: MedicalRecordStatus!
+  stellarTxHash: String
+  title: String
+  updatedAt: DateTime!
+  uploadedBy: String
+  uploadedById: String
+}
+
+type MedicalRecordEdge {
+  cursor: String!
+  node: MedicalRecord!
+}
+
+type MedicalRecordConnection {
+  edges: [MedicalRecordEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+# ─── AccessGrant ─────────────────────────────────────────────
+
+type AccessGrant {
+  createdAt: DateTime!
+  expiresAt: DateTime
+  id: ID!
+  patient: User!
+  patientId: String!
+  provider: User!
+  providerId: String!
+  recordId: String!
+  status: GrantStatus!
+  updatedAt: DateTime!
+}
+
+# ─── AuditLog ────────────────────────────────────────────────
+
+type AuditLog {
+  action: AuditAction!
+  actor: User
+  actorId: String
+  createdAt: DateTime!
+  id: ID!
+  ipAddress: String
+  metadata: String
+  resourceId: String!
+  userAgent: String
+}
+
+type AuditLogEdge {
+  cursor: String!
+  node: AuditLog!
+}
+
+type AuditLogConnection {
+  edges: [AuditLogEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+# ─── Error types ─────────────────────────────────────────────
+
+type FieldError {
+  field: String!
+  message: String!
+}
+
+type NotFoundError {
+  message: String!
+}
+
+type StellarTransactionError {
+  errorCode: String
+  message: String!
+  txHash: String
+}
+
+type UnauthorizedError {
+  message: String!
+}
+
+type ValidationError {
+  fieldErrors: [FieldError!]
+  message: String!
+}
+
+# ─── Mutation payload unions ─────────────────────────────────
+
+type UploadRecordSuccess {
+  estimatedCompletionTime: DateTime
+  idempotent: Boolean
+  jobId: ID
+  record: MedicalRecord!
+  status: JobStatus
+}
+
+union UploadRecordPayload =
+    StellarTransactionError
+  | UnauthorizedError
+  | UploadRecordSuccess
+  | ValidationError
+
+type AccessGrantSuccess {
+  grant: AccessGrant!
+}
+
+union AccessGrantPayload =
+    AccessGrantSuccess
+  | NotFoundError
+  | UnauthorizedError
+  | ValidationError
+
+type RevokeAccessSuccess {
+  grantId: ID!
+  revoked: Boolean!
+}
+
+union RevokeAccessPayload = NotFoundError | RevokeAccessSuccess | UnauthorizedError
+
+type UpdateProfileSuccess {
+  user: User!
+}
+
+union UpdateProfilePayload = UnauthorizedError | UpdateProfileSuccess | ValidationError
+
+type RegisterDeviceSuccess {
+  deviceId: ID!
+  registered: Boolean!
+}
+
+union RegisterDevicePayload =
+    RegisterDeviceSuccess
+  | UnauthorizedError
+  | ValidationError
+
+type GdprRequestSuccess {
+  estimatedCompletionTime: DateTime
+  jobId: ID!
+  status: JobStatus!
+}
+
+union GdprRequestPayload = GdprRequestSuccess | UnauthorizedError | ValidationError
+
+# ─── Input types ─────────────────────────────────────────────
+
+input GrantAccessInput {
+  expiresAt: DateTime
+  providerId: ID!
+  recordId: ID!
+}
+
+input PaginationInput {
+  after: String
+  before: String
+  first: Int = 20
+  last: Int
+}
+
+input RecordFilterInput {
+  fromDate: DateTime
+  recordType: RecordType
+  toDate: DateTime
+  uploadedBy: ID
+}
+
+input RegisterDeviceInput {
+  deviceModel: String
+  platform: String!
+  pushToken: String!
+}
+
+input UpdateProfileInput {
+  avatar: Upload
+  firstName: String
+  lastName: String
+  licenseNumber: String
+  phoneNumber: String
+  specialty: String
+}
+
+input UploadRecordInput {
+  description: String
+  file: Upload!
+  idempotencyKey: String
+  patientId: ID
+  recordDate: DateTime
+  recordType: RecordType!
+  title: String!
+}
+
+# ─── Root types ──────────────────────────────────────────────
+
+type Query {
+  """Paginated audit trail for a resource"""
+  auditLog(
+    pagination: PaginationInput
+    resourceId: ID!
+  ): AuditLogConnection!
+
+  """Returns the authenticated user's full profile"""
+  me: User!
+
+  """Fetch a single record with access verification"""
+  record(id: ID!): MedicalRecord!
+
+  """Paginated list of records using Relay-style cursor pagination"""
+  records(
+    filter: RecordFilterInput
+    pagination: PaginationInput
+  ): MedicalRecordConnection!
+
+  """List access grants — filtered by patient and/or status"""
+  accessGrants(patientId: ID, status: GrantStatus): [AccessGrant!]!
+
+  """Public provider profile"""
+  provider(id: ID!): User!
+
+  """Provider directory — searchable by name or specialty"""
+  providers(search: String, specialty: String): [User!]!
+}
+
+type Mutation {
+  """Grant a provider access to a medical record"""
+  grantAccess(input: GrantAccessInput!): AccessGrantPayload!
+
+  """Register a device for push notifications"""
+  registerDevice(input: RegisterDeviceInput!): RegisterDevicePayload!
+
+  """Revoke an existing access grant"""
+  revokeAccess(grantId: ID!): RevokeAccessPayload!
+
+  """Submit a GDPR data request"""
+  submitGdprRequest(type: GdprRequestType!): GdprRequestPayload!
+
+  """Update authenticated user's profile"""
+  updateProfile(input: UpdateProfileInput!): UpdateProfilePayload!
+
+  """Upload a new medical record. Accepts an optional idempotencyKey for safe retries."""
+  uploadRecord(input: UploadRecordInput!): UploadRecordPayload!
+}
+
+type Subscription {
+  """Fires when access is granted or revoked for the patient"""
+  onAccessChanged(patientAddress: String!): AccessGrant!
+
+  """Fires when a new medical record is created for the patient"""
+  onNewRecord(patientAddress: String!): MedicalRecord!
+}

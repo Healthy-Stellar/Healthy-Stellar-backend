@@ -98,11 +98,10 @@ export class QuotaGuard implements CanActivate {
   private extractTenantId(request: Request): string | undefined {
     // Typical NestJS JWT pattern: request.user set by Passport strategy
     const user = (request as any).user as
-      | { tenantId?: string }
+      | { organizationId?: string }
       | undefined;
 
-    // Fallback: tenant passed via custom header (e.g. from an internal service)
-    return user?.tenantId ?? (request.headers['x-tenant-id'] as string);
+    return user?.organizationId;
   }
 
   private async resolveQuota(quotaType: QuotaType, tenantId: string) {
