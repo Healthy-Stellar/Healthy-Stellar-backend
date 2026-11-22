@@ -1,4 +1,10 @@
-import { CanActivate, ExecutionContext, INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  INestApplication,
+  UnauthorizedException,
+  ValidationPipe,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
@@ -115,5 +121,50 @@ describe('POST /auth/register/staff (e2e)', () => {
     await post(body(UserRole.PATIENT), UserRole.ADMIN).expect(400);
     await post(body('not_a_role'), UserRole.ADMIN).expect(400);
     await post(body(UserRole.NURSE, { organizationId: 'x' }), UserRole.ADMIN).expect(400);
+  });
+
+  it('rejects invalid email formats', async () => {
+    await post({ ...body(UserRole.NURSE), email: 'not-an-email' }, UserRole.ADMIN).expect(400);
+    await post({ ...body(UserRole.NURSE), email: '' }, UserRole.ADMIN).expect(400);
+    await post({ ...body(UserRole.NURSE), email: '@example.com' }, UserRole.ADMIN).expect(400);
+  });
+
+  it('rejects weak passwords', async () => {
+    const weakPasswordBody = { ...body(UserRole.NURSE), password: '123' };
+    await post(weakPasswordBody, UserRole.ADMIN).expect(400);
+
+    const noSpecialCharBody = { ...body(UserRole.NURSE), password: 'Password123' };
+    await post(noSpecialCharBody, UserRole.ADMIN).expect(400);
+  });
+
+  it('rejects duplicate email addresses', async () => {
+    userRepository.findOne.mockResolvedValueOnce({
+      id: 'existing-user',
+      email: 'staff@example.test',
+    });
+
+    await post(body(UserRole.NURSE), UserRole.ADMIN).expect(409);
+    expect(userRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('requires all mandatory fields (firstName, lastName, email, password, role)', async () => {
+    const incompleteBody = { email: 'test@example.com', password: 'Str0ng!Passw0rd#' };
+    await post(incompleteBody, UserRole.ADMIN).expect(400);
+
+    const missingEmail = { ...body(UserRole.NURSE) };
+    delete missingEmail.email;
+    await post(missingEmail, UserRole.ADMIN).expect(400);
+
+    const missingRole = { ...body(UserRole.NURSE) };
+    delete missingRole.role;
+    await post(missingRole, UserRole.ADMIN).expect(400);
+  });
+
+  it('allows super_admin to create another super_admin', async () => {
+    const res = await post(body(UserRole.SUPER_ADMIN), UserRole.SUPER_ADMIN).expect(201);
+    expect(res.body.user.role).toBe(UserRole.SUPER_ADMIN);
+    expect(userRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ role: UserRole.SUPER_ADMIN }),
+    );
   });
 });
