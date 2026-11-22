@@ -13,6 +13,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
@@ -41,6 +42,20 @@ export class GdprController {
     private readonly gdprRequestRepository: Repository<GdprRequest>,
   ) {}
 
+  /**
+   * JwtAuthGuard sets req.user to the JwtPayload, whose identifier is
+   * `userId` (there is no `id`). Reading the wrong field yields undefined,
+   * which TypeORM silently drops from WHERE clauses — returning every user's
+   * GDPR requests. Fail closed instead.
+   */
+  private requireUserId(req: any): string {
+    const userId = req?.user?.userId;
+    if (!userId || typeof userId !== 'string') {
+      throw new UnauthorizedException('Authenticated user id missing');
+    }
+    return userId;
+  }
+
   @Post(['data-export-request', 'export-request'])
   @HttpCode(HttpStatus.ACCEPTED)
   @RateLimit(5, 60)
@@ -49,7 +64,7 @@ export class GdprController {
   @ApiResponse({ status: 409, description: 'A pending or in-progress request already exists' })
   @AuditLog('GDPR_EXPORT_REQUEST', 'GdprRequest')
   async requestDataExport(@Req() req) {
-    const userId = req.user.userId;
+    const userId = this.requireUserId(req);
     return this.gdprService.createExportRequest(userId);
   }
 
@@ -61,7 +76,7 @@ export class GdprController {
   @ApiResponse({ status: 409, description: 'A pending or in-progress request already exists' })
   @AuditLog('GDPR_ERASURE_REQUEST', 'GdprRequest')
   async requestErasure(@Req() req, @Body() dto?: CreateErasureRequestDto) {
-    const userId = req.user.userId;
+    const userId = this.requireUserId(req);
     return this.gdprService.createErasureRequest(userId, dto);
   }
 
@@ -69,7 +84,7 @@ export class GdprController {
   @ApiOperation({ summary: 'List all submitted GDPR requests and their status' })
   @ApiResponse({ status: 200, description: 'List of GDPR requests' })
   async getRequests(@Req() req) {
-    const userId = req.user.userId;
+    const userId = this.requireUserId(req);
     return this.gdprService.getRequestsByUser(userId);
   }
 
@@ -81,7 +96,7 @@ export class GdprController {
   })
   @ApiResponse({ status: 200, description: 'Per-module deletion preview' })
   async previewErasure(@Req() req) {
-    const userId = req.user.userId;
+    const userId = this.requireUserId(req);
     return this.gdprService.previewErasure(userId);
   }
 
@@ -100,7 +115,7 @@ export class GdprController {
     @Req() req,
     @Res() res: Response,
   ) {
-    const userId = req.user.userId;
+    const userId = this.requireUserId(req);
 
     const request = await this.gdprRequestRepository.findOne({
       where: { id: requestId },

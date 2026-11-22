@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { KeyManagementService } from './key-management.service';
+import { DekWrapper } from './dek-wrapper.interface';
 import { EncryptedRecord } from '../interfaces';
 import { 
   EncryptionError, 
@@ -33,7 +34,7 @@ export class EncryptionService {
    * 
    * @param kms - The Key Management Service for DEK wrapping/unwrapping operations
    */
-  constructor(private readonly kms: KeyManagementService) {}
+  constructor(@Inject(KeyManagementService) private readonly kms: DekWrapper) {}
 
   /**
    * Encrypts a medical record payload using envelope encryption
@@ -76,7 +77,7 @@ export class EncryptionService {
       }
 
       // Create AES-256-GCM cipher with the DEK and IV
-      const cipher = crypto.createCipheriv('aes-256-gcm', dek, iv);
+      const cipher = crypto.createCipheriv('aes-256-gcm', dek, iv, { authTagLength: 16 });
 
       // Encrypt the payload
       const ciphertext = Buffer.concat([
@@ -164,6 +165,13 @@ export class EncryptionService {
       throw new ValidationError('EncryptedRecord is malformed: authTag is missing or empty');
     }
 
+    // A truncated GCM tag must never be accepted (tag-truncation forgery).
+    if (encryptedRecord.authTag.length !== 16) {
+      throw new ValidationError(
+        `EncryptedRecord is malformed: authTag must be 16 bytes, got ${encryptedRecord.authTag.length}`,
+      );
+    }
+
     if (!encryptedRecord.encryptedDek || encryptedRecord.encryptedDek.length === 0) {
       throw new ValidationError('EncryptedRecord is malformed: encryptedDek is missing or empty');
     }
@@ -179,7 +187,10 @@ export class EncryptionService {
       dek = await this.kms.unwrapDek(encryptedRecord.encryptedDek, patientId);
 
       // Create AES-256-GCM decipher with the DEK and IV
-      const decipher = crypto.createDecipheriv('aes-256-gcm', dek, encryptedRecord.iv);
+      // Pin the expected tag length so Node refuses any shorter tag.
+      const decipher = crypto.createDecipheriv('aes-256-gcm', dek, encryptedRecord.iv, {
+        authTagLength: 16,
+      });
 
       // Set the authentication tag on the decipher for verification
       decipher.setAuthTag(encryptedRecord.authTag);

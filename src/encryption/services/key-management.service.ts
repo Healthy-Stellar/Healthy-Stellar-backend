@@ -4,6 +4,13 @@ import * as crypto from 'crypto';
 import { CircuitBreakerService } from '../../common/circuit-breaker/circuit-breaker.service';
 
 /**
+ * Key Management Service — IN-MEMORY, TEST-ONLY
+ *
+ * KEKs live in process memory and are lost on restart. Do not use in
+ * production: EncryptionModule binds this token to
+ * PersistentKeyManagementService, which persists KEKs via the KeyStore.
+ * This class remains as the DI token and as a fixture for unit tests.
+ *
  * Key Management Service
  * 
  * Manages Key Encryption Keys (KEKs) and performs Data Encryption Key (DEK) 

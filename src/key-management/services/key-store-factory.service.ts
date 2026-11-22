@@ -25,6 +25,17 @@ export class KeyStoreFactory implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
+    this.resolve();
+  }
+
+  getStore(): KeyStore {
+    // KEY_STORE's useFactory calls this during provider instantiation, which
+    // happens before onModuleInit; resolve lazily so it never returns undefined.
+    return this.store ?? this.resolve();
+  }
+
+  private resolve(): KeyStore {
+    if (this.store) return this.store;
     const backend = this.config.get<string>('KEY_STORAGE_BACKEND', 'database');
     switch (backend) {
       case 'aws-kms':
@@ -40,9 +51,6 @@ export class KeyStoreFactory implements OnModuleInit {
           `Unknown KEY_STORAGE_BACKEND: ${backend}. Use 'database' or 'aws-kms'.`,
         );
     }
-  }
-
-  getStore(): KeyStore {
     return this.store;
   }
 }
