@@ -34,7 +34,7 @@ export class EmergencyMedicalInfoController {
     @Body() dto: UpdateEmergencyMedicalInfoDto,
     @Req() req: any
   ) {
-    return this.service.update(patientId, dto, req.user.id);
+    return this.service.update(patientId, dto, req.user.userId);
   }
 
   @Get('patient/:patientId/history')

@@ -22,7 +22,7 @@ export class UsersEmergencyAccessController {
     @Body() dto: UpdateEmergencyAccessDto,
     @Req() req: any,
   ) {
-    const actorUserId = req.user?.userId || req.user?.id;
+    const actorUserId = req.user?.userId;
     return this.accessControlService.setEmergencyAccessEnabled(id, dto.enabled, actorUserId);
   }
 }

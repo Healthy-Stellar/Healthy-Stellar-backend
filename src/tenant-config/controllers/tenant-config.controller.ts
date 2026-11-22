@@ -113,7 +113,7 @@ export class TenantConfigController {
     this.validateTenantAccess(req.user, tenantId);
     this.validateConfigKey(updateDto.key);
 
-    const userId = req.user?.userId || req.user?.id;
+    const userId = req.user?.userId;
 
     this.logger.log(
       `Updating config for tenant ${this.sanitizeTenantId(tenantId)}: ${updateDto.key}`,
@@ -169,7 +169,7 @@ export class TenantConfigController {
       throw new BadRequestException(I18nContext.current()?.t('errors.BULK_UPDATE_LIMITED_TO_50_CONFIGURATIONS_AT_ONCE') || 'Bulk update limited to 50 configurations at once');
     }
 
-    const userId = req.user?.userId || req.user?.id;
+    const userId = req.user?.userId;
 
     this.logger.log(
       `Bulk updating ${bulkUpdateDto.configs.length} configs for tenant ${this.sanitizeTenantId(tenantId)}`,
@@ -214,7 +214,7 @@ export class TenantConfigController {
     this.validateTenantAccess(req.user, tenantId);
     this.validateConfigKey(key);
 
-    const userId = req.user?.userId || req.user?.id;
+    const userId = req.user?.userId;
 
     this.logger.log(`Deleting config key "${key}" for tenant: ${this.sanitizeTenantId(tenantId)}`);
 

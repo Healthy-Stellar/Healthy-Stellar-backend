@@ -84,7 +84,7 @@ export class RecordsController {
       throw new BadRequestException('Encrypted record file is required');
     }
 
-    const providerId = req.user?.userId || req.user?.id;
+    const providerId = req.user?.userId;
     return this.recordsService.uploadRecord(dto, file.buffer, providerId);
   }
 
@@ -162,7 +162,7 @@ export class RecordsController {
     @Query() dto: SearchRecordsDto,
     @Req() req: any,
   ): Promise<SearchRecordsResponseDto> {
-    const callerId: string = req.user?.userId ?? req.user?.id;
+    const callerId: string = req.user?.userId;
     const callerRole: string = req.user?.role ?? '';
     return this.recordsService.search(dto, callerId, callerRole);
   }
@@ -172,7 +172,7 @@ export class RecordsController {
   @ApiResponse({ status: 200, description: 'Base64 PNG QR code' })
   @ApiResponse({ status: 404, description: 'Record not found' })
   async getQrCode(@Param('id') id: string, @Req() req: any) {
-    const patientId = req.user?.userId || req.user?.id;
+    const patientId = req.user?.userId;
     const qrBase64 = await this.recordsService.generateQrCode(id, patientId);
     return { qrCode: qrBase64 };
   }
@@ -193,7 +193,7 @@ export class RecordsController {
     // MedicalRbacGuard.canActivate() can read it instead of always throwing.
     if (!req.medicalUser && req.user) {
       req.medicalUser = {
-        id: req.user.userId ?? req.user.id,
+        id: req.user.userId,
         role: req.user.role,
       };
     }
@@ -230,7 +230,8 @@ export class RecordsController {
     if (!file) {
       throw new BadRequestException('Encrypted record file is required');
     }
-    return this.recordVersionService.amend(id, dto, file.buffer, this.requesterId(req));
+    const ownerId = req.user?.userId;
+    return this.recordVersionService.amendRecord(id, dto, file.buffer, ownerId);
   }
 
   @Get(':id/versions')
@@ -289,15 +290,9 @@ export class RecordsController {
     @Req() req: any,
     @Res() res: Response,
   ): Promise<void> {
-    const ip: string = req.ip ?? req.socket?.remoteAddress ?? '';
-    const userAgent: string = req.headers?.['user-agent'] ?? '';
-    const { stream, filename, contentType } = await this.recordDownloadService.download(
-      id,
-      this.requesterId(req),
-      ip,
-      userAgent,
-    );
-    res.setHeader('Content-Type', contentType);
+    const userId = req.user?.userId;
+    const { stream, filename, mimeType } = await this.recordDownloadService.download(id, userId);
+    res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     stream.pipe(res);
   }
@@ -323,7 +318,8 @@ export class RecordsController {
     if (!file) {
       throw new BadRequestException('Attachment file is required');
     }
-    return this.recordAttachmentUploadService.uploadAttachment(id, file, this.requesterId(req));
+    const uploaderId = req.user?.userId;
+    return this.recordAttachmentUploadService.upload(id, dto, file.buffer, uploaderId);
   }
 
   @Get(':id/related')

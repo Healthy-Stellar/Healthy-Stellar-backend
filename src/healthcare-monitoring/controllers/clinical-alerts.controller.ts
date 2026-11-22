@@ -59,7 +59,7 @@ export class ClinicalAlertsController {
   @Put(':id/acknowledge')
   @Roles(UserRole.ADMIN, UserRole.PHYSICIAN, UserRole.NURSE)
   async acknowledgeAlert(@Param('id') alertId: string, @Request() req: any) {
-    const userId: string = req.user.id;
+    const userId: string = req.user.userId;
     return await this.clinicalAlertService.acknowledgeAlert(alertId, userId);
   }
 
@@ -70,7 +70,7 @@ export class ClinicalAlertsController {
     @Body() body: { resolutionNotes?: string },
     @Request() req: any,
   ) {
-    const userId: string = req.user.id;
+    const userId: string = req.user.userId;
     return await this.clinicalAlertService.resolveAlert(alertId, userId, body.resolutionNotes);
   }
 

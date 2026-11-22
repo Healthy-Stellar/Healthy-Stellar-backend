@@ -24,7 +24,7 @@ export class AccessControlController {
   @Post('grant')
   @UseGuards(JwtAuthGuard)
   async grantAccess(@Body() dto: CreateAccessGrantDto, @Req() req: any) {
-    const userId = req.user?.userId || req.user?.id;
+    const userId = req.user?.userId;
     if (!userId) {
       throw new UnauthorizedException('Authenticated user required');
     }
@@ -35,7 +35,7 @@ export class AccessControlController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   async revokeAccess(@Param('grantId') grantId: string, @Req() req: any) {
-    const userId = req.user?.userId || req.user?.id;
+    const userId = req.user?.userId;
     if (!userId) {
       throw new UnauthorizedException('Authenticated user required');
     }
@@ -45,7 +45,7 @@ export class AccessControlController {
   @Get('grants')
   @UseGuards(JwtAuthGuard)
   async getPatientGrants(@Req() req: any) {
-    const userId = req.user?.userId || req.user?.id;
+    const userId = req.user?.userId;
     if (!userId) {
       throw new UnauthorizedException('Authenticated user required');
     }
@@ -55,7 +55,7 @@ export class AccessControlController {
   @Get('received')
   @UseGuards(JwtAuthGuard)
   async getReceivedGrants(@Req() req: any) {
-    const userId = req.user?.userId || req.user?.id;
+    const userId = req.user?.userId;
     if (!userId) {
       throw new UnauthorizedException('Authenticated user required');
     }
@@ -65,7 +65,7 @@ export class AccessControlController {
   @Post('emergency')
   @UseGuards(JwtAuthGuard)
   async createEmergencyAccess(@Body() dto: CreateEmergencyAccessDto, @Req() req: any) {
-    const userId = req.user?.userId || req.user?.id;
+    const userId = req.user?.userId;
     if (!userId) {
       throw new UnauthorizedException('Authenticated user required');
     }
@@ -75,7 +75,7 @@ export class AccessControlController {
   @Get('emergency/log')
   @UseGuards(JwtAuthGuard)
   async getEmergencyLog(@Query('patientId') patientId: string, @Req() req: any) {
-    const userId = req.user?.userId || req.user?.id;
+    const userId = req.user?.userId;
     if (!userId) {
       throw new UnauthorizedException('Authenticated user required');
     }

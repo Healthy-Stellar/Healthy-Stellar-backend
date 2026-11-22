@@ -30,6 +30,14 @@ export default tseslint.config(
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
       'no-console': ['error', { allow: ['warn', 'error'] }],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "MemberExpression[object.type='MemberExpression'][object.object.name=/^(req|request)$/][object.property.name='user'][property.name='id']",
+          message: 'JwtAuthGuard exposes the authenticated actor as userId, not id.',
+        },
+      ],
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
