@@ -28,7 +28,7 @@ export class RecordingController {
     @UploadedFile() file: Express.Multer.File,
     @Request() req: any,
   ) {
-    return this.recordingService.uploadRecording(sessionId, file, req.user?.id ?? 'unknown');
+    return this.recordingService.uploadRecording(sessionId, file, req.user?.userId ?? 'unknown');
   }
 
   @Get(':id/recording/url')
@@ -36,7 +36,7 @@ export class RecordingController {
   @ApiOperation({ summary: 'Generate a 15-minute signed playback URL for a session recording' })
   async getPlaybackUrl(@Param('id') sessionId: string, @Request() req: any) {
     const userRole = req.user?.role ?? '';
-    const userId = req.user?.id ?? '';
+    const userId = req.user?.userId ?? '';
     return this.recordingService.getSignedUrl(sessionId, userRole, userId);
   }
 }

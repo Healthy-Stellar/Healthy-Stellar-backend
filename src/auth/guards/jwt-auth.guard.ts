@@ -1,6 +1,6 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { AuthTokenService, JwtPayload } from '../services/auth-token.service';
+import { AuthTokenService } from '../services/auth-token.service';
 import { SessionManagementService } from '../services/session-management.service';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 import { setRequestContextUser } from '../../common/middleware/request-context.middleware';
@@ -58,6 +58,9 @@ export class JwtAuthGuard implements CanActivate {
 
       return true;
     } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException('Invalid or expired token');
     }
   }

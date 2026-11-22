@@ -33,14 +33,14 @@ export class CredentialTrackingController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Add a credential/license record for a staff member' })
   addCredential(@Body() dto: CreateStaffCredentialDto, @Req() req: any) {
-    const actorId = req.user?.userId ?? req.user?.id ?? dto.verifiedBy;
+    const actorId = req.user?.userId ?? dto.verifiedBy;
     return this.service.addCredential({ ...dto, verifiedBy: actorId ?? dto.verifiedBy });
   }
 
   @Get('staff/:staffId')
   @ApiOperation({ summary: 'Get all credentials for a staff member' })
   getByStaff(@Param('staffId', ParseUUIDPipe) staffId: string, @Req() req: any) {
-    if (req.user?.role !== UserRole.ADMIN && req.user?.role !== UserRole.SUPER_ADMIN && req.user?.role !== UserRole.MEDICAL_RECORDS && req.user?.userId !== staffId && req.user?.id !== staffId) {
+    if (req.user?.role !== UserRole.ADMIN && req.user?.role !== UserRole.SUPER_ADMIN && req.user?.role !== UserRole.MEDICAL_RECORDS && req.user?.userId !== staffId) {
       throw new ForbiddenException('You are not allowed to access this staff credential set');
     }
     return this.service.getCredentialsForStaff(staffId);

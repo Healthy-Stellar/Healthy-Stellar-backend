@@ -5,7 +5,7 @@ import { RateLimitingService } from '../rate-limiting/rate-limiting.service';
 import { AuditAction, AuditSeverity } from '../entities/audit-log.entity';
 
 interface AuthenticatedRequest extends Request {
-  user?: { id: string; role: string };
+  user?: { userId: string; role: string };
   correlationId?: string;
   deviceId?: string;
 }
@@ -37,7 +37,7 @@ export class HealthcareSecurityMiddleware implements NestMiddleware {
   async use(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     const startTime = Date.now();
     const ipAddress = this.getClientIp(req);
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
 
     // 1. IP-level rate limiting (first line of defense)
     const ipResult = this.rateLimitingService.checkIpLimit(ipAddress);

@@ -16,13 +16,13 @@ export class DeviceTokenController {
   @ApiOperation({ summary: 'Register a device token for push notifications (FCM/APNs)' })
   @ApiResponse({ status: 201, description: 'Token registered' })
   register(@Req() req: any, @Body() dto: RegisterDeviceTokenDto) {
-    return this.pushService.registerToken(req.user.id, dto.token, dto.platform);
+    return this.pushService.registerToken(req.user.userId, dto.token, dto.platform);
   }
 
   @Delete()
   @ApiOperation({ summary: 'Deregister a device token' })
   @ApiResponse({ status: 200, description: 'Token deregistered' })
   deregister(@Req() req: any, @Body() dto: DeregisterDeviceTokenDto) {
-    return this.pushService.deregisterToken(req.user.id, dto.token);
+    return this.pushService.deregisterToken(req.user.userId, dto.token);
   }
 }

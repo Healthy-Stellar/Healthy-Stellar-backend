@@ -1,7 +1,7 @@
 /**
  * Tests for ClinicalAlertsController (#1122):
  *   - Guard applied at class level (no anonymous access)
- *   - userId removed from acknowledge/resolve bodies; uses req.user.id
+ *   - userId removed from acknowledge/resolve bodies; uses req.user.userId
  *   - Alert creation restricted to ADMIN/SUPER_ADMIN
  *   - Actor spoofing prevention
  *
@@ -124,29 +124,29 @@ describe('ClinicalAlertsController (#1122) — guards, roles & actor spoofing', 
 
   // ── Actor spoofing prevention ─────────────────────────────────────────
 
-  it('acknowledgeAlert uses req.user.id — not body.userId', async () => {
-    const req = { user: { id: 'real-clinician', role: UserRole.PHYSICIAN } };
+  it('acknowledgeAlert uses req.user.userId — not body.userId', async () => {
+    const req = { user: { userId: 'real-clinician', role: UserRole.PHYSICIAN } };
     await controller.acknowledgeAlert('alert-1', req);
     expect(alertService.acknowledgeAlert).toHaveBeenCalledWith('alert-1', 'real-clinician');
   });
 
   it('acknowledgeAlert ignores a spoofed userId (body has no userId param)', async () => {
-    const req = { user: { id: 'real-clinician', role: UserRole.PHYSICIAN } };
+    const req = { user: { userId: 'real-clinician', role: UserRole.PHYSICIAN } };
     // Controller signature: acknowledgeAlert(alertId, req) — no body
     await controller.acknowledgeAlert('alert-1', req);
     expect(alertService.acknowledgeAlert).not.toHaveBeenCalledWith('alert-1', 'attacker-id');
     expect(alertService.acknowledgeAlert).toHaveBeenCalledWith('alert-1', 'real-clinician');
   });
 
-  it('resolveAlert uses req.user.id — not body.userId', async () => {
-    const req = { user: { id: 'real-clinician', role: UserRole.PHYSICIAN } };
+  it('resolveAlert uses req.user.userId — not body.userId', async () => {
+    const req = { user: { userId: 'real-clinician', role: UserRole.PHYSICIAN } };
     const body = { resolutionNotes: 'Treated and resolved' };
     await controller.resolveAlert('alert-1', body, req);
     expect(alertService.resolveAlert).toHaveBeenCalledWith('alert-1', 'real-clinician', body.resolutionNotes);
   });
 
   it('resolveAlert body does not include userId (no spoofing surface)', async () => {
-    const req = { user: { id: 'real-clinician', role: UserRole.PHYSICIAN } };
+    const req = { user: { userId: 'real-clinician', role: UserRole.PHYSICIAN } };
     // Even if an attacker passes userId in the body object, the controller ignores it
     const body = { resolutionNotes: 'resolved', userId: 'attacker-id' } as any;
     await controller.resolveAlert('alert-1', body, req);
