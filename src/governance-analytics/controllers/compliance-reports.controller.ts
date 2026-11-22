@@ -24,7 +24,7 @@ export class ComplianceReportsController {
   })
   @ApiResponse({ status: 202, description: 'Report generation queued' })
   async generate(@Req() req: any, @Body() dto: GenerateComplianceReportDto) {
-    return this.complianceReportsService.requestReport(dto, req.user?.id);
+    return this.complianceReportsService.requestReport(dto, req.user?.userId);
   }
 
   @Get(':jobId')
@@ -44,7 +44,7 @@ export class ComplianceReportsController {
     @Query('format') format: 'pdf' | 'csv' = 'pdf',
     @Res() res: Response,
   ) {
-    const buffer = await this.complianceReportsService.download(jobId, format, req.user?.id);
+    const buffer = await this.complianceReportsService.download(jobId, format, req.user?.userId);
     res.set({
       'Content-Type': format === 'pdf' ? 'application/pdf' : 'text/csv',
       'Content-Disposition': `attachment; filename="compliance-report-${jobId}.${format}"`,

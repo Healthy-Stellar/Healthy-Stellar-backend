@@ -18,7 +18,7 @@ export class KekRotationController {
   @Post('rotate')
   @ApiOperation({ summary: 'Trigger on-demand KEK rotation and re-encryption of all DEKs' })
   async rotate(@Request() req: { user?: { id?: string } }) {
-    return this.kekRotation.rotate(req.user?.id ?? 'api');
+    return this.kekRotation.rotate(req.user?.userId ?? 'api');
   }
 
   @Get('rotation-status')

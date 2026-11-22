@@ -18,7 +18,7 @@ export class TreatmentPlanningController {
     @Body() updateData: any,
     @Request() req: any
   ) {
-    const authorId = req.user?.userId || req.user?.id || req.user?.sub || 'system-user'; 
+    const authorId = req.user?.userId || 'system-user';
     return this.planningService.savePlan(id, updateData, authorId);
   }
 
@@ -45,7 +45,7 @@ export class TreatmentPlanningController {
     @Param('version', ParseIntPipe) version: number,
     @Request() req: any
   ) {
-    const authorId = req.user?.userId || req.user?.id || req.user?.sub || 'system-user';
+    const authorId = req.user?.userId || 'system-user';
     return this.planningService.revertToVersion(id, version, authorId);
   }
 }

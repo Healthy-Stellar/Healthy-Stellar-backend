@@ -30,7 +30,7 @@ export class LabTestsController {
   @ApiResponse({ status: 201, description: 'Lab test created successfully' })
   @ApiResponse({ status: 409, description: 'Test code already exists' })
   create(@Body() createDto: CreateLabTestDto, @Request() req: any) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.labTestsService.create(createDto, userId);
   }
 
@@ -78,7 +78,7 @@ export class LabTestsController {
     @Body() updateDto: Partial<CreateLabTestDto>,
     @Request() req: any,
   ) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.labTestsService.update(id, updateDto, userId);
   }
 
@@ -86,7 +86,7 @@ export class LabTestsController {
   @ApiOperation({ summary: 'Activate lab test' })
   @ApiResponse({ status: 200, description: 'Lab test activated successfully' })
   activate(@Param('id') id: string, @Request() req: any) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.labTestsService.activate(id, userId);
   }
 
@@ -94,7 +94,7 @@ export class LabTestsController {
   @ApiOperation({ summary: 'Deactivate lab test' })
   @ApiResponse({ status: 200, description: 'Lab test deactivated successfully' })
   deactivate(@Param('id') id: string, @Request() req: any) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.labTestsService.deactivate(id, userId);
   }
 
@@ -102,7 +102,7 @@ export class LabTestsController {
   @ApiOperation({ summary: 'Add parameter to lab test' })
   @ApiResponse({ status: 201, description: 'Parameter added successfully' })
   addParameter(@Param('id') id: string, @Body() parameterDto: any, @Request() req: any) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.labTestsService.addParameter(id, parameterDto, userId);
   }
 
@@ -114,7 +114,7 @@ export class LabTestsController {
     @Body() updateDto: any,
     @Request() req: any,
   ) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.labTestsService.updateParameter(parameterId, updateDto, userId);
   }
 

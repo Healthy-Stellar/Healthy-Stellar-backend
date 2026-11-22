@@ -16,6 +16,7 @@ import { RecordEventStoreService } from './record-event-store.service';
 import { IpfsService } from './ipfs.service';
 import { StellarService } from './stellar.service';
 import { AccessControlService } from '../../access-control/services/access-control.service';
+import { grantCoversRecord } from '../../access-control/utils/grant-coverage.util';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { RecordAmended } from '../../event-store/domain-events';
 import { AmendRecordDto } from '../dto/amend-record.dto';
@@ -116,6 +117,7 @@ export class RecordVersionService {
         recordId,
         version: nextVersion,
         cid,
+        encryptedDek: dto.encryptedDek ?? null,
         stellarTxHash,
         amendedBy: requesterId,
         amendmentReason: dto.amendmentReason,
@@ -225,6 +227,29 @@ export class RecordVersionService {
   }
 
   /**
+   * Retrieve the most recent version of a record.
+   * Access check applies.
+   */
+  async getLatestVersion(recordId: string, requesterId: string): Promise<RecordVersionMetaDto> {
+    const record = await this.recordRepo.findOne({ where: { id: recordId } });
+    if (!record || record.isDeleted) {
+      throw new NotFoundException(`Record ${recordId} not found`);
+    }
+
+    await this.assertAccess(record.patientId, recordId, requesterId);
+
+    const latest = await this.versionRepo.findOne({
+      where: { recordId },
+      order: { version: 'DESC' },
+    });
+    if (!latest) {
+      throw new NotFoundException(`Record ${recordId} has no versions`);
+    }
+
+    return this.toMeta(latest);
+  }
+
+  /**
    * Return the RecordVersion row for a specific version number (used internally by diff service).
    * Does NOT perform an access check — caller is responsible.
    */
@@ -248,7 +273,7 @@ export class RecordVersionService {
   private async assertAccess(patientId: string, recordId: string, requesterId: string): Promise<void> {
     if (patientId === requesterId) return;
 
-    const hasGrant = await this.accessControlService.verifyAccess(requesterId, recordId);
+    const hasGrant = await this.accessControlService.verifyAccess(requesterId, recordId, patientId);
     if (!hasGrant) {
       const hasEmergency = await this.accessControlService.findActiveEmergencyGrant(
         patientId,
@@ -269,9 +294,8 @@ export class RecordVersionService {
   ): Promise<void> {
     try {
       const grants = await this.accessControlService.getPatientGrants(patientId);
-      const relevantGrants = grants.filter(
-        (g) => g.recordIds.includes('*') || g.recordIds.includes(recordId),
-      );
+      const now = new Date();
+      const relevantGrants = grants.filter((g) => grantCoversRecord(g, recordId, patientId, now));
 
       for (const grant of relevantGrants) {
         this.notificationsService.emitRecordAmended(amendedBy, recordId, {

@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, MoreThan } from 'typeorm';
 import { createHash, randomBytes, randomUUID } from 'crypto';
@@ -36,6 +32,9 @@ export interface SessionInfo {
 
 @Injectable()
 export class SessionManagementService {
+  private readonly activityThrottleMs: number;
+  private readonly lastActivityUpdates = new Map<string, number>();
+
   constructor(
     @InjectRepository(SessionEntity)
     private sessionRepository: Repository<SessionEntity>,
@@ -43,7 +42,10 @@ export class SessionManagementService {
     private userRepository: Repository<User>,
     private configService: ConfigService,
     private sessionRevocationService: SessionRevocationService,
-  ) {}
+  ) {
+    this.activityThrottleMs =
+      this.configService?.get<number>('SESSION_ACTIVITY_THROTTLE_MS', 60_000) ?? 60_000;
+  }
 
   /** SHA-256 hash a token — the raw value is never persisted. */
   private hashToken(token: string): string {
@@ -124,6 +126,7 @@ export class SessionManagementService {
       for (const session of toRevoke) {
         session.isActive = false;
         session.revokedAt = now;
+        this.lastActivityUpdates.delete(session.id);
       }
       await this.sessionRepository.save(toRevoke);
     }
@@ -245,12 +248,19 @@ export class SessionManagementService {
       throw new UnauthorizedException('Refresh token expired');
     }
 
+    const isTimeoutValid = await this.enforceSessionTimeout(session);
+    if (!isTimeoutValid) {
+      throw new UnauthorizedException('Session expired due to inactivity');
+    }
+
     session.accessTokenHash = this.hashToken(newAccessToken);
     session.refreshTokenHash = this.hashToken(
       newRefreshToken ?? randomBytes(32).toString('hex'),
     );
     session.expiresAt = newExpiresAt;
     session.refreshTokenExpiresAt = newRefreshTokenExpiresAt;
+    session.updatedAt = new Date();
+    this.lastActivityUpdates.set(session.id, Date.now());
 
     return this.sessionRepository.save(session);
   }
@@ -270,6 +280,7 @@ export class SessionManagementService {
     session.isActive = false;
     session.revokedAt = new Date();
     await this.sessionRepository.save(session);
+    this.lastActivityUpdates.delete(sessionId);
 
     // Propagate revocation to open WebSocket connections immediately.
     await this.sessionRevocationService.notifySessionRevoked(sessionId);
@@ -289,6 +300,7 @@ export class SessionManagementService {
     for (const session of sessions) {
       session.isActive = false;
       session.revokedAt = new Date();
+      this.lastActivityUpdates.delete(session.id);
     }
 
     await this.sessionRepository.save(sessions);
@@ -317,11 +329,14 @@ export class SessionManagementService {
 
     if (new Date() > session.expiresAt) {
       session.isActive = false;
+      session.revokedAt = new Date();
       await this.sessionRepository.save(session);
+      this.lastActivityUpdates.delete(session.id);
+      await this.sessionRevocationService.notifySessionRevoked(session.id);
       return false;
     }
 
-    return true;
+    return this.enforceSessionTimeout(session);
   }
 
   /**
@@ -365,14 +380,24 @@ export class SessionManagementService {
       return false;
     }
 
-    const lastActivityTime = session.updatedAt;
-    const now = new Date();
-    const minutesSinceLastActivity = (now.getTime() - lastActivityTime.getTime()) / (1000 * 60);
+    const timeout =
+      inactivityMinutes ??
+      this.configService?.get<number>('SESSION_TIMEOUT_MINUTES') ??
+      this.configService?.get<number>('session_timeout_minutes') ??
+      15;
 
-    if (minutesSinceLastActivity > inactivityMinutes) {
+    const lastActivity = session.updatedAt || session.createdAt || new Date();
+    const lastActivityTime =
+      lastActivity instanceof Date ? lastActivity.getTime() : new Date(lastActivity).getTime();
+    const now = Date.now();
+    const minutesSinceLastActivity = (now - lastActivityTime) / (1000 * 60);
+
+    if (minutesSinceLastActivity > timeout) {
       session.isActive = false;
-      session.revokedAt = new Date();
+      session.revokedAt = new Date(now);
       await this.sessionRepository.save(session);
+      this.lastActivityUpdates.delete(session.id);
+      await this.sessionRevocationService?.notifySessionRevoked(session.id);
       return false;
     }
 
@@ -405,7 +430,7 @@ export class SessionManagementService {
   }
 
   /**
-   * Update session activity timestamp.
+   * Update session activity timestamp (throttled to avoid DB writes on every request).
    */
   async updateSessionActivity(sessionId: string): Promise<void> {
     if (!this.isWellFormedSessionId(sessionId)) {

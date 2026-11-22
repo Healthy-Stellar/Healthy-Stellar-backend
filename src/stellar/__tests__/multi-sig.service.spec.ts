@@ -1,242 +1,387 @@
 ﻿import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { getQueueToken } from '@nestjs/bull';
+import { FindOperator } from 'typeorm';
 import { MultiSigTransactionService } from '../services/multi-sig-transaction.service';
 import { MultiSigTransactionEntity } from '../entities/multi-sig-transaction.entity';
-import { StellarService } from '../services/stellar.service';
+import { StellarPaymentService } from '../services/stellar-payment.service';
+import { StellarService, StellarPaymentError } from '../services/stellar.service';
+import { MultiSigExecutionProcessor } from '../processors/multi-sig-execution.processor';
+import { MultiSigSweepTask } from '../tasks/multi-sig-sweep.task';
 import { NotificationsGateway } from '../../notifications/notifications.gateway';
+import { NotificationEventType } from '../../notifications/interfaces/notification-event.interface';
+import {
+  MULTI_SIG_EXECUTE_JOB,
+  MULTI_SIG_EXECUTION_QUEUE,
+  MultiSigExecutionJobData,
+} from '../multi-sig.constants';
 import {
   MultiSigTransactionStatus,
   SignatureStatus,
   CreateMultiSigPaymentDto,
 } from '../interfaces/multi-sig.interface';
 
-const mockConfig = (overrides = {}) => ({
-  get: jest.fn((key, defaultVal) => overrides[key] ?? defaultVal ?? null),
-  getOrThrow: jest.fn((key) => {
-    if (!overrides[key]) throw new Error('Missing: ' + key);
-    return overrides[key];
-  }),
+const DESTINATION = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H';
+const TX_HASH = 'a'.repeat(64);
+
+const mockConfig = (overrides: { [key: string]: string } = {}) => ({
+  get: jest.fn((key: string, defaultVal?: unknown) => overrides[key] ?? defaultVal ?? null),
 }) as unknown as ConfigService;
 
-const mockRepo = () => ({
-  create: jest.fn((d) => d),
-  save: jest.fn((e) => Promise.resolve({ ...e, id: 'tx-' + Date.now(), expiresAt: e.expiresAt || new Date(Date.now()+3600000), createdAt: new Date(), destination: e.destination || '', amount: e.amount || '0', asset: e.asset || 'XLM', threshold: e.threshold || 2, totalSigners: e.totalSigners || 3 })),
-  findOne: jest.fn(),
-  find: jest.fn(),
-  update: jest.fn(),
-}) as unknown as Repository<MultiSigTransactionEntity>;
+/** Minimal in-memory stand-in for Repository<MultiSigTransactionEntity>. */
+function createInMemoryRepo() {
+  const store = new Map<string, MultiSigTransactionEntity>();
+  let seq = 0;
 
-const mockStellarService = () => ({
-  getAccount: jest.fn(),
-  submitTransaction: jest.fn(),
-}) as unknown as StellarService;
+  const matches = (entity: MultiSigTransactionEntity, where: { [key: string]: unknown } = {}) =>
+    Object.entries(where).every(([key, expected]) => {
+      const actual = (entity as any)[key];
+      if (expected instanceof FindOperator) {
+        if (expected.type === 'isNull') return actual === null || actual === undefined;
+        if (expected.type === 'lessThan') return actual < expected.value;
+        throw new Error(`Unsupported operator ${expected.type}`);
+      }
+      return actual === expected;
+    });
 
-const mockNotificationsGateway = () => ({
-  emitNotification: jest.fn(),
-}) as unknown as NotificationsGateway;
+  const repo: any = {
+    store,
+    create: jest.fn((data: Partial<MultiSigTransactionEntity>) => ({ ...data }) as MultiSigTransactionEntity),
+    save: jest.fn(async (entity: MultiSigTransactionEntity) => {
+      if (!entity.id) {
+        entity.id = `tx-${++seq}`;
+        entity.createdAt = new Date();
+        entity.executionAttempts = entity.executionAttempts ?? 0;
+        entity.stellarTxHash = entity.stellarTxHash ?? null;
+      }
+      store.set(entity.id, entity);
+      return entity;
+    }),
+    findOne: jest.fn(async ({ where }: any) => [...store.values()].find((e) => matches(e, where)) ?? null),
+    find: jest.fn(async ({ where }: any = {}) => [...store.values()].filter((e) => matches(e, where))),
+    update: jest.fn(async (criteria: any, partial: Partial<MultiSigTransactionEntity>) => {
+      const hits = [...store.values()].filter((e) => matches(e, criteria));
+      hits.forEach((e) => Object.assign(e, partial));
+      return { affected: hits.length };
+    }),
+  };
+  repo.manager = {
+    transaction: jest.fn(async (cb: (manager: any) => Promise<unknown>) =>
+      cb({ getRepository: () => repo }),
+    ),
+  };
+  return repo;
+}
+
+/** Captures jobs like Bull does, de-duplicating by jobId. */
+function createFakeQueue() {
+  const jobs: Array<{ name: string; data: MultiSigExecutionJobData; opts?: any; id: string }> = [];
+  return {
+    jobs,
+    add: jest.fn(async (name: string, data: MultiSigExecutionJobData, opts?: { jobId?: string }) => {
+      const id = opts?.jobId ?? `job-${jobs.length + 1}`;
+      const existing = jobs.find((j) => j.id === id);
+      if (existing) return existing;
+      const job = { name, data, opts, id };
+      jobs.push(job);
+      return job;
+    }),
+  };
+}
 
 describe('MultiSigTransactionService', () => {
   let service: MultiSigTransactionService;
-  let repo: Repository<MultiSigTransactionEntity>;
-  let notifications: NotificationsGateway;
+  let processor: MultiSigExecutionProcessor;
+  let sweepTask: MultiSigSweepTask;
+  let repo: ReturnType<typeof createInMemoryRepo>;
+  let queue: ReturnType<typeof createFakeQueue>;
+  let notifications: { emitNotification: jest.Mock };
+  let stellar: { buildPaymentTransaction: jest.Mock; submitSignedTransaction: jest.Mock };
+
+  const createDto: CreateMultiSigPaymentDto = {
+    tenantId: 'default',
+    destination: DESTINATION,
+    amount: '15000',
+    asset: 'XLM',
+    memo: 'test payment',
+  };
+
+  /** Drain the fake queue through the real processor, as a Bull worker would. */
+  async function runQueuedJobs() {
+    while (queue.jobs.length) {
+      const job = queue.jobs.shift();
+      expect(job.name).toBe(MULTI_SIG_EXECUTE_JOB);
+      await processor.handle({ id: job.id, data: job.data });
+    }
+  }
 
   beforeEach(async () => {
-    const config = mockConfig({
-      'MULTI_SIG_THRESHOLD_default': '10000',
-      'MULTI_SIG_QUORUM_default': '2',
-      'MULTI_SIG_SIGNERS_default': 'signer-1,signer-2,signer-3',
-      'MULTI_SIG_TTL_MINUTES_default': '60',
-    });
-    repo = mockRepo();
-    notifications = mockNotificationsGateway();
+    repo = createInMemoryRepo();
+    queue = createFakeQueue();
+    notifications = { emitNotification: jest.fn() };
+    stellar = {
+      buildPaymentTransaction: jest.fn().mockResolvedValue({ xdr: 'signed-xdr', hash: TX_HASH }),
+      submitSignedTransaction: jest.fn().mockResolvedValue(TX_HASH),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MultiSigTransactionService,
-        { provide: ConfigService, useValue: config },
+        StellarPaymentService,
+        MultiSigExecutionProcessor,
+        MultiSigSweepTask,
+        {
+          provide: ConfigService,
+          useValue: mockConfig({
+            MULTI_SIG_THRESHOLD_default: '10000',
+            MULTI_SIG_QUORUM_default: '2',
+            MULTI_SIG_SIGNERS_default: 'signer-1,signer-2,signer-3',
+            MULTI_SIG_TTL_MINUTES_default: '60',
+            MULTI_SIG_MAX_EXECUTION_ATTEMPTS: '3',
+          }),
+        },
         { provide: getRepositoryToken(MultiSigTransactionEntity), useValue: repo },
-        { provide: StellarService, useValue: mockStellarService() },
+        { provide: getQueueToken(MULTI_SIG_EXECUTION_QUEUE), useValue: queue },
+        { provide: StellarService, useValue: stellar },
         { provide: NotificationsGateway, useValue: notifications },
       ],
     }).compile();
 
-    service = module.get<MultiSigTransactionService>(MultiSigTransactionService);
+    service = module.get(MultiSigTransactionService);
+    processor = module.get(MultiSigExecutionProcessor);
+    sweepTask = module.get(MultiSigSweepTask);
   });
 
   describe('createMultiSigPayment', () => {
-    it('should create a multi-sig payment request', async () => {
-      const dto: CreateMultiSigPaymentDto = {
-        tenantId: 'default',
-        destination: 'GABCDEF1234567890ABCDEF1234567890ABCDEF1234567890',
-        amount: '15000',
-        asset: 'XLM',
-        memo: 'test payment',
-      };
+    it('creates a pending request and notifies every signer', async () => {
+      const result = await service.createMultiSigPayment(createDto, 'requester-1');
 
-      const result = await service.createMultiSigPayment(dto, 'requester-1');
-      expect(result).toBeDefined();
       expect(result.status).toBe(MultiSigTransactionStatus.PENDING_SIGNATURES);
       expect(result.amount).toBe('15000');
       expect(result.signatures).toHaveLength(3);
-      expect(notifications.emitNotification).toHaveBeenCalled();
+      expect(notifications.emitNotification).toHaveBeenCalledTimes(3);
+      expect(notifications.emitNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: NotificationEventType.MULTI_SIG_PAYMENT_AWAITING,
+          actorId: 'requester-1',
+          resourceId: result.id,
+          metadata: expect.objectContaining({ targetUserId: 'signer-1', transactionId: result.id }),
+        }),
+      );
     });
 
-    it('should reject payments below threshold', async () => {
-      const dto: CreateMultiSigPaymentDto = {
-        tenantId: 'default',
-        destination: 'GABCDEF1234567890ABCDEF1234567890ABCDEF1234567890',
-        amount: '100',
-        asset: 'XLM',
-      };
-
-      await expect(service.createMultiSigPayment(dto, 'requester-1')).rejects.toThrow();
+    it('rejects payments below threshold', async () => {
+      await expect(
+        service.createMultiSigPayment({ ...createDto, amount: '100' }, 'requester-1'),
+      ).rejects.toThrow('Amount below threshold');
     });
   });
 
-  describe('2-of-3 approval flow', () => {
-    let pendingTx: any;
+  describe('approve → enqueue → execute', () => {
+    it('enqueues on quorum and the processor submits the payment with a real hash', async () => {
+      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
 
-    beforeEach(async () => {
-      const initialSignatures = [
-        { signerId: 'signer-1', status: SignatureStatus.PENDING },
-        { signerId: 'signer-2', status: SignatureStatus.PENDING },
-        { signerId: 'signer-3', status: SignatureStatus.PENDING },
-      ];
+      const first = await service.approveTransaction(id, { signerId: 'signer-1' });
+      expect(first.status).toBe(MultiSigTransactionStatus.PENDING_SIGNATURES);
+      expect(queue.add).not.toHaveBeenCalled();
 
-      pendingTx = {
-        id: 'tx-test-1',
-        tenantId: 'default',
-        destination: 'GABCD...',
+      const second = await service.approveTransaction(id, { signerId: 'signer-2' });
+      expect(second.status).toBe(MultiSigTransactionStatus.APPROVED);
+      expect(repo.manager.transaction).toHaveBeenCalledTimes(2);
+      expect(queue.add).toHaveBeenCalledWith(
+        'execute',
+        { transactionId: id },
+        expect.objectContaining({ jobId: `multi-sig-${id}` }),
+      );
+
+      await runQueuedJobs();
+
+      expect(stellar.buildPaymentTransaction).toHaveBeenCalledWith({
+        destination: DESTINATION,
         amount: '15000',
         asset: 'XLM',
-        status: MultiSigTransactionStatus.PENDING_SIGNATURES,
-        expiresAt: new Date(Date.now()+3600000),
-        createdAt: new Date(),
-        threshold: 2,
-        totalSigners: 3,
-        ttlMinutes: 60,
-        expiresAt: new Date(Date.now() + 3600000),
-        requesterId: 'requester-1',
-        signatures: initialSignatures,
-      };
-
-      (repo.findOne as jest.Mock).mockResolvedValue(pendingTx);
-    });
-
-    it('should reach quorum with 2 approvals and change status', async () => {
-      (repo.save as jest.Mock).mockImplementation(async (e) => e);
-
-      await service.approveTransaction('tx-test-1', { signerId: 'signer-1' });
-      // Update mock to reflect first approval
-      pendingTx.signatures = [
-        { signerId: 'signer-1', status: SignatureStatus.APPROVED, signedAt: new Date().toISOString() },
-        { signerId: 'signer-2', status: SignatureStatus.PENDING },
-        { signerId: 'signer-3', status: SignatureStatus.PENDING },
-      ];
-      (repo.findOne as jest.Mock).mockResolvedValue(pendingTx);
-
-      const result = await service.approveTransaction('tx-test-1', { signerId: 'signer-2' });
-      expect(result.status).toBe(MultiSigTransactionStatus.APPROVED);
-    });
-
-    it('should reject and cancel the transaction', async () => {
-      const result = await service.rejectTransaction('tx-test-1', {
-        signerId: 'signer-1',
-        reason: 'Insufficient funds',
+        memo: 'test payment',
       });
+      expect(stellar.submitSignedTransaction).toHaveBeenCalledWith('signed-xdr');
+
+      const stored = repo.store.get(id);
+      expect(stored.status).toBe(MultiSigTransactionStatus.EXECUTED);
+      expect(stored.stellarTxHash).toBe(TX_HASH);
+      expect(stored.xdr).toBe('signed-xdr');
+
+      const status = await service.getTransactionStatus(id);
+      expect(status.stellarTxHash).toBe(TX_HASH);
+    });
+
+    it('keeps the approval when enqueueing fails, and the sweep enqueues it later', async () => {
+      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
+      await service.approveTransaction(id, { signerId: 'signer-1' });
+
+      queue.add.mockRejectedValueOnce(new Error('redis down'));
+      const approved = await service.approveTransaction(id, { signerId: 'signer-2' });
+      expect(approved.status).toBe(MultiSigTransactionStatus.APPROVED);
+      expect(queue.jobs).toHaveLength(0);
+
+      await sweepTask.handleSweep();
+      expect(queue.jobs).toEqual([expect.objectContaining({ data: { transactionId: id } })]);
+
+      await runQueuedJobs();
+      expect(repo.store.get(id).status).toBe(MultiSigTransactionStatus.EXECUTED);
+    });
+
+    it('leaves a retryable failure APPROVED and resubmits the same signed envelope', async () => {
+      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
+      await service.approveTransaction(id, { signerId: 'signer-1' });
+      await service.approveTransaction(id, { signerId: 'signer-2' });
+
+      stellar.submitSignedTransaction.mockRejectedValueOnce(
+        new StellarPaymentError('Payment submission failed (timeout)', true),
+      );
+      await runQueuedJobs();
+
+      const afterFailure = repo.store.get(id);
+      expect(afterFailure.status).toBe(MultiSigTransactionStatus.APPROVED);
+      expect(afterFailure.executionAttempts).toBe(1);
+      expect(afterFailure.lastError).toContain('timeout');
+      expect(afterFailure.xdr).toBe('signed-xdr');
+
+      await expect(service.sweepApprovedTransactions()).resolves.toBe(1);
+      await runQueuedJobs();
+
+      // The retry reuses the persisted envelope instead of building a new payment.
+      expect(stellar.buildPaymentTransaction).toHaveBeenCalledTimes(1);
+      expect(stellar.submitSignedTransaction).toHaveBeenCalledTimes(2);
+      expect(repo.store.get(id).status).toBe(MultiSigTransactionStatus.EXECUTED);
+      expect(repo.store.get(id).lastError).toBeNull();
+    });
+
+    it('marks a terminal failure EXECUTION_FAILED and does not sweep it again', async () => {
+      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
+      await service.approveTransaction(id, { signerId: 'signer-1' });
+      await service.approveTransaction(id, { signerId: 'signer-2' });
+
+      stellar.submitSignedTransaction.mockRejectedValueOnce(
+        new StellarPaymentError('insufficient funds (op_underfunded)', false, 'op_underfunded'),
+      );
+      await runQueuedJobs();
+
+      expect(repo.store.get(id).status).toBe(MultiSigTransactionStatus.EXECUTION_FAILED);
+      await expect(service.sweepApprovedTransactions()).resolves.toBe(0);
+    });
+
+    it('gives up after MULTI_SIG_MAX_EXECUTION_ATTEMPTS retryable failures', async () => {
+      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
+      await service.approveTransaction(id, { signerId: 'signer-1' });
+      await service.approveTransaction(id, { signerId: 'signer-2' });
+      stellar.submitSignedTransaction.mockRejectedValue(new StellarPaymentError('horizon 503', true));
+
+      for (let i = 0; i < 3; i++) {
+        await service.sweepApprovedTransactions();
+        await runQueuedJobs();
+      }
+
+      const stored = repo.store.get(id);
+      expect(stored.executionAttempts).toBe(3);
+      expect(stored.status).toBe(MultiSigTransactionStatus.EXECUTION_FAILED);
+    });
+
+    it('does not execute a transaction twice', async () => {
+      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
+      await service.approveTransaction(id, { signerId: 'signer-1' });
+      await service.approveTransaction(id, { signerId: 'signer-2' });
+      await runQueuedJobs();
+
+      await service.executeApprovedTransaction(id);
+      await expect(service.sweepApprovedTransactions()).resolves.toBe(0);
+      expect(stellar.submitSignedTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('de-duplicates repeated sweeps while a job is still queued', async () => {
+      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
+      await service.approveTransaction(id, { signerId: 'signer-1' });
+      await service.approveTransaction(id, { signerId: 'signer-2' });
+
+      await service.sweepApprovedTransactions();
+      await service.sweepApprovedTransactions();
+
+      expect(queue.jobs).toHaveLength(1);
+    });
+  });
+
+  describe('MultiSigExecutionProcessor', () => {
+    it('reads the transaction id from job.data', async () => {
+      const spy = jest.spyOn(service, 'executeApprovedTransaction').mockResolvedValue(undefined);
+      await processor.handle({ id: 'job-1', data: { transactionId: 'tx-42' } });
+      expect(spy).toHaveBeenCalledWith('tx-42');
+    });
+
+    it('ignores jobs without a transaction id', async () => {
+      const spy = jest.spyOn(service, 'executeApprovedTransaction');
+      await processor.handle({ id: 'job-1', data: {} as MultiSigExecutionJobData });
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('approval rules', () => {
+    let id: string;
+
+    beforeEach(async () => {
+      ({ id } = await service.createMultiSigPayment(createDto, 'requester-1'));
+    });
+
+    it('rejects and cancels the transaction', async () => {
+      const result = await service.rejectTransaction(id, { signerId: 'signer-1', reason: 'Insufficient funds' });
       expect(result.status).toBe(MultiSigTransactionStatus.REJECTED);
     });
 
-    it('should reject duplicate approvals', async () => {
-      pendingTx.signatures[0].status = SignatureStatus.APPROVED;
-      (repo.findOne as jest.Mock).mockResolvedValue(pendingTx);
-
-      await expect(
-        service.approveTransaction('tx-test-1', { signerId: 'signer-1' }),
-      ).rejects.toThrow();
+    it('rejects duplicate approvals', async () => {
+      await service.approveTransaction(id, { signerId: 'signer-1' });
+      await expect(service.approveTransaction(id, { signerId: 'signer-1' })).rejects.toThrow('Already approved');
     });
 
-    it('should reject approval after previous rejection', async () => {
-      pendingTx.signatures[0].status = SignatureStatus.REJECTED;
-      (repo.findOne as jest.Mock).mockResolvedValue(pendingTx);
-
-      await expect(
-        service.approveTransaction('tx-test-1', { signerId: 'signer-1' }),
-      ).rejects.toThrow();
-    });
-  });
-
-  describe('expiry', () => {
-    it('should detect expired transactions', async () => {
-      const expiredTx = {
-        id: 'tx-expired',
-        tenantId: 'default',
-        status: MultiSigTransactionStatus.PENDING_SIGNATURES,
-        expiresAt: new Date(Date.now() - 3600000),
-        signatures: [{ signerId: 'signer-1', status: SignatureStatus.PENDING }],
-      };
-      (repo.findOne as jest.Mock).mockResolvedValue(expiredTx);
-      (repo.save as jest.Mock).mockImplementation(async (e) => e);
-
-      await expect(
-        service.approveTransaction('tx-expired', { signerId: 'signer-1' }),
-      ).rejects.toThrow('expired');
+    it('rejects unknown signers', async () => {
+      await expect(service.approveTransaction(id, { signerId: 'intruder' })).rejects.toThrow('Not authorised');
     });
 
-    it('should expire stale transactions via cron', async () => {
-      (repo.update as jest.Mock).mockResolvedValue({ affected: 2 });
-      (repo.find as jest.Mock).mockResolvedValue([
-        { id: 'tx-1', requesterId: 'req-1', amount: '15000', asset: 'XLM' },
-        { id: 'tx-2', requesterId: 'req-2', amount: '20000', asset: 'XLM' },
-      ]);
+    it('rejects approval of an already rejected signature', async () => {
+      repo.store.get(id).signatures[0].status = SignatureStatus.REJECTED;
+      await expect(service.approveTransaction(id, { signerId: 'signer-1' })).rejects.toThrow('Already rejected');
+    });
 
-      const expired = await service.expireStaleTransactions();
-      expect(expired).toBe(2);
-      // Notifications removed in simplified service
+    it('persists EXPIRED and rejects approval of an expired transaction', async () => {
+      repo.store.get(id).expiresAt = new Date(Date.now() - 1000);
+
+      await expect(service.approveTransaction(id, { signerId: 'signer-1' })).rejects.toThrow('expired');
+      expect(repo.store.get(id).status).toBe(MultiSigTransactionStatus.EXPIRED);
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFound for an unknown transaction', async () => {
+      await expect(service.approveTransaction('missing', { signerId: 'signer-1' })).rejects.toThrow('Not found');
     });
   });
 
-  describe('getTransactionStatus', () => {
-    it('should return transaction status', async () => {
-      const tx = {
-        id: 'tx-status',
-        tenantId: 'default',
-        destination: 'GABCD...',
-        amount: '15000',
-        asset: 'XLM',
-        status: MultiSigTransactionStatus.PENDING_SIGNATURES,
-        threshold: 2,
-        totalSigners: 3,
-        ttlMinutes: 60,
-        expiresAt: new Date(Date.now() + 3600000),
-        requesterId: 'requester-1',
-        signatures: [],
-        expiresAt: new Date(Date.now()+3600000),
-        createdAt: new Date(),
-        memo: null,
-      };
-      (repo.findOne as jest.Mock).mockResolvedValue(tx);
+  describe('queries', () => {
+    it('expires stale pending transactions', async () => {
+      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
+      repo.store.get(id).expiresAt = new Date(Date.now() - 1000);
 
-      const result = await service.getTransactionStatus('tx-status');
-      expect(result.id).toBe('tx-status');
+      await expect(service.expireStaleTransactions()).resolves.toBe(1);
+      expect(repo.store.get(id).status).toBe(MultiSigTransactionStatus.EXPIRED);
     });
 
-    it('should throw for non-existent transaction', async () => {
-      (repo.findOne as jest.Mock).mockResolvedValue(null);
-      await expect(service.getTransactionStatus('nonexistent')).rejects.toThrow();
+    it('returns transaction status and throws for unknown ids', async () => {
+      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
+      await expect(service.getTransactionStatus(id)).resolves.toEqual(expect.objectContaining({ id }));
+      await expect(service.getTransactionStatus('nonexistent')).rejects.toThrow('Transaction not found');
     });
-  });
 
-  describe('listPendingTransactions', () => {
-    it('should return pending transactions for a tenant', async () => {
-      (repo.find as jest.Mock).mockResolvedValue([
-        { id: 'tx-1', tenantId: 'tenant-a', status: MultiSigTransactionStatus.PENDING_SIGNATURES, signatures: [], expiresAt: new Date(Date.now()+3600000), createdAt: new Date() },
-      ]);
+    it('lists pending transactions for a tenant', async () => {
+      await service.createMultiSigPayment(createDto, 'requester-1');
+      await service.createMultiSigPayment({ ...createDto, tenantId: 'other' }, 'requester-1');
 
-      const result = await service.listPendingTransactions('tenant-a');
-      expect(result).toHaveLength(1);
+      await expect(service.listPendingTransactions('default')).resolves.toHaveLength(1);
     });
   });
 });

@@ -19,7 +19,7 @@ export class NotificationPreferencesController {
   })
   @ApiResponse({ status: 200, description: 'Preferences retrieved', type: [CategoryPreferenceResponseDto] })
   async getPreferences(@Req() req: any) {
-    return this.preferenceCenter.getPreferences(req.user.id);
+    return this.preferenceCenter.getPreferences(req.user.userId);
   }
 
   @Put(':category')
@@ -34,6 +34,6 @@ export class NotificationPreferencesController {
     @Param('category') category: string,
     @Body() dto: UpdateCategoryPreferenceDto,
   ) {
-    return this.preferenceCenter.updateCategoryPreference(req.user.id, category, dto);
+    return this.preferenceCenter.updateCategoryPreference(req.user.userId, category, dto);
   }
 }

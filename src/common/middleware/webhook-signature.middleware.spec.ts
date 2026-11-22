@@ -25,7 +25,7 @@ function sign(
 function makeReq(header: string | undefined, body = '{}'): any {
   return {
     headers: header !== undefined ? { 'x-webhook-signature': header } : {},
-    rawBody: body,
+    rawBody: Buffer.from(body),
   };
 }
 
@@ -87,14 +87,17 @@ describe('WebhookSignatureMiddleware', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to empty string when rawBody is absent', async () => {
+  it('rejects when rawBody is absent without reserving the nonce', async () => {
     const { header } = sign('', IPFS_SECRET);
     const req = { headers: { 'x-webhook-signature': header } }; // no rawBody
     const next = jest.fn();
 
-    await middleware.use(req as any, {} as any, next);
+    await expect(middleware.use(req as any, {} as any, next)).rejects.toThrow(
+      'Raw webhook body unavailable',
+    );
 
-    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).not.toHaveBeenCalled();
+    expect(redisMock.set).not.toHaveBeenCalled();
   });
 
   // ── Missing / malformed header ────────────────────────────────────────────

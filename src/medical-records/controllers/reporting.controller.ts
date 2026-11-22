@@ -47,7 +47,7 @@ export class ReportingController {
   @ApiOperation({ summary: 'Queue a report generation job' })
   @ApiResponse({ status: 201, description: 'Report generation queued' })
   async generateReport(@Body() dto: GenerateReportDto, @Req() req: any) {
-    if (req.user.role === UserRole.PATIENT && req.user.id !== dto.patientId) {
+    if (req.user.role === UserRole.PATIENT && req.user.userId !== dto.patientId) {
       throw new ForbiddenException('Patients may only generate reports for their own records');
     }
     return this.reportGenerationService.queueReportGeneration(dto.patientId, dto.format);
@@ -89,7 +89,7 @@ export class ReportingController {
       throw new BadRequestException(job['error']);
     }
 
-    if (!PRIVILEGED_REPORT_ROLES.includes(req.user.role) && job.patientId !== req.user.id) {
+    if (!PRIVILEGED_REPORT_ROLES.includes(req.user.role) && job.patientId !== req.user.userId) {
       throw new ForbiddenException('You may only download your own reports');
     }
 
@@ -111,7 +111,7 @@ export class ReportingController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    if (req.user.role === UserRole.PATIENT && req.user.id !== patientId) {
+    if (req.user.role === UserRole.PATIENT && req.user.userId !== patientId) {
       throw new ForbiddenException('Patients may only access their own records');
     }
     return this.reportingService.getPatientSummary(
@@ -141,7 +141,7 @@ export class ReportingController {
   @ApiOperation({ summary: 'Get consent report' })
   @ApiResponse({ status: 200, description: 'Consent report retrieved successfully' })
   async getConsentReport(@Query('patientId') patientId: string, @Req() req: any) {
-    if (req.user.role === UserRole.PATIENT && req.user.id !== patientId) {
+    if (req.user.role === UserRole.PATIENT && req.user.userId !== patientId) {
       throw new ForbiddenException('Patients may only access their own consent records');
     }
     return this.reportingService.getConsentReport(patientId);

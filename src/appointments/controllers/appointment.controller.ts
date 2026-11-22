@@ -18,8 +18,8 @@ import { AppointmentStatus, MedicalPriority } from '../entities/appointment.enti
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
-import { UserRole } from '../../auth/enums/user-role.enum';
-import { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
+import { UserRole } from '../../auth/entities/user.entity';
+import { JwtPayload } from '../../auth/services/auth-token.service';
 
 const STAFF_ROLES = [
   UserRole.ADMIN,

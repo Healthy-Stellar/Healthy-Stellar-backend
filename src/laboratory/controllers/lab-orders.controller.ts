@@ -27,7 +27,7 @@ export class LabOrdersController {
   @ApiOperation({ summary: 'Create a new lab order' })
   @ApiResponse({ status: 201, description: 'Lab order created successfully' })
   create(@Body() createDto: CreateLabOrderDto, @Request() req: any) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.labOrdersService.create(createDto, userId);
   }
 
@@ -58,7 +58,7 @@ export class LabOrdersController {
   @ApiResponse({ status: 200, description: 'Lab order updated successfully' })
   @ApiResponse({ status: 404, description: 'Lab order not found' })
   update(@Param('id') id: string, @Body() updateDto: UpdateLabOrderDto, @Request() req: any) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.labOrdersService.update(id, updateDto, userId);
   }
 
@@ -67,7 +67,7 @@ export class LabOrdersController {
   @ApiResponse({ status: 200, description: 'Lab order cancelled successfully' })
   @ApiResponse({ status: 400, description: 'Cannot cancel completed order' })
   cancel(@Param('id') id: string, @Body('reason') reason: string, @Request() req: any) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.labOrdersService.cancel(id, reason, userId);
   }
 }

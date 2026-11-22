@@ -106,7 +106,7 @@ export class MarController {
   @Post('administer')
   @Roles(UserRole.NURSE)
   administerMedication(@Body() administerDto: AdministerMedicationDto, @Req() req: any) {
-    const nurseId = req.user?.id ?? req.user?.userId;
+    const nurseId = req.user?.userId;
     const nurseName = req.user?.name ?? req.user?.fullName ?? req.user?.username;
     return this.marService.administerMedication(administerDto, nurseId, nurseName);
   }
@@ -118,7 +118,7 @@ export class MarController {
     @Body() administerDto: Omit<AdministerMedicationDto, 'marId'>,
     @Req() req: any,
   ) {
-    const nurseId = req.user?.id ?? req.user?.userId;
+    const nurseId = req.user?.userId;
     const nurseName = req.user?.name ?? req.user?.fullName ?? req.user?.username;
     return this.marService.administerDoseById(id, administerDto, nurseId, nurseName);
   }

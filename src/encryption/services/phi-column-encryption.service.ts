@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { KeyManagementService } from './key-management.service';
+import { DekWrapper } from './dek-wrapper.interface';
 import { PhiKeyManagedTransformer } from '../../common/transformers/phi-key-managed.transformer';
 import { createHmac, randomBytes } from 'crypto';
 
@@ -18,7 +19,7 @@ export class PhiColumnEncryptionService {
   private readonly logger = new Logger(PhiColumnEncryptionService.name);
   private readonly dekCache = new Map<string, Buffer>();
 
-  constructor(private readonly kms: KeyManagementService) {}
+  constructor(@Inject(KeyManagementService) private readonly kms: DekWrapper) {}
 
   /**
    * Obtain (or generate + wrap) a 32-byte DEK for the given patient.

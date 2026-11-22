@@ -8,6 +8,7 @@ import {
   UploadedFile,
   UseInterceptors,
   BadRequestException,
+  ForbiddenException,
   Req,
   Res,
   UseGuards,
@@ -48,11 +49,13 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../../auth/guards/admin.guard';
 import { JwtPayload } from '../../auth/services/auth-token.service';
 import { RecordResponseDto } from '../dto/record-response.dto';
-import { AttachmentResponseDto } from '../dto/attachment-response.dto';
 import { RecordAccessGuard } from '../guards/record-access.guard';
 import { DeprecatedRoute } from '../../common/decorators/deprecated.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @ApiTags('Records')
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
+@UseGuards(JwtAuthGuard)
 @Controller({ path: 'records', version: '1' })
 export class RecordsController {
   constructor(
@@ -68,6 +71,8 @@ export class RecordsController {
   @ApiOperation({ summary: 'Upload a new medical record' })
   @ApiResponse({ status: 201, description: 'Record uploaded successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 403, description: 'Patient uploading for another patient' })
   @UseInterceptors(
     FileInterceptor('file', {
       limits: {
@@ -84,7 +89,12 @@ export class RecordsController {
       throw new BadRequestException('Encrypted record file is required');
     }
 
-    const providerId = req.user?.userId || req.user?.id;
+    // Patients may only upload records into their own chart.
+    if (req.user?.role === UserRole.PATIENT && dto.patientId !== req.user?.userId) {
+      throw new ForbiddenException('Patients can only upload their own records');
+    }
+
+    const providerId = req.user?.userId;
     return this.recordsService.uploadRecord(dto, file.buffer, providerId);
   }
 
@@ -143,12 +153,18 @@ export class RecordsController {
     type: String,
     description: 'Filter by patient ID',
   })
-  async findAll(@Query() query: PaginationQueryDto): Promise<PaginatedRecordsResponseDto> {
-    return this.recordsService.findAll(query);
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  async findAll(
+    @Query() query: PaginationQueryDto,
+    @Req() req: any,
+  ): Promise<PaginatedRecordsResponseDto> {
+    return this.recordsService.findAll(query, {
+      userId: req.user?.userId,
+      role: req.user?.role,
+    });
   }
 
   @Get('search')
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({
     summary: 'Search records with dynamic filtering',
@@ -162,7 +178,7 @@ export class RecordsController {
     @Query() dto: SearchRecordsDto,
     @Req() req: any,
   ): Promise<SearchRecordsResponseDto> {
-    const callerId: string = req.user?.userId ?? req.user?.id;
+    const callerId: string = req.user?.userId;
     const callerRole: string = req.user?.role ?? '';
     return this.recordsService.search(dto, callerId, callerRole);
   }
@@ -170,16 +186,18 @@ export class RecordsController {
   @Get(':id/qr-code')
   @ApiOperation({ summary: 'Generate a QR code for a one-time share link (patient only)' })
   @ApiResponse({ status: 200, description: 'Base64 PNG QR code' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 403, description: 'Caller is not the record owner' })
   @ApiResponse({ status: 404, description: 'Record not found' })
   async getQrCode(@Param('id') id: string, @Req() req: any) {
-    const patientId = req.user?.userId || req.user?.id;
+    const patientId = req.user?.userId;
     const qrBase64 = await this.recordsService.generateQrCode(id, patientId);
     return { qrCode: qrBase64 };
   }
 
   @Get('recent')
   @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
-  @UseGuards(JwtAuthGuard, MedicalRbacGuard)
+  @UseGuards(MedicalRbacGuard)
   @MedicalRoles(MedicalRole.ADMIN)
   @ApiOperation({ summary: 'Get latest platform activity (Admin only)' })
   @ApiResponse({
@@ -193,7 +211,7 @@ export class RecordsController {
     // MedicalRbacGuard.canActivate() can read it instead of always throwing.
     if (!req.medicalUser && req.user) {
       req.medicalUser = {
-        id: req.user.userId ?? req.user.id,
+        id: req.user.userId,
         role: req.user.role,
       };
     }
@@ -203,7 +221,6 @@ export class RecordsController {
   // ── Versioning endpoints ────────────────────────────────────────────────────
 
   @Post(':id/amend')
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @UseInterceptors(
     FileInterceptor('file', {
@@ -230,12 +247,11 @@ export class RecordsController {
     if (!file) {
       throw new BadRequestException('Encrypted record file is required');
     }
-    const ownerId = req.user?.userId || req.user?.id;
+    const ownerId = req.user?.userId;
     return this.recordVersionService.amendRecord(id, dto, file.buffer, ownerId);
   }
 
   @Get(':id/versions')
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({ summary: 'List all versions of a record' })
   @ApiResponse({ status: 200, description: 'Versions retrieved', type: PaginatedVersionsResponseDto })
@@ -244,12 +260,12 @@ export class RecordsController {
     @Param('id') id: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize: number,
+    @Req() req: any,
   ): Promise<PaginatedVersionsResponseDto> {
-    return this.recordVersionService.listVersions(id, page, pageSize);
+    return this.recordVersionService.getVersions(id, this.requesterId(req), page, pageSize);
   }
 
   @Get(':id/versions/:version')
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({ summary: 'Get metadata for a specific record version' })
   @ApiResponse({ status: 200, description: 'Version metadata', type: RecordVersionMetaDto })
@@ -257,12 +273,12 @@ export class RecordsController {
   async getVersion(
     @Param('id') id: string,
     @Param('version', ParseIntPipe) version: number,
+    @Req() req: any,
   ): Promise<RecordVersionMetaDto> {
-    return this.recordVersionService.getVersion(id, version);
+    return this.recordVersionService.getVersion(id, version, this.requesterId(req));
   }
 
   @Get(':id/diff')
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({ summary: 'Diff two versions of a record' })
   @ApiResponse({ status: 200, description: 'Diff result', type: RecordDiffResponseDto })
@@ -271,12 +287,13 @@ export class RecordsController {
     @Param('id') id: string,
     @Query('from', ParseIntPipe) from: number,
     @Query('to', ParseIntPipe) to: number,
+    @Req() req: any,
   ): Promise<RecordDiffResponseDto> {
-    return this.recordDiffService.diff(id, from, to);
+    return this.recordDiffService.computeDiff(id, from, to, this.requesterId(req));
   }
 
   @Get(':id/download')
-  @UseGuards(JwtAuthGuard, RecordAccessGuard)
+  @UseGuards(RecordAccessGuard)
   @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({ summary: 'Download a record (owner or granted user)' })
   @ApiResponse({ status: 200, description: 'Record file stream' })
@@ -287,7 +304,7 @@ export class RecordsController {
     @Req() req: any,
     @Res() res: Response,
   ): Promise<void> {
-    const userId = req.user?.userId || req.user?.id;
+    const userId = req.user?.userId;
     const { stream, filename, mimeType } = await this.recordDownloadService.download(id, userId);
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -295,7 +312,6 @@ export class RecordsController {
   }
 
   @Post(':id/attachments')
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @UseInterceptors(
     FileInterceptor('file', {
@@ -303,29 +319,37 @@ export class RecordsController {
     }),
   )
   @ApiOperation({ summary: 'Attach a file to a record' })
-  @ApiResponse({ status: 201, description: 'Attachment created', type: AttachmentResponseDto })
+  @ApiResponse({ status: 201, description: 'Attachment created (attachmentId, cid, fileSize)' })
   @ApiResponse({ status: 400, description: 'Missing file' })
   @ApiResponse({ status: 404, description: 'Record not found' })
   async addAttachment(
     @Param('id') id: string,
-    @Body() dto: CreateAttachmentDto,
+    @Body() _dto: CreateAttachmentDto,
     @UploadedFile() file: Express.Multer.File,
     @Req() req: any,
-  ): Promise<AttachmentResponseDto> {
+  ): Promise<{ attachmentId: string; cid: string; fileSize: number }> {
     if (!file) {
       throw new BadRequestException('Attachment file is required');
     }
-    const uploaderId = req.user?.userId || req.user?.id;
+    const uploaderId = req.user?.userId;
     return this.recordAttachmentUploadService.upload(id, dto, file.buffer, uploaderId);
   }
 
   @Get(':id/related')
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({ summary: 'List records related to a record' })
   @ApiResponse({ status: 200, description: 'Related records', type: [RelatedRecordDto] })
   @ApiResponse({ status: 404, description: 'Record not found' })
-  async getRelated(@Param('id') id: string): Promise<RelatedRecordDto[]> {
-    return this.relatedRecordsService.findRelated(id);
+  async getRelated(@Param('id') id: string, @Req() req: any): Promise<RelatedRecordDto[]> {
+    return this.relatedRecordsService.findRelated(id, this.requesterId(req));
+  }
+
+  /** Authenticated caller id as populated by JwtStrategy (`req.user.userId`). */
+  private requesterId(req: any): string {
+    const userId: string | undefined = req.user?.userId ?? req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('Authenticated user identity could not be resolved');
+    }
+    return userId;
   }
 }

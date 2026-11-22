@@ -18,6 +18,13 @@ export enum TransferStatus {
   CANCELLED = 'cancelled',
 }
 
+export enum ReceiptStatus {
+  NOT_ANCHORED = 'NOT_ANCHORED',
+  ANCHORING = 'ANCHORING',
+  ANCHORED = 'ANCHORED',
+  ANCHOR_FAILED = 'ANCHOR_FAILED',
+}
+
 @Entity('patient_transfers')
 @Index(['patientId', 'status'])
 @Index(['fromHospitalId', 'status'])
@@ -74,6 +81,19 @@ export class PatientTransfer {
   /** Stellar transaction hash for the immutable transfer receipt */
   @Column({ name: 'stellar_tx_hash', type: 'varchar', length: 128, nullable: true })
   stellarTxHash: string;
+
+  /** Status of the Stellar receipt anchoring */
+  @Column({
+    name: 'receipt_status',
+    type: 'enum',
+    enum: ReceiptStatus,
+    default: ReceiptStatus.NOT_ANCHORED,
+  })
+  receiptStatus: ReceiptStatus;
+
+  /** Error message if receipt anchoring failed */
+  @Column({ name: 'receipt_error', type: 'text', nullable: true })
+  receiptError: string;
 
   /** IDs of medical records shared with the receiving hospital */
   @Column({ name: 'shared_record_ids', type: 'text', array: true, default: [] })

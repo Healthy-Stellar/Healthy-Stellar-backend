@@ -9,7 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { PatientTransfer, TransferStatus } from '../entities/patient-transfer.entity';
+import { PatientTransfer, TransferStatus, ReceiptStatus } from '../entities/patient-transfer.entity';
 import { HospitalRegistry } from '../entities/hospital-registry.entity';
 import { CreateTransferDto } from '../dto/create-transfer.dto';
 import { AcceptTransferDto } from '../dto/accept-transfer.dto';
@@ -18,6 +18,7 @@ import { CancelTransferDto } from '../dto/cancel-transfer.dto';
 import { MedicalRecordsService } from '../../medical-records/services/medical-records.service';
 import { AccessControlService } from '../../access-control/services/access-control.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { StellarService } from '../../stellar/services/stellar.service';
 
 @Injectable()
 export class TransferService {
@@ -31,6 +32,7 @@ export class TransferService {
     private readonly medicalRecordsService: MedicalRecordsService,
     private readonly accessControlService: AccessControlService,
     private readonly notificationsService: NotificationsService,
+    private readonly stellarService: StellarService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -146,7 +148,10 @@ export class TransferService {
 
     await this.sendTransferNotifications(saved);
 
-    this.logger.log('Transfer ' + transferId + ' completed. Stellar tx: ' + transfer.stellarTxHash);
+    this.logger.log(
+      'Transfer ' + transferId + ' completed. Receipt status: ' + transfer.receiptStatus +
+      (transfer.stellarTxHash ? ', Stellar tx: ' + transfer.stellarTxHash : ''),
+    );
     return saved;
   }
 
@@ -281,6 +286,57 @@ export class TransferService {
       throw new ForbiddenException(
         'Caller is not authorized to act on this transfer',
       );
+    }
+  }
+
+  /**
+   * Anchor transfer receipt on Stellar ledger
+   *
+   * Invokes StellarService to write the transfer metadata on-chain.
+   * This creates an immutable, verifiable proof of the transfer.
+   *
+   * @param transfer Patient transfer record
+   * @returns Stellar transaction hash
+   * @throws Error if Stellar anchoring fails
+   */
+  private async anchorTransferReceipt(transfer: PatientTransfer): Promise<string> {
+    this.logger.log(
+      `[anchorTransferReceipt] Anchoring transfer ${transfer.id} ` +
+      `from ${transfer.fromHospitalId} to ${transfer.toHospitalId}`,
+    );
+
+    try {
+      // Invoke Stellar contract to anchor transfer metadata
+      // The contract records: transfer ID, patient ID, from/to hospitals, timestamp
+      const result = await this.stellarService.invokeContract(
+        this.configService.get<string>('STELLAR_CONTRACT_ID'),
+        'anchor_transfer',
+        [
+          // Transfer ID
+          (await import('@stellar/stellar-sdk')).nativeToScVal(transfer.id, { type: 'string' }),
+          // Patient ID
+          (await import('@stellar/stellar-sdk')).nativeToScVal(transfer.patientId, { type: 'string' }),
+          // From Hospital ID
+          (await import('@stellar/stellar-sdk')).nativeToScVal(transfer.fromHospitalId, { type: 'string' }),
+          // To Hospital ID
+          (await import('@stellar/stellar-sdk')).nativeToScVal(transfer.toHospitalId, { type: 'string' }),
+          // Transfer timestamp
+          (await import('@stellar/stellar-sdk')).nativeToScVal(transfer.completedAt.getTime(), { type: 'u64' }),
+        ],
+      );
+
+      this.logger.log(
+        `[anchorTransferReceipt] Successfully anchored transfer ${transfer.id} ` +
+        `on Stellar. Tx hash: ${result.txHash}`,
+      );
+
+      return result.txHash;
+    } catch (error) {
+      this.logger.error(
+        `[anchorTransferReceipt] Failed to anchor transfer ${transfer.id}: ` +
+        (error instanceof Error ? error.message : String(error)),
+      );
+      throw error;
     }
   }
 

@@ -180,7 +180,7 @@ describe('webhooks docs reference snippets (docs/webhooks.md)', () => {
 
     const makeReq = (header: string | undefined, body = rawBody): any => ({
       headers: header !== undefined ? { 'x-webhook-signature': header } : {},
-      rawBody: body,
+      rawBody: Buffer.from(body),
     });
 
     beforeEach(() => {
