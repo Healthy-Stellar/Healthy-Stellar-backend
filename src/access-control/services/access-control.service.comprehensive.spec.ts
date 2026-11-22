@@ -589,34 +589,83 @@ describe('AccessControlService (comprehensive)', () => {
   // ── verifyAccess ─────────────────────────────────────────────────────────────
 
   describe('verifyAccess', () => {
-    it('returns true when a valid, non-expired grant covers the record', async () => {
+    it('returns true when a valid, non-expired grant names the record', async () => {
       grantRepo.find.mockResolvedValue([{ ...baseGrant(), expiresAt: future() }]);
 
-      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID)).resolves.toBe(true);
+      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID, PATIENT_ID)).resolves.toBe(true);
+    });
+
+    it('scopes the lookup to the grantee, the record\'s patient and ACTIVE grants', async () => {
+      grantRepo.find.mockResolvedValue([]);
+
+      await service.verifyAccess(GRANTEE_ID, RECORD_ID, PATIENT_ID);
+
+      expect(grantRepo.find).toHaveBeenCalledWith({
+        where: { granteeId: GRANTEE_ID, patientId: PATIENT_ID, status: GrantStatus.ACTIVE },
+      });
+    });
+
+    it('returns true for a wildcard grant (approved access request)', async () => {
+      grantRepo.find.mockResolvedValue([{ ...baseGrant(), recordIds: ['*'] }]);
+
+      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID, PATIENT_ID)).resolves.toBe(true);
+    });
+
+    it('returns true for an active emergency (break-glass) wildcard grant', async () => {
+      grantRepo.find.mockResolvedValue([
+        { ...baseGrant(), recordIds: ['*'], isEmergency: true, expiresAt: future() },
+      ]);
+
+      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID, PATIENT_ID)).resolves.toBe(true);
+    });
+
+    it('does not let a wildcard grant from one patient cover another patient\'s record', async () => {
+      grantRepo.find.mockResolvedValue([
+        { ...baseGrant(), patientId: 'someone-else', recordIds: ['*'] },
+      ]);
+
+      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID, PATIENT_ID)).resolves.toBe(false);
     });
 
     it('returns false when the grant does not include the requested record', async () => {
       grantRepo.find.mockResolvedValue([{ ...baseGrant(), recordIds: ['other'] }]);
 
-      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID)).resolves.toBe(false);
+      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID, PATIENT_ID)).resolves.toBe(false);
     });
 
-    it('returns false when the grant has expired', async () => {
-      grantRepo.find.mockResolvedValue([{ ...baseGrant(), expiresAt: past() }]);
+    it('returns false when the grant has expired, wildcard or not', async () => {
+      grantRepo.find.mockResolvedValue([
+        { ...baseGrant(), expiresAt: past() },
+        { ...baseGrant(), recordIds: ['*'], expiresAt: past() },
+      ]);
 
-      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID)).resolves.toBe(false);
+      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID, PATIENT_ID)).resolves.toBe(false);
+    });
+
+    it('returns false when the grant has been revoked', async () => {
+      grantRepo.find.mockResolvedValue([
+        { ...baseGrant(), recordIds: ['*'], revokedAt: new Date() },
+        { ...baseGrant(), status: GrantStatus.REVOKED },
+      ]);
+
+      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID, PATIENT_ID)).resolves.toBe(false);
     });
 
     it('returns true when the grant has no expiry (permanent grant)', async () => {
       grantRepo.find.mockResolvedValue([{ ...baseGrant(), expiresAt: null }]);
 
-      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID)).resolves.toBe(true);
+      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID, PATIENT_ID)).resolves.toBe(true);
     });
 
     it('returns false when there are no grants', async () => {
       grantRepo.find.mockResolvedValue([]);
 
-      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID)).resolves.toBe(false);
+      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID, PATIENT_ID)).resolves.toBe(false);
+    });
+
+    it('returns false without querying when the record\'s patient is unknown', async () => {
+      await expect(service.verifyAccess(GRANTEE_ID, RECORD_ID, undefined)).resolves.toBe(false);
+      expect(grantRepo.find).not.toHaveBeenCalled();
     });
   });
 });

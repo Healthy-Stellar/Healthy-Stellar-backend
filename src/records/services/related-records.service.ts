@@ -128,6 +128,6 @@ export class RelatedRecordsService {
     if (record.patientId === requesterId) return true;
 
     // Check active access grant
-    return this.accessControlService.verifyAccess(requesterId, record.id);
+    return this.accessControlService.verifyAccess(requesterId, record.id, record.patientId);
   }
 }

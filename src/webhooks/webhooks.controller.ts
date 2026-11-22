@@ -7,6 +7,8 @@ import { ConfigService } from '@nestjs/config';
 import { WebhookDeliveryService } from './services/webhook-delivery.service';
 import { WebhookSubscriptionService } from './services/webhook-subscription.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { JwtPayload } from '../auth/services/auth-token.service';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../auth/entities/user.entity';
@@ -49,9 +51,13 @@ export class WebhooksController {
   @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
   @ApiOperation({ summary: 'Create a new webhook subscription (includes validation ping)' })
   @ApiBody({ type: CreateWebhookSubscriptionDto })
-  async createSubscription(@Req() req: any, @Body() dto: CreateWebhookSubscriptionDto) {
+  async createSubscription(
+    @Req() req: any,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CreateWebhookSubscriptionDto,
+  ) {
     const tenantId = req.user?.tenantId ?? req.user?.organizationId;
-    const userId = req.user?.id;
+    const userId = user.userId;
     this.subscriptionService.assertEventsAllowedForRole(req.user?.role, dto.events);
     return this.subscriptionService.createSubscription(tenantId, userId, dto);
   }
@@ -64,11 +70,12 @@ export class WebhooksController {
   @ApiBody({ type: UpdateWebhookSubscriptionDto })
   async updateSubscription(
     @Req() req: any,
+    @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
     @Body() dto: UpdateWebhookSubscriptionDto,
   ) {
     const tenantId = req.user?.tenantId ?? req.user?.organizationId;
-    const userId = req.user?.id;
+    const userId = user.userId;
     if (dto.events !== undefined) {
       this.subscriptionService.assertEventsAllowedForRole(req.user?.role, dto.events);
     }
@@ -81,9 +88,13 @@ export class WebhooksController {
   @ApiOperation({ summary: 'Delete a webhook subscription' })
   @ApiParam({ name: 'id', type: String })
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteSubscription(@Req() req: any, @Param('id') id: string) {
+  async deleteSubscription(
+    @Req() req: any,
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
     const tenantId = req.user?.tenantId ?? req.user?.organizationId;
-    const userId = req.user?.id;
+    const userId = user.userId;
     await this.subscriptionService.deleteSubscription(tenantId, id, userId);
   }
 
@@ -93,9 +104,13 @@ export class WebhooksController {
   @ApiOperation({ summary: 'Rotate the HMAC signing secret for a webhook subscription' })
   @ApiParam({ name: 'id', type: String })
   @HttpCode(HttpStatus.OK)
-  async rotateSubscriptionSecret(@Req() req: any, @Param('id') id: string) {
+  async rotateSubscriptionSecret(
+    @Req() req: any,
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
     const tenantId = req.user?.tenantId ?? req.user?.organizationId;
-    const userId = req.user?.id;
+    const userId = user.userId;
     return this.subscriptionService.rotateSecret(tenantId, id, userId);
   }
 
@@ -248,8 +263,12 @@ export class WebhooksController {
   @ApiOperation({ summary: 'Manually replay a failed webhook delivery (signature re-computed)' })
   @ApiParam({ name: 'id', type: String })
   @HttpCode(200)
-  async replayDelivery(@Param('id') id: string, @Req() req: any) {
-    const userId = req.user?.id || 'unknown';
+  async replayDelivery(
+    @Param('id') id: string,
+    @Req() req: any,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    const userId = user.userId || 'unknown';
     await this.assertTenantDelivery(id, this.tenantIdOf(req));
     await this.webhookService.replayDelivery(id, userId);
     return { success: true, message: 'Webhook delivery queued for replay' };
@@ -311,8 +330,9 @@ export class WebhooksController {
   async replayDeadLetterItem(
     @Param('deliveryId') deliveryId: string,
     @Req() req: any,
+    @CurrentUser() user: JwtPayload,
   ) {
-    const userId = req.user?.id || 'unknown';
+    const userId = user.userId || 'unknown';
     await this.assertTenantDelivery(deliveryId, this.tenantIdOf(req));
     await this.webhookService.replayDelivery(deliveryId, userId);
     return { success: true, message: 'Webhook delivery queued for replay' };

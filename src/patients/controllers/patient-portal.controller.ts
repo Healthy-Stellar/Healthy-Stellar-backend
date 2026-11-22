@@ -22,7 +22,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
 interface AuthenticatedRequest {
   user: {
-    id: string;
+    userId: string;
     role: string;
     patientId?: string;
   };
@@ -69,7 +69,7 @@ export class PatientPortalController {
     @Body() dto: ReviewCorrectionRequestDto,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.service.reviewCorrectionRequest(requestId, req.user.id, dto);
+    return this.service.reviewCorrectionRequest(requestId, req.user.userId, dto);
   }
 
   @Get('correction-requests/:requestId')
@@ -78,14 +78,14 @@ export class PatientPortalController {
     @Param('requestId', ParseUUIDPipe) requestId: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.service.getCorrectionRequestById(requestId, req.user.id, req.user.role);
+    return this.service.getCorrectionRequestById(requestId, req.user.userId, req.user.role);
   }
 
   private assertOwnership(user: AuthenticatedRequest['user'], patientId: string): void {
     if (user.role !== 'patient') {
       return;
     }
-    if (user.patientId !== patientId && user.id !== patientId) {
+    if (user.patientId !== patientId && user.userId !== patientId) {
       throw new ForbiddenException('You may only access your own correction requests');
     }
   }

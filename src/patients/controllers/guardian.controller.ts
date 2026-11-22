@@ -28,7 +28,7 @@ export class GuardianController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiOperation({ summary: 'Create a guardian link (admin/registration only)' })
   create(@Body() dto: CreateGuardianLinkDto, @Request() req: any) {
-    const actorId: string = req.user?.id ?? 'system';
+    const actorId: string = req.user?.userId ?? 'system';
     return this.guardianService.createLink(dto, actorId);
   }
 
@@ -45,7 +45,7 @@ export class GuardianController {
     @Body() dto: RevokeGuardianLinkDto,
     @Request() req: any,
   ) {
-    const actorId: string = req.user?.id ?? 'system';
+    const actorId: string = req.user?.userId ?? 'system';
     return this.guardianService.revokeLink(linkId, actorId, dto);
   }
 

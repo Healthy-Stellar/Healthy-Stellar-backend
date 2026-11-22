@@ -1,0 +1,37 @@
+name: Controller Guard Check
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  controller-guards:
+    name: Every registered route is guarded or @Public()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The check only needs the TypeScript parser. It is installed into an
+      # isolated prefix so this gate does not depend on the full dependency
+      # install succeeding.
+      - name: Install TypeScript parser
+        run: npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/guard-check" typescript@5.9.3
+
+      - name: Check controller guards
+        run: node scripts/check-controller-guards.js
+        env:
+          NODE_PATH: ${{ runner.temp }}/guard-check/node_modules

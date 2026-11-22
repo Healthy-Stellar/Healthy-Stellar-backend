@@ -1,5 +1,5 @@
-import { IsString, MinLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AmendRecordDto {
   @ApiProperty({
@@ -10,4 +10,11 @@ export class AmendRecordDto {
   @IsString()
   @MinLength(20, { message: 'amendmentReason must be at least 20 characters' })
   amendmentReason: string;
+
+  @ApiPropertyOptional({
+    description: 'Encrypted data-encryption key (DEK) for the new version\'s file',
+  })
+  @IsOptional()
+  @IsString()
+  encryptedDek?: string;
 }

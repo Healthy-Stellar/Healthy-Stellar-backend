@@ -3,7 +3,9 @@ import { I18nContext } from 'nestjs-i18n';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Request } from 'express';
 import { MfaService } from '../services/mfa.service';
+import { AuthService, IssuedTokens } from '../services/auth.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { AllowMfaPending } from '../decorators/allow-mfa-pending.decorator';
 import { JwtPayload } from '../services/auth-token.service';
 import { MfaSetupDto, MfaVerifyDto, MfaEnableDto, BackupCodesDto, VerifyBackupCodeDto } from '../dto/mfa.dto';
 import { AuditService } from '../../common/audit/audit.service';
@@ -16,6 +18,7 @@ export class MfaController {
   constructor(
     private mfaService: MfaService,
     private auditService: AuditService,
+    private authService: AuthService,
   ) {}
 
   /**
@@ -95,14 +98,22 @@ export class MfaController {
   }
 
   /**
-   * Verify MFA code (during login or action verification)
+   * Verify MFA code (during login or action verification).
+   *
+   * Accepts the MFA-pending token from POST /auth/login or a regular access
+   * token. On success the session is marked MFA-verified and a new verified
+   * token pair is returned; the previous token should be discarded.
    */
   @Post('verify-code')
   @UseGuards(JwtAuthGuard)
+  @AllowMfaPending()
   @VerifyRateLimit() // 5 requests per minute
-  @ApiOperation({ summary: 'Verify MFA code' })
-  @ApiResponse({ status: 200, description: 'MFA code verified' })
-  async verifyCode(@Body() mfaVerifyDto: MfaVerifyDto, @Req() req: Request): Promise<any> {
+  @ApiOperation({ summary: 'Verify MFA code and issue an MFA-verified token pair' })
+  @ApiResponse({ status: 200, description: 'MFA code verified; verified token pair issued' })
+  async verifyCode(
+    @Body() mfaVerifyDto: MfaVerifyDto,
+    @Req() req: Request,
+  ): Promise<{ success: true; message: string } & IssuedTokens> {
     const user = req.user as JwtPayload;
     if (!/^\d{6}$/.test(mfaVerifyDto.code)) {
       throw new BadRequestException(I18nContext.current()?.t('errors.INVALID_CODE_FORMAT') || 'Invalid code format');
@@ -120,7 +131,19 @@ export class MfaController {
       throw new BadRequestException(I18nContext.current()?.t('errors.INVALID_MFA_CODE') || 'Invalid MFA code');
     }
 
-    return { success: true, message: 'MFA code verified' };
+    const tokens = await this.authService.completeMfaChallenge(
+      user.userId,
+      user.sessionId,
+      this.getIpAddress(req),
+    );
+
+    await this.auditService.logAuthenticationEvent(AuditAction.MFA_VERIFIED, true, {
+      userId: user.userId,
+      description: 'MFA code verified for session',
+      ipAddress: this.getIpAddress(req),
+    });
+
+    return { success: true, message: 'MFA code verified', ...tokens };
   }
 
   /**
@@ -148,9 +171,10 @@ export class MfaController {
    */
   @Post('backup-codes/verify')
   @UseGuards(JwtAuthGuard)
+  @AllowMfaPending()
   @VerifyRateLimit() // 5 requests per minute
-  @ApiOperation({ summary: 'Verify a backup code for 2FA authentication' })
-  @ApiResponse({ status: 200, description: 'Backup code verified' })
+  @ApiOperation({ summary: 'Verify a backup code and issue an MFA-verified token pair' })
+  @ApiResponse({ status: 200, description: 'Backup code verified; verified token pair issued' })
   async verifyBackupCode(
     @Body() dto: VerifyBackupCodeDto,
     @Req() req: Request,
@@ -171,6 +195,12 @@ export class MfaController {
       );
     }
 
+    const tokens = await this.authService.completeMfaChallenge(
+      user.userId,
+      user.sessionId,
+      this.getIpAddress(req),
+    );
+
     await this.auditService.logAuthenticationEvent(AuditAction.MFA_VERIFIED, true, {
       userId: user.userId,
       description: 'Backup code used for 2FA authentication',
@@ -180,6 +210,7 @@ export class MfaController {
     return {
       success: true,
       message: 'Backup code verified successfully',
+      ...tokens,
       remainingCodes: result.remainingCodes,
       ...(result.remainingCodes === 0 && {
         warning:

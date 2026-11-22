@@ -389,9 +389,8 @@ describe('RecordsController', () => {
         pipe: jest.fn().mockReturnThis(),
       };
 
-      // JWT might use 'id' instead of 'userId'
       const mockRequest = {
-        user: { id: 'user-id-alternate' },
+        user: { userId: 'user-id-alternate' },
         ip: '10.0.0.2',
         headers: { 'user-agent': 'test-agent-2' },
       };
@@ -726,7 +725,7 @@ describe('RecordsController', () => {
       };
 
       const mockRequest = {
-        user: { id: userId }, // using 'id' instead of 'userId'
+        user: { userId },
       };
 
       const mockDto = {
@@ -783,11 +782,11 @@ describe('RecordsController', () => {
       expect(service.generateQrCode).toHaveBeenCalledWith('record-1', 'patient-1');
     });
 
-    it('should use req.user.id as fallback for patientId', async () => {
+    it('should use req.user.userId for patientId', async () => {
       const qrBase64 = 'data:image/png;base64,xyz';
       mockRecordsService.generateQrCode.mockResolvedValue(qrBase64);
 
-      const req = { user: { id: 'patient-2' } };
+      const req = { user: { userId: 'patient-2' } };
       const result = await controller.getQrCode('record-2', req);
 
       expect(result).toEqual({ qrCode: qrBase64 });

@@ -1,4 +1,4 @@
-import { Injectable, Logger, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { InjectQueue } from '@nestjs/bull';
@@ -7,6 +7,16 @@ import { GdprRequest, GdprRequestType, GdprRequestStatus } from '../entities/gdp
 import { GdprComplianceLog } from '../entities/gdpr-compliance-log.entity';
 import { DeletionPreviewEntry, DeletionRegistryService } from './deletion-registry.service';
 import { CreateErasureRequestDto } from '../dto/create-erasure-request.dto';
+
+/**
+ * Guard against querying with an undefined userId: TypeORM drops undefined
+ * keys from WHERE clauses, which would match every user's rows.
+ */
+function assertUserId(userId: string | undefined | null): asserts userId is string {
+  if (!userId || typeof userId !== 'string') {
+    throw new BadRequestException('userId is required');
+  }
+}
 
 @Injectable()
 export class GdprService {
@@ -23,10 +33,12 @@ export class GdprService {
 
   /** Dry-run: reports what an erasure request would delete/anonymise per module, without changing anything. */
   async previewErasure(userId: string): Promise<DeletionPreviewEntry[]> {
+    assertUserId(userId);
     return this.deletionRegistry.previewForUser(userId);
   }
 
   async createExportRequest(userId: string): Promise<GdprRequest> {
+    assertUserId(userId);
     const existingRequest = await this.gdprRequestRepository.findOne({
       where: {
         userId,
@@ -63,6 +75,7 @@ export class GdprService {
     userId: string,
     dto: CreateErasureRequestDto = {} as CreateErasureRequestDto,
   ): Promise<GdprRequest> {
+    assertUserId(userId);
     const existingRequest = await this.gdprRequestRepository.findOne({
       where: {
         userId,
@@ -116,6 +129,7 @@ export class GdprService {
   }
 
   async getRequestsByUser(userId: string): Promise<GdprRequest[]> {
+    assertUserId(userId);
     return this.gdprRequestRepository.find({
       where: { userId },
       order: { createdAt: 'DESC' },

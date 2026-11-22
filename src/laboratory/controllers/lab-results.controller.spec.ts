@@ -143,7 +143,7 @@ describe('LabResultsController (#1119) — guard active, real service', () => {
   });
 
   it('create() delegates to LabResultsService.create (not a hardcoded stub)', async () => {
-    const req = { user: { id: 'dr-1', role: UserRole.PHYSICIAN } };
+    const req = { user: { userId: 'dr-1', role: UserRole.PHYSICIAN } };
     const dto: any = { orderItemId: 'item-1', values: [] };
 
     const result = await controller.create(dto, req);
@@ -155,7 +155,7 @@ describe('LabResultsController (#1119) — guard active, real service', () => {
   });
 
   it('verify() delegates to LabResultsService.verify (not a hardcoded stub)', async () => {
-    const req = { user: { id: 'dr-1', name: 'Dr. Smith', role: UserRole.PHYSICIAN } };
+    const req = { user: { userId: 'dr-1', name: 'Dr. Smith', role: UserRole.PHYSICIAN } };
 
     const result = await controller.verify('result-1', req);
 

@@ -14,6 +14,7 @@ import { NotificationsService } from '../../notifications/services/notifications
 import { RecordEventStoreService } from './record-event-store.service';
 import { RecordType } from '../dto/create-record.dto';
 import { AmendRecordDto } from '../dto/amend-record.dto';
+import { GrantStatus } from '../../access-control/entities/access-grant.entity';
 
 // ── Shared fixtures ────────────────────────────────────────────────────────────
 
@@ -232,16 +233,44 @@ describe('RecordVersionService', () => {
 
     it('notifies active grantees after amendment', async () => {
       mocks.accessControl.getPatientGrants.mockResolvedValue([
-        { granteeId: 'grantee-001', recordIds: [RECORD_ID], expiresAt: null },
+        { patientId: PATIENT_ID, granteeId: 'grantee-001', recordIds: [RECORD_ID], status: GrantStatus.ACTIVE, expiresAt: null },
+        { patientId: PATIENT_ID, granteeId: 'grantee-wild', recordIds: ['*'], status: GrantStatus.ACTIVE, expiresAt: null },
+        { patientId: PATIENT_ID, granteeId: 'grantee-other', recordIds: ['other-record'], status: GrantStatus.ACTIVE, expiresAt: null },
       ]);
 
       await service.amend(RECORD_ID, dto, Buffer.from('encrypted'), PATIENT_ID);
 
+      const notified = mocks.notifications.emitRecordAmended.mock.calls.map((c: any[]) => c[2].targetUserId);
+      expect(notified).toEqual(['grantee-001', 'grantee-wild']);
       expect(mocks.notifications.emitRecordAmended).toHaveBeenCalledWith(
         PATIENT_ID,
         RECORD_ID,
         expect.objectContaining({ targetUserId: 'grantee-001' }),
       );
+    });
+
+    it('stores the encryptedDek supplied with the amendment', async () => {
+      let saved: any;
+      mocks.dataSource.transaction.mockImplementation(async (cb: (manager: any) => any) =>
+        cb({
+          createQueryBuilder: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnThis(),
+            orderBy: jest.fn().mockReturnThis(),
+            setLock: jest.fn().mockReturnThis(),
+            getOne: jest.fn().mockResolvedValue(V1),
+          }),
+          create: jest.fn().mockImplementation((_cls: any, data: any) => data),
+          save: jest.fn().mockImplementation((_cls: any, data: any) => {
+            saved = data;
+            return Promise.resolve({ ...data, id: 'ver-002' });
+          }),
+          update: jest.fn().mockResolvedValue(undefined),
+        }),
+      );
+
+      await service.amend(RECORD_ID, { ...dto, encryptedDek: 'wrapped-dek' }, Buffer.from('enc'), PATIENT_ID);
+
+      expect(saved.encryptedDek).toBe('wrapped-dek');
     });
   });
 
@@ -294,11 +323,50 @@ describe('RecordVersionService', () => {
       );
     });
 
-    it('allows access for an active grantee', async () => {
+    it('allows access for an active grantee, checking the grant against the record\'s patient', async () => {
       mocks.accessControl.verifyAccess.mockResolvedValue(true);
 
       const result = await service.getVersion(RECORD_ID, 1, 'grantee-001');
       expect(result).toBeDefined();
+      expect(mocks.accessControl.verifyAccess).toHaveBeenCalledWith('grantee-001', RECORD_ID, PATIENT_ID);
+    });
+
+    it('does not consult grants for the record owner', async () => {
+      await service.getVersion(RECORD_ID, 1, PATIENT_ID);
+      expect(mocks.accessControl.verifyAccess).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── getLatestVersion ─────────────────────────────────────────────────────────
+
+  describe('getLatestVersion', () => {
+    beforeEach(() => {
+      mocks.recordRepo.findOne.mockResolvedValue(BASE_RECORD);
+    });
+
+    it('returns the highest version', async () => {
+      mocks.versionRepo.findOne.mockResolvedValue(V2);
+
+      const result = await service.getLatestVersion(RECORD_ID, PATIENT_ID);
+
+      expect(result.version).toBe(2);
+      expect(mocks.versionRepo.findOne).toHaveBeenCalledWith({
+        where: { recordId: RECORD_ID },
+        order: { version: 'DESC' },
+      });
+    });
+
+    it('enforces access', async () => {
+      mocks.accessControl.verifyAccess.mockResolvedValue(false);
+      mocks.accessControl.findActiveEmergencyGrant.mockResolvedValue(null);
+
+      await expect(service.getLatestVersion(RECORD_ID, OTHER_USER_ID)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('throws NotFound when the record has no versions', async () => {
+      mocks.versionRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.getLatestVersion(RECORD_ID, PATIENT_ID)).rejects.toThrow(NotFoundException);
     });
   });
 });

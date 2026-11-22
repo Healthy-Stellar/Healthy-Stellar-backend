@@ -35,6 +35,12 @@ import { getRequestContext } from '../../common/middleware/request-context.middl
 import { UserRole } from '../../auth/entities/user.entity';
 import { WaitlistService } from './waitlist.service';
 
+/** The authenticated caller, as taken from req.user (never from client headers). */
+export interface AppointmentCaller {
+  userId?: string;
+  role?: string;
+}
+
 /** How many minutes before the appointment start a join token becomes valid. */
 const TOKEN_VALID_BEFORE_MINUTES = 15;
 
@@ -114,9 +120,12 @@ export class AppointmentService {
    * Generates a TypeORM where object that enforces tenant and user-level isolation.
    * @private
    */
-  private getScopedWhere(baseWhere: FindOptionsWhere<Appointment> = {}): FindOptionsWhere<Appointment> {
+  private getScopedWhere(
+    baseWhere: FindOptionsWhere<Appointment> = {},
+    caller?: AppointmentCaller,
+  ): FindOptionsWhere<Appointment> {
     const tenantId = TenantContext.getTenantId();
-    const context = getRequestContext();
+    const context = this.resolveCaller(caller);
 
     if (!tenantId) {
       throw new ForbiddenException('Tenant context missing');
@@ -137,8 +146,21 @@ export class AppointmentService {
     return scopedWhere;
   }
 
+  /**
+   * Prefer the caller passed explicitly by the controller (from req.user);
+   * otherwise use the identity JwtAuthGuard recorded on the request context.
+   */
+  private resolveCaller(caller?: AppointmentCaller): AppointmentCaller {
+    if (caller && (caller.userId || caller.role)) {
+      return caller;
+    }
+    const context = getRequestContext();
+    return { userId: context?.userId, role: context?.role };
+  }
+
   async create(
     createAppointmentDto: CreateAppointmentDto,
+    caller?: AppointmentCaller,
     transactionManager?: EntityManager,
   ): Promise<Appointment> {
     const tenantId = TenantContext.getTenantId();
@@ -149,8 +171,8 @@ export class AppointmentService {
     // Ownership check: patients may only book for themselves. Staff roles
     // (admins, physicians, etc.) may book on behalf of any patient in the
     // tenant.
-    const context = getRequestContext();
-    if (context?.role === UserRole.PATIENT && createAppointmentDto.patientId !== context.userId) {
+    const context = this.resolveCaller(caller);
+    if (context.role === UserRole.PATIENT && createAppointmentDto.patientId !== context.userId) {
       throw new ForbiddenException('Patients can only book appointments for themselves');
     }
 
@@ -292,7 +314,7 @@ export class AppointmentService {
         // to the real caller when known, falling back to the patient id.
         await this.auditService
           .log({
-            actorId: context?.userId ?? createAppointmentDto.patientId,
+            actorId: context.userId ?? createAppointmentDto.patientId,
             action: 'APPOINTMENT_CREATED',
             resourceId: saved.id,
             resourceType: 'Appointment',
@@ -432,9 +454,9 @@ export class AppointmentService {
     };
   }
 
-  async findAll(): Promise<Appointment[]> {
+  async findAll(caller?: AppointmentCaller): Promise<Appointment[]> {
     return this.appointmentRepository.find({
-      where: this.getScopedWhere(),
+      where: this.getScopedWhere({}, caller),
       relations: ['consultationNotes'],
       order: { appointmentDate: 'ASC' },
     });
@@ -470,10 +492,11 @@ export class AppointmentService {
   async updateStatus(
     id: string,
     status: AppointmentStatus,
-    actorId: string,
+    actor?: string | AppointmentCaller,
   ): Promise<Appointment> {
-    const appointment = await this.appointmentRepository.findOne({ 
-      where: this.getScopedWhere({ id }) 
+    const caller = typeof actor === 'object' ? actor : undefined;
+    const appointment = await this.appointmentRepository.findOne({
+      where: this.getScopedWhere({ id }, caller),
     });
     if (!appointment) {
       throw new NotFoundException(`Appointment with ID ${id} not found`);
@@ -481,11 +504,12 @@ export class AppointmentService {
 
     // Ownership check: patients may only change the status of their own
     // appointments. Staff roles may change any appointment in the tenant.
-    const context = getRequestContext();
-    if (context?.role === UserRole.PATIENT && appointment.patientId !== context.userId) {
+    const context = this.resolveCaller(caller);
+    if (context.role === UserRole.PATIENT && appointment.patientId !== context.userId) {
       throw new ForbiddenException('Patients can only modify their own appointments');
     }
 
+    const previousStatus = appointment.status;
     appointment.status = status;
     const updated = await this.appointmentRepository.save(appointment);
 
@@ -497,7 +521,8 @@ export class AppointmentService {
         : 'APPOINTMENT_UPDATED';
 
     await this.auditService.log({
-      actorId: context?.userId ?? appointment.patientId,
+      actorId:
+        context.userId ?? (typeof actor === 'string' ? actor : undefined) ?? appointment.patientId,
       action: auditAction,
       resourceId: id,
       resourceType: 'Appointment',

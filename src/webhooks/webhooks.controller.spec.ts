@@ -6,10 +6,19 @@ import { IpfsService } from '../stellar/services/ipfs.service';
 import { QueueService } from '../queues/queue.service';
 import { ConfigService } from '@nestjs/config';
 import { WebhookDeliveryService } from './services/webhook-delivery.service';
+import { WebhookSubscriptionService } from './services/webhook-subscription.service';
 import { WebhookDelivery, WebhookDeliveryStatus } from './entities/webhook-delivery.entity';
 import { ClaimService } from '../billing/services/claim.service';
+import { UserRole } from '../auth/entities/user.entity';
+import { JwtPayload } from '../auth/services/auth-token.service';
 jest.mock('../billing/dto/claim.dto', () => ({
   AdjudicationWebhookDto: class AdjudicationWebhookDto {},
+}));
+
+// ClaimService is replaced by a mock provider below; stubbing the module also
+// keeps Jest from loading the billing entities' stale compiled `.js` twins.
+jest.mock('../billing/services/claim.service', () => ({
+  ClaimService: class ClaimService {},
 }));
 
 jest.mock('../auth/guards/jwt-auth.guard', () => ({
@@ -37,10 +46,19 @@ const mockConfigService = () => ({ get: jest.fn() });
 const mockWebhookDeliveryService = () => ({
   replayDelivery: jest.fn(),
 });
+const mockWebhookSubscriptionService = () => ({
+  listSubscriptions: jest.fn(),
+  assertEventsAllowedForRole: jest.fn(),
+  createSubscription: jest.fn(),
+  updateSubscription: jest.fn(),
+  deleteSubscription: jest.fn(),
+  rotateSecret: jest.fn(),
+});
 const mockClaimService = () => ({
   handleAdjudicationWebhook: jest.fn(),
 });
 const mockDeliveryRepository = () => ({
+  exist: jest.fn().mockResolvedValue(true),
   findAndCount: jest.fn(),
   findOne: jest.fn(),
   save: jest.fn(),
@@ -51,6 +69,7 @@ describe('WebhooksController', () => {
   let queueService: ReturnType<typeof mockQueueService>;
   let deliveryRepository: ReturnType<typeof mockDeliveryRepository>;
   let webhookDeliveryService: ReturnType<typeof mockWebhookDeliveryService>;
+  let claimService: ReturnType<typeof mockClaimService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -60,6 +79,7 @@ describe('WebhooksController', () => {
         { provide: QueueService, useFactory: mockQueueService },
         { provide: ConfigService, useFactory: mockConfigService },
         { provide: WebhookDeliveryService, useFactory: mockWebhookDeliveryService },
+        { provide: WebhookSubscriptionService, useValue: {} },
         { provide: getRepositoryToken(WebhookDelivery), useFactory: mockDeliveryRepository },
         { provide: ClaimService, useFactory: mockClaimService },
       ],
@@ -69,6 +89,24 @@ describe('WebhooksController', () => {
     queueService = module.get(QueueService);
     deliveryRepository = module.get(getRepositoryToken(WebhookDelivery));
     webhookDeliveryService = module.get(WebhookDeliveryService);
+    claimService = module.get(ClaimService);
+  });
+
+  // ── POST /webhooks/insurance-claims ───────────────────────────────────────
+
+  describe('handleInsuranceClaimAdjudication', () => {
+    it('delegates to ClaimService.handleAdjudicationWebhook and returns the new status', async () => {
+      const payload = { claimNumber: 'CLM-123', decision: 'approved' as const, paidAmount: 120 };
+      claimService.handleAdjudicationWebhook.mockResolvedValue({
+        claimNumber: 'CLM-123',
+        status: 'approved',
+      });
+
+      const result = await controller.handleInsuranceClaimAdjudication(payload as any);
+
+      expect(claimService.handleAdjudicationWebhook).toHaveBeenCalledWith(payload);
+      expect(result).toEqual({ received: true, claimNumber: 'CLM-123', status: 'approved' });
+    });
   });
 
   // ── POST /webhooks/ipfs ───────────────────────────────────────────────────
@@ -176,10 +214,13 @@ describe('WebhooksController', () => {
       const delivery = { id: 'delivery-1', attempts: [{ attemptNumber: 1, timestamp: '2024-01-01T00:00:00.000Z', httpStatus: 503, error: 'down', responseBodySnippet: '{"detail":"down"}' }] };
       deliveryRepository.findOne.mockResolvedValue(delivery);
 
-      const result = await controller.getDeliveryHistory('delivery-1');
+      const req = { user: { organizationId: 'tenant-1' } };
+      const result = await controller.getDeliveryHistory(req, 'delivery-1');
 
       expect(deliveryRepository.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'delivery-1' } }),
+        expect.objectContaining({
+          where: { id: 'delivery-1', tenantId: 'tenant-1' },
+        }),
       );
       expect(result).toEqual(delivery);
     });
@@ -191,8 +232,10 @@ describe('WebhooksController', () => {
     it('returns paginated failed deliveries', async () => {
       const items = [{ id: 'dlq-1', status: WebhookDeliveryStatus.FAILED }];
       deliveryRepository.findAndCount.mockResolvedValue([items, 1]);
+      const req = { user: { organizationId: 'tenant-1' } };
 
       const result = await controller.getDeadLetterQueue(
+        req,
         WebhookDeliveryStatus.FAILED,
         undefined,
         '10',
@@ -204,8 +247,9 @@ describe('WebhooksController', () => {
 
     it('caps the limit at 100', async () => {
       deliveryRepository.findAndCount.mockResolvedValue([[], 0]);
+      const req = { user: { organizationId: 'tenant-1' } };
 
-      await controller.getDeadLetterQueue(undefined, undefined, '9999', '0');
+      await controller.getDeadLetterQueue(req, undefined, undefined, '9999', '0');
 
       expect(deliveryRepository.findAndCount).toHaveBeenCalledWith(
         expect.objectContaining({ take: 100 }),
@@ -214,8 +258,9 @@ describe('WebhooksController', () => {
 
     it('defaults limit to 50 when not provided', async () => {
       deliveryRepository.findAndCount.mockResolvedValue([[], 0]);
+      const req = { user: { organizationId: 'tenant-1' } };
 
-      await controller.getDeadLetterQueue();
+      await controller.getDeadLetterQueue(req);
 
       expect(deliveryRepository.findAndCount).toHaveBeenCalledWith(
         expect.objectContaining({ take: 50 }),
@@ -228,9 +273,17 @@ describe('WebhooksController', () => {
   describe('replayDeadLetterItem', () => {
     it('calls replayDelivery and returns success', async () => {
       webhookDeliveryService.replayDelivery.mockResolvedValue(undefined);
-      const req = { user: { id: 'admin-1' } };
+      const user: JwtPayload = {
+        userId: 'admin-1',
+        email: 'admin@example.test',
+        role: UserRole.ADMIN,
+        mfaEnabled: true,
+        sessionId: 'test-session',
+        organizationId: 'tenant-1',
+      };
+      const req = { user };
 
-      const result = await controller.replayDeadLetterItem('dlq-1', req);
+      const result = await controller.replayDeadLetterItem('dlq-1', req, user);
 
       expect(webhookDeliveryService.replayDelivery).toHaveBeenCalledWith('dlq-1', 'admin-1');
       expect(result).toMatchObject({ success: true });
@@ -244,8 +297,9 @@ describe('WebhooksController', () => {
       const delivery = { id: 'dlq-1', status: WebhookDeliveryStatus.PENDING };
       deliveryRepository.findOne.mockResolvedValue(delivery);
       deliveryRepository.save.mockResolvedValue({ ...delivery, status: WebhookDeliveryStatus.FAILED });
+      const req = { user: { organizationId: 'tenant-1' } };
 
-      const result = await controller.discardDeadLetterItem('dlq-1');
+      const result = await controller.discardDeadLetterItem(req, 'dlq-1');
 
       expect(deliveryRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({ status: WebhookDeliveryStatus.FAILED }),
@@ -255,8 +309,9 @@ describe('WebhooksController', () => {
 
     it('returns error when delivery is not found', async () => {
       deliveryRepository.findOne.mockResolvedValue(null);
+      const req = { user: { organizationId: 'tenant-1' } };
 
-      const result = await controller.discardDeadLetterItem('dlq-missing');
+      const result = await controller.discardDeadLetterItem(req, 'dlq-missing');
 
       expect(deliveryRepository.save).not.toHaveBeenCalled();
       expect(result).toMatchObject({ success: false });

@@ -18,7 +18,7 @@ export class AccessControlController {
   @ApiResponse({ status: 201, description: 'Access granted successfully' })
   @ApiResponse({ status: 409, description: 'Duplicate grant exists' })
   async grantAccess(@Body() dto: CreateAccessGrantDto, @Req() req: any) {
-    const patientId = req.user?.userId || req.user?.id || '00000000-0000-0000-0000-000000000000';
+    const patientId = req.user?.userId || '00000000-0000-0000-0000-000000000000';
     return this.accessControlService.grantAccess(patientId, dto);
   }
 
@@ -31,7 +31,7 @@ export class AccessControlController {
     @Query('reason') reason: string,
     @Req() req: any,
   ) {
-    const patientId = req.user?.userId || req.user?.id || '00000000-0000-0000-0000-000000000000';
+    const patientId = req.user?.userId || '00000000-0000-0000-0000-000000000000';
     return this.accessControlService.revokeAccess(grantId, patientId, reason);
   }
 
@@ -39,7 +39,7 @@ export class AccessControlController {
   @ApiOperation({ summary: 'List all active grants for authenticated patient' })
   @ApiResponse({ status: 200, description: 'Grants retrieved successfully' })
   async getPatientGrants(@Req() req: any) {
-    const patientId = req.user?.userId || req.user?.id || '00000000-0000-0000-0000-000000000000';
+    const patientId = req.user?.userId || '00000000-0000-0000-0000-000000000000';
     return this.accessControlService.getPatientGrants(patientId);
   }
 
@@ -47,7 +47,7 @@ export class AccessControlController {
   @ApiOperation({ summary: 'List all grants the authenticated provider has received' })
   @ApiResponse({ status: 200, description: 'Received grants retrieved successfully' })
   async getReceivedGrants(@Req() req: any) {
-    const granteeId = req.user?.userId || req.user?.id || '00000000-0000-0000-0000-000000000000';
+    const granteeId = req.user?.userId || '00000000-0000-0000-0000-000000000000';
     return this.accessControlService.getReceivedGrants(granteeId);
   }
 
@@ -58,7 +58,7 @@ export class AccessControlController {
   @ApiResponse({ status: 201, description: 'Emergency access grant created' })
   @ApiResponse({ status: 400, description: 'Invalid emergency reason' })
   async createEmergencyAccess(@Body() dto: CreateEmergencyAccessDto, @Req() req: any) {
-    const requestedBy = req.user?.userId || req.user?.id;
+    const requestedBy = req.user?.userId;
     return this.accessControlService.createEmergencyAccess(requestedBy, dto);
   }
 
@@ -68,7 +68,7 @@ export class AccessControlController {
   @ApiOperation({ summary: 'Patient views emergency access history' })
   @ApiResponse({ status: 200, description: 'Emergency logs retrieved successfully' })
   async getEmergencyLog(@Req() req: any) {
-    const patientId = req.user?.userId || req.user?.id;
+    const patientId = req.user?.userId;
     return this.accessControlService.getEmergencyLog(patientId);
   }
 }

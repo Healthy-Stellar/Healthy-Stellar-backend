@@ -122,10 +122,22 @@ export class AuthController {
       throw new BadRequestException('User not found or inactive');
     }
 
-    // 4. Issue new token pair
-    const tokens = this.authTokenService.generateTokenPair(user, payload.sessionId, user.mfaEnabled);
+    // 4. Load the session: it must still be active, and its recorded MFA state
+    //    (not the account-level user.mfaEnabled flag) carries over to the new
+    //    access token.
+    const session = await this.sessionManagementService.getRefreshableSession(
+      payload.sessionId,
+      user.id,
+    );
 
-    // 5. Persist new refresh token in Redis and update DB session
+    // 5. Issue new token pair
+    const tokens = this.authTokenService.generateTokenPair(
+      user,
+      session.id,
+      session.mfaVerified === true,
+    );
+
+    // 6. Persist new refresh token in Redis and update DB session
     await this.refreshTokenStore.store(payload.sessionId, tokens.refreshToken);
 
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);

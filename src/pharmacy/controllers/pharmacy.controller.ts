@@ -87,7 +87,7 @@ export class PharmacyController {
   @ApiResponse({ status: 403, description: "Prescribing doctor's license is not active" })
   @ApiResponse({ status: 422, description: 'Blocked by a critical drug interaction' })
   async createPrescription(@Body() dto: CreatePrescriptionDto, @Req() req: any) {
-    dto.prescriberId = req.user.id;
+    dto.prescriberId = req.user.userId;
     return this.prescriptionService.create(dto);
   }
 
@@ -98,7 +98,7 @@ export class PharmacyController {
   })
   @ApiResponse({ status: 200, description: 'Prescriptions retrieved' })
   async getPatientPrescriptions(@Param('patientId') patientId: string, @Req() req: any) {
-    if (req.user.role === UserRole.PATIENT && req.user.id !== patientId) {
+    if (req.user.role === UserRole.PATIENT && req.user.userId !== patientId) {
       throw new ForbiddenException('Patients may only access their own prescriptions');
     }
     return this.prescriptionService.getPatientPrescriptions(patientId);
@@ -132,7 +132,7 @@ export class PharmacyController {
     @Body() dto: DispensePrescriptionRequestDto,
     @Req() req: any,
   ) {
-    dto.pharmacistId = req.user.id;
+    dto.pharmacistId = req.user.userId;
     return this.prescriptionService.dispensePrescription(id, dto);
   }
 

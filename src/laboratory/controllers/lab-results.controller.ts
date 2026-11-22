@@ -25,7 +25,7 @@ export class LabResultsController {
   @ApiResponse({ status: 201, description: 'Lab results created successfully' })
   @ApiResponse({ status: 400, description: 'Result already exists for order item' })
   create(@Body() createDto: CreateLabResultDto, @Request() req: any) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.labResultsService.create(createDto, userId);
   }
 
@@ -49,7 +49,7 @@ export class LabResultsController {
   @ApiResponse({ status: 200, description: 'Lab results verified successfully' })
   @ApiResponse({ status: 400, description: 'Cannot verify cancelled result' })
   verify(@Param('id') id: string, @Request() req: any) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     const verifierName = req.user?.name;
     return this.labResultsService.verify(id, userId, verifierName);
   }
@@ -63,7 +63,7 @@ export class LabResultsController {
     @Body('values') values: any[],
     @Request() req: any,
   ) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.labResultsService.correct(id, correctionReason, values, userId);
   }
 

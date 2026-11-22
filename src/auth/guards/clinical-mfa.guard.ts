@@ -51,10 +51,10 @@ export class ClinicalMfaGuard implements CanActivate {
       return true;
     }
 
-    // `user.mfaEnabled` is the JWT's session-scoped claim (set only once MFA has
-    // been verified for this login), not the account-level DB flag — a clinical
+    // `mfaVerified` is the session-scoped claim (true only once MFA has been
+    // completed for this session), not the account-level DB flag — a clinical
     // user must have completed MFA for the current session's token.
-    if (!user.mfaEnabled) {
+    if (user.mfaVerified !== true) {
       throw new UnauthorizedException('MFA verification required');
     }
 

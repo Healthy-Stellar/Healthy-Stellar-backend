@@ -141,7 +141,7 @@ export class RecordDiffService implements OnModuleInit, OnModuleDestroy {
   private async assertAccess(patientId: string, recordId: string, requesterId: string): Promise<void> {
     if (patientId === requesterId) return;
 
-    const hasGrant = await this.accessControlService.verifyAccess(requesterId, recordId);
+    const hasGrant = await this.accessControlService.verifyAccess(requesterId, recordId, patientId);
     if (!hasGrant) {
       const hasEmergency = await this.accessControlService.findActiveEmergencyGrant(
         patientId,

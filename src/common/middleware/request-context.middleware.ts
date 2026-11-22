@@ -27,11 +27,15 @@ export class RequestContextMiddleware implements NestMiddleware {
     const traceId = spanContext?.traceId || (req.headers['x-trace-id'] as string) || randomUUID();
     const spanId = spanContext?.spanId;
 
-    // Extract from JWT or headers if available
     const tenantId = req.headers['x-tenant-id'] as string;
-    const user = (req as any).user;
-    const userId = user?.userId || (req.headers['x-user-id'] as string);
-    const role = user?.role;
+
+    // Identity (userId / role) is intentionally NOT read here. Middleware runs
+    // before guards, so req.user is never set yet, and client-supplied headers
+    // such as x-user-id must never be trusted as identity. JwtAuthGuard
+    // populates these fields via setRequestContextUser() after verifying the
+    // token.
+    const userId: string | undefined = undefined;
+    const role: string | undefined = undefined;
 
     const context_obj: RequestContext = {
       requestId,
@@ -60,4 +64,16 @@ export class RequestContextMiddleware implements NestMiddleware {
 // Helper function to get current context
 export function getRequestContext(): RequestContext | undefined {
   return asyncLocalStorage.getStore();
+}
+
+/**
+ * Records the authenticated caller on the current request context.
+ * Must only be called after the caller's credentials have been verified
+ * (e.g. from JwtAuthGuard). No-op outside a request scope.
+ */
+export function setRequestContextUser(user: { userId?: string; role?: string } | undefined): void {
+  const store = asyncLocalStorage.getStore();
+  if (!store) return;
+  store.userId = user?.userId;
+  store.role = user?.role;
 }

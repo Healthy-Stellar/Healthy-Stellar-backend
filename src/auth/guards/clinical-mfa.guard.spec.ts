@@ -16,16 +16,16 @@ describe('ClinicalMfaGuard', () => {
     guard = new ClinicalMfaGuard(reflector, userRepository as any);
   });
 
-  const buildContext = (role: UserRole, mfaEnabled = false) => ({
+  const buildContext = (role: UserRole, mfaVerified = false) => ({
     switchToHttp: () => ({
       getRequest: () => ({
         originalUrl: '/patients/123',
-        user: { userId: 'user-1', role, mfaEnabled },
+        user: { userId: 'user-1', role, mfaVerified },
       }),
     }),
     getHandler: () => jest.fn(),
     getClass: () => jest.fn(),
-  }) as ExecutionContext;
+  }) as unknown as ExecutionContext;
 
   it('blocks clinical users without a session-verified MFA claim', async () => {
     userRepository.findOne.mockResolvedValue({ id: 'user-1', role: UserRole.PHYSICIAN, mfaEnabled: false });
@@ -47,6 +47,22 @@ describe('ClinicalMfaGuard', () => {
     userRepository.findOne.mockResolvedValue({ id: 'user-1', role: UserRole.ADMIN, mfaEnabled: false });
 
     await expect(guard.canActivate(buildContext(UserRole.ADMIN, false))).resolves.toBe(true);
+  });
+
+  it('ignores a legacy `mfaEnabled` claim — only `mfaVerified` counts', async () => {
+    userRepository.findOne.mockResolvedValue({ id: 'user-1', role: UserRole.PHYSICIAN, mfaEnabled: true });
+    const ctx = {
+      switchToHttp: () => ({
+        getRequest: () => ({
+          originalUrl: '/patients/123',
+          user: { userId: 'user-1', role: UserRole.PHYSICIAN, mfaEnabled: true },
+        }),
+      }),
+      getHandler: () => jest.fn(),
+      getClass: () => jest.fn(),
+    } as unknown as ExecutionContext;
+
+    await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
   });
 
   it('allows clinical users with a session-verified MFA claim', async () => {
