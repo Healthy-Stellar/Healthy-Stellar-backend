@@ -1,5 +1,3 @@
-import { ApiProperty, ApiOperation, ApiTag, Body} from '@nestjs/swagger';
-
 export enum MultiSigTransactionStatus {
   PENDING_SIGNATURES = 'PENDING_SIGNATURES',
   APPROVED = 'APPROVED',

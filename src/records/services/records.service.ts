@@ -80,7 +80,10 @@ export class RecordsService {
   }
 
   @Traced('records.findAll')
-  async findAll(query: PaginationQueryDto): Promise<PaginatedRecordsResponseDto> {
+  async findAll(
+    query: PaginationQueryDto,
+    caller?: { userId?: string; role?: string },
+  ): Promise<PaginatedRecordsResponseDto> {
     const {
       page = 1,
       pageSize = 20,
@@ -91,10 +94,29 @@ export class RecordsService {
       order = 'desc',
       patientId,
     } = query;
+    const limit = Math.min(Math.max(Number(pageSize) || 20, 1), 100);
 
     const where: FindOptionsWhere<Record> = { isDeleted: false };
     if (recordType) where.recordType = recordType;
     if (patientId) where.patientId = patientId;
+
+    // Tenant isolation is enforced by TenantInterceptor (schema-per-tenant
+    // search_path). Within the tenant, non-privileged callers (patients and
+    // any role other than admin/physician) only ever see their own records,
+    // regardless of the patientId filter they supply.
+    if (caller) {
+      const isPrivileged =
+        caller.role === UserRole.ADMIN ||
+        caller.role === UserRole.SUPER_ADMIN ||
+        caller.role === UserRole.PHYSICIAN;
+      if (!isPrivileged) {
+        if (!caller.userId) {
+          throw new ForbiddenException('Authenticated caller required');
+        }
+        where.patientId = caller.userId;
+      }
+    }
+
     if (fromDate && toDate) {
       where.createdAt = Between(new Date(fromDate), new Date(toDate));
     } else if (fromDate) {
@@ -135,6 +157,11 @@ export class RecordsService {
   async generateQrCode(id: string, patientId: string): Promise<string> {
     const record = await this.recordRepository.findOne({ where: { id } });
     if (!record) throw new NotFoundException(`Record ${id} not found`);
+
+    // Only the record's own patient may mint a share link / QR code for it.
+    if (!patientId || record.patientId !== patientId) {
+      throw new ForbiddenException('Only the record owner can generate a share link');
+    }
 
     const token = await this.stellarService.createShareLink(id, patientId);
     const appDomain = process.env.APP_DOMAIN || 'https://app.domain.com';

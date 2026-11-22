@@ -13,6 +13,7 @@ import { AccessRequest, AccessRequestStatus } from '../entities/access-request.e
 import { AccessGrant, AccessLevel, GrantStatus } from '../entities/access-grant.entity';
 import { CreateAccessRequestDto } from '../dto/create-access-request.dto';
 import { SorobanQueueService } from './soroban-queue.service';
+import { WILDCARD_RECORD_ID } from '../utils/grant-coverage.util';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { NotificationEventType } from '../../notifications/interfaces/notification-event.interface';
 
@@ -129,7 +130,7 @@ export class AccessRequestService implements OnModuleInit, OnModuleDestroy {
     const grant = this.grantRepo.create({
       patientId: patientAddress,
       granteeId: request.providerAddress,
-      recordIds: ['*'],
+      recordIds: [WILDCARD_RECORD_ID],
       accessLevel: AccessLevel.READ,
       isEmergency: false,
       emergencyReason: null,

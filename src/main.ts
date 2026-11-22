@@ -38,7 +38,7 @@ function parseSwaggerServers(raw?: string): Array<{ url: string; description: st
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true });
 
   // Run onModuleDestroy/onApplicationShutdown hooks (Redis locks, DB pools, etc.) on SIGTERM/SIGINT
   app.enableShutdownHooks();

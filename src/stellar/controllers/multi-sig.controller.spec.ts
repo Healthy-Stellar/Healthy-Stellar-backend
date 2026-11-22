@@ -151,7 +151,7 @@ describe('MultiSigController', () => {
 
       const result = await controller.sweepApprovedPayments();
 
-      expect(result).toEqual(3);
+      expect(result).toEqual({ processed: 3 });
       expect(mockMultiSigService.sweepApprovedTransactions).toHaveBeenCalled();
     });
   });

@@ -47,7 +47,7 @@ export class TenantBrandingController {
     @Body() dto: UpdateTenantBrandingDto,
     @Request() req,
   ) {
-    const userId = req.user?.userId || req.user?.id;
+    const userId = req.user?.userId;
     return this.brandingService.upsertBranding(tenantId, dto, userId);
   }
 

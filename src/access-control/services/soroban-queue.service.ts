@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   Keypair,
-  Networks,
   TransactionBuilder,
   Contract,
   nativeToScVal,
@@ -10,6 +9,7 @@ import {
   xdr,
 } from '@stellar/stellar-sdk';
 import { AccessGrant } from '../entities/access-grant.entity';
+import { getNetworkPassphrase } from '../../config/env.validation';
 
 @Injectable()
 export class SorobanQueueService {
@@ -21,8 +21,17 @@ export class SorobanQueueService {
 
   constructor(private readonly config: ConfigService) {
     const rpcUrl = this.config.get<string>('SOROBAN_RPC_URL');
-    this.networkPassphrase =
-      this.config.get<string>('STELLAR_NETWORK_PASSPHRASE') ?? Networks.TESTNET;
+    const network = this.config.get<string>('STELLAR_NETWORK', 'testnet');
+    const expectedPassphrase = getNetworkPassphrase(network);
+    const configuredPassphrase = this.config.get<string>('STELLAR_NETWORK_PASSPHRASE');
+
+    if (configuredPassphrase && configuredPassphrase !== expectedPassphrase) {
+      throw new Error(
+        `SorobanQueueService misconfigured: STELLAR_NETWORK_PASSPHRASE does not match STELLAR_NETWORK (${network})`,
+      );
+    }
+
+    this.networkPassphrase = expectedPassphrase;
     this.contractId = this.config.get<string>('SOROBAN_ACCESS_CONTRACT_ID') ?? '';
 
     const secret = this.config.get<string>('SOROBAN_SOURCE_SECRET');

@@ -17,7 +17,7 @@ export class SpecimensController {
   @ApiResponse({ status: 201, description: 'Specimen created successfully' })
   @ApiResponse({ status: 409, description: 'Specimen ID already exists' })
   create(@Body() createDto: CreateSpecimenDto, @Request() req: any) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     return this.specimensService.create(createDto, userId);
   }
 
@@ -55,7 +55,7 @@ export class SpecimensController {
     @Body('notes') notes: string,
     @Request() req: any,
   ) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     const userName = req.user?.name;
     return this.specimensService.updateStatus(id, status, userId, userName, location, notes);
   }
@@ -64,7 +64,7 @@ export class SpecimensController {
   @ApiOperation({ summary: 'Reject specimen' })
   @ApiResponse({ status: 200, description: 'Specimen rejected successfully' })
   reject(@Param('id') id: string, @Body('reason') reason: string, @Request() req: any) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     const userName = req.user?.name;
     return this.specimensService.reject(id, reason, userId, userName);
   }
@@ -77,7 +77,7 @@ export class SpecimensController {
     @Body('storageLocation') storageLocation: string,
     @Request() req: any,
   ) {
-    const userId = req.user?.id || 'system';
+    const userId = req.user?.userId || 'system';
     const userName = req.user?.name;
     return this.specimensService.updateStorage(id, storageLocation, userId, userName);
   }

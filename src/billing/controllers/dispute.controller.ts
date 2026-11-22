@@ -36,7 +36,7 @@ export class DisputeController {
   @ApiOperation({ summary: 'Open a new billing dispute' })
   @ApiResponse({ status: 201, description: 'Dispute created successfully' })
   async create(@Body() dto: CreateDisputeDto, @Request() req: any) {
-    const createdBy: string = req.user?.sub ?? req.user?.id ?? 'unknown';
+    const createdBy: string = req.user?.userId ?? 'unknown';
     return this.disputeService.create(dto, createdBy);
   }
 

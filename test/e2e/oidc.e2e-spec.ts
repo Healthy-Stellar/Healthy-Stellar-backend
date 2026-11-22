@@ -21,7 +21,7 @@ import { Patient } from '../../src/patients/entities/patient.entity';
 import { WebhookDelivery } from '../../src/webhooks/entities/webhook-delivery.entity';
 import { WebhookSubscription } from '../../src/webhooks/entities/webhook-subscription.entity';
 import { Record } from '../../src/records/entities/record.entity';
-import { RecordVersion } from '../../src/records/versions/record-version.entity';
+import { RecordVersion } from '../../src/records/entities/record-version.entity';
 import { RecordSnapshot } from '../../src/records/entities/record-snapshot.entity';
 import { RecordTemplate } from '../../src/records/entities/record-template.entity';
 import { RecordAttachment } from '../../src/records/entities/record-attachment.entity';
