@@ -12,7 +12,47 @@ import {
   InvokeContractResult,
   ContractEvent,
   StellarNetwork,
+  SendPaymentParams,
+  SignedPaymentTransaction,
 } from '../interfaces/stellar-contract.interface';
+
+/** Seconds a signed payment envelope stays valid before Horizon rejects it as tx_too_late. */
+const PAYMENT_TX_TIMEOUT_SECONDS = 180;
+
+/** Stellar text memos are limited to 28 bytes. */
+const MAX_TEXT_MEMO_BYTES = 28;
+
+/** Result codes that mean the payment can never succeed as requested. */
+const TERMINAL_RESULT_CODES: { [code: string]: string } = {
+  op_underfunded: 'insufficient funds',
+  tx_insufficient_balance: 'insufficient funds',
+  op_low_reserve: 'insufficient funds',
+  op_no_destination: 'Invalid destination: account does not exist',
+  op_malformed: 'Invalid destination or amount (op_malformed)',
+  op_no_trust: 'invalid asset: destination has no trustline',
+  op_not_authorized: 'invalid asset: destination is not authorized to hold the asset',
+  op_no_issuer: 'invalid asset: issuer does not exist',
+  op_line_full: 'invalid asset: destination trustline is full',
+  op_src_no_trust: 'invalid asset: source has no trustline',
+  op_src_not_authorized: 'invalid asset: source is not authorized to send the asset',
+};
+
+/**
+ * Error raised by the classic-payment helpers.
+ *
+ * `retryable` tells callers whether submitting again can succeed. `code` carries
+ * the Horizon result code when there is one (e.g. `tx_too_late`, `op_underfunded`).
+ */
+export class StellarPaymentError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = 'StellarPaymentError';
+  }
+}
 
 /**
  * StellarService
@@ -122,6 +162,132 @@ export class StellarService {
       const confirmed = await this.pollForConfirmation(sendResult.hash);
       return { ...confirmed, status: 'SUCCESS' as const };
     });
+  }
+
+  // ── Classic payments (Issue #1328) ───────────────────────────────────────
+
+  /**
+   * Build and sign a classic payment from the platform source account.
+   * Nothing is sent to the network. Persist `xdr` before submitting so a retry
+   * can resubmit the same envelope instead of creating a second payment.
+   *
+   * Validation failures throw a non-retryable {@link StellarPaymentError}.
+   */
+  async buildPaymentTransaction(params: SendPaymentParams): Promise<SignedPaymentTransaction> {
+    const { destination, amount, memo } = params;
+
+    if (!destination || !StellarSdk.StrKey.isValidEd25519PublicKey(destination)) {
+      throw new StellarPaymentError(`Invalid destination: ${destination}`, false);
+    }
+    if (!/^\d+(\.\d{1,7})?$/.test(amount ?? '') || Number(amount) <= 0) {
+      throw new StellarPaymentError(`Invalid amount: ${amount}`, false);
+    }
+    if (memo && Buffer.byteLength(memo, 'utf8') > MAX_TEXT_MEMO_BYTES) {
+      throw new StellarPaymentError(`Invalid memo: longer than ${MAX_TEXT_MEMO_BYTES} bytes`, false);
+    }
+    const asset = this.parseAsset(params.asset);
+
+    const sourceAccount = await this.stellarTracing.traceHorizonCall(
+      'loadAccount',
+      {
+        'stellar.account.address': this.sourceKeypair.publicKey(),
+        'stellar.operation': 'buildPaymentTransaction',
+      },
+      () => this.horizonServer.loadAccount(this.sourceKeypair.publicKey()),
+    );
+
+    const builder = new StellarSdk.TransactionBuilder(sourceAccount, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase: this.networkPassphrase,
+    })
+      .addOperation(StellarSdk.Operation.payment({ destination, asset, amount }))
+      .setTimeout(PAYMENT_TX_TIMEOUT_SECONDS);
+
+    if (memo) {
+      builder.addMemo(StellarSdk.Memo.text(memo));
+    }
+
+    const tx = builder.build();
+    tx.sign(this.sourceKeypair);
+
+    return { xdr: tx.toXDR(), hash: tx.hash().toString('hex') };
+  }
+
+  /**
+   * Submit a signed envelope (from {@link buildPaymentTransaction}) to Horizon
+   * and return its transaction hash once it is in a ledger.
+   *
+   * Safe to call repeatedly with the same XDR: if an earlier submission already
+   * landed (e.g. the response was lost), the existing hash is returned.
+   */
+  async submitSignedTransaction(xdr: string): Promise<string> {
+    const tx = StellarSdk.TransactionBuilder.fromXDR(xdr, this.networkPassphrase);
+    const hash = tx.hash().toString('hex');
+
+    try {
+      const response = await this.stellarTracing.traceHorizonCall(
+        'submitTransaction',
+        { 'stellar.tx_hash': hash, 'stellar.operation': 'submitPayment' },
+        () => this.horizonServer.submitTransaction(tx),
+      );
+      if (!response.successful) {
+        throw new StellarPaymentError(`Transaction ${response.hash} was not successful`, true);
+      }
+      this.logger.log(`[submitSignedTransaction] txHash=${response.hash} ledger=${response.ledger}`);
+      return response.hash;
+    } catch (err: any) {
+      if (await this.isTransactionOnLedger(hash)) {
+        this.logger.warn(`[submitSignedTransaction] txHash=${hash} already on ledger — treating as success`);
+        return hash;
+      }
+      throw this.toPaymentError(err);
+    }
+  }
+
+  /** Build, sign and submit a classic payment. Returns the transaction hash. */
+  async sendPayment(params: SendPaymentParams): Promise<string> {
+    const { xdr } = await this.buildPaymentTransaction(params);
+    return this.submitSignedTransaction(xdr);
+  }
+
+  private parseAsset(asset?: string): StellarSdk.Asset {
+    if (!asset || asset === 'XLM' || asset === 'native') {
+      return StellarSdk.Asset.native();
+    }
+    const [code, issuer] = asset.split(':');
+    try {
+      return new StellarSdk.Asset(code, issuer);
+    } catch {
+      throw new StellarPaymentError(`invalid asset: ${asset} (expected XLM or CODE:ISSUER)`, false);
+    }
+  }
+
+  private async isTransactionOnLedger(hash: string): Promise<boolean> {
+    try {
+      const record = await this.horizonServer.transactions().transaction(hash).call();
+      return !!record?.successful;
+    } catch {
+      return false;
+    }
+  }
+
+  private toPaymentError(err: any): StellarPaymentError {
+    if (err instanceof StellarPaymentError) return err;
+
+    const resultCodes = err?.response?.data?.extras?.result_codes ?? {};
+    const codes: string[] = [resultCodes.transaction, ...(resultCodes.operations ?? [])].filter(
+      (c: unknown): c is string => typeof c === 'string' && c !== 'op_success' && c !== 'tx_failed',
+    );
+
+    for (const code of codes) {
+      if (TERMINAL_RESULT_CODES[code]) {
+        return new StellarPaymentError(`${TERMINAL_RESULT_CODES[code]} (${code})`, false, code);
+      }
+    }
+
+    const code = codes[0] ?? resultCodes.transaction;
+    const detail = code ? ` (${code})` : '';
+    return new StellarPaymentError(`Payment submission failed${detail}: ${err?.message ?? err}`, true, code);
   }
 
   /**

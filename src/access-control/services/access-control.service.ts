@@ -17,6 +17,7 @@ import { SorobanQueueService } from './soroban-queue.service';
 import { User, UserRole } from '../../auth/entities/user.entity';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { RedisLockService } from '../../common/utils/redis-lock.service';
+import { WILDCARD_RECORD_ID, grantCoversRecord } from '../utils/grant-coverage.util';
 
 @Injectable()
 export class AccessControlService {
@@ -191,7 +192,7 @@ export class AccessControlService {
     const grant = this.grantRepository.create({
       patientId: dto.patientId,
       granteeId: requestedBy,
-      recordIds: ['*'],
+      recordIds: [WILDCARD_RECORD_ID],
       accessLevel: AccessLevel.READ_WRITE,
       isEmergency: true,
       emergencyReason: dto.emergencyReason.trim(),
@@ -300,7 +301,7 @@ export class AccessControlService {
       return null;
     }
 
-    if (recordId && !(grant.recordIds.includes('*') || grant.recordIds.includes(recordId))) {
+    if (recordId && !grantCoversRecord(grant, recordId, patientId, now)) {
       return null;
     }
 
@@ -395,7 +396,7 @@ export class AccessControlService {
         continue;
       }
 
-      if (grant.recordIds.includes('*') || grant.recordIds.includes(recordId)) {
+      if (grantCoversRecord(grant, recordId, patientId, now)) {
         return true;
       }
     }
@@ -417,24 +418,34 @@ export class AccessControlService {
     });
   }
 
-  async verifyAccess(requesterId: string, recordId: string): Promise<boolean> {
+  /**
+   * Does `requesterId` hold an active grant covering `recordId`?
+   *
+   * `patientId` must be the owner of the record (`record.patientId`). A grant
+   * only counts when it was issued by that patient, so wildcard grants
+   * (`recordIds: ['*']`, used by approved access requests and emergency
+   * access) cover every record of *that* patient and nothing else.
+   *
+   * Ownership itself is not a grant: callers that should let the patient
+   * through must check `record.patientId === requesterId` first.
+   */
+  async verifyAccess(requesterId: string, recordId: string, patientId: string): Promise<boolean> {
+    if (!requesterId || !recordId || !patientId) {
+      return false;
+    }
+
     this.logger.log(`Verifying access for requester ${requesterId} on record ${recordId}`);
 
     const grants = await this.grantRepository.find({
       where: {
         granteeId: requesterId,
+        patientId,
         status: GrantStatus.ACTIVE,
       },
     });
 
     const now = new Date();
-    const validGrant = grants.find((grant) => {
-      const hasRecord = grant.recordIds.includes(recordId);
-      const notExpired = !grant.expiresAt || grant.expiresAt > now;
-      return hasRecord && notExpired;
-    });
-
-    return !!validGrant;
+    return grants.some((grant) => grantCoversRecord(grant, recordId, patientId, now));
   }
 
   async revokeAccessByPatient(

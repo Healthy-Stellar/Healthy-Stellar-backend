@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { BullModule } from '@nestjs/bull';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -23,6 +24,7 @@ import { MultiSigTransactionService } from './services/multi-sig-transaction.ser
 import { MultiSigExecutionProcessor } from './processors/multi-sig-execution.processor';
 import { MultiSigSweepTask } from './tasks/multi-sig-sweep.task';
 import { MultiSigTransactionEntity } from './entities/multi-sig-transaction.entity';
+import { MULTI_SIG_EXECUTION_QUEUE } from './multi-sig.constants';
 import { HttpIdempotencyEntity } from '../idempotency/idempotency.entity';
 import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
 import { MetricsModule } from '../metrics/metrics.module';
@@ -38,6 +40,20 @@ import { AuthModule } from '../auth/auth.module';
     TypeOrmModule.forFeature([HttpIdempotencyEntity, MultiSigTransactionEntity]),
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
+    // Approved multi-sig payments are executed asynchronously by MultiSigExecutionProcessor.
+    BullModule.registerQueueAsync({
+      name: MULTI_SIG_EXECUTION_QUEUE,
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        redis: {
+          host: config.get<string>('REDIS_HOST', 'localhost'),
+          port: Number(config.get('REDIS_PORT', 6379)),
+          password: config.get<string>('REDIS_PASSWORD'),
+          db: Number(config.get('REDIS_DB', 0)),
+        },
+      }),
+    }),
     NotificationsModule,
     HttpModule.register({ timeout: 10000, maxRedirects: 5 }),
   ],
