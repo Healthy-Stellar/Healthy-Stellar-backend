@@ -61,7 +61,8 @@ export class MultiSigController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Sweep approved multi-sig payments to execute on-chain' })
   async sweepApprovedPayments(): Promise<{ processed: number }> {
-    return this.multiSigService.sweepApprovedTransactions();
+    const processed = await this.multiSigService.sweepApprovedTransactions();
+    return { processed };
   }
 
   @Get('payments/:id')

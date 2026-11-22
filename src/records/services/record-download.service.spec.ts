@@ -83,6 +83,36 @@ describe('RecordDownloadService', () => {
     await expect(service.download('record-uuid', 'req-id', '127.0.0.1', 'jest')).rejects.toThrow(ForbiddenException);
   });
 
+  // ── Owner always allowed, without a grant ─────────────────────────────────
+  it('lets the record\'s own patient download without consulting grants', async () => {
+    recordRepo.findOne.mockResolvedValue(mockRecord);
+    encryption.decryptRecord.mockResolvedValue(Buffer.from('owner-bytes'));
+
+    const result = await service.download('record-uuid', 'patient-uuid', '127.0.0.1', 'jest');
+
+    expect(accessControl.verifyAccess).not.toHaveBeenCalled();
+    const chunks: Buffer[] = [];
+    for await (const chunk of result.stream) chunks.push(Buffer.from(chunk));
+    expect(Buffer.concat(chunks).toString()).toBe('owner-bytes');
+  });
+
+  it('checks a grantee\'s grant against the record\'s patient', async () => {
+    recordRepo.findOne.mockResolvedValue(mockRecord);
+    accessControl.verifyAccess.mockResolvedValue(true);
+    encryption.decryptRecord.mockResolvedValue(Buffer.from('data'));
+
+    await service.download('record-uuid', 'req-id', '127.0.0.1', 'jest');
+
+    expect(accessControl.verifyAccess).toHaveBeenCalledWith('req-id', 'record-uuid', 'patient-uuid');
+  });
+
+  it('throws NotFoundException for a soft-deleted record', async () => {
+    recordRepo.findOne.mockResolvedValue({ ...mockRecord, isDeleted: true });
+    await expect(service.download('record-uuid', 'patient-uuid', '127.0.0.1', 'jest')).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
   // ── Successful download returns stream ────────────────────────────────────
   it('returns a Readable stream with correct content-type on success', async () => {
     recordRepo.findOne.mockResolvedValue(mockRecord);

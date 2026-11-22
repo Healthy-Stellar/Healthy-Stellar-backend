@@ -8,6 +8,7 @@ import {
   UploadedFile,
   UseInterceptors,
   BadRequestException,
+  UnauthorizedException,
   Req,
   Res,
   UseGuards,
@@ -48,7 +49,6 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../../auth/guards/admin.guard';
 import { JwtPayload } from '../../auth/services/auth-token.service';
 import { RecordResponseDto } from '../dto/record-response.dto';
-import { AttachmentResponseDto } from '../dto/attachment-response.dto';
 import { RecordAccessGuard } from '../guards/record-access.guard';
 import { DeprecatedRoute } from '../../common/decorators/deprecated.decorator';
 
@@ -244,8 +244,9 @@ export class RecordsController {
     @Param('id') id: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize: number,
+    @Req() req: any,
   ): Promise<PaginatedVersionsResponseDto> {
-    return this.recordVersionService.listVersions(id, page, pageSize);
+    return this.recordVersionService.getVersions(id, this.requesterId(req), page, pageSize);
   }
 
   @Get(':id/versions/:version')
@@ -257,8 +258,9 @@ export class RecordsController {
   async getVersion(
     @Param('id') id: string,
     @Param('version', ParseIntPipe) version: number,
+    @Req() req: any,
   ): Promise<RecordVersionMetaDto> {
-    return this.recordVersionService.getVersion(id, version);
+    return this.recordVersionService.getVersion(id, version, this.requesterId(req));
   }
 
   @Get(':id/diff')
@@ -271,8 +273,9 @@ export class RecordsController {
     @Param('id') id: string,
     @Query('from', ParseIntPipe) from: number,
     @Query('to', ParseIntPipe) to: number,
+    @Req() req: any,
   ): Promise<RecordDiffResponseDto> {
-    return this.recordDiffService.diff(id, from, to);
+    return this.recordDiffService.computeDiff(id, from, to, this.requesterId(req));
   }
 
   @Get(':id/download')
@@ -303,15 +306,15 @@ export class RecordsController {
     }),
   )
   @ApiOperation({ summary: 'Attach a file to a record' })
-  @ApiResponse({ status: 201, description: 'Attachment created', type: AttachmentResponseDto })
+  @ApiResponse({ status: 201, description: 'Attachment created (attachmentId, cid, fileSize)' })
   @ApiResponse({ status: 400, description: 'Missing file' })
   @ApiResponse({ status: 404, description: 'Record not found' })
   async addAttachment(
     @Param('id') id: string,
-    @Body() dto: CreateAttachmentDto,
+    @Body() _dto: CreateAttachmentDto,
     @UploadedFile() file: Express.Multer.File,
     @Req() req: any,
-  ): Promise<AttachmentResponseDto> {
+  ): Promise<{ attachmentId: string; cid: string; fileSize: number }> {
     if (!file) {
       throw new BadRequestException('Attachment file is required');
     }
@@ -325,7 +328,16 @@ export class RecordsController {
   @ApiOperation({ summary: 'List records related to a record' })
   @ApiResponse({ status: 200, description: 'Related records', type: [RelatedRecordDto] })
   @ApiResponse({ status: 404, description: 'Record not found' })
-  async getRelated(@Param('id') id: string): Promise<RelatedRecordDto[]> {
-    return this.relatedRecordsService.findRelated(id);
+  async getRelated(@Param('id') id: string, @Req() req: any): Promise<RelatedRecordDto[]> {
+    return this.relatedRecordsService.findRelated(id, this.requesterId(req));
+  }
+
+  /** Authenticated caller id as populated by JwtStrategy (`req.user.userId`). */
+  private requesterId(req: any): string {
+    const userId: string | undefined = req.user?.userId ?? req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('Authenticated user identity could not be resolved');
+    }
+    return userId;
   }
 }
