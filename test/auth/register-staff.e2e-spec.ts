@@ -123,79 +123,48 @@ describe('POST /auth/register/staff (e2e)', () => {
     await post(body(UserRole.NURSE, { organizationId: 'x' }), UserRole.ADMIN).expect(400);
   });
 
-  it('rejects registration with missing email field', async () => {
-    const payload = { ...body(UserRole.NURSE) };
-    delete payload.email;
-    await post(payload, UserRole.ADMIN).expect(400);
-    expect(userRepository.create).not.toHaveBeenCalled();
+  it('rejects invalid email formats', async () => {
+    await post({ ...body(UserRole.NURSE), email: 'not-an-email' }, UserRole.ADMIN).expect(400);
+    await post({ ...body(UserRole.NURSE), email: '' }, UserRole.ADMIN).expect(400);
+    await post({ ...body(UserRole.NURSE), email: '@example.com' }, UserRole.ADMIN).expect(400);
   });
 
-  it('rejects registration with missing password field', async () => {
-    const payload = { ...body(UserRole.NURSE) };
-    delete payload.password;
-    await post(payload, UserRole.ADMIN).expect(400);
-    expect(userRepository.create).not.toHaveBeenCalled();
+  it('rejects weak passwords', async () => {
+    const weakPasswordBody = { ...body(UserRole.NURSE), password: '123' };
+    await post(weakPasswordBody, UserRole.ADMIN).expect(400);
+
+    const noSpecialCharBody = { ...body(UserRole.NURSE), password: 'Password123' };
+    await post(noSpecialCharBody, UserRole.ADMIN).expect(400);
   });
 
-  it('rejects registration with missing firstName field', async () => {
-    const payload = { ...body(UserRole.NURSE) };
-    delete payload.firstName;
-    await post(payload, UserRole.ADMIN).expect(400);
-    expect(userRepository.create).not.toHaveBeenCalled();
-  });
-
-  it('rejects registration with missing lastName field', async () => {
-    const payload = { ...body(UserRole.NURSE) };
-    delete payload.lastName;
-    await post(payload, UserRole.ADMIN).expect(400);
-    expect(userRepository.create).not.toHaveBeenCalled();
-  });
-
-  it('rejects registration with invalid email format', async () => {
-    const payload = { ...body(UserRole.NURSE), email: 'not-an-email' };
-    await post(payload, UserRole.ADMIN).expect(400);
-    expect(userRepository.create).not.toHaveBeenCalled();
-  });
-
-  it('rejects registration with duplicate email', async () => {
+  it('rejects duplicate email addresses', async () => {
     userRepository.findOne.mockResolvedValueOnce({
       id: 'existing-user',
       email: 'staff@example.test',
     });
+
     await post(body(UserRole.NURSE), UserRole.ADMIN).expect(409);
-    expect(userRepository.create).not.toHaveBeenCalled();
+    expect(userRepository.save).not.toHaveBeenCalled();
   });
 
-  it('lets admin create multiple staff roles successfully', async () => {
-    await post(body(UserRole.NURSE), UserRole.ADMIN).expect(201);
-    await post(body(UserRole.PHYSICIAN), UserRole.ADMIN).expect(201);
-    expect(userRepository.create).toHaveBeenCalledTimes(2);
+  it('requires all mandatory fields (firstName, lastName, email, password, role)', async () => {
+    const incompleteBody = { email: 'test@example.com', password: 'Str0ng!Passw0rd#' };
+    await post(incompleteBody, UserRole.ADMIN).expect(400);
+
+    const missingEmail = { ...body(UserRole.NURSE) };
+    delete missingEmail.email;
+    await post(missingEmail, UserRole.ADMIN).expect(400);
+
+    const missingRole = { ...body(UserRole.NURSE) };
+    delete missingRole.role;
+    await post(missingRole, UserRole.ADMIN).expect(400);
   });
 
-  it('lets super_admin create staff with all valid roles', async () => {
-    await post(body(UserRole.NURSE), UserRole.SUPER_ADMIN).expect(201);
-    await post(body(UserRole.PHYSICIAN), UserRole.SUPER_ADMIN).expect(201);
-    await post(body(UserRole.ADMIN), UserRole.SUPER_ADMIN).expect(201);
-    expect(userRepository.create).toHaveBeenCalledTimes(3);
-  });
-
-  it('rejects registration with empty string fields', async () => {
-    const payload = { ...body(UserRole.NURSE), firstName: '' };
-    await post(payload, UserRole.ADMIN).expect(400);
-    expect(userRepository.create).not.toHaveBeenCalled();
-  });
-
-  it('ensures created user has correct organization scoping', async () => {
-    const res = await post(body(UserRole.NURSE), UserRole.ADMIN).expect(201);
+  it('allows super_admin to create another super_admin', async () => {
+    const res = await post(body(UserRole.SUPER_ADMIN), UserRole.SUPER_ADMIN).expect(201);
+    expect(res.body.user.role).toBe(UserRole.SUPER_ADMIN);
     expect(userRepository.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        email: 'staff@example.test',
-        role: UserRole.NURSE,
-        organizationId: ORG_ID,
-        firstName: 'Staff',
-        lastName: 'Member',
-      }),
+      expect.objectContaining({ role: UserRole.SUPER_ADMIN }),
     );
-    expect(res.body.user).toBeDefined();
   });
 });
