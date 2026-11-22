@@ -8,10 +8,30 @@ export interface JwtPayload {
   userId: string;
   email: string;
   role: UserRole;
-  mfaEnabled: boolean;
+  /**
+   * Session-scoped: true only when the session this token belongs to has
+   * passed a TOTP / backup-code challenge. Deliberately not named after the
+   * account-level `User.mfaEnabled` flag, which says nothing about whether
+   * MFA was performed for this login.
+   */
+  mfaVerified: boolean;
+  /**
+   * Set on the short-lived token issued after a password-only login for an
+   * MFA-enabled account. Such a token is rejected everywhere except routes
+   * marked `@AllowMfaPending()` (the MFA challenge endpoints).
+   */
+  mfaPending?: boolean;
   sessionId: string;
   organizationId: string;
 }
+
+export interface VerifyAccessTokenOptions {
+  /** Accept an MFA-pending token. Only the MFA challenge endpoints should set this. */
+  allowMfaPending?: boolean;
+}
+
+/** Lifetime of the MFA-pending token returned by POST /auth/login. */
+export const MFA_PENDING_TOKEN_TTL_SECONDS = 5 * 60;
 
 export interface TokenPair {
   accessToken: string;
@@ -36,12 +56,34 @@ export class AuthTokenService {
       userId: user.id,
       email: user.email,
       role: user.role,
-      mfaEnabled: user.mfaEnabled && mfaVerified,
+      mfaVerified: mfaVerified === true,
       sessionId,
       organizationId: user.organizationId ?? null,
     };
 
     return this.secretRotation.sign(payload, { algorithm: 'HS512' });
+  }
+
+  /**
+   * Short-lived token proving only that the password step succeeded. It can be
+   * exchanged for a full token pair at POST /auth/mfa/verify-code and is
+   * refused by every other route.
+   */
+  generateMfaPendingToken(user: User, sessionId: string): string {
+    const payload: JwtPayload = {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      mfaVerified: false,
+      mfaPending: true,
+      sessionId,
+      organizationId: user.organizationId ?? null,
+    };
+
+    return this.secretRotation.sign(payload, {
+      algorithm: 'HS512',
+      expiresIn: MFA_PENDING_TOKEN_TTL_SECONDS,
+    });
   }
 
   /**
@@ -79,10 +121,20 @@ export class AuthTokenService {
   }
 
   /**
-   * Verify access token
+   * Verify access token. MFA-pending tokens are rejected unless the caller
+   * explicitly opts in.
    */
-  verifyAccessToken(token: string): JwtPayload | null {
-    return this.secretRotation.verify<JwtPayload>(token, { algorithms: ['HS512'] });
+  verifyAccessToken(token: string, options: VerifyAccessTokenOptions = {}): JwtPayload | null {
+    const payload = this.secretRotation.verify<JwtPayload>(token, { algorithms: ['HS512'] });
+    if (!payload) {
+      return null;
+    }
+
+    if (payload.mfaPending && !options.allowMfaPending) {
+      return null;
+    }
+
+    return payload;
   }
 
   /**

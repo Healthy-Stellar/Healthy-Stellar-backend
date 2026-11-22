@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { AuthTokenService, JwtPayload } from '../services/auth-token.service';
 import { SessionManagementService } from '../services/session-management.service';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
+import { ALLOW_MFA_PENDING_KEY } from '../decorators/allow-mfa-pending.decorator';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -29,8 +30,16 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('No token provided');
     }
 
+    const allowMfaPending =
+      this.reflector.getAllAndOverride<boolean>(ALLOW_MFA_PENDING_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true;
+
     try {
-      const payload = this.authTokenService.verifyAccessToken(token);
+      // MFA-pending tokens (password step only) are refused here unless the
+      // route is one of the MFA challenge endpoints.
+      const payload = this.authTokenService.verifyAccessToken(token, { allowMfaPending });
 
       if (!payload) {
         throw new UnauthorizedException('Invalid token');

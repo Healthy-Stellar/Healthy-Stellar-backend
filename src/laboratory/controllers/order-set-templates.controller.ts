@@ -6,11 +6,19 @@ import {
   Body,
   Param,
   Query,
+  Req,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
+import { authenticatedUserId } from '../../auth/utils/authenticated-user-id';
 import { OrderSetTemplatesService } from '../services/order-set-templates.service';
 import {
   CreateOrderSetTemplateDto,
@@ -18,8 +26,21 @@ import {
 } from '../dto/create-order-set-template.dto';
 import { OrderFromTemplateDto } from '../dto/order-from-template.dto';
 
+const TEMPLATE_READERS = [
+  UserRole.ADMIN,
+  UserRole.SUPER_ADMIN,
+  UserRole.PHYSICIAN,
+  UserRole.SURGEON,
+  UserRole.NURSE,
+];
+const TEMPLATE_ADMINS = [UserRole.ADMIN, UserRole.SUPER_ADMIN];
+const LAB_ORDERERS = [UserRole.PHYSICIAN, UserRole.SURGEON];
+
 @ApiTags('order-set-templates')
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 @Controller('laboratory/order-set-templates')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(...TEMPLATE_READERS)
 export class OrderSetTemplatesController {
   constructor(private readonly service: OrderSetTemplatesService) {}
 
@@ -47,13 +68,14 @@ export class OrderSetTemplatesController {
   }
 
   @Post()
+  @Roles(...TEMPLATE_ADMINS)
   @ApiOperation({ summary: 'Admin: create a custom order-set template' })
-  create(@Body() dto: CreateOrderSetTemplateDto) {
-    const userId = 'system';
-    return this.service.create(dto, userId);
+  create(@Body() dto: CreateOrderSetTemplateDto, @Req() req: any) {
+    return this.service.create(dto, authenticatedUserId(req));
   }
 
   @Patch(':id')
+  @Roles(...TEMPLATE_ADMINS)
   @ApiOperation({ summary: 'Admin: update a custom order-set template' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -63,12 +85,12 @@ export class OrderSetTemplatesController {
   }
 
   @Post('order')
+  @Roles(...LAB_ORDERERS)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Order an entire template — expands to individual lab orders linked to an encounter',
   })
-  orderFromTemplate(@Body() dto: OrderFromTemplateDto) {
-    const userId = 'system';
-    return this.service.orderFromTemplate(dto, userId);
+  orderFromTemplate(@Body() dto: OrderFromTemplateDto, @Req() req: any) {
+    return this.service.orderFromTemplate(dto, authenticatedUserId(req));
   }
 }

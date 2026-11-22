@@ -45,6 +45,15 @@ export class SessionEntity {
   @Column({ default: false })
   isActive: boolean;
 
+  /**
+   * True only once this session has passed a TOTP / backup-code challenge.
+   * Access tokens minted for the session (including on refresh) copy this
+   * value into their `mfaVerified` claim. It is never derived from the
+   * account-level `User.mfaEnabled` flag.
+   */
+  @Column({ default: false })
+  mfaVerified: boolean;
+
   @Column({ nullable: true })
   revokedAt: Date;
 

@@ -280,8 +280,9 @@ export class ClaimService {
     return this.claimRepository.save(claim);
   }
 
-  async submit(id: string, submitDto: SubmitClaimDto): Promise<InsuranceClaim> {
-    const claim = await this.findById(id);
+
+  async submit(submitDto: SubmitClaimDto): Promise<InsuranceClaim> {
+    const claim = await this.findById(submitDto.claimId);
 
     if (claim.status !== ClaimStatus.DRAFT && claim.status !== ClaimStatus.REJECTED) {
       throw new BadRequestException(`Cannot submit claim in ${claim.status} status`);
@@ -292,7 +293,7 @@ export class ClaimService {
     claim.edi837Payload = edi837;
     claim.status = ClaimStatus.PENDING;
     claim.submittedAt = new Date();
-    claim.submissionAttempts += 1;
+    claim.submissionAttempts = (claim.submissionAttempts || 0) + 1;
     claim.clearinghouseClaimId = submitDto.clearinghouseId || `CH-${uuidv4().substring(0, 8)}`;
 
     claim.submissionHistory = [
@@ -344,15 +345,16 @@ export class ClaimService {
         },
       ];
     } else if (result.rejectionCode || result.rejectionReason) {
+      // The rejection code/reason is recorded in the submission history; the
+      // claim entity has no dedicated rejection columns.
       target.status = ClaimStatus.REJECTED;
-      target.rejectedAt = new Date();
-      target.rejectionReason = result.rejectionReason || result.rejectionCode;
       target.submissionHistory = [
         ...(target.submissionHistory || []),
         {
           date: new Date().toISOString(),
           status: 'rejected',
-          message: result.rejectionReason || result.rejectionCode || 'Claim rejected by payer',
+          message: [result.rejectionCode, result.rejectionReason].filter(Boolean).join(': ') ||
+            'Claim rejected by payer',
         },
       ];
     }
@@ -362,7 +364,7 @@ export class ClaimService {
     return this.claimRepository.save(target);
   }
 
-  async resubmit(id: string, submitDto: SubmitClaimDto): Promise<InsuranceClaim> {
+  async resubmit(id: string, submitDto: Partial<SubmitClaimDto> = {}): Promise<InsuranceClaim> {
     const claim = await this.findById(id);
 
     if (claim.status !== ClaimStatus.REJECTED && claim.status !== ClaimStatus.DENIED) {
@@ -381,7 +383,7 @@ export class ClaimService {
 
     await this.claimRepository.save(claim);
 
-    return this.submit(id, submitDto);
+    return this.submit({ ...submitDto, claimId: id });
   }
 
   async checkStatus(id: string): Promise<InsuranceClaim> {
@@ -423,50 +425,126 @@ export class ClaimService {
     return this.claimRepository.save(claim);
   }
 
-  async getSubmissionReport(id: string): Promise<Record<string, any>> {
-    const claim = await this.findById(id);
+  /** Submission volume and acceptance rate for claims submitted in [startDate, endDate]. */
+  async getSubmissionReport(
+    startDate: string,
+    endDate: string,
+  ): Promise<{
+    startDate: string;
+    endDate: string;
+    totalSubmitted: number;
+    accepted: number;
+    rejected: number;
+    pending: number;
+    acceptanceRate: number;
+    totalAmount: number;
+  }> {
+    const claims = await this.findSubmittedBetween(startDate, endDate);
+
+    const acceptedStatuses = [
+      ClaimStatus.ACCEPTED,
+      ClaimStatus.APPROVED,
+      ClaimStatus.PAID,
+      ClaimStatus.PARTIALLY_PAID,
+    ];
+    const rejectedStatuses = [ClaimStatus.REJECTED, ClaimStatus.DENIED];
+
+    const accepted = claims.filter((c) => acceptedStatuses.includes(c.status)).length;
+    const rejected = claims.filter((c) => rejectedStatuses.includes(c.status)).length;
+    const totalSubmitted = claims.length;
 
     return {
-      claimId: claim.id,
-      claimNumber: claim.claimNumber,
-      status: claim.status,
-      submittedAt: claim.submittedAt,
-      acceptedAt: claim.acceptedAt,
-      submissionAttempts: claim.submissionAttempts,
-      clearinghouseClaimId: claim.clearinghouseClaimId,
-      submissionHistory: claim.submissionHistory || [],
+      startDate,
+      endDate,
+      totalSubmitted,
+      accepted,
+      rejected,
+      pending: totalSubmitted - accepted - rejected,
+      acceptanceRate: this.percentage(accepted, totalSubmitted),
+      totalAmount: this.roundCurrency(
+        claims.reduce((sum, c) => sum + Number(c.billedAmount || 0), 0),
+      ),
     };
   }
 
-  async getDenialAnalysis(id: string): Promise<Record<string, any>> {
-    const claim = await this.findById(id);
-    const denials = claim.denials || [];
+  /** Denial rate, top denial reasons and recoverable amount for claims submitted in [startDate, endDate]. */
+  async getDenialAnalysis(
+    startDate: string,
+    endDate: string,
+  ): Promise<{
+    startDate: string;
+    endDate: string;
+    totalClaims: number;
+    totalDenials: number;
+    denialRate: number;
+    topReasons: Array<{ reason: string; count: number }>;
+    recoveryOpportunity: number;
+  }> {
+    const claims = await this.findSubmittedBetween(startDate, endDate, ['denials']);
+    const denied = claims.filter((c) => c.status === ClaimStatus.DENIED);
 
-    return {
-      claimId: claim.id,
-      claimNumber: claim.claimNumber,
-      status: claim.status,
-      denialCount: denials.length,
-      denials,
-    };
-  }
+    const reasonCounts = new Map<string, number>();
+    let recoveryOpportunity = 0;
 
-  async getPendingClaims(priority?: string): Promise<InsuranceClaim[]> {
-    const where: FindOptionsWhere<InsuranceClaim> = {
-      status: ClaimStatus.PENDING,
-    };
-
-    const claims = await this.claimRepository.find({
-      where,
-      relations: ['insurance'],
-      order: { submittedAt: 'ASC' },
-    });
-
-    if (!priority) {
-      return claims;
+    for (const claim of denied) {
+      const denials = claim.denials || [];
+      if (denials.length === 0) {
+        reasonCounts.set('unspecified', (reasonCounts.get('unspecified') || 0) + 1);
+        recoveryOpportunity += Number(claim.billedAmount || 0);
+        continue;
+      }
+      for (const denial of denials) {
+        const reason = String(denial.primaryReason || 'unspecified');
+        reasonCounts.set(reason, (reasonCounts.get(reason) || 0) + 1);
+        if (!denial.isResolved) {
+          recoveryOpportunity += Number(denial.deniedAmount || 0);
+        }
+      }
     }
 
-    return claims.filter((claim) => (claim as any).priority === priority);
+    const topReasons = [...reasonCounts.entries()]
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    return {
+      startDate,
+      endDate,
+      totalClaims: claims.length,
+      totalDenials: denied.length,
+      denialRate: this.percentage(denied.length, claims.length),
+      topReasons,
+      recoveryOpportunity: this.roundCurrency(recoveryOpportunity),
+    };
+  }
+
+  private async findSubmittedBetween(
+    startDate: string,
+    endDate: string,
+    relations: string[] = [],
+  ): Promise<InsuranceClaim[]> {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (!startDate || !endDate || isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new BadRequestException('startDate and endDate must be valid dates');
+    }
+    if (start > end) {
+      throw new BadRequestException('startDate must be before endDate');
+    }
+
+    return this.claimRepository.find({
+      where: { submittedAt: Between(start, end) },
+      relations,
+    });
+  }
+
+  private percentage(part: number, total: number): number {
+    return total === 0 ? 0 : Math.round((part / total) * 10000) / 100;
+  }
+
+  private roundCurrency(value: number): number {
+    return Math.round(value * 100) / 100;
   }
 
   private generateEDI837(claim: InsuranceClaim): string {
@@ -497,6 +575,273 @@ export class ClaimService {
     let serviceLines = '';
     claim.procedureCodes?.forEach((proc, index) => {
       const lx = `LX*${index + 1}~`;
-      const sv1 = `SV1*HC:${proc.code}${proc.modifiers ? ':' + proc.modifiers.join(':') : ''}*${proc.charge}*UN*${proc.units}***${proc.diagnosis
+      const sv1 = `SV1*HC:${proc.code}${proc.modifiers ? ':' + proc.modifiers.join(':') : ''}*${proc.charge}*UN*${proc.units}***${proc.diagnosisPointers.join(':')}~`;
+      const dtp = `DTP*472*D8*${this.formatDateGS(claim.serviceStartDate)}~`;
+      serviceLines += lx + sv1 + dtp;
+    });
 
-/* … truncated 8489 chars — edit only what you need near the top … */
+    const se = `SE*${20 + (claim.diagnosisCodes?.length || 0) + (claim.procedureCodes?.length || 0) * 3}*0001~`;
+    const ge = `GE*1*1~`;
+    const iea = `IEA*1*000000001~`;
+
+    return [
+      isa,
+      gs,
+      st,
+      bht,
+      nm1Submitter,
+      nm1Receiver,
+      hl1,
+      nm1BillingProvider,
+      hl2,
+      sbr,
+      nm1Subscriber,
+      hl3,
+      clm,
+      diagnosisSegments,
+      serviceLines,
+      se,
+      ge,
+      iea,
+    ].join('\n');
+  }
+
+  private formatDate(date: Date): string {
+    return date.toISOString().slice(2, 10).replace(/-/g, '');
+  }
+
+  private formatTime(date: Date): string {
+    return date.toISOString().slice(11, 16).replace(/:/g, '');
+  }
+
+  private formatDateGS(date: Date | string): string {
+    // `date` columns (e.g. serviceStartDate) come back from Postgres as strings.
+    return new Date(date).toISOString().slice(0, 10).replace(/-/g, '');
+  }
+
+  private formatTimeGS(date: Date): string {
+    return date.toISOString().slice(11, 19).replace(/:/g, '');
+  }
+
+  async processERA(processDto: ProcessERADto): Promise<InsuranceClaim[]> {
+    const updatedClaims: InsuranceClaim[] = [];
+
+    const eraData = this.parseEDI835(processDto.edi835Content);
+
+    for (const claimData of eraData.claims) {
+      try {
+        const claim = await this.findByClaimNumber(claimData.claimNumber);
+
+        claim.status = claimData.paidAmount > 0 ? ClaimStatus.PAID : ClaimStatus.DENIED;
+        claim.paidAmount = claimData.paidAmount;
+        claim.allowedAmount = claimData.allowedAmount;
+        claim.adjustmentAmount = claimData.adjustmentAmount;
+        claim.patientResponsibility = claimData.patientResponsibility;
+        claim.copayAmount = claimData.copay || 0;
+        claim.deductibleAmount = claimData.deductible || 0;
+        claim.coinsuranceAmount = claimData.coinsurance || 0;
+        claim.edi835Response = processDto.edi835Content;
+        claim.adjudicatedAt = new Date();
+        claim.payerClaimNumber = claimData.payerClaimNumber;
+        if (claimData.remarkCodes) {
+          claim.remarkCodes = claimData.remarkCodes;
+        }
+        if (claimData.adjustmentCodes) {
+          claim.adjustmentCodes = claimData.adjustmentCodes;
+        }
+
+        claim.submissionHistory = [
+          ...(claim.submissionHistory || []),
+          {
+            date: new Date().toISOString(),
+            status: claim.status,
+            message: `ERA processed. Paid: $${claimData.paidAmount}`,
+          },
+        ];
+
+        await this.claimRepository.save(claim);
+        updatedClaims.push(claim);
+      } catch (error) {
+        this.logger.error(`Error processing claim ${claimData.claimNumber}:`, error);
+      }
+    }
+
+    return updatedClaims;
+  }
+
+  private parseEDI835(_edi835: string): {
+    claims: Array<{
+      claimNumber: string;
+      payerClaimNumber: string;
+      paidAmount: number;
+      allowedAmount: number;
+      adjustmentAmount: number;
+      patientResponsibility: number;
+      copay?: number;
+      deductible?: number;
+      coinsurance?: number;
+      remarkCodes?: Array<{ code: string; description: string }>;
+      adjustmentCodes?: Array<{
+        groupCode: string;
+        reasonCode: string;
+        amount: number;
+      }>;
+    }>;
+  } {
+    return {
+      claims: [
+        {
+          claimNumber: 'CLM-SAMPLE',
+          payerClaimNumber: 'PAYER-12345',
+          paidAmount: 120.0,
+          allowedAmount: 140.0,
+          adjustmentAmount: 10.0,
+          patientResponsibility: 30.0,
+          copay: 25.0,
+          deductible: 0,
+          coinsurance: 5.0,
+          remarkCodes: [{ code: 'N130', description: 'Payment adjusted based on fee schedule' }],
+          adjustmentCodes: [{ groupCode: 'CO', reasonCode: '45', amount: 10.0 }],
+        },
+      ],
+    };
+  }
+
+  async getClaimsByStatus(status: ClaimStatus): Promise<InsuranceClaim[]> {
+    return this.claimRepository.find({
+      where: { status },
+      relations: ['insurance'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getPendingClaims(priority?: string): Promise<InsuranceClaim[]> {
+    const claims = await this.claimRepository.find({
+      where: [
+        { status: ClaimStatus.PENDING },
+        { status: ClaimStatus.SUBMITTED },
+        { status: ClaimStatus.ACCEPTED },
+      ],
+      relations: ['insurance'],
+      order: { submittedAt: 'ASC' },
+    });
+
+    if (!priority) {
+      return claims;
+    }
+
+    return claims.filter((claim) => (claim as any).priority === priority);
+  }
+
+  /** Receives a real-time adjudication callback from the payer webhook and updates the claim. */
+  async handleAdjudicationWebhook(payload: {
+    claimNumber: string;
+    decision: 'approved' | 'rejected';
+    payerClaimNumber?: string;
+    paidAmount?: number;
+    allowedAmount?: number;
+    adjustmentAmount?: number;
+    patientResponsibility?: number;
+    remarkCodes?: Array<{ code: string; description: string }>;
+  }): Promise<InsuranceClaim> {
+    const claim = await this.findByClaimNumber(payload.claimNumber);
+
+    claim.status = payload.decision === 'approved' ? ClaimStatus.APPROVED : ClaimStatus.REJECTED;
+    claim.adjudicatedAt = new Date();
+    claim.payerClaimNumber = payload.payerClaimNumber ?? claim.payerClaimNumber;
+    claim.paidAmount = payload.paidAmount ?? claim.paidAmount;
+    claim.allowedAmount = payload.allowedAmount ?? claim.allowedAmount;
+    claim.adjustmentAmount = payload.adjustmentAmount ?? claim.adjustmentAmount;
+    claim.patientResponsibility = payload.patientResponsibility ?? claim.patientResponsibility;
+    if (payload.remarkCodes) {
+      claim.remarkCodes = payload.remarkCodes;
+    }
+
+    claim.submissionHistory = [
+      ...(claim.submissionHistory || []),
+      {
+        date: new Date().toISOString(),
+        status: claim.status,
+        message: `Adjudication webhook received from payer: ${payload.decision}`,
+      },
+    ];
+
+    await this.claimRepository.save(claim);
+
+    if (claim.status === ClaimStatus.APPROVED) {
+      await this.generatePatientStatement(claim);
+    }
+
+    return claim;
+  }
+
+  /** Auto-generates/updates the patient statement for the remaining balance after adjudication. */
+  private async generatePatientStatement(claim: InsuranceClaim): Promise<void> {
+    const billing = await this.billingRepository.findOne({ where: { id: claim.billingId } });
+    if (!billing) {
+      return;
+    }
+
+    billing.totalPayments = Number(billing.totalPayments || 0) + Number(claim.paidAmount || 0);
+    billing.patientResponsibility = Number(claim.patientResponsibility || 0);
+    billing.balance = Math.max(
+      Number(billing.totalCharges || 0) - Number(billing.totalPayments || 0) - Number(billing.totalAdjustments || 0),
+      0,
+    );
+    billing.status = billing.balance > 0 ? 'statement_pending' : 'paid';
+
+    await this.billingRepository.save(billing);
+  }
+
+  /** Dashboard data: claim counts by status, plus aging buckets for unresolved claims. */
+  async getClaimsDashboard(): Promise<{
+    byStatus: Record<string, number>;
+    agingBuckets: Record<'0-30' | '31-60' | '61-90' | '90+', number>;
+  }> {
+    const claims = await this.claimRepository.find();
+
+    const byStatus: Record<string, number> = {};
+    for (const status of Object.values(ClaimStatus)) {
+      byStatus[status] = 0;
+    }
+
+    const agingBuckets = { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 };
+    const outstandingStatuses = [ClaimStatus.SUBMITTED, ClaimStatus.PENDING, ClaimStatus.ACCEPTED];
+    const now = Date.now();
+
+    for (const claim of claims) {
+      byStatus[claim.status] = (byStatus[claim.status] || 0) + 1;
+
+      if (outstandingStatuses.includes(claim.status) && claim.submittedAt) {
+        const ageDays = Math.floor((now - new Date(claim.submittedAt).getTime()) / 86_400_000);
+        if (ageDays <= 30) agingBuckets['0-30']++;
+        else if (ageDays <= 60) agingBuckets['31-60']++;
+        else if (ageDays <= 90) agingBuckets['61-90']++;
+        else agingBuckets['90+']++;
+      }
+    }
+
+    return { byStatus, agingBuckets };
+  }
+
+  async voidClaim(id: string, reason: string): Promise<InsuranceClaim> {
+    const claim = await this.findById(id);
+
+    if (claim.status === ClaimStatus.PAID) {
+      throw new BadRequestException('Cannot void a paid claim');
+    }
+
+    claim.status = ClaimStatus.VOID;
+    claim.notes = `${claim.notes || ''}\nVoided: ${reason}`;
+    claim.submissionHistory = [
+      ...(claim.submissionHistory || []),
+      {
+        date: new Date().toISOString(),
+        status: 'void',
+        message: `Claim voided: ${reason}`,
+      },
+    ];
+
+    return this.claimRepository.save(claim);
+  }
+}

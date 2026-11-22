@@ -31,6 +31,7 @@ const mockSession = {
   id: 'session-1',
   userId: 'user-1',
   isActive: true,
+  mfaVerified: false,
 };
 
 function buildMocks() {
@@ -39,6 +40,8 @@ function buildMocks() {
     logout: jest.fn().mockResolvedValue(undefined),
     register: jest.fn(),
     login: jest.fn(),
+    forgotPassword: jest.fn(),
+    resetPassword: jest.fn(),
   };
 
   const authTokenService = {
@@ -51,6 +54,7 @@ function buildMocks() {
   };
 
   const sessionManagementService = {
+    getRefreshableSession: jest.fn().mockResolvedValue(mockSession),
     refreshSession: jest.fn().mockResolvedValue(undefined),
     getUserSessions: jest.fn().mockResolvedValue([mockSession]),
     revokeSession: jest.fn().mockResolvedValue(undefined),
@@ -63,6 +67,14 @@ function buildMocks() {
   };
 
   const mfaService = { isMfaEnabled: jest.fn().mockResolvedValue(false) };
+
+  const configService = {
+    get: jest.fn((key: string) =>
+      key === 'FRONTEND_URL' ? 'https://healthystellar.org' : undefined,
+    ),
+  };
+
+  const mailerService = { sendMail: jest.fn().mockResolvedValue(undefined) };
 
   return { authService, authTokenService, sessionManagementService, refreshTokenStore, mfaService, configService, mailerService };
 }
@@ -78,6 +90,8 @@ async function buildController(overrides: Partial<ReturnType<typeof buildMocks>>
       { provide: SessionManagementService, useValue: mocks.sessionManagementService },
       { provide: RefreshTokenStoreService, useValue: mocks.refreshTokenStore },
       { provide: MfaService, useValue: mocks.mfaService },
+      { provide: ConfigService, useValue: mocks.configService },
+      { provide: MAILER_SERVICE, useValue: mocks.mailerService },
     ],
   }).compile();
 
@@ -175,6 +189,58 @@ describe('POST /auth/refresh', () => {
     await expect(controller.refreshToken({ refreshToken: 'valid-token' })).rejects.toThrow(
       BadRequestException,
     );
+  });
+
+  describe('MFA state (#1322)', () => {
+    it('does not mark the new token MFA-verified just because the account has MFA enabled', async () => {
+      const { controller, mocks } = await buildController();
+      mocks.authService.getUserById.mockResolvedValue({ ...mockUser, mfaEnabled: true });
+      mocks.sessionManagementService.getRefreshableSession.mockResolvedValue({
+        ...mockSession,
+        mfaVerified: false,
+      });
+
+      await controller.refreshToken({ refreshToken: 'valid-token' });
+
+      expect(mocks.sessionManagementService.getRefreshableSession).toHaveBeenCalledWith(
+        'session-1',
+        'user-1',
+      );
+      expect(mocks.authTokenService.generateTokenPair).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'user-1' }),
+        'session-1',
+        false,
+      );
+    });
+
+    it('preserves a verified session as verified', async () => {
+      const { controller, mocks } = await buildController();
+      mocks.sessionManagementService.getRefreshableSession.mockResolvedValue({
+        ...mockSession,
+        mfaVerified: true,
+      });
+
+      await controller.refreshToken({ refreshToken: 'valid-token' });
+
+      expect(mocks.authTokenService.generateTokenPair).toHaveBeenCalledWith(
+        expect.anything(),
+        'session-1',
+        true,
+      );
+    });
+
+    it('issues no tokens when the session is revoked or expired', async () => {
+      const { controller, mocks } = await buildController();
+      mocks.sessionManagementService.getRefreshableSession.mockRejectedValue(
+        new UnauthorizedException('Session is not active'),
+      );
+
+      await expect(controller.refreshToken({ refreshToken: 'valid-token' })).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(mocks.authTokenService.generateTokenPair).not.toHaveBeenCalled();
+      expect(mocks.refreshTokenStore.store).not.toHaveBeenCalled();
+    });
   });
 });
 

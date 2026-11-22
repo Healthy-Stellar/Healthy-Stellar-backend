@@ -33,13 +33,13 @@ describe('API Key / MFA Compliance', () => {
       await expect(guard.canActivate(ctx)).rejects.toThrow('MFA verification required');
     });
 
-    it('throws when user.mfaEnabled is false but MFA is enabled in DB', async () => {
+    it('throws when the session mfaVerified claim is false but MFA is enabled in DB', async () => {
       const ctx = {
         switchToHttp: () => ({
           getRequest: () => ({
             user: {
               userId: 'user-1', email: 'test@example.com', role: UserRole.PHYSICIAN,
-              mfaEnabled: false, sessionId: 'sess-1', organizationId: 'org-1',
+              mfaVerified: false, sessionId: 'sess-1', organizationId: 'org-1',
             },
           }),
         }),
@@ -48,13 +48,13 @@ describe('API Key / MFA Compliance', () => {
       await expect(guard.canActivate(ctx)).rejects.toThrow('MFA verification required');
     });
 
-    it('passes when user.mfaEnabled is true (MFA already verified in JWT)', async () => {
+    it('passes when the session mfaVerified claim is true (MFA verified for this session)', async () => {
       const ctx = {
         switchToHttp: () => ({
           getRequest: () => ({
             user: {
               userId: 'user-1', email: 'test@example.com', role: UserRole.PHYSICIAN,
-              mfaEnabled: true, sessionId: 'sess-1', organizationId: 'org-1',
+              mfaVerified: true, sessionId: 'sess-1', organizationId: 'org-1',
             },
           }),
         }),
@@ -69,7 +69,7 @@ describe('API Key / MFA Compliance', () => {
           getRequest: () => ({
             user: {
               userId: 'user-2', email: 'test@example.com', role: UserRole.PATIENT,
-              mfaEnabled: false, sessionId: 'sess-2', organizationId: 'org-1',
+              mfaVerified: false, sessionId: 'sess-2', organizationId: 'org-1',
             },
           }),
         }),
@@ -165,7 +165,7 @@ describe('API Key / MFA Compliance', () => {
           getRequest: () => ({
             user: {
               userId: 'user-1', email: 'doctor@example.com', role: UserRole.PHYSICIAN,
-              mfaEnabled: true, sessionId: 'sess-1', organizationId: 'org-1',
+              mfaVerified: true, sessionId: 'sess-1', organizationId: 'org-1',
             },
           }),
         }),

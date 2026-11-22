@@ -17,7 +17,9 @@ export class MfaVerifiedGuard implements CanActivate {
     // Check if user has MFA enabled
     const mfaEnabled = await this.mfaService.isMfaEnabled(user.userId);
 
-    if (mfaEnabled && !user.mfaEnabled) {
+    // `mfaVerified` is the session-scoped JWT claim; `mfaEnabled` here is the
+    // account-level setting looked up from the database.
+    if (mfaEnabled && user.mfaVerified !== true) {
       throw new UnauthorizedException('MFA verification required');
     }
 
