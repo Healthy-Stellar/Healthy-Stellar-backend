@@ -18,6 +18,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { UserRole } from '../../auth/entities/user.entity';
 import { ClaimService } from '../services/claim.service';
 import { CreateClaimDto, UpdateClaimDto, SubmitClaimDto } from '../dto/claim.dto';
+import { ClaimStatus } from '../../common/enums';
 
 @ApiTags('Insurance Claims')
 @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
@@ -60,7 +61,8 @@ export class ClaimController {
   @ApiResponse({ status: 200, description: 'Claim submitted successfully to payer' })
   @ApiResponse({ status: 400, description: 'Claim validation failed' })
   async submit(@Param('id') id: string, @Body() submitDto: SubmitClaimDto) {
-    return this.claimService.submit({ ...submitDto, id });
+    // The route param is authoritative; a claimId in the body is ignored.
+    return this.claimService.submit({ ...submitDto, claimId: id });
   }
 
   @Get(':id')
@@ -96,7 +98,7 @@ export class ClaimController {
   @ApiResponse({ status: 200, description: 'Patient claims retrieved' })
   async findByPatientId(
     @Param('patientId') patientId: string,
-    @Query('status') status?: string,
+    @Query('status') status?: ClaimStatus,
   ) {
     return this.claimService.findByPatientId(patientId, status);
   }
@@ -230,6 +232,6 @@ export class ClaimController {
   @ApiQuery({ name: 'priority', required: false, description: 'Filter by priority level' })
   @ApiResponse({ status: 200, description: 'Pending claims retrieved' })
   async getPendingClaims(@Query('priority') priority?: string) {
-    return this.claimService.getPendingClaims();
+    return this.claimService.getPendingClaims(priority);
   }
 }

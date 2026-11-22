@@ -15,6 +15,12 @@ jest.mock('../billing/dto/claim.dto', () => ({
   AdjudicationWebhookDto: class AdjudicationWebhookDto {},
 }));
 
+// ClaimService is replaced by a mock provider below; stubbing the module also
+// keeps Jest from loading the billing entities' stale compiled `.js` twins.
+jest.mock('../billing/services/claim.service', () => ({
+  ClaimService: class ClaimService {},
+}));
+
 jest.mock('../auth/guards/jwt-auth.guard', () => ({
   JwtAuthGuard: class JwtAuthGuard {
     canActivate() {
@@ -63,6 +69,7 @@ describe('WebhooksController', () => {
   let queueService: ReturnType<typeof mockQueueService>;
   let deliveryRepository: ReturnType<typeof mockDeliveryRepository>;
   let webhookDeliveryService: ReturnType<typeof mockWebhookDeliveryService>;
+  let claimService: ReturnType<typeof mockClaimService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -72,7 +79,7 @@ describe('WebhooksController', () => {
         { provide: QueueService, useFactory: mockQueueService },
         { provide: ConfigService, useFactory: mockConfigService },
         { provide: WebhookDeliveryService, useFactory: mockWebhookDeliveryService },
-        { provide: WebhookSubscriptionService, useFactory: mockWebhookSubscriptionService },
+        { provide: WebhookSubscriptionService, useValue: {} },
         { provide: getRepositoryToken(WebhookDelivery), useFactory: mockDeliveryRepository },
         { provide: ClaimService, useFactory: mockClaimService },
       ],
@@ -82,6 +89,24 @@ describe('WebhooksController', () => {
     queueService = module.get(QueueService);
     deliveryRepository = module.get(getRepositoryToken(WebhookDelivery));
     webhookDeliveryService = module.get(WebhookDeliveryService);
+    claimService = module.get(ClaimService);
+  });
+
+  // ── POST /webhooks/insurance-claims ───────────────────────────────────────
+
+  describe('handleInsuranceClaimAdjudication', () => {
+    it('delegates to ClaimService.handleAdjudicationWebhook and returns the new status', async () => {
+      const payload = { claimNumber: 'CLM-123', decision: 'approved' as const, paidAmount: 120 };
+      claimService.handleAdjudicationWebhook.mockResolvedValue({
+        claimNumber: 'CLM-123',
+        status: 'approved',
+      });
+
+      const result = await controller.handleInsuranceClaimAdjudication(payload as any);
+
+      expect(claimService.handleAdjudicationWebhook).toHaveBeenCalledWith(payload);
+      expect(result).toEqual({ received: true, claimNumber: 'CLM-123', status: 'approved' });
+    });
   });
 
   // ── POST /webhooks/ipfs ───────────────────────────────────────────────────

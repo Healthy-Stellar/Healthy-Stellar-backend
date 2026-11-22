@@ -6,12 +6,16 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { randomBytes, createHash, timingSafeEqual } from 'crypto';
+import { randomBytes, randomUUID, createHash, timingSafeEqual } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from '../entities/user.entity';
 import { PasswordValidationService } from './password-validation.service';
-import { AuthTokenService, JwtPayload } from './auth-token.service';
+import {
+  AuthTokenService,
+  JwtPayload,
+  MFA_PENDING_TOKEN_TTL_SECONDS,
+} from './auth-token.service';
 import { MfaService } from './mfa.service';
 import { SessionManagementService } from './session-management.service';
 import { RefreshTokenStoreService } from './refresh-token-store.service';
@@ -27,12 +31,28 @@ export interface AuthResponse {
     role: UserRole;
     mfaEnabled: boolean;
   };
-  tokens: {
+  /**
+   * Omitted when `mfaRequired` is true: an MFA-enabled account gets no usable
+   * token pair until it completes POST /auth/mfa/verify-code.
+   */
+  tokens?: {
     accessToken: string;
     refreshToken: string;
     expiresIn: number;
   };
   mfaRequired?: boolean;
+  /**
+   * Short-lived token accepted only by the MFA challenge endpoints. Send it as
+   * `Authorization: Bearer <mfaToken>` to POST /auth/mfa/verify-code.
+   */
+  mfaToken?: string;
+  mfaTokenExpiresIn?: number;
+}
+
+export interface IssuedTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
 }
 
 @Injectable()
@@ -65,12 +85,12 @@ export class AuthService {
       await this.userRepository.save(savedUser);
     }
 
-    // Create session
+    // Create session. The id signed into the tokens is the row's primary key.
     const sessionId = this.generateSessionId();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
     const refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
-    const tokens = this.authTokenService.generateTokenPair(savedUser, sessionId);
+    const tokens = this.authTokenService.generateTokenPair(savedUser, sessionId, false);
 
     await this.sessionManagementService.createSession(
       savedUser.id,
@@ -80,6 +100,8 @@ export class AuthService {
       refreshTokenExpiresAt,
       ipAddress,
       userAgent,
+      undefined,
+      { id: sessionId, mfaVerified: false },
     );
     await this.refreshTokenStore.store(sessionId, tokens.refreshToken);
 
@@ -277,12 +299,47 @@ export class AuthService {
     user.lastLoginAt = new Date();
     await this.userRepository.save(user);
 
-    // Create session
+    // Create session. The id signed into the tokens is the row's primary key.
     const sessionId = this.generateSessionId();
+
+    if (mfaEnabled) {
+      // Password alone is not enough: issue only a short-lived MFA-pending
+      // token (no refresh token) and leave the session unverified until
+      // POST /auth/mfa/verify-code succeeds.
+      const mfaToken = this.authTokenService.generateMfaPendingToken(user, sessionId);
+      const pendingExpiresAt = new Date(Date.now() + MFA_PENDING_TOKEN_TTL_SECONDS * 1000);
+
+      await this.sessionManagementService.createSession(
+        user.id,
+        mfaToken,
+        null,
+        pendingExpiresAt,
+        pendingExpiresAt,
+        ipAddress,
+        userAgent,
+        undefined,
+        { id: sessionId, mfaVerified: false },
+      );
+
+      this.auditLogService.log({
+        actorAddress: user.id,
+        action: 'LOGIN_MFA_PENDING',
+        ipAddress,
+        metadata: { email: user.email, sessionId, success: true },
+      }).catch(() => {});
+
+      return {
+        user: this.formatUser(user),
+        mfaRequired: true,
+        mfaToken,
+        mfaTokenExpiresIn: MFA_PENDING_TOKEN_TTL_SECONDS,
+      };
+    }
+
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
     const refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
-    const tokens = this.authTokenService.generateTokenPair(user, sessionId, !mfaEnabled);
+    const tokens = this.authTokenService.generateTokenPair(user, sessionId, false);
 
     await this.sessionManagementService.createSession(
       user.id,
@@ -292,6 +349,8 @@ export class AuthService {
       refreshTokenExpiresAt,
       ipAddress,
       userAgent,
+      undefined,
+      { id: sessionId, mfaVerified: false },
     );
     await this.refreshTokenStore.store(sessionId, tokens.refreshToken);
 
@@ -310,7 +369,51 @@ export class AuthService {
         refreshToken: tokens.refreshToken,
         expiresIn: tokens.expiresIn,
       },
-      mfaRequired: mfaEnabled,
+      mfaRequired: false,
+    };
+  }
+
+  /**
+   * Called after a TOTP / backup code has been verified for `sessionId`.
+   * Marks the session MFA-verified and issues the verified token pair, which
+   * replaces the MFA-pending token (or upgrades an existing session).
+   */
+  async completeMfaChallenge(
+    userId: string,
+    sessionId: string,
+    ipAddress: string,
+  ): Promise<IssuedTokens> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('User not found or inactive');
+    }
+
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    const refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+    const tokens = this.authTokenService.generateTokenPair(user, sessionId, true);
+
+    await this.sessionManagementService.completeMfaChallenge(
+      sessionId,
+      user.id,
+      tokens.accessToken,
+      tokens.refreshToken,
+      expiresAt,
+      refreshTokenExpiresAt,
+    );
+    await this.refreshTokenStore.store(sessionId, tokens.refreshToken);
+
+    this.auditLogService.log({
+      actorAddress: user.id,
+      action: 'MFA_SESSION_VERIFIED',
+      ipAddress,
+      metadata: { email: user.email, sessionId, success: true },
+    }).catch(() => {});
+
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
     };
   }
 
@@ -530,7 +633,12 @@ export class AuthService {
     });
   }
 
+  /**
+   * Session ids are UUIDs because they double as the `sessions` primary key
+   * (a uuid column). They are generated up front so the same value can be
+   * signed into the tokens and persisted.
+   */
   private generateSessionId(): string {
-    return randomBytes(16).toString('hex');
+    return randomUUID();
   }
 }

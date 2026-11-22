@@ -294,9 +294,12 @@ export class UpdateClaimDto {
 }
 
 export class SubmitClaimDto {
-  @ApiProperty()
+  // Optional in the request body: POST /claims/:id/submit takes the claim id
+  // from the route, which overrides any value sent here.
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  claimId: string;
+  claimId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

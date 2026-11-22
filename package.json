@@ -64,6 +64,7 @@
     "check:circular": "madge --circular --extensions ts src/ --ts-config tsconfig.json",
     "check:no-spaces": "bash -lc 'if find src -name \"* *\" -type d | read; then echo \"Found directories with spaces under src/\"; exit 1; fi'",
     "check:migrations": "node scripts/check-migration-safety.js",
+    "check:guards": "node scripts/check-controller-guards.js",
     "generate:contract-types": "node scripts/generate-contract-types.js",
     "check:contract-types": "node scripts/check-contract-types.js",
     "check:sdk-drift": "node scripts/check-sdk-drift.js",

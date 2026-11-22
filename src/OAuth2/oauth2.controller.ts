@@ -26,6 +26,15 @@ import { JwtPayload } from '../auth/services/auth-token.service';
 import { Patient } from '../users/entities/patient.entity';
 import { ApiTags } from '@nestjs/swagger';
 import { RefreshTokenStoreService } from '../auth/services/refresh-token-store.service';
+import { SessionManagementService } from '../auth/services/session-management.service';
+
+const OAUTH2_ACCESS_TOKEN_TTL_SECONDS = 900;
+const OAUTH2_REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+interface TokenRequestContext {
+  ipAddress: string;
+  userAgent: string;
+}
 
 @ApiTags('oauth2')
 @Controller('oauth2')
@@ -37,6 +46,7 @@ export class OAuth2Controller {
     private readonly refreshTokenStore: RefreshTokenStoreService,
     @InjectRepository(Patient)
     private readonly patientRepo: Repository<Patient>,
+    private readonly sessionManagement: SessionManagementService,
   ) {}
 
   @Get('authorize')
@@ -86,17 +96,22 @@ export class OAuth2Controller {
 
   @Post('token')
   @HttpCode(HttpStatus.OK)
-  async token(@Body() dto: OAuth2TokenDto) {
+  async token(@Body() dto: OAuth2TokenDto, @Req() req: Request) {
+    const ctx: TokenRequestContext = {
+      ipAddress: (req?.ip || req?.socket?.remoteAddress || 'unknown').toString(),
+      userAgent: req?.get?.('user-agent') ?? 'unknown',
+    };
+
     if (dto.grant_type === 'authorization_code') {
-      return this.handleAuthorizationCodeGrant(dto);
+      return this.handleAuthorizationCodeGrant(dto, ctx);
     } else if (dto.grant_type === 'refresh_token') {
-      return this.handleRefreshTokenGrant(dto);
+      return this.handleRefreshTokenGrant(dto, ctx);
     } else {
       throw new BadRequestException('unsupported_grant_type');
     }
   }
 
-  private async handleAuthorizationCodeGrant(dto: OAuth2TokenDto) {
+  private async handleAuthorizationCodeGrant(dto: OAuth2TokenDto, ctx: TokenRequestContext) {
     if (!dto.code || !dto.client_id || !dto.redirect_uri) {
       throw new BadRequestException(
         'invalid_request: code, client_id and redirect_uri are required',
@@ -122,10 +137,10 @@ export class OAuth2Controller {
     );
 
     const smartScopes = this.filterSmartScopes(entry.scope);
-    return this.generateTokenResponse(entry.userId, smartScopes, entry.clientId);
+    return this.generateTokenResponse(entry.userId, smartScopes, entry.clientId, ctx);
   }
 
-  private async handleRefreshTokenGrant(dto: OAuth2TokenDto) {
+  private async handleRefreshTokenGrant(dto: OAuth2TokenDto, ctx: TokenRequestContext) {
     if (!dto.refresh_token || !dto.client_id) {
       throw new BadRequestException('invalid_request: refresh_token and client_id are required');
     }
@@ -158,12 +173,37 @@ export class OAuth2Controller {
     await this.refreshTokenStore.consumeAndValidate(sessionId, dto.refresh_token);
 
     const smartScopes = this.filterSmartScopes(decodedToken.scope);
-    return this.generateTokenResponse(decodedToken.sub, smartScopes, dto.client_id, sessionId);
+    return this.generateTokenResponse(decodedToken.sub, smartScopes, dto.client_id, ctx, sessionId);
   }
 
-  private async generateTokenResponse(userId: string, scopes: string[], clientId: string, existingSessionId?: string) {
-    const sessionId = existingSessionId ?? crypto.randomUUID();
-    
+  /**
+   * Issues the OAuth2 token response. The `sessionId` embedded in the tokens
+   * is always the primary key of a persisted `sessions` row: a new row for
+   * the authorization-code grant, or the existing row (rotated, and rejected
+   * if revoked/expired) for the refresh grant.
+   */
+  private async generateTokenResponse(
+    userId: string,
+    scopes: string[],
+    clientId: string,
+    ctx: TokenRequestContext,
+    existingSessionId?: string,
+  ) {
+    // Resolve the patient context before minting anything so a failed launch
+    // does not leave an orphaned session or refresh token behind.
+    let patientId: string | undefined;
+    if (scopes.includes('launch/patient')) {
+      const patient = await this.patientRepo.findOne({
+        where: { userId },
+      });
+      if (!patient) {
+        throw new UnauthorizedException('launch_patient_required: user has no associated patient record');
+      }
+      patientId = patient.id;
+    }
+
+    const sessionId = existingSessionId ?? this.sessionManagement.generateSessionId();
+
     const tokenPayload: Record<string, any> = {
       sub: userId,
       scope: scopes.join(' '),
@@ -172,34 +212,61 @@ export class OAuth2Controller {
     };
 
     if (scopes.includes('fhirUser')) {
-      tokenPayload.fhirUser = `${process.env.FHIR_BASE_URL ?? \`http://localhost:\${process.env.PORT ?? 3000}\`}/fhir/r4/Patient/${userId}`;
+      const fhirBaseUrl =
+        process.env.FHIR_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
+      tokenPayload.fhirUser = `${fhirBaseUrl}/fhir/r4/Patient/${userId}`;
     }
 
     const accessToken = this.jwt.sign(tokenPayload);
 
+    // If offline_access was granted, issue a new refresh token
+    const refreshToken = scopes.includes('offline_access')
+      ? this.jwt.sign({ ...tokenPayload, type: 'refresh' }, { expiresIn: '7d' })
+      : null;
+
+    const now = Date.now();
+    const expiresAt = new Date(now + OAUTH2_ACCESS_TOKEN_TTL_SECONDS * 1000);
+    const refreshTokenExpiresAt = refreshToken
+      ? new Date(now + OAUTH2_REFRESH_TOKEN_TTL_SECONDS * 1000)
+      : expiresAt;
+
+    if (existingSessionId) {
+      // Throws if the session was revoked, expired or never existed.
+      await this.sessionManagement.refreshSession(
+        sessionId,
+        accessToken,
+        refreshToken,
+        expiresAt,
+        refreshTokenExpiresAt,
+      );
+    } else {
+      await this.sessionManagement.createSession(
+        userId,
+        accessToken,
+        refreshToken,
+        expiresAt,
+        refreshTokenExpiresAt,
+        ctx.ipAddress,
+        ctx.userAgent,
+        `oauth2:${clientId}`,
+        { id: sessionId },
+      );
+    }
+
     const response: Record<string, any> = {
       access_token: accessToken,
       token_type: 'Bearer',
-      expires_in: 900,
+      expires_in: OAUTH2_ACCESS_TOKEN_TTL_SECONDS,
       scope: scopes.join(' '),
     };
 
-    // If offline_access was granted, issue a new refresh token
-    if (scopes.includes('offline_access')) {
-      const refreshToken = this.jwt.sign({ ...tokenPayload, type: 'refresh' }, { expiresIn: '7d' });
+    if (refreshToken) {
       await this.refreshTokenStore.store(sessionId, refreshToken);
       response.refresh_token = refreshToken;
     }
 
-    if (scopes.includes('launch/patient')) {
-      const patient = await this.patientRepo.findOne({
-        where: { userId },
-      });
-      if (patient) {
-        response.patient = patient.id;
-      } else {
-        throw new UnauthorizedException('launch_patient_required: user has no associated patient record');
-      }
+    if (patientId) {
+      response.patient = patientId;
     }
 
     return response;

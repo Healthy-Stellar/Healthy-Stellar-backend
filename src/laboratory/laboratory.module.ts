@@ -22,6 +22,7 @@ import { CriticalValuesController } from './controllers/critical-values.controll
 import { OrderSetTemplatesController } from './controllers/order-set-templates.controller';
 import { OrderSetTemplatesService } from './services/order-set-templates.service';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -39,6 +40,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
       OrderSetTemplateItem,
     ]),
     NotificationsModule,
+    // Provides AuthTokenService / SessionManagementService for JwtAuthGuard.
+    AuthModule,
   ],
   controllers: [
     LaboratoryController,

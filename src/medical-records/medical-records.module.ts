@@ -15,6 +15,7 @@ import { ProviderPatientModule } from '../provider-patient/provider-patient.modu
 import { QUEUE_NAMES } from '../queues/queue.constants';
 import { MailModule } from '../email-notification-service-for-critical-access-events/mail.module';
 import { AuditModule } from '../common/audit/audit.module';
+import { AuthModule } from '../auth/auth.module';
 
 import { MedicalRecordsService } from './services/medical-records.service';
 import { ClinicalTemplatesService } from './services/clinical-templates.service';
@@ -47,6 +48,8 @@ import { Patient } from '../patients/entities/patient.entity';
     ProviderPatientModule,
     MailModule,
     AuditModule,
+    // Provides AuthTokenService / SessionManagementService for JwtAuthGuard.
+    AuthModule,
     TypeOrmModule.forFeature([
       MedicalRecord,
       MedicalRecordVersion,

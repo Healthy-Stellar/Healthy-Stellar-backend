@@ -51,6 +51,7 @@ function buildMocks() {
     generateTokenPair: jest.fn().mockReturnValue(mockTokens),
     generateAccessToken: jest.fn().mockReturnValue(mockTokens.accessToken),
     generateRefreshToken: jest.fn().mockReturnValue(mockTokens.refreshToken),
+    generateMfaPendingToken: jest.fn().mockReturnValue('mfa-pending-token'),
   };
 
   const mfaService = {
@@ -59,6 +60,7 @@ function buildMocks() {
 
   const sessionManagementService = {
     createSession: jest.fn().mockResolvedValue({ id: 'session-1' }),
+    completeMfaChallenge: jest.fn().mockResolvedValue({ id: 'session-1', mfaVerified: true }),
     revokeSession: jest.fn().mockResolvedValue(undefined),
   };
 
@@ -134,6 +136,87 @@ describe('AuthService.login', () => {
     expect(storeRefreshToken).toBe(refreshTokenInSession);
     expect(typeof storeSessionId).toBe('string');
     expect(storeSessionId.length).toBeGreaterThan(0);
+  });
+});
+
+describe('AuthService.login — session id (#1323)', () => {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  it('signs tokens with a UUID session id and persists the session under that same id', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(mockUser);
+
+    await service.login({ email: 'test@example.com', password: 'pw' }, '127.0.0.1', 'ua');
+
+    const [, signedSessionId, mfaVerified] = mocks.authTokenService.generateTokenPair.mock.calls[0];
+    expect(signedSessionId).toMatch(UUID_RE);
+    expect(mfaVerified).toBe(false);
+
+    const createArgs = mocks.sessionManagementService.createSession.mock.calls[0];
+    expect(createArgs[8]).toEqual({ id: signedSessionId, mfaVerified: false });
+    expect(mocks.refreshTokenStore.store).toHaveBeenCalledWith(signedSessionId, mockTokens.refreshToken);
+  });
+});
+
+describe('AuthService.login — MFA-enabled account (#1322)', () => {
+  it('returns only a short-lived MFA-pending token, no token pair', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue({ ...mockUser, mfaEnabled: true });
+    mocks.mfaService.isMfaEnabled.mockResolvedValue(true);
+
+    const result = await service.login({ email: 'test@example.com', password: 'pw' }, 'ip', 'ua');
+
+    expect(result.mfaRequired).toBe(true);
+    expect(result.tokens).toBeUndefined();
+    expect(result.mfaToken).toBe('mfa-pending-token');
+    expect(result.mfaTokenExpiresIn).toBe(300);
+    expect(mocks.authTokenService.generateTokenPair).not.toHaveBeenCalled();
+    expect(mocks.refreshTokenStore.store).not.toHaveBeenCalled();
+
+    const [, pendingSessionId] = mocks.authTokenService.generateMfaPendingToken.mock.calls[0];
+    const createArgs = mocks.sessionManagementService.createSession.mock.calls[0];
+    expect(createArgs[1]).toBe('mfa-pending-token');
+    expect(createArgs[2]).toBeNull(); // no refresh token issued
+    expect(createArgs[8]).toEqual({ id: pendingSessionId, mfaVerified: false });
+  });
+});
+
+describe('AuthService.completeMfaChallenge (#1322)', () => {
+  it('marks the session verified and issues an MFA-verified token pair', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue({ ...mockUser, mfaEnabled: true });
+
+    const tokens = await service.completeMfaChallenge('user-1', 'session-1', 'ip');
+
+    expect(mocks.authTokenService.generateTokenPair).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user-1' }),
+      'session-1',
+      true,
+    );
+    expect(mocks.sessionManagementService.completeMfaChallenge).toHaveBeenCalledWith(
+      'session-1',
+      'user-1',
+      mockTokens.accessToken,
+      mockTokens.refreshToken,
+      expect.any(Date),
+      expect.any(Date),
+    );
+    expect(mocks.refreshTokenStore.store).toHaveBeenCalledWith('session-1', mockTokens.refreshToken);
+    expect(tokens).toEqual({
+      accessToken: mockTokens.accessToken,
+      refreshToken: mockTokens.refreshToken,
+      expiresIn: mockTokens.expiresIn,
+    });
+  });
+
+  it('refuses inactive users', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue({ ...mockUser, isActive: false });
+
+    await expect(service.completeMfaChallenge('user-1', 'session-1', 'ip')).rejects.toThrow(
+      'User not found or inactive',
+    );
+    expect(mocks.sessionManagementService.completeMfaChallenge).not.toHaveBeenCalled();
   });
 });
 

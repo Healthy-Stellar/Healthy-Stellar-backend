@@ -43,6 +43,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Invalid token payload');
     }
 
+    // The MFA-pending token from POST /auth/login only proves the password
+    // step; it must not authenticate any route served through this strategy.
+    if (payload.mfaPending) {
+      throw new UnauthorizedException('MFA verification required');
+    }
+
     const medicalUser: MedicalUser = {
       id: userId,
       email: payload.email,

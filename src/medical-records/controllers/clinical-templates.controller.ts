@@ -1,20 +1,57 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, Req } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
+import { authenticatedUserId } from '../../auth/utils/authenticated-user-id';
 import { ClinicalTemplatesService } from '../services/clinical-templates.service';
 import { CreateClinicalTemplateDto } from '../dto/create-clinical-template.dto';
 import { TemplateCategory } from '../entities/clinical-note-template.entity';
 
+const TEMPLATE_READERS = [
+  UserRole.ADMIN,
+  UserRole.SUPER_ADMIN,
+  UserRole.PHYSICIAN,
+  UserRole.SURGEON,
+  UserRole.NURSE,
+  UserRole.MEDICAL_RECORDS,
+];
+const TEMPLATE_AUTHORS = [
+  UserRole.ADMIN,
+  UserRole.SUPER_ADMIN,
+  UserRole.PHYSICIAN,
+  UserRole.SURGEON,
+  UserRole.MEDICAL_RECORDS,
+];
+const TEMPLATE_ADMINS = [UserRole.ADMIN, UserRole.SUPER_ADMIN];
+
 @ApiTags('Clinical Templates')
+@ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 @Controller('clinical-templates')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(...TEMPLATE_READERS)
 export class ClinicalTemplatesController {
   constructor(private readonly templatesService: ClinicalTemplatesService) {}
 
   @Post()
+  @Roles(...TEMPLATE_AUTHORS)
   @ApiOperation({ summary: 'Create a new clinical note template' })
   @ApiResponse({ status: 201, description: 'Template created successfully' })
   async create(@Body() createDto: CreateClinicalTemplateDto, @Req() req: any) {
-    const userId = req.user?.userId || '00000000-0000-0000-0000-000000000000';
-    return this.templatesService.create(createDto, userId);
+    return this.templatesService.create(createDto, authenticatedUserId(req));
   }
 
   @Get()
@@ -33,6 +70,7 @@ export class ClinicalTemplatesController {
   }
 
   @Put(':id')
+  @Roles(...TEMPLATE_AUTHORS)
   @ApiOperation({ summary: 'Update a clinical template' })
   @ApiResponse({ status: 200, description: 'Template updated successfully' })
   async update(@Param('id') id: string, @Body() updateDto: Partial<CreateClinicalTemplateDto>) {
@@ -40,6 +78,7 @@ export class ClinicalTemplatesController {
   }
 
   @Delete(':id')
+  @Roles(...TEMPLATE_ADMINS)
   @ApiOperation({ summary: 'Delete a clinical template' })
   @ApiResponse({ status: 200, description: 'Template deleted successfully' })
   async delete(@Param('id') id: string) {
