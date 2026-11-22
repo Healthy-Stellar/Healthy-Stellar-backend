@@ -8,6 +8,7 @@ import {
   Query,
   Req,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { API_BEARER_AUTH_SCHEME } from '../common/constants/swagger.constants';
@@ -21,18 +22,29 @@ import { FeatureFlagService, UpsertFeatureFlagDto } from './feature-flag.service
 @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 @Controller('admin/feature-flags')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
 export class FeatureFlagController {
   constructor(private readonly service: FeatureFlagService) {}
 
+  /**
+   * List all feature flags.
+   *
+   * ⚠️ RESTRICTED: Only SUPER_ADMIN can view global flag configurations
+   * (includes cross-tenant enabledTenantIds and rollout strategies).
+   * 
+   * Tenant admins should use the evaluation API instead.
+   */
   @Get()
+  @Roles(UserRole.SUPER_ADMIN)
   findAll() {
     return this.service.findAll();
   }
 
   /**
    * Evaluate a single flag for the given actor/tenant context.
-   * Useful for debugging rollout targeting without modifying flags.
+   * 
+   * ✅ UNRESTRICTED: Any authenticated user can evaluate flags.
+   * Returns only: is the flag enabled for this context?
+   * Does not reveal enabledTenantIds or strategies to unauthorized users.
    */
   @Get(':key/evaluate')
   @ApiQuery({ name: 'actorId', required: false })
@@ -48,6 +60,8 @@ export class FeatureFlagController {
 
   /**
    * Batch evaluate multiple flags for a context.
+   * 
+   * ✅ UNRESTRICTED: Any authenticated user can evaluate flags.
    * Body: { keys: string[], actorId?: string, tenantId?: string }
    */
   @Post('evaluate-many')
@@ -61,13 +75,44 @@ export class FeatureFlagController {
     return results;
   }
 
+  /**
+   * Create or update a feature flag.
+   *
+   * ⚠️ RESTRICTED: Only SUPER_ADMIN can modify global feature flags.
+   * This prevents tenant admins from enabling/disabling features for other tenants.
+   */
   @Post()
+  @Roles(UserRole.SUPER_ADMIN)
   upsert(@Body() dto: UpsertFeatureFlagDto, @Req() req: any) {
-    return this.service.upsert(dto, req.user?.userId ?? 'system');
+    const userId = this.extractUserIdFromRequest(req);
+    return this.service.upsert(dto, userId);
   }
 
+  /**
+   * Rollback (disable) a feature flag.
+   *
+   * ⚠️ RESTRICTED: Only SUPER_ADMIN can rollback global feature flags.
+   * This prevents tenant admins from breaking features for other tenants.
+   */
   @Patch(':key/rollback')
+  @Roles(UserRole.SUPER_ADMIN)
   rollback(@Param('key') key: string, @Req() req: any) {
-    return this.service.rollback(key, req.user?.userId ?? 'system');
+    const userId = this.extractUserIdFromRequest(req);
+    return this.service.rollback(key, userId);
+  }
+
+  /**
+   * Extract userId from request, ensuring it's properly set.
+   *
+   * @throws ForbiddenException if userId is not available
+   */
+  private extractUserIdFromRequest(req: any): string {
+    const userId = req.user?.userId;
+    if (!userId) {
+      throw new ForbiddenException(
+        'User identity could not be verified. Please re-authenticate.',
+      );
+    }
+    return userId;
   }
 }
