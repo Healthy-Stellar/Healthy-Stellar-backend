@@ -58,10 +58,88 @@ export class LinkStellarAddressDto {
  * Optional: query params used when initiating OIDC flow via GET.
  */
 export class OidcInitiateQueryDto {
-  /** Where to redirect after successful auth (validated server-side). */
+  /**
+   * Where to redirect after successful auth. Only relative paths or origins
+   * from the configured frontend allowlist are accepted (see
+   * `isSafeRedirectTarget`).
+   */
   @IsOptional()
   @IsString()
   redirectTo?: string;
+}
+
+/**
+ * Body for POST /auth/oidc/exchange — trades the one-time code returned by
+ * the OIDC callback redirect for the actual access token.
+ */
+export class OidcExchangeCodeDto {
+  @IsString()
+  code: string;
+}
+
+// ---------------------------------------------------------------------------
+// Redirect validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when `redirectTo` is safe to redirect to after OIDC login.
+ *
+ * Allowed:
+ *  - relative paths (e.g. `/dashboard`, `/settings?tab=security`)
+ *  - absolute URLs whose origin is in `allowedOrigins`
+ *
+ * Rejected:
+ *  - protocol-relative URLs (`//evil.example`, `/\evil.example`)
+ *  - absolute URLs with a scheme (e.g. `javascript:`, `https://evil.example`)
+ *    unless their origin is allowlisted
+ *  - anything that does not parse as a URL
+ */
+export function isSafeRedirectTarget(
+  redirectTo: string | undefined | null,
+  allowedOrigins: string[] = [],
+): boolean {
+  if (!redirectTo || typeof redirectTo !== 'string') {
+    return false;
+  }
+
+  // Reject protocol-relative and backslash tricks before any parsing.
+  if (redirectTo.startsWith('//') || redirectTo.startsWith('/\\') || redirectTo.startsWith('\\')) {
+    return false;
+  }
+
+  // Relative path: must start with a single `/` and not contain a scheme.
+  if (redirectTo.startsWith('/')) {
+    // Guard against `/%2F%2Fevil` style encoded protocol-relative paths.
+    try {
+      const decoded = decodeURIComponent(redirectTo);
+      if (decoded.startsWith('//') || decoded.startsWith('/\\')) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+    return true;
+  }
+
+  // Absolute URL: only allow if origin is in the allowlist.
+  let parsed: URL;
+  try {
+    parsed = new URL(redirectTo);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return false;
+  }
+
+  return allowedOrigins.some((origin) => {
+    try {
+      return new URL(origin).origin === parsed.origin;
+    } catch {
+      return false;
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
