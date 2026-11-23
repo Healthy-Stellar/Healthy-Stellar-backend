@@ -17,12 +17,19 @@ export enum ImportFormat {
 
 @Entity('import_jobs')
 @Index(['importBatchId'], { unique: true })
+@Index(['tenantId'])
 export class ImportJob {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'varchar' })
   importBatchId: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  tenantId: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  createdBy: string | null;
 
   @Column({ type: 'enum', enum: ImportFormat })
   format: ImportFormat;
