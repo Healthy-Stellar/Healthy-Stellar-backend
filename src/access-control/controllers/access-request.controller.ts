@@ -65,14 +65,14 @@ export class AccessRequestController {
   }
 
   /**
-   * Patient approves a request — triggers on-chain grant_access.
+   * Patient approves a request — queues on-chain grant_access.
    */
   @Patch('requests/:id/approve')
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
-  @Roles(UserRole.PATIENT, UserRole.ADMIN)
+  @Roles(UserRole.PATIENT)
   @ApiOperation({ summary: 'Patient approves an access request' })
-  @ApiResponse({ status: 200, description: 'Request approved; grant created on-chain' })
+  @ApiResponse({ status: 200, description: 'Request approved; grant queued for on-chain creation' })
   @ApiResponse({ status: 403, description: 'Not the target patient' })
   @ApiResponse({ status: 404, description: 'Request not found' })
   @ApiResponse({ status: 409, description: 'Request already responded to or expired' })
@@ -90,7 +90,7 @@ export class AccessRequestController {
   @Patch('requests/:id/deny')
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
-  @Roles(UserRole.PATIENT, UserRole.ADMIN)
+  @Roles(UserRole.PATIENT)
   @ApiOperation({ summary: 'Patient denies an access request' })
   @ApiResponse({ status: 200, description: 'Request denied' })
   @ApiResponse({ status: 403, description: 'Not the target patient' })

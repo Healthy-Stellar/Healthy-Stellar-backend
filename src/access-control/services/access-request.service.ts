@@ -8,14 +8,16 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
 import { LessThanOrEqual, Repository } from 'typeorm';
+import { Queue } from 'bullmq';
 import { AccessRequest, AccessRequestStatus } from '../entities/access-request.entity';
 import { AccessGrant, AccessLevel, GrantStatus } from '../entities/access-grant.entity';
 import { CreateAccessRequestDto } from '../dto/create-access-request.dto';
-import { SorobanQueueService } from './soroban-queue.service';
 import { WILDCARD_RECORD_ID } from '../utils/grant-coverage.util';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { NotificationEventType } from '../../notifications/interfaces/notification-event.interface';
+import { QUEUE_NAMES } from '../../queues/queue.constants';
 
 const REQUEST_TTL_MS = 72 * 60 * 60 * 1000; // 72 hours
 const EXPIRY_POLL_MS = 15 * 60 * 1000;       // 15 minutes
@@ -28,10 +30,9 @@ export class AccessRequestService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @InjectRepository(AccessRequest)
     private readonly requestRepo: Repository<AccessRequest>,
-    @InjectRepository(AccessGrant)
-    private readonly grantRepo: Repository<AccessGrant>,
-    private readonly sorobanQueue: SorobanQueueService,
     private readonly notifications: NotificationsService,
+    @InjectQueue(QUEUE_NAMES.ACCESS_GRANT_DISPATCH)
+    private readonly grantDispatchQueue: Queue,
   ) {}
 
   onModuleInit(): void {
@@ -121,46 +122,66 @@ export class AccessRequestService implements OnModuleInit, OnModuleDestroy {
     patientAddress: string,
   ): Promise<{ request: AccessRequest; grant: AccessGrant }> {
     const request = await this.loadAndValidate(requestId, patientAddress);
+    const now = new Date();
+    const result = await this.requestRepo.manager.transaction(async (manager) => {
+      const requestRepository = manager.getRepository(AccessRequest);
+      const grantRepository = manager.getRepository(AccessGrant);
+      const transition = await requestRepository
+        .createQueryBuilder()
+        .update(AccessRequest)
+        .set({ status: AccessRequestStatus.APPROVED, respondedAt: now })
+        .where('id = :requestId', { requestId })
+        .andWhere('patientAddress = :patientAddress', { patientAddress })
+        .andWhere('status = :pending', { pending: AccessRequestStatus.PENDING })
+        .andWhere('expiresAt > :now', { now })
+        .execute();
 
-    // Transition state
-    request.status = AccessRequestStatus.APPROVED;
-    request.respondedAt = new Date();
+      if (transition.affected !== 1) {
+        throw new ConflictException(
+          'Request is no longer pending or has expired',
+        );
+      }
 
-    // Create the access grant (all records, READ access, 30-day default)
-    const grant = this.grantRepo.create({
-      patientId: patientAddress,
-      granteeId: request.providerAddress,
-      recordIds: [WILDCARD_RECORD_ID],
-      accessLevel: AccessLevel.READ,
-      isEmergency: false,
-      emergencyReason: null,
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      status: GrantStatus.ACTIVE,
+      const savedRequest = await requestRepository.findOneByOrFail({ id: requestId });
+      const savedGrant = await grantRepository.save(
+        grantRepository.create({
+          patientId: patientAddress,
+          granteeId: request.providerAddress,
+          recordIds: [WILDCARD_RECORD_ID],
+          accessLevel: AccessLevel.READ,
+          isEmergency: false,
+          emergencyReason: null,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          status: GrantStatus.PENDING_CHAIN,
+        }),
+      );
+
+      return { request: savedRequest, grant: savedGrant };
     });
 
-    const savedGrant = await this.grantRepo.save(grant);
-
-    // Dispatch to Soroban
-    const txHash = await this.sorobanQueue.dispatchGrant(savedGrant);
-    savedGrant.sorobanTxHash = txHash;
-    await this.grantRepo.save(savedGrant);
-
-    request.sorobanTxHash = txHash;
-    const savedRequest = await this.requestRepo.save(request);
+    await this.grantDispatchQueue.add(
+      'dispatch-access-grant',
+      { grantId: result.grant.id, requestId },
+      {
+        jobId: `access-grant-${result.grant.id}`,
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 2000 },
+      },
+    );
 
     // Notify provider
-    this.notifications.emitAccessGranted(patientAddress, savedGrant.id, {
+    this.notifications.emitAccessGranted(patientAddress, result.grant.id, {
       targetUserId: request.providerAddress,
       requestId,
-      grantId: savedGrant.id,
-      sorobanTxHash: txHash,
+      grantId: result.grant.id,
+      grantStatus: GrantStatus.PENDING_CHAIN,
     });
 
     this.logger.log(
-      `Request ${requestId} approved by patient ${patientAddress} — grant ${savedGrant.id} created`,
+      `Request ${requestId} approved by patient ${patientAddress} — grant ${result.grant.id} queued for Soroban`,
     );
 
-    return { request: savedRequest, grant: savedGrant };
+    return result;
   }
 
   // ── PATCH /access/requests/:id/deny ────────────────────────────────────────
