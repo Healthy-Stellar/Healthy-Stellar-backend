@@ -1,13 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
+import { AuthTokenService } from '../../auth/services/auth-token.service';
+import { SessionManagementService } from '../../auth/services/session-management.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 export interface SubscriptionContext {
   user: {
-    sub: string;
-    patientId: string;
+    userId: string;
+    patientId?: string;
     role: string;
   };
   connectionId: string;
@@ -22,9 +23,10 @@ export class SubscriptionAuthGuard {
   private readonly logger = new Logger(SubscriptionAuthGuard.name);
 
   constructor(
-    private readonly jwtService: JwtService,
+    private readonly authTokenService: AuthTokenService,
+    private readonly sessionManagementService: SessionManagementService,
+    private readonly prisma: PrismaService,
     @InjectRedis() private readonly redis: Redis,
-    private readonly config: ConfigService,
   ) {}
 
   async validateConnection(connectionParams: Record<string, any>): Promise<SubscriptionContext> {
@@ -38,14 +40,33 @@ export class SubscriptionAuthGuard {
 
     let payload: any;
     try {
-      payload = this.jwtService.verify(token, {
-        secret: this.config.get<string>('JWT_SECRET'),
-      });
+      payload = await this.authTokenService.verifyAccessToken(token);
     } catch {
       throw new Error('Invalid or expired token');
     }
 
-    const userId: string = payload.sub;
+    const userId: string = payload?.userId;
+    if (!userId) {
+      throw new Error('Invalid or expired token');
+    }
+
+    if (payload.sessionId) {
+      const sessionValid = await this.sessionManagementService.isSessionValid(payload.sessionId);
+      if (!sessionValid) {
+        throw new Error('Session has been revoked');
+      }
+    }
+
+    const role: string = payload.role;
+    let patientId: string | undefined;
+    if (role === 'PATIENT') {
+      const patient = await this.prisma.patient.findFirst({
+        where: { userId },
+        select: { id: true },
+      });
+      patientId = patient?.id;
+    }
+
     const connectionId = `${userId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
     const connKey = `${CONNECTION_KEY_PREFIX}${userId}`;
 
@@ -63,9 +84,9 @@ export class SubscriptionAuthGuard {
 
     return {
       user: {
-        sub: payload.sub,
-        patientId: payload.patientId,
-        role: payload.role,
+        userId,
+        patientId,
+        role,
       },
       connectionId,
     };
