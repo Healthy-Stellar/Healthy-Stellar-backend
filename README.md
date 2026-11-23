@@ -554,12 +554,21 @@ npm run test:compliance  # HIPAA/GDPR compliance tests
 
 ## Deployment
 
+Production runs two processes from the same image: the HTTP API (`dist/main`) and the BullMQ worker (`dist/worker`). Migrations are **not** applied automatically (`migrationsRun: false`), so they must be run explicitly before each release.
+
 ```bash
-npm install
-npm run start:dev
+npm ci && npm run build          # build the image / bundle
+npm run migration:run            # apply pending migrations (once per release)
+npm run start:prod               # API process
+npm run start:worker:prod        # worker process (separate container/instance)
 ```
 
-The API is served under the global prefix `/api`. Swagger docs are available at `/api/docs`.
+- Set `NODE_ENV=production` and provide the mandatory secrets (JWT, KMS/encryption, Stellar/Soroban, webhook secrets) — see [docs/deployment.md](docs/deployment.md).
+- Liveness: `GET /health`; readiness: `GET /health/ready`.
+- The API is served under the global prefix `/api`; Swagger docs are at `/api/docs`.
+- Running more than one replica requires disabling or leader-electing the in-process cron sweeps (break-glass, session cleanup, missed-dose detection).
+
+The full guide — prerequisites, image build, required env/secrets, migration and backup env vars, scaling caveats, TLS/reverse-proxy expectations, and the release/rollback checklist — is in **[docs/deployment.md](docs/deployment.md)**. Operator procedures are indexed in [docs/runbooks/README.md](docs/runbooks/README.md).
 
 ## Route overview
 

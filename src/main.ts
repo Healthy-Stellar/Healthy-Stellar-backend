@@ -56,7 +56,7 @@ async function bootstrap() {
 
   // Generate the nonce before Helmet evaluates the shared CSP configuration.
   app.use(nonceMiddleware);
-  // Keep runtime headers aligned with the security-header integration test.
+  // Apply the shared security-header configuration (buildHelmetOptions).
   applySecurityHeaders(app);
 
   // Remove X-Powered-By header
