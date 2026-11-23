@@ -1,9 +1,48 @@
 import * as Joi from 'joi';
 import { Networks } from '@stellar/stellar-sdk';
+import * as fs from 'fs';
 
 export function getNetworkPassphrase(network: string): string {
   return network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET;
 }
+
+/**
+ * Resolve `*_FILE` secret variables into their plain counterparts.
+ *
+ * Docker secrets (and similar mechanisms) mount the secret value in a file and
+ * expose only its path via `<NAME>_FILE`. Nothing else in the app reads those
+ * variables, so we read the file here and populate `<NAME>` before the Joi
+ * schema runs. An explicitly provided `<NAME>` always wins over `<NAME>_FILE`.
+ */
+export function resolveFileSecrets(
+  env: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  for (const key of Object.keys(env)) {
+    if (!key.endsWith('_FILE')) {
+      continue;
+    }
+
+    const target = key.slice(0, -'_FILE'.length);
+    if (!target || env[target]) {
+      continue;
+    }
+
+    const filePath = env[key];
+    if (!filePath) {
+      continue;
+    }
+
+    try {
+      env[target] = fs.readFileSync(filePath, 'utf8').trim();
+    } catch {
+      // Leave the variable unset so validation reports the missing value.
+    }
+  }
+
+  return env;
+}
+
+resolveFileSecrets();
 
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'test', 'staging', 'production').default('development'),
