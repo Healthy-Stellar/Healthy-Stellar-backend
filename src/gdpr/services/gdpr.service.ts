@@ -18,6 +18,17 @@ function assertUserId(userId: string | undefined | null): asserts userId is stri
   }
 }
 
+/**
+ * Server-derived identity for an erasure request, built from the authenticated
+ * principal (req.user). Never populated from the request body.
+ */
+export interface ErasureRequestor {
+  userId: string;
+  patientId?: string;
+  tenantId?: string;
+  identity: string;
+}
+
 @Injectable()
 export class GdprService {
   private readonly logger = new Logger(GdprService.name);
@@ -73,9 +84,16 @@ export class GdprService {
 
   async createErasureRequest(
     userId: string,
-    dto: CreateErasureRequestDto = {} as CreateErasureRequestDto,
+    requestor: ErasureRequestor,
+    _dto: CreateErasureRequestDto = {} as CreateErasureRequestDto,
   ): Promise<GdprRequest> {
     assertUserId(userId);
+    // Identity fields are derived server-side from the authenticated principal.
+    // Any client-supplied patientId/tenantId/requestorIdentity in the body is ignored.
+    const patientId = requestor.patientId;
+    const tenantId = requestor.tenantId;
+    const requestorIdentity = requestor.identity;
+
     const existingRequest = await this.gdprRequestRepository.findOne({
       where: {
         userId,
@@ -92,9 +110,9 @@ export class GdprService {
 
     const request = this.gdprRequestRepository.create({
       userId,
-      patientId: dto.patientId,
-      requestorIdentity: dto.requestorIdentity,
-      tenantId: dto.tenantId,
+      patientId,
+      requestorIdentity,
+      tenantId,
       type: GdprRequestType.ERASURE,
       status: GdprRequestStatus.PENDING,
     });
@@ -104,14 +122,14 @@ export class GdprService {
     await this.complianceLogRepository.save(
       this.complianceLogRepository.create({
         requestId: request.id,
-        patientId: dto.patientId,
-        tenantId: dto.tenantId,
-        operator: dto.requestorIdentity,
+        patientId,
+        tenantId,
+        operator: requestorIdentity,
         scope: 'gdpr-erasure-request',
         details: {
           action: 'ERASURE_REQUESTED',
-          requestorIdentity: dto.requestorIdentity,
-          tenantId: dto.tenantId,
+          requestorIdentity,
+          tenantId,
         },
       }),
     );
@@ -119,9 +137,9 @@ export class GdprService {
     await this.gdprQueue.add('erase-data', {
       requestId: request.id,
       userId,
-      patientId: dto.patientId,
-      requestorIdentity: dto.requestorIdentity,
-      tenantId: dto.tenantId,
+      patientId,
+      requestorIdentity,
+      tenantId,
     });
 
     this.logger.log(`Erasure request ${request.id} queued for user ${userId}`);

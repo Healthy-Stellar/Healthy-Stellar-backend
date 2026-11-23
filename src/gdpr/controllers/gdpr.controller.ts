@@ -77,7 +77,16 @@ export class GdprController {
   @AuditLog('GDPR_ERASURE_REQUEST', 'GdprRequest')
   async requestErasure(@Req() req, @Body() dto?: CreateErasureRequestDto) {
     const userId = this.requireUserId(req);
-    return this.gdprService.createErasureRequest(userId, dto);
+    // Derive the subject and operator from the authenticated principal. Any
+    // client-supplied patientId/tenantId/requestorIdentity in the body is
+    // ignored so the compliance log cannot be forged.
+    const requestor = {
+      userId,
+      patientId: req?.user?.patientId,
+      tenantId: req?.user?.tenantId,
+      identity: req?.user,
+    };
+    return this.gdprService.createErasureRequest(userId, dto, requestor);
   }
 
   @Get('requests')

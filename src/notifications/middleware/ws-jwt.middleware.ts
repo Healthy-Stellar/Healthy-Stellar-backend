@@ -50,6 +50,10 @@ export class WsJwtMiddleware {
 
         // Attach decoded user for downstream handlers / guards
         socket.data.user = payload;
+        // Expose session/expiry metadata so the gateway can schedule an
+        // expiry timer and match revocation events to this socket (Issue #1375).
+        socket.data.sessionId = payload.sessionId;
+        socket.data.exp = payload.exp;
         next();
       } catch {
         socket.emit('error', { status: 401, message: 'Unauthorized' });
