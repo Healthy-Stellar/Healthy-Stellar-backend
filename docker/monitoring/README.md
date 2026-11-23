@@ -3,6 +3,20 @@
 Prometheus scrapes the app `/metrics` endpoint and evaluates the rule files listed
 in `prometheus.yml`. Alerts are dispatched through Alertmanager (`alertmanager.yml`).
 
+## Scraping authenticated metrics
+
+`/metrics` requires `METRICS_TOKEN` by default. The scrape config reads the token
+from `/run/secrets/metrics_token`, which Docker Compose mounts from
+`./secrets/metrics_token.txt`. Create that file with the same value as the app's
+`METRICS_TOKEN`, without a trailing newline:
+
+```bash
+printf '%s' "$METRICS_TOKEN" > secrets/metrics_token.txt
+```
+
+Do not use `METRICS_ALLOWED_NETWORKS` to admit the Prometheus container: doing so
+would also admit every caller that reaches the app through the same network.
+
 ## Rule files
 
 | File | Purpose |
