@@ -10,7 +10,7 @@ import {
 import { DataSource, Repository } from 'typeorm';
 
 import { OidcService } from './oidc.service';
-import { OidcIdentity } from './entities/oidc-identity.entity';
+import { OidcIdentity } from './oidc-identity.entity';
 import { User } from '../auth/entities/user.entity';
 import { OidcVerifiedProfile } from './oidc.strategy';
 import { LinkStellarAddressDto } from './dto/oidc.dto';
@@ -56,6 +56,7 @@ const mockProfile = (overrides: Partial<OidcVerifiedProfile> = {}): OidcVerified
   provider: 'azure',
   providerSubject: 'sub-abc-123',
   email: 'doctor@hospital.org',
+  emailVerified: true,
   givenName: 'Ada',
   familyName: 'Lovelace',
   rawClaims: { sub: 'sub-abc-123', email: 'doctor@hospital.org' },
@@ -177,7 +178,9 @@ describe('OidcService', () => {
         const existingUser = mockUser();
         managerOidcRepo.findOne = jest.fn().mockResolvedValue(null);
         managerUserRepo.findOne = jest.fn().mockResolvedValue(existingUser);
-        managerOidcRepo.create = jest.fn().mockReturnValue({} as OidcIdentity);
+        managerOidcRepo.create = jest.fn(
+          (entity: Partial<OidcIdentity>) => entity as OidcIdentity,
+        );
         managerOidcRepo.save = jest.fn().mockResolvedValue({} as OidcIdentity);
 
         const result = await service.handleOidcLogin(mockProfile());
@@ -192,6 +195,27 @@ describe('OidcService', () => {
         );
         expect(result.user.isNewUser).toBe(false);
       });
+
+      it('does not link by email when the IdP has not verified it', async () => {
+        const newUser = mockUser({ id: 'new-user-id' });
+        managerOidcRepo.findOne = jest.fn().mockResolvedValue(null);
+        managerUserRepo.findOne = jest.fn().mockResolvedValue(mockUser());
+        managerUserRepo.create = jest.fn().mockReturnValue(newUser);
+        managerUserRepo.save = jest.fn().mockResolvedValue(newUser);
+        managerOidcRepo.create = jest.fn(
+          (entity: Partial<OidcIdentity>) => entity as OidcIdentity,
+        );
+        managerOidcRepo.save = jest.fn().mockResolvedValue({} as OidcIdentity);
+
+        const result = await service.handleOidcLogin(
+          mockProfile({ emailVerified: false }),
+        );
+
+        // Unverified email must never be used to auto-link an existing account
+        expect(managerUserRepo.findOne).not.toHaveBeenCalled();
+        expect(managerUserRepo.create).toHaveBeenCalled();
+        expect(result.user.isNewUser).toBe(true);
+      });
     });
 
     describe('when no identity and no matching email user exist', () => {
@@ -201,7 +225,9 @@ describe('OidcService', () => {
         managerUserRepo.findOne = jest.fn().mockResolvedValue(null);
         managerUserRepo.create = jest.fn().mockReturnValue(newUser);
         managerUserRepo.save = jest.fn().mockResolvedValue(newUser);
-        managerOidcRepo.create = jest.fn().mockReturnValue({} as OidcIdentity);
+        managerOidcRepo.create = jest.fn(
+          (entity: Partial<OidcIdentity>) => entity as OidcIdentity,
+        );
         managerOidcRepo.save = jest.fn().mockResolvedValue({} as OidcIdentity);
 
         const result = await service.handleOidcLogin(mockProfile());
@@ -222,7 +248,9 @@ describe('OidcService', () => {
         managerUserRepo.findOne = jest.fn().mockResolvedValue(null);
         managerUserRepo.create = jest.fn().mockReturnValue(newUser);
         managerUserRepo.save = jest.fn().mockResolvedValue(newUser);
-        managerOidcRepo.create = jest.fn().mockReturnValue({} as OidcIdentity);
+        managerOidcRepo.create = jest.fn(
+          (entity: Partial<OidcIdentity>) => entity as OidcIdentity,
+        );
         managerOidcRepo.save = jest.fn().mockResolvedValue({});
 
         await service.handleOidcLogin(mockProfile({ email: null }));
