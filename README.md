@@ -423,7 +423,8 @@ For local development, the routing service initializes SQLite-backed regional da
 | Webhooks           | `IPFS_WEBHOOK_SECRET`, `STELLAR_WEBHOOK_SECRET`, `QUEUE_HMAC_SECRET`                                                      |
 | OIDC / SSO         | `OIDC_PROVIDERS`, `OIDC_{PROVIDER}_CLIENT_ID`, …                                                                          |
 | Logging            | `LOG_LEVEL`, `LOKI_HOST`                                                                                                  |
-| Metrics & Tracing  | `METRICS_TOKEN`, `OTEL_EXPORTER_OTLP_ENDPOINT`                                                                            |
+| Metrics & Tracing  | `METRICS_TOKEN`, `METRICS_ALLOWED_NETWORKS`, `OTEL_EXPORTER_OTLP_ENDPOINT`                                                  |
+| Proxy / Client IP  | `TRUST_PROXY`                                                                                                             |
 | Backup             | `BACKUP_DIR`, `BACKUP_ENCRYPTION_KEY`, `BACKUP_RETENTION_DAYS`                                                            |
 | Feature Flags      | `TELEMEDICINE_ENABLED`, `SURGICAL_MANAGEMENT_ENABLED`                                                                     |
 

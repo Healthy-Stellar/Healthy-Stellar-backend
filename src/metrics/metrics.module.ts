@@ -4,7 +4,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { MetricsController } from './metrics.controller';
-import { MetricsService } from './metrics.service';
+import { PrometheusMetricsController } from './controllers/prometheus-metrics.controller';
 import {
   CustomMetricsService,
   // Existing providers
@@ -46,6 +46,8 @@ import { QUEUE_NAMES } from '../queues/queue.constants';
   imports: [
     ConfigModule,
     PrometheusModule.register({
+      // Use our guarded controller so /metrics is never exposed unauthenticated.
+      controller: PrometheusMetricsController,
       defaultMetrics: {
         enabled: true,
         config: { prefix: 'medchain_' },
@@ -66,7 +68,6 @@ import { QUEUE_NAMES } from '../queues/queue.constants';
   ],
   controllers: [MetricsController],
   providers: [
-    MetricsService,
     CustomMetricsService,
     // Existing metric providers
     RecordsUploadedCounter,
