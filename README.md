@@ -323,6 +323,8 @@ Copy `.env.example` to `.env`. Key sections:
 
 The backend supports region-aware tenant database routing across four regions: **EU**, **US**, **APAC**, and **AFRICA**. Each tenant declares a residency region and, when `strictDataResidency` is enabled, requests are rejected with `403 Forbidden` if they attempt to access data outside the configured region.
 
+The residency guard resolves authenticated tenants from the JWT `organizationId` claim, falling back to the active `TenantContext`. Authenticated requests without a resolvable tenant are rejected; requests without an authenticated principal or tenant context are treated as public. Strict tenants are checked against configured allowed IP ranges and any supplied `X-Region-Hint`. Forwarded client IP headers are trusted only when the immediate connection is from an IP listed in `DATA_RESIDENCY_TRUSTED_PROXIES`.
+
 Each region has its own set of environment variables for database, Stellar Horizon, and IPFS configuration:
 
 | Variable                     | Region | Description                                           | Default                                |
