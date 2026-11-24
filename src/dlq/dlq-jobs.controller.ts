@@ -18,11 +18,12 @@ import { DlqJobStatus } from './dlq-job.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../auth/entities/user.entity';
 
 @ApiTags('dlq/jobs')
 @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('admin')
+@Roles(UserRole.SUPER_ADMIN)
 @Controller('dlq')
 export class DlqJobsController {
   constructor(private readonly dlqService: DlqService) {}
