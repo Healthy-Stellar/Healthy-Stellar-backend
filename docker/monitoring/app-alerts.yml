@@ -133,3 +133,17 @@ groups:
         annotations:
           summary: "High number of active access grants"
           description: "Tenant {{ $labels.tenant }} has {{ $value }} active access grants (threshold: 10000)"
+
+      # PHI audit attribution regression (issues #750 / #779)
+      # An authenticated PHI request whose audit row is written without an actor
+      # or tenant means the HIPAA audit trail can no longer identify who
+      # accessed the patient record.
+      - alert: PhiAuditUnattributedAccess
+        expr: increase(medchain_phi_audit_anonymous_rows_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: compliance
+        annotations:
+          summary: "Authenticated PHI access logged without actor/tenant"
+          description: "{{ $value }} PHI access events (reason={{ $labels.reason }}) were written for an authenticated request without an attributable actor or tenant in the last 5 minutes. The HIPAA audit trail is missing the caller identity."

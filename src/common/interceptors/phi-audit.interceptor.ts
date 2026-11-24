@@ -1,8 +1,33 @@
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+} from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
+import { InjectMetric, makeCounterProvider } from '@willsoto/nestjs-prometheus';
+import { Counter } from 'prom-client';
 import { AuditLogService } from '../services/audit-log.service';
 import { SensitiveAuditAction } from '../entities/sensitive-audit-log.entity';
+
+/** Placeholder actor recorded when no authenticated principal can be resolved. */
+export const ANONYMOUS_ACTOR = 'anonymous';
+
+/** Metric that alerts when an authenticated PHI access cannot be attributed. */
+export const PHI_AUDIT_ANONYMOUS_ROWS_METRIC = 'medchain_phi_audit_anonymous_rows_total';
+
+/**
+ * Counter incremented whenever an *authenticated* request produces a PHI audit
+ * row that cannot be attributed to an actor or a tenant. A non-zero rate means
+ * the audit trail can no longer answer "who accessed this patient's record".
+ */
+export const PhiAuditAnonymousRowsCounter = makeCounterProvider({
+  name: PHI_AUDIT_ANONYMOUS_ROWS_METRIC,
+  help: 'PHI audit rows written for an authenticated request without an attributable actor or tenant',
+  labelNames: ['reason'],
+});
 
 /**
  * PhiAuditInterceptor — records every PHI access to the append-only `audit_log`
@@ -13,20 +38,40 @@ import { SensitiveAuditAction } from '../entities/sensitive-audit-log.entity';
  */
 @Injectable()
 export class PhiAuditInterceptor implements NestInterceptor {
-  constructor(private readonly auditLogService: AuditLogService) {}
+  private readonly logger = new Logger(PhiAuditInterceptor.name);
+
+  constructor(
+    private readonly auditLogService: AuditLogService,
+    @InjectMetric(PHI_AUDIT_ANONYMOUS_ROWS_METRIC)
+    private readonly anonymousRowsCounter: Counter<string>,
+  ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest();
     const { method, url, user, ip, headers, params, query, body } = request;
 
-    const actorAddress: string = user?.id ?? 'anonymous';
+    // The JWT principal (see JwtStrategy) carries `userId` and `organizationId`.
+    const actorAddress: string = user?.userId ?? user?.id ?? ANONYMOUS_ACTOR;
     const actorRole: string | null = user?.role ?? null;
-    const tenantId: string | null = user?.tenantId ?? null;
+    const tenantId: string | null = user?.organizationId ?? user?.tenantId ?? null;
     const ipAddress: string = ip ?? request.connection?.remoteAddress ?? '';
     const patientId: string | null = this.extractPatientId(params, query, body, url);
 
     return next.handle().pipe(
       tap(async () => {
+        // HIPAA: every PHI access must name the actor and the tenant. Writing a
+        // row for an authenticated principal that resolved to an anonymous
+        // actor (or a null tenant) is a compliance defect — surface it on an
+        // alertable metric and in the logs rather than silently.
+        if (user) {
+          if (actorAddress === ANONYMOUS_ACTOR) {
+            this.reportUnattributedAccess('missing_actor', method, url);
+          }
+          if (!tenantId) {
+            this.reportUnattributedAccess('missing_tenant', method, url);
+          }
+        }
+
         try {
           await this.auditLogService.log({
             actorAddress,
@@ -43,6 +88,18 @@ export class PhiAuditInterceptor implements NestInterceptor {
           // Never let an audit failure crash the request
         }
       }),
+    );
+  }
+
+  /** Emits the alerting metric and an error log for an unattributable row. */
+  private reportUnattributedAccess(
+    reason: 'missing_actor' | 'missing_tenant',
+    method: string,
+    url: string,
+  ): void {
+    this.anonymousRowsCounter.inc({ reason });
+    this.logger.error(
+      `PHI audit row is not attributable (${reason}) for an authenticated request: ${method} ${url}`,
     );
   }
 

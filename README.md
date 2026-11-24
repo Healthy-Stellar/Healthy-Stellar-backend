@@ -1,4 +1,174 @@
-# Healthcare Backend
+# Handsoff
+
+Handsoff is a NestJS backend for clinical operations: patient records, appointments, pharmacy, laboratory, analytics, and integrations.
+
+## Getting started
+## Table of Contents
+
+- [Project Structure](#project-structure)
+- [Local Development with Docker](#local-development-with-docker)
+- [Background Worker Process](#background-worker-process)
+- [Getting Started](#getting-started)
+- [Configuration](#configuration)
+- [Scripts Reference](#scripts-reference)
+- [Authentication & Authorization](#authentication--authorization)
+- [Security Headers](#security-headers)
+- [API Endpoints](#api-endpoints)
+- [Webhooks](#webhooks)
+- [Postman Collection](#postman-collection)
+- [Database Schema](#database-schema)
+- [Multi-Tenancy](#multi-tenancy)
+- [Error Handling](#error-handling)
+- [Testing](#testing)
+- [Deployment](#deployment)
+
+## Project Structure
+
+### Entry points
+
+| File | Purpose |
+|---|---|
+| `src/main.ts` | HTTP API process — bootstraps the NestJS app, applies global middleware, starts listening |
+| `src/worker.ts` | BullMQ worker process — runs queue processors without exposing an HTTP port |
+| `src/worker.module.ts` | NestJS module that wires only the queue processors (no HTTP layer) |
+| `packages/sdk/` | Auto-generated TypeScript client SDK published to npm |
+
+---
+
+### Module map
+
+Modules are grouped below by domain. Each entry is a top-level directory under `src/`.
+
+#### Clinical
+
+| Directory | Description |
+|---|---|
+| `patients/` | Patient registry, demographics, geo-restrictions, notification preferences |
+| `medical-records/` | Core medical records with version control, consent, clinical notes, attachments |
+| `records/` | Versioned record storage with IPFS anchoring and Stellar event-sourcing |
+| `pharmacy/` | Drugs, prescriptions, drug interactions, recalls, inventory, controlled substances |
+| `laboratory/` | Lab orders, results, specimens, equipment, quality control |
+| `appointments/` | Scheduling, consultations, doctor availability |
+| `diagnosis/` | Diagnosis management and ICD code handling |
+| `treatment-planning/` | Care plans, clinical guidelines, decision-support alerts |
+| `medication-administration/` | MAR (Medication Administration Record), barcode verification, adverse reactions |
+| `infection-control/` | Outbreak tracking, isolation protocols, antibiotic resistance surveillance |
+| `emergency-operations/` | Triage, rapid-response teams, critical care coordination |
+| `emergency-medical-info/` | Break-glass emergency access to patient data |
+| `pathology/` | Histology, cytology, genetic testing, digital pathology |
+| `hospital-registry/` | Hospital and facility configuration |
+
+#### Billing & Finance
+
+| Directory | Description |
+|---|---|
+| `billing/` | Claims, invoices, insurance, payment processing |
+
+#### Blockchain & Data Integrity
+
+| Directory | Description |
+|---|---|
+| `stellar/` | Stellar Horizon / Soroban SDK wrapper, transaction retry/recovery |
+| `stellar-stream/` | Real-time Stellar event streaming and re-indexing |
+| `ledger-reconciliation/` | Detects discrepancies between the DB and on-chain state |
+| `reconciliation/` | General data reconciliation jobs |
+| `blockchain/` | Low-level blockchain utilities and abstract contract interface |
+| `event-store/` | Append-only event-sourcing store for domain aggregates |
+| `projections/` | CQRS read-model projections built from the event store |
+
+#### Platform / Infrastructure
+
+| Directory | Description |
+|---|---|
+| `app.module.ts` | Root module — wires all application modules together |
+| `common/` | Shared DTOs, interceptors, filters, guards, audit, pagination, throttler, circuit-breaker |
+| `config/` | Database config, env validation schema, logger config |
+| `auth/` | JWT, MFA, API keys, session management, OIDC/OAuth2 |
+| `OAuth2/` | OIDC provider module (wraps the auth OIDC flow) |
+| `rbac/` | Role-Based Access Control policy engine |
+| `roles/` | Medical RBAC decorators and guards (MedicalRole enum, MedicalRbacGuard) |
+| `access-control/` | Fine-grained access grants, revocations, and consent enforcement |
+| `tenant/` | Multi-tenancy — tenant resolution, Row-Level Security (RLS), tenant context |
+| `tenant-config/` | Per-tenant feature flags and configuration overrides |
+| `notifications/` | WebSocket gateway, transactional outbox, email, notification preferences |
+| `queues/` | BullMQ job queues, DLQ, queue dashboard |
+| `graphql/` | Apollo GraphQL server, subscriptions, dataloaders, cursor pagination |
+| `pubsub/` | GraphQL PubSub transport (Redis-backed) |
+| `subscriptions/` | GraphQL subscription lifecycle management |
+| `metrics/` | Prometheus metrics, Grafana dashboards, SLO tracking |
+| `health/` | `/health` endpoint (Terminus health indicators) |
+| `analytics/` | Admin statistics and platform-level activity tracking |
+| `jobs/` | Scheduled background jobs (cron-based) |
+| `data-retention/` | Automated data-retention policy enforcement |
+| `webhooks/` | Outbound webhook delivery, signature verification |
+| `idempotency/` | Idempotency-key middleware for safe request replays |
+| `dlq/` | Dead-letter queue inspection and replay |
+| `incident/` | Incident tracking and escalation |
+| `operator-runbook/` | Runbook endpoints for on-call operators |
+| `versioning/` | API versioning helpers and deprecation interceptor |
+| `admin/` | Admin-only endpoints, user management, system configuration |
+| `security/` | Security headers config, IP allowlist, brute-force detection |
+| `key-management/` | AWS KMS / local envelope encryption, DEK rotation |
+| `encryption/` | PHI field-level encryption (AES-GCM, deterministic column transforms) |
+| `i18n/` | Internationalisation (nestjs-i18n), translation files, i18n exception filter |
+| `feature-flags/` | Runtime feature-flag evaluation |
+| `circuit-breaker/` _(under `common/`)_ | Cockatiel-based circuit breaker for external calls |
+
+#### Compliance & GDPR
+
+| Directory | Description |
+|---|---|
+| `gdpr/` | GDPR data-subject requests (access, erasure, portability) |
+| `data-residency/` | Geo-based data residency enforcement |
+| `fhir/` | FHIR R4 resource mapping and bulk export |
+| [`research-export/`](docs/research-export.md) | De-identified, k-anonymous data exports for research — see the [research export & de-identification guide](docs/research-export.md) |
+| `ehr-import/` | Structured import of external EHR data (HL7, CSV) |
+| `governance-analytics/` | Compliance dashboards and governance metrics |
+| `consistency-checker/` | Cross-system data consistency validation |
+
+---
+
+### Directories that need cleanup ⚠️
+
+The following directories are **named after GitHub issues** rather than their domain, which makes the codebase harder to navigate. They contain valid implementations but should be renamed or merged in a future clean-up PR.
+
+| Directory | Status | Recommended action |
+|---|---|---|
+| `src/Auto-Generate TypeScript Client SDK from OpenAPI Spec/` | Duplicate — CI workflows only | Move workflows to `.github/workflows/`; delete directory |
+| `src/SwaggerOpenAPI Documentation with Full Schema Coverage/` | Contains `export-openapi.ts` | Move script to `scripts/`; delete directory |
+| `src/Profile and Optimize Database Query Performance Under Load/` | Contains benchmark scripts | Merge into `scripts/`; delete directory |
+| `src/profile-and-optimize-database-query-performance-under-load/` | Duplicate of above (different casing) | Delete after merging |
+| `src/Dockerfile and Docker Compose for Production-Ready Containerization/` | Contains CI yml files | Move to `.github/workflows/`; delete directory |
+| `src/Build Admin Analytics Dashboard Endpoints/` | Unclear overlap with `analytics/` | Audit and merge or delete |
+| `src/Telemedicine and Remote/` | Contains spaces in name; likely overlaps with… | Merge into `telemedicine-and-remote/` and delete |
+| `src/telemedicine-and-remote/` | …this directory | Keep this one; delete the spaced variant |
+| `src/Tenant Provisioning and Onboarding Workflow/` | Overlaps with… | Merge into `tenant-provisioning-and-onboarding-workflow/` |
+| `src/tenant-provisioning-and-onboarding-workflow/` | …this directory | Keep; delete the spaced variant |
+| `src/Department and Ward Management/` | Unclear if wired into app.module | Audit and either wire or delete |
+| `src/Surgical Management System/` | Unclear if wired into app.module | Audit and either wire or delete |
+| `src/Email Notification Service for Critical Access Events/` | Likely superseded by `notifications/` | Audit and delete if redundant |
+| `src/Hospital config/` | Likely superseded by `hospital-registry/` | Audit and merge or delete |
+| `src/Migration-CLI/` | Likely superseded by TypeORM CLI scripts | Audit and delete if redundant |
+| `src/modules/` | Contains a `patient` sub-module alongside `src/patients/` | Audit which is canonical; delete the other |
+
+> Track clean-up work in a dedicated issue. Do not import from the spaced-name directories in new code.
+
+## Local Development with Docker
+
+| Service  | Container   | Port(s)                | Purpose                    |
+| -------- | ----------- | ---------------------- | -------------------------- |
+| api      | hs-api      | 3000                   | NestJS app with hot reload |
+| worker   | hs-worker   | -                      | BullMQ queue processors    |
+| postgres | hs-postgres | 5432                   | PostgreSQL 15              |
+| redis    | hs-redis    | 6379                   | Redis 7                    |
+| mailhog  | hs-mailhog  | 1025 (SMTP), 8025 (UI) | Local email capture        |
+
+```bash
+cp .env.docker .env.docker.local
+docker compose -f docker-compose.local.yml up --build
+docker compose -f docker-compose.local.yml exec api npm run migration:run
+docker compose -f docker-compose.local.yml exec api npm run seed
+```
 
 A production-grade healthcare backend built with NestJS, PostgreSQL, Redis, and Stellar.
 
@@ -87,7 +257,7 @@ cp .env.example .env
 | IPFS | `IPFS_NODE_URL`, `IPFS_GATEWAY`, `IPFS_FALLBACK_GATEWAY` |
 | Email / SMTP | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM_ADDRESS` |
 | Telemedicine | `TELEMEDICINE_SIGNALING_URL`, `TELEMEDICINE_TOKEN_SECRET` |
-| Research export | `RESEARCH_EXPORT_BUCKET`, `RESEARCH_K_ANONYMITY` |
+| Research export | `RESEARCH_EXPORT_BUCKET`, `RESEARCH_EXPORT_HASH_SALT`, `RESEARCH_K_ANONYMITY` (+ `ANONYMIZATION_SALT`) — see [docs/research-export.md](docs/research-export.md) |
 | EHR import | `EHR_IMPORT_S3_BUCKET`, `EHR_IMPORT_MAX_RETRIES` |
 | GraphQL subscriptions | `SUBSCRIPTIONS_IDLE_TIMEOUT_MS`, `SUBSCRIPTIONS_MAX_PER_CONNECTION` |
 | Ops / alerting | `OPS_SLACK_WEBHOOK_URL`, `QUEUE_DEPTH_THRESHOLD` |

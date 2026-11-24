@@ -17,7 +17,10 @@ import { RedisLockService } from './utils/redis-lock.service';
 import { QueryPerformanceController } from './controllers/query-performance.controller';
 import { ErrorDocumentationController } from './controllers/error-documentation.controller';
 import { CacheModule } from './cache/cache.module';
-import { PhiAuditInterceptor } from './interceptors/phi-audit.interceptor';
+import {
+  PhiAuditInterceptor,
+  PhiAuditAnonymousRowsCounter,
+} from './interceptors/phi-audit.interceptor';
 
 @Global()
 @Module({
@@ -26,6 +29,7 @@ import { PhiAuditInterceptor } from './interceptors/phi-audit.interceptor';
   providers: [
     AuditLogService,
     PhiAuditInterceptor,
+    PhiAuditAnonymousRowsCounter,
     DataEncryptionService,
     TracingService,
     QueryPerformanceMonitor,
@@ -44,6 +48,7 @@ import { PhiAuditInterceptor } from './interceptors/phi-audit.interceptor';
   exports: [
     AuditLogService,
     PhiAuditInterceptor,
+    PhiAuditAnonymousRowsCounter,
     DataEncryptionService,
     TracingService,
     QueryPerformanceMonitor,
