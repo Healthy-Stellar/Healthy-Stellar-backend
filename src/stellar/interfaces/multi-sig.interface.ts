@@ -21,7 +21,6 @@ export interface SignerEntry {
 }
 
 export class CreateMultiSigPaymentDto {
-  tenantId: string;
   destination: string;
   amount: string;
   asset?: string;
@@ -29,7 +28,6 @@ export class CreateMultiSigPaymentDto {
 }
 
 export class ApproveRejectDto {
-  signerId: string;
   reason?: string;
 }
 

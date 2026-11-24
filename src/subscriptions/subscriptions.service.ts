@@ -17,9 +17,17 @@ export class SubscriptionsService {
   ) {}
 
   assertPatientAccess(requestedPatientId: string, contextPatientId: string): void {
-    if (requestedPatientId !== contextPatientId) {
+    if (!contextPatientId || requestedPatientId !== contextPatientId) {
       throw new ForbiddenException(
         'FORBIDDEN: You can only subscribe to events for your own patient record.',
+      );
+    }
+  }
+
+  assertJobAccess(requestedJobId: string, contextUserId: string, jobOwnerId?: string): void {
+    if (!contextUserId || !jobOwnerId || jobOwnerId !== contextUserId) {
+      throw new ForbiddenException(
+        'FORBIDDEN: You can only subscribe to status updates for your own jobs.',
       );
     }
   }

@@ -4,6 +4,7 @@ import {
   ExecutionContext,
   CallHandler,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -39,6 +40,35 @@ export class TenantInterceptor implements NestInterceptor {
       }
     }
 
+    // Resolve the tenant from the authenticated principal. The header/subdomain
+    // is only a hint that must match the principal's tenant (SUPER_ADMIN may
+    // target any tenant). This prevents a user from switching tenants by
+    // spoofing the X-Tenant-ID header.
+    const user = request.user;
+    if (user) {
+      const isSuperAdmin = user.role === 'SUPER_ADMIN';
+      const principalTenantId = user.organizationId ?? user.tenantId;
+
+      if (!isSuperAdmin) {
+        if (!principalTenantId) {
+          throw new ForbiddenException('Authenticated principal is not bound to a tenant');
+        }
+
+        if (tenantSlug) {
+          const hintedTenant = await this.tenantService.findBySlug(tenantSlug);
+          if (!hintedTenant || hintedTenant.id !== principalTenantId) {
+            throw new ForbiddenException('Tenant does not match authenticated principal');
+          }
+        } else {
+          const principalTenant = await this.tenantService.findById(principalTenantId);
+          if (!principalTenant) {
+            throw new ForbiddenException('Tenant does not match authenticated principal');
+          }
+          tenantSlug = principalTenant.slug;
+        }
+      }
+    }
+
     if (!tenantSlug) {
       throw new BadRequestException('Tenant identifier not found in request');
     }
@@ -48,6 +78,15 @@ export class TenantInterceptor implements NestInterceptor {
 
     if (!tenant || tenant.status !== 'active') {
       throw new BadRequestException('Invalid or inactive tenant');
+    }
+
+    // Enforce membership after authentication: the resolved tenant must match
+    // the authenticated principal's tenant unless the principal is SUPER_ADMIN.
+    if (user && user.role !== 'SUPER_ADMIN') {
+      const principalTenantId = user.organizationId ?? user.tenantId;
+      if (!principalTenantId || principalTenantId !== tenant.id) {
+        throw new ForbiddenException('Tenant does not match authenticated principal');
+      }
     }
 
     const schemaName = `tenant_${tenant.slug}`;

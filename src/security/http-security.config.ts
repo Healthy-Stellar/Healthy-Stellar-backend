@@ -35,7 +35,9 @@ export const buildHelmetOptions = (): Parameters<typeof helmet>[0] => ({
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
       workerSrc: ["'none'"],
-      // Directive values vary by environment (see above)
+      // Directive values vary by environment (see above).  The nonce function
+      // is appended here so the tested config is the single source of truth
+      // for the CSP script-src directive (Issue #1240).
       scriptSrc: [
         ...swaggerAssets.scriptSrc,
         (_req, res: any) => `'nonce-${res.locals.nonce}'`,

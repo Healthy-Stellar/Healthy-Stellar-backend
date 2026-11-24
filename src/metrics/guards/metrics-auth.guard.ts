@@ -1,134 +1,151 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { BlockList, isIP } from 'node:net';
 import {
   Injectable,
   CanActivate,
   ExecutionContext,
+  Logger,
   UnauthorizedException,
   ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 
+const IPV4_MAPPED_PREFIX = '::ffff:';
+
+type IpFamily = 'ipv4' | 'ipv6';
+
+function normalizeIp(raw: string): string {
+  const ip = raw.trim();
+
+  if (
+    ip.toLowerCase().startsWith(IPV4_MAPPED_PREFIX) &&
+    isIP(ip.slice(IPV4_MAPPED_PREFIX.length)) === 4
+  ) {
+    return ip.slice(IPV4_MAPPED_PREFIX.length);
+  }
+
+  return ip;
+}
+
+/**
+ * Build a matcher from an explicit allowlist. Returns null when no allowlist is
+ * configured, which means no network-based bypass is available.
+ */
+function buildAllowlist(raw: string, logger: Logger): BlockList | null {
+  const entries = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const blockList = new BlockList();
+
+  for (const entry of entries) {
+    const [address, prefix, ...rest] = entry.split('/');
+    const family = isIP(address);
+
+    if (rest.length > 0 || family === 0) {
+      logger.warn(`Ignoring invalid METRICS_ALLOWED_NETWORKS entry: "${entry}"`);
+      continue;
+    }
+
+    const type: IpFamily = family === 4 ? 'ipv4' : 'ipv6';
+
+    if (prefix === undefined) {
+      blockList.addAddress(address, type);
+      continue;
+    }
+
+    const maxPrefix = family === 4 ? 32 : 128;
+    const prefixLength = Number(prefix);
+
+    if (!/^\d+$/.test(prefix) || prefixLength > maxPrefix) {
+      logger.warn(
+        `Ignoring invalid METRICS_ALLOWED_NETWORKS entry: "${entry}" (prefix must be 0-${maxPrefix})`,
+      );
+      continue;
+    }
+
+    blockList.addSubnet(address, prefixLength, type);
+  }
+
+  return blockList;
+}
+
+function isAllowlisted(blockList: BlockList | null, ip: string | undefined): boolean {
+  if (!blockList || !ip) {
+    return false;
+  }
+
+  const normalized = normalizeIp(ip);
+  const family = isIP(normalized);
+
+  if (family === 4) {
+    return blockList.check(normalized, 'ipv4');
+  }
+
+  if (family === 6) {
+    return blockList.check(normalized, 'ipv6');
+  }
+
+  return false;
+}
+
+/**
+ * Constant-time comparison. Hashing first keeps the digests the same length, so
+ * `timingSafeEqual` cannot throw for tokens of different lengths.
+ */
+function tokensMatch(provided: string, expected: string): boolean {
+  const providedDigest = createHash('sha256').update(provided, 'utf8').digest();
+  const expectedDigest = createHash('sha256').update(expected, 'utf8').digest();
+
+  return timingSafeEqual(providedDigest, expectedDigest);
+}
+
 @Injectable()
 export class MetricsAuthGuard implements CanActivate {
+  private readonly logger = new Logger(MetricsAuthGuard.name);
   private readonly metricsToken: string;
-  private readonly allowedNetworks: string[];
+  private readonly allowedNetworks: BlockList | null;
 
   constructor(private readonly configService: ConfigService) {
-    this.metricsToken = this.configService.get<string>('METRICS_TOKEN', '');
-    this.allowedNetworks = this.configService
-      .get<string>('METRICS_ALLOWED_NETWORKS', '127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')
-      .split(',')
-      .map((network) => network.trim());
+    this.metricsToken = this.configService.get<string>('METRICS_TOKEN', '') ?? '';
+
+    const configuredNetworks = this.configService.get<string>('METRICS_ALLOWED_NETWORKS', '') ?? '';
+    this.allowedNetworks = buildAllowlist(configuredNetworks, this.logger);
   }
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
-    const clientIp = this.getClientIp(request);
 
-    // Check if request is from internal network
-    if (this.isInternalNetwork(clientIp)) {
+    // Only trust Express' client IP. It honours X-Forwarded-For exclusively
+    // according to the application's `trust proxy` setting.
+    const clientIp = request.ip;
+
+    // Network access is opt-in: with no allowlist configured, the token is
+    // required even for loopback and container/private-network callers.
+    if (isAllowlisted(this.allowedNetworks, clientIp)) {
       return true;
     }
 
-    // Check for METRICS_TOKEN header
-    const token = request.headers['x-metrics-token'] as string;
-    
     if (!this.metricsToken) {
-      // If no token is configured, only allow internal network access
-      throw new ForbiddenException(
-        'Metrics endpoint is only accessible from internal network',
-      );
+      throw new ForbiddenException('Metrics access is not configured');
     }
 
-    if (!token) {
+    const token = request.headers['x-metrics-token'];
+
+    if (typeof token !== 'string' || token.length === 0) {
       throw new UnauthorizedException('METRICS_TOKEN header is required');
     }
 
-    if (token !== this.metricsToken) {
+    if (!tokensMatch(token, this.metricsToken)) {
       throw new UnauthorizedException('Invalid METRICS_TOKEN');
     }
 
     return true;
-  }
-
-  private getClientIp(request: Request): string {
-    // Check X-Forwarded-For header first (for proxied requests)
-    const forwardedFor = request.headers['x-forwarded-for'];
-    if (forwardedFor) {
-      const ips = Array.isArray(forwardedFor)
-        ? forwardedFor[0]
-        : forwardedFor;
-      return ips.split(',')[0].trim();
-    }
-
-    // Check X-Real-IP header
-    const realIp = request.headers['x-real-ip'];
-    if (realIp) {
-      return Array.isArray(realIp) ? realIp[0] : realIp;
-    }
-
-    // Fall back to socket address
-    return request.socket.remoteAddress || '0.0.0.0';
-  }
-
-  private isInternalNetwork(ip: string): boolean {
-    // Normalize IPv6 localhost
-    if (ip === '::1' || ip === '::ffff:127.0.0.1') {
-      return true;
-    }
-
-    // Check localhost
-    if (ip === '127.0.0.1' || ip === 'localhost') {
-      return true;
-    }
-
-    // Check against allowed networks
-    for (const network of this.allowedNetworks) {
-      if (this.ipMatchesNetwork(ip, network)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private ipMatchesNetwork(ip: string, network: string): boolean {
-    // Simple IP matching (exact match or CIDR notation)
-    if (ip === network) {
-      return true;
-    }
-
-    // Handle CIDR notation (basic implementation)
-    if (network.includes('/')) {
-      const [networkIp, prefixLength] = network.split('/');
-      const prefix = parseInt(prefixLength, 10);
-      
-      // Convert IPs to binary and compare
-      const ipBinary = this.ipToBinary(ip);
-      const networkBinary = this.ipToBinary(networkIp);
-      
-      if (ipBinary && networkBinary) {
-        return ipBinary.substring(0, prefix) === networkBinary.substring(0, prefix);
-      }
-    }
-
-    return false;
-  }
-
-  private ipToBinary(ip: string): string | null {
-    const parts = ip.split('.');
-    if (parts.length !== 4) {
-      return null;
-    }
-
-    return parts
-      .map((part) => {
-        const num = parseInt(part, 10);
-        if (isNaN(num) || num < 0 || num > 255) {
-          return null;
-        }
-        return num.toString(2).padStart(8, '0');
-      })
-      .join('');
   }
 }

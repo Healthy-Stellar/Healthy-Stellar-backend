@@ -80,7 +80,8 @@ export class SubscriptionsResolver {
     subscriptionType: string,
   ): { handle: string; terminate: () => void } {
     const connectionId = ctx.connectionId ?? 'unknown';
-    const userId = ctx.user?.sub ?? 'anonymous';
+    // Access tokens carry `userId` (not `sub`); fall back to `sub` for legacy tokens.
+    const userId = ctx.user?.userId ?? ctx.user?.sub ?? 'anonymous';
     let terminateFn: () => void = () => {};
     const handle = this.rateLimiter.registerSubscription(
       userId,
@@ -188,6 +189,8 @@ export class SubscriptionsResolver {
     @Args('jobId', { type: () => ID }) jobId: string,
     @Context() ctx: SubscriptionContext,
   ): AsyncGenerator<JobStatusEvent> {
+    // Ownership check: only the user who owns the job may watch its status.
+    this.subscriptionsService.assertJobAccess(jobId, ctx.user?.userId ?? ctx.user?.sub);
     const { handle } = this.registerWithRateLimiter(ctx, 'jobStatusUpdated');
     return withDisconnectCleanup(
       this.subscriptionsService.getJobStatusIterator(jobId),

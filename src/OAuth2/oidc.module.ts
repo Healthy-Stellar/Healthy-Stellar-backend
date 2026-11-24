@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 
-import { OidcIdentity } from './entities/oidc-identity.entity';
+import { OidcIdentity } from './oidc-identity.entity';
 import { OidcClientRegistry, OidcStrategy } from './oidc.strategy';
 import { OidcService } from './oidc.service';
 import { OidcController } from './oidc.controller';

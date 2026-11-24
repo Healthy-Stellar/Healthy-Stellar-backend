@@ -13,6 +13,7 @@ export enum AccessLevel {
 }
 
 export enum GrantStatus {
+  PENDING_CHAIN = 'PENDING_CHAIN',
   ACTIVE = 'ACTIVE',
   EXPIRING = 'EXPIRING',
   REVOKED = 'REVOKED',

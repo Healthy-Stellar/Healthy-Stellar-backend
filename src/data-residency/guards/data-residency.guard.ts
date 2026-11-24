@@ -8,7 +8,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { DataResidencyService } from '../services/data-residency.service';
-import { TenantService } from '../../tenant/tenant.service';
+import { TenantService } from '../../tenant/services/tenant.service';
+import { TenantContext } from '../../tenant/context/tenant.context';
 
 /**
  * Guard to enforce data residency compliance
@@ -35,10 +36,16 @@ export class DataResidencyGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    const tenantId = request.user?.tenantId;
+    const principal = (
+      request as Request & { user?: { organizationId?: string | null } }
+    ).user;
+    const tenantId = principal?.organizationId || TenantContext.getTenantId();
 
-    // Skip if no tenant context (public endpoints)
+    // Public requests may have no tenant. Authenticated requests may not.
     if (!tenantId) {
+      if (principal) {
+        throw new ForbiddenException('Authenticated request has no tenant');
+      }
       return true;
     }
 

@@ -4,7 +4,7 @@ module.exports = {
     {
       displayName: 'unit',
       testMatch: ['<rootDir>/src/**/*.spec.ts'],
-      moduleFileExtensions: ['js', 'json', 'ts'],
+      moduleFileExtensions: ['ts', 'js', 'json'],
       rootDir: '.',
       transform: {
         '^.+\\.(t|j)s$': 'ts-jest',
@@ -48,7 +48,7 @@ module.exports = {
     {
       displayName: 'compliance',
       testMatch: ['<rootDir>/test/compliance/**/*.spec.ts'],
-      moduleFileExtensions: ['js', 'json', 'ts'],
+      moduleFileExtensions: ['ts', 'js', 'json'],
       rootDir: '.',
       transform: {
         '^.+\\.(t|j)s$': 'ts-jest',
@@ -68,7 +68,7 @@ module.exports = {
     {
       displayName: 'e2e',
       testMatch: ['<rootDir>/test/**/*.e2e-spec.ts'],
-      moduleFileExtensions: ['js', 'json', 'ts'],
+      moduleFileExtensions: ['ts', 'js', 'json'],
       rootDir: '.',
       transform: {
         '^.+\\.(t|j)s$': 'ts-jest',

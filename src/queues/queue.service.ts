@@ -15,6 +15,25 @@ interface JobDispatchResult {
   correlationId: string;
 }
 
+/**
+ * Identity of the caller on whose behalf a job is dispatched. Persisted on the
+ * job payload so that status lookups can be scoped to the owner / tenant.
+ */
+export interface JobOwnerContext {
+  initiatedBy?: string;
+  tenantId?: string;
+}
+
+/**
+ * Caller context used when reading job status. `isAdmin` indicates the caller
+ * is an admin of `tenantId`.
+ */
+export interface JobAccessContext {
+  userId?: string;
+  tenantId?: string;
+  isAdmin?: boolean;
+}
+
 @Injectable()
 export class QueueService {
   private readonly logger = new Logger(QueueService.name);
@@ -44,10 +63,56 @@ export class QueueService {
   }
 
   /**
+   * Merge ownership metadata into the job payload before signing.
+   */
+  private withOwner(
+    data: Record<string, any>,
+    owner?: JobOwnerContext,
+  ): Record<string, any> {
+    return {
+      ...data,
+      initiatedBy: owner?.initiatedBy ?? data.initiatedBy,
+      tenantId: owner?.tenantId ?? data.tenantId,
+    };
+  }
+
+  /**
+   * Determine whether the caller may access the given job. Returns true when
+   * the caller initiated the job, or is an admin of the job's tenant.
+   */
+  private canAccessJob(job: Job, access?: JobAccessContext): boolean {
+    const jobOwner = job.data?.initiatedBy;
+    const jobTenant = job.data?.tenantId;
+
+    if (access?.isAdmin && access.tenantId && jobTenant) {
+      if (access.tenantId === jobTenant) {
+        return true;
+      }
+    }
+
+    if (access?.userId && jobOwner && access.userId === jobOwner) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Throw NotFoundException (not Forbidden) when the caller is not allowed to
+   * see the job, so that other users' jobs are indistinguishable from missing.
+   */
+  private assertJobAccess(job: Job, access?: JobAccessContext): void {
+    if (!this.canAccessJob(job, access)) {
+      throw new NotFoundException(`Job with ID ${job.id} not found`);
+    }
+  }
+
+  /**
    * Dispatch Soroban contract write operation to background queue
    */
   async dispatchContractWrite(
     jobData: StellarTransactionJobDto,
+    owner?: JobOwnerContext,
   ): Promise<JobDispatchResult> {
     return this.tracingService.withSpan('queue.dispatch.contractWrite', async (span) => {
       span.setAttribute('queue.name', QUEUE_NAMES.CONTRACT_WRITES);
@@ -58,11 +123,16 @@ export class QueueService {
       const traceContext: Record<string, string> = {};
       propagation.inject(context.active(), traceContext);
 
-      const enrichedJobData = this.signedPayload({
-        ...jobData,
-        traceContext,
-        traceId: this.tracingService.getCurrentTraceId(),
-      });
+      const enrichedJobData = this.signedPayload(
+        this.withOwner(
+          {
+            ...jobData,
+            traceContext,
+            traceId: this.tracingService.getCurrentTraceId(),
+          },
+          owner,
+        ),
+      );
 
       const job = await this.contractWritesQueue.add(
         jobData.operationType,
@@ -102,6 +172,7 @@ export class QueueService {
    */
   async dispatchStellarTransaction(
     jobData: StellarTransactionJobDto,
+    owner?: JobOwnerContext,
   ): Promise<JobDispatchResult> {
     return this.tracingService.withSpan(
       'queue.dispatch.stellarTransaction',
@@ -115,11 +186,16 @@ export class QueueService {
         propagation.inject(context.active(), traceContext);
 
         // Add trace context to job data
-        const enrichedJobData = this.signedPayload({
-          ...jobData,
-          traceContext,
-          traceId: this.tracingService.getCurrentTraceId(),
-        });
+        const enrichedJobData = this.signedPayload(
+          this.withOwner(
+            {
+              ...jobData,
+              traceContext,
+              traceId: this.tracingService.getCurrentTraceId(),
+            },
+            owner,
+          ),
+        );
 
         const job = await this.stellarQueue.add(
           jobData.operationType,
@@ -157,7 +233,10 @@ export class QueueService {
   /**
    * Dispatch IPFS upload to background queue
    */
-  async dispatchIpfsUpload(jobData: any): Promise<JobDispatchResult> {
+  async dispatchIpfsUpload(
+    jobData: any,
+    owner?: JobOwnerContext,
+  ): Promise<JobDispatchResult> {
     return this.tracingService.withSpan('queue.dispatch.ipfsUpload', async (span) => {
       span.setAttribute('queue.name', QUEUE_NAMES.IPFS_UPLOADS);
       span.setAttribute('queue.correlation_id', jobData.correlationId);
@@ -165,11 +244,16 @@ export class QueueService {
       const traceContext: Record<string, string> = {};
       propagation.inject(context.active(), traceContext);
 
-      const enrichedJobData = this.signedPayload({
-        ...jobData,
-        traceContext,
-        traceId: this.tracingService.getCurrentTraceId(),
-      });
+      const enrichedJobData = this.signedPayload(
+        this.withOwner(
+          {
+            ...jobData,
+            traceContext,
+            traceId: this.tracingService.getCurrentTraceId(),
+          },
+          owner,
+        ),
+      );
 
       const job = await this.ipfsQueue.add('upload', enrichedJobData, {
         jobId: jobData.correlationId,
@@ -197,7 +281,10 @@ export class QueueService {
   /**
    * Dispatch event indexing job to background queue
    */
-  async dispatchEventIndexing(jobData: any): Promise<JobDispatchResult> {
+  async dispatchEventIndexing(
+    jobData: any,
+    owner?: JobOwnerContext,
+  ): Promise<JobDispatchResult> {
     return this.tracingService.withSpan(
       'queue.dispatch.eventIndexing',
       async (span) => {
@@ -207,11 +294,16 @@ export class QueueService {
         const traceContext: Record<string, string> = {};
         propagation.inject(context.active(), traceContext);
 
-        const enrichedJobData = this.signedPayload({
-          ...jobData,
-          traceContext,
-          traceId: this.tracingService.getCurrentTraceId(),
-        });
+        const enrichedJobData = this.signedPayload(
+          this.withOwner(
+            {
+              ...jobData,
+              traceContext,
+              traceId: this.tracingService.getCurrentTraceId(),
+            },
+            owner,
+          ),
+        );
 
         const job = await this.eventIndexingQueue.add(
           'indexEvent',
@@ -244,7 +336,10 @@ export class QueueService {
   /**
    * Get job status by job ID
    */
-  async getJobStatusById(jobId: string): Promise<any> {
+  async getJobStatusById(
+    jobId: string,
+    access?: JobAccessContext,
+  ): Promise<any> {
     const queues = [
       this.contractWritesQueue,
       this.stellarQueue,
@@ -258,9 +353,13 @@ export class QueueService {
       try {
         const job = await queue.getJob(jobId);
         if (job) {
-          return await this.buildJobStatusResponse(job);
+          this.assertJobAccess(job, access);
+          return await this.buildJobStatusResponse(job, access);
         }
       } catch (error) {
+        if (error instanceof NotFoundException) {
+          throw error;
+        }
         this.logger.debug(
           `Job ${jobId} not found in queue ${queue.name}`,
         );
@@ -275,12 +374,12 @@ export class QueueService {
   /**
    * Subscribe to job status updates in real-time
    */
-  subscribeToJob(jobId: string): Observable<any> {
+  subscribeToJob(jobId: string, access?: JobAccessContext): Observable<any> {
     return new Observable((subscriber) => {
       let isUnsubscribed = false;
 
       // 1. First yield the current status
-      this.getJobStatusById(jobId)
+      this.getJobStatusById(jobId, access)
         .then((currentStatus) => {
           if (isUnsubscribed) return;
           subscriber.next(currentStatus);
@@ -299,7 +398,7 @@ export class QueueService {
           const listener = (eventData: any) => {
             if (isUnsubscribed) return;
             // Fetch fresh status to ensure consistent formatting and accurate data
-            this.getJobStatusById(jobId)
+            this.getJobStatusById(jobId, access)
               .then((status) => {
                 if (isUnsubscribed) return;
                 subscriber.next(status);
@@ -338,7 +437,10 @@ export class QueueService {
   /**
    * Get job status by correlation ID (legacy support)
    */
-  async getJobStatus(correlationId: string): Promise<any> {
+  async getJobStatus(
+    correlationId: string,
+    access?: JobAccessContext,
+  ): Promise<any> {
     const queues = [
       this.contractWritesQueue,
       this.stellarQueue,
@@ -362,9 +464,13 @@ export class QueueService {
         );
 
         if (job) {
-          return await this.buildJobStatusResponse(job);
+          this.assertJobAccess(job, access);
+          return await this.buildJobStatusResponse(job, access);
         }
       } catch (error) {
+        if (error instanceof NotFoundException) {
+          throw error;
+        }
         this.logger.debug(
           `Error searching jobs in queue ${queue.name}: ${(error as Error).message}`,
         );
@@ -379,25 +485,41 @@ export class QueueService {
   /**
    * Build normalized job status response — params field is intentionally omitted
    * to prevent PHI/sensitive contract data from leaking via the status API.
+   *
+   * When the caller is not the job owner (e.g. a tenant admin viewing another
+   * user's job), only status/progress metadata is returned; result and error
+   * payloads are withheld.
    */
-  private async buildJobStatusResponse(job: Job): Promise<any> {
+  private async buildJobStatusResponse(
+    job: Job,
+    access?: JobAccessContext,
+  ): Promise<any> {
     const state = await job.getState();
     const progress = job.progress || 0;
     const failedReason = job.failedReason;
+    const isOwner = !!access?.userId && access.userId === job.data?.initiatedBy;
 
-    return {
+    const base = {
       jobId: job.id,
       correlationId: job.data.correlationId,
       status: this.mapJobState(state),
       progress: typeof progress === 'number' ? progress : 0,
       attempts: job.attemptsMade,
-      error: failedReason || null,
-      result: job.returnvalue || null,
       createdAt: new Date(job.timestamp).toISOString(),
       startedAt: job.processedOn ? new Date(job.processedOn).toISOString() : null,
       completedAt: job.finishedOn
         ? new Date(job.finishedOn).toISOString()
         : null,
+    };
+
+    if (!isOwner) {
+      return base;
+    }
+
+    return {
+      ...base,
+      error: failedReason || null,
+      result: job.returnvalue || null,
     };
   }
 

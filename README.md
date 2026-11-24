@@ -170,64 +170,32 @@ docker compose -f docker-compose.local.yml exec api npm run migration:run
 docker compose -f docker-compose.local.yml exec api npm run seed
 ```
 
-- API: http://localhost:3000
-- Swagger: http://localhost:3000/api
-- MailHog: http://localhost:8025
+A production-grade healthcare backend built with NestJS, PostgreSQL, Redis, and Stellar.
 
-The `src/` directory is bind-mounted; NestJS runs with `--watch` so changes reload automatically.
+## Deployment
 
-```bash
-docker compose -f docker-compose.local.yml logs -f api      # Follow API logs
-docker compose -f docker-compose.local.yml logs -f worker   # Follow Worker logs
-docker compose -f docker-compose.local.yml down             # keep volumes
-docker compose -f docker-compose.local.yml down -v          # wipe volumes
-```
+### Single-scheduler requirement (distributed cron locking)
 
-> `.env.docker` contains placeholder secrets for local use only. Never use outside local dev.
+This application schedules background work with `@Cron` decorators (subscription
+renewals, appointment reminders, notification digests, compliance reports, backups,
+escalations, cleanups, and more). When the API runs with more than one replica, every
+replica would otherwise execute every scheduled job, producing duplicate charges,
+emails, reports, and concurrent `pg_dump`s.
 
-## Background Worker Process
+To prevent this, scheduled jobs are guarded by a shared `@WithDistributedLock()`
+decorator backed by `RedisLockService`. Each job acquires a Redis lock keyed by the
+job name and the current tick before running; replicas that fail to acquire the lock
+skip that tick. Lock acquisition failures are logged and treated as a skip rather
+than a crash.
 
-The backend application uses [BullMQ](https://bullmq.io/) for managing and executing background queues. This is essential for offloading heavy operations or interacting with the Stellar blockchain without blocking the main HTTP event loop of the API service.
+Operational requirements:
 
-The worker process is defined in `src/worker.ts` and `src/worker.module.ts`.
-
-> For how `src/blockchain/`, `src/stellar/`, and `src/stellar-stream/` fit
-> together and interact with this worker process — including which parts are
-> fully wired up versus built-but-not-yet-connected — see
-> [`docs/STELLAR_ARCHITECTURE.md`](docs/STELLAR_ARCHITECTURE.md).
-
-### Key Responsibilities
-
-The worker processes tasks from several queues:
-
-- **`contract-writes`**: Schedules and signs write transactions to Stellar Soroban smart contracts.
-- **`stellar-transactions`**: Manages blockchain transaction submission and retry logic.
-- **`event-indexing`**: Scrapes and indexes events emitted by the smart contracts.
-- **`ipfs-uploads`**: Uploads records/PHI hashes to IPFS.
-- **`email-notifications`**: Sends transactional and notification emails.
-- **`reports`**: Processes PDF/CSV healthcare compliance report generation.
-- **`fhir-bulk-export` / `ehr-import`**: Processes FHIR/EHR batch data imports and exports.
-
-### Running the Worker
-
-#### With Docker Compose (Local Dev)
-
-The worker is included in `docker-compose.local.yml` and runs automatically when you spin up the project:
-
-```bash
-docker compose -f docker-compose.local.yml up --build
-```
-
-#### Bare Metal (Without Docker)
-
-If you run the NestJS API locally using `npm run start:dev`, you **MUST** also start the worker process in a separate terminal:
-
-```bash
-npm run start:worker:dev
-```
-
-The application will be available at `http://localhost:3000`.
-Swagger documentation will be available at `http://localhost:3000/api`.
+- A shared Redis instance MUST be reachable by all replicas so the lock is visible
+  cluster-wide. Do not run replicas against isolated Redis instances.
+- Keep replica clocks reasonably synchronized (NTP) so tick keys align.
+- If you prefer a dedicated scheduler process, run exactly one replica with
+  `SCHEDULER_ENABLED=true` and set it to `false` on the others; the distributed lock
+  remains a safety net for rolling deploys and misconfiguration.
 
 ## Getting Started
 
@@ -322,6 +290,8 @@ Copy `.env.example` to `.env`. Key sections:
 ### Data residency and multi-region routing
 
 The backend supports region-aware tenant database routing across four regions: **EU**, **US**, **APAC**, and **AFRICA**. Each tenant declares a residency region and, when `strictDataResidency` is enabled, requests are rejected with `403 Forbidden` if they attempt to access data outside the configured region.
+
+The residency guard resolves authenticated tenants from the JWT `organizationId` claim, falling back to the active `TenantContext`. Authenticated requests without a resolvable tenant are rejected; requests without an authenticated principal or tenant context are treated as public. Strict tenants are checked against configured allowed IP ranges and any supplied `X-Region-Hint`. Forwarded client IP headers are trusted only when the immediate connection is from an IP listed in `DATA_RESIDENCY_TRUSTED_PROXIES`.
 
 Each region has its own set of environment variables for database, Stellar Horizon, and IPFS configuration:
 
@@ -554,12 +524,21 @@ npm run test:compliance  # HIPAA/GDPR compliance tests
 
 ## Deployment
 
+Production runs two processes from the same image: the HTTP API (`dist/main`) and the BullMQ worker (`dist/worker`). Migrations are **not** applied automatically (`migrationsRun: false`), so they must be run explicitly before each release.
+
 ```bash
-npm install
-npm run start:dev
+npm ci && npm run build          # build the image / bundle
+npm run migration:run            # apply pending migrations (once per release)
+npm run start:prod               # API process
+npm run start:worker:prod        # worker process (separate container/instance)
 ```
 
-The API is served under the global prefix `/api`. Swagger docs are available at `/api/docs`.
+- Set `NODE_ENV=production` and provide the mandatory secrets (JWT, KMS/encryption, Stellar/Soroban, webhook secrets) — see [docs/deployment.md](docs/deployment.md).
+- Liveness: `GET /health`; readiness: `GET /health/ready`.
+- The API is served under the global prefix `/api`; Swagger docs are at `/api/docs`.
+- Running more than one replica requires disabling or leader-electing the in-process cron sweeps (break-glass, session cleanup, missed-dose detection).
+
+The full guide — prerequisites, image build, required env/secrets, migration and backup env vars, scaling caveats, TLS/reverse-proxy expectations, and the release/rollback checklist — is in **[docs/deployment.md](docs/deployment.md)**. Operator procedures are indexed in [docs/runbooks/README.md](docs/runbooks/README.md).
 
 ## Route overview
 

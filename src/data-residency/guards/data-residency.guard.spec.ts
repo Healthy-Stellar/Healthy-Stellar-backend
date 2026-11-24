@@ -1,8 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataResidencyGuard } from '../guards/data-residency.guard';
 import { DataResidencyService } from '../services/data-residency.service';
-import { TenantService } from '../../tenant/tenant.service';
+import { TenantService } from '../../tenant/services/tenant.service';
+import { TenantContext } from '../../tenant/context/tenant.context';
 import { DataResidencyRegion } from '../../enums/data-residency.enum';
 
 describe('DataResidencyGuard', () => {
@@ -20,7 +22,7 @@ describe('DataResidencyGuard', () => {
   const mockExecutionContext = {
     switchToHttp: () => ({
       getRequest: () => ({
-        user: { tenantId: 'tenant-123' },
+        user: { organizationId: 'tenant-123' },
         headers: {
           'x-forwarded-for': '10.10.10.10',
         },
@@ -43,6 +45,16 @@ describe('DataResidencyGuard', () => {
           provide: TenantService,
           useValue: {
             findById: jest.fn(),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string, defaultValue?: string) =>
+              key === 'DATA_RESIDENCY_TRUSTED_PROXIES'
+                ? '127.0.0.1'
+                : defaultValue,
+            ),
           },
         },
       ],
@@ -71,6 +83,51 @@ describe('DataResidencyGuard', () => {
         contextWithoutUser as ExecutionContext,
       );
       expect(result).toBe(true);
+    });
+
+    it('should fail closed for an authenticated request without a resolvable tenant', async () => {
+      const contextWithoutTenant = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            user: { userId: 'user-123', organizationId: null },
+            headers: {},
+            socket: { remoteAddress: '127.0.0.1' },
+          }),
+        }),
+      } as any;
+
+      await expect(guard.canActivate(contextWithoutTenant)).rejects.toThrow(
+        'Authenticated request has no tenant',
+      );
+      expect(tenantService.findById).not.toHaveBeenCalled();
+    });
+
+    it('should resolve tenant from TenantContext when the principal has no organization claim', async () => {
+      jest.spyOn(tenantService, 'findById').mockResolvedValue({
+        ...mockTenant,
+        strictDataResidency: false,
+      });
+
+      await TenantContext.run(
+        {
+          tenantId: 'tenant-123',
+          tenantSlug: 'tenant-123',
+          schemaName: 'tenant_tenant_123',
+        },
+        async () => {
+          const context = {
+            switchToHttp: () => ({
+              getRequest: () => ({
+                user: { userId: 'user-123', organizationId: null },
+                headers: {},
+                socket: { remoteAddress: '127.0.0.1' },
+              }),
+            }),
+          } as any;
+          await expect(guard.canActivate(context)).resolves.toBe(true);
+        },
+      );
+      expect(tenantService.findById).toHaveBeenCalledWith('tenant-123');
     });
 
     it('should throw when tenant not found', async () => {
@@ -129,7 +186,7 @@ describe('DataResidencyGuard', () => {
       const contextWithMismatchedRegion = {
         switchToHttp: () => ({
           getRequest: () => ({
-            user: { tenantId: 'tenant-123' },
+            user: { organizationId: 'tenant-123' },
             headers: {
               'x-forwarded-for': '10.10.10.10',
               'x-region-hint': 'US',
@@ -151,7 +208,7 @@ describe('DataResidencyGuard', () => {
         .mockReturnValue(true);
 
       const mockRequest = {
-        user: { tenantId: 'tenant-123' },
+        user: { organizationId: 'tenant-123' },
         headers: { 'x-forwarded-for': '10.10.10.10' },
         socket: { remoteAddress: '127.0.0.1' },
       };

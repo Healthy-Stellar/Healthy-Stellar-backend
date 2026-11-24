@@ -57,6 +57,20 @@ import { IdempotencyEntity } from './entities/idempotency.entity';
 import { GdprModule } from '../gdpr/gdpr.module';
 import { DevicesModule } from '../devices/devices.module';
 
+function extractWsToken(connectionParams: any): string | null {
+  if (!connectionParams) {
+    return null;
+  }
+  const authHeader = connectionParams.Authorization ?? connectionParams.authorization;
+  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+    return authHeader.slice('Bearer '.length).trim() || null;
+  }
+  if (typeof connectionParams.token === 'string' && connectionParams.token.trim()) {
+    return connectionParams.token.trim();
+  }
+  return null;
+}
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([Patient, Record, AccessGrant, User, IdempotencyEntity]),
@@ -167,6 +181,100 @@ import { DevicesModule } from '../devices/devices.module';
                     await auditLogService.log({
                       entityType: 'GraphQLSubscription',
                       entityId: payload.userId,
-                    
+                      action: 'CONNECTION_FAILED',
+                      userId: payload.userId,
+                      changes: { reason: 'connection_limit' },
+                      metadata: {
+                        clientIp,
+                        reason: error instanceof Error ? error.message : 'Connection limit exceeded',
+                      },
+                    });
+                    throw new GraphQLError('Connection limit exceeded', {
+                      extensions: { code: 'TOO_MANY_REQUESTS' },
+                    });
+                  }
 
-/* … truncated 3355 chars — edit only what you need near the top … */
+                  return {
+                    userId: payload.userId,
+                    sessionId: payload.sessionId,
+                    connectionId,
+                  };
+                } catch (error) {
+                  if (error instanceof GraphQLError) {
+                    throw error;
+                  }
+                  throw new GraphQLError('Unauthorized', {
+                    extensions: { code: 'UNAUTHENTICATED' },
+                  });
+                }
+              },
+              onDisconnect: async (ctx: any) => {
+                const connectionId = ctx?.connectionParams?.connectionId;
+                const userId = ctx?.connectionParams?.userId;
+                if (connectionId && userId) {
+                  await graphqlPubSubService.unregisterConnection(userId, connectionId);
+                }
+              },
+            },
+          },
+
+          context: ({ req, connectionParams }: any) => ({
+            req,
+            connectionParams,
+          }),
+
+          formatError: (error: GraphQLError) => {
+            const originalError = error.extensions?.originalError as any;
+            const statusCode = originalError?.statusCode ?? originalError?.status;
+            if (statusCode === 401) {
+              return {
+                ...error,
+                extensions: { ...error.extensions, code: 'UNAUTHENTICATED' },
+              };
+            }
+            if (statusCode === 403) {
+              return {
+                ...error,
+                extensions: { ...error.extensions, code: 'FORBIDDEN' },
+              };
+            }
+            return error;
+          },
+        };
+      },
+    }),
+    GdprModule,
+    DevicesModule,
+  ],
+  providers: [
+    GqlAuthGuard,
+    GqlRolesGuard,
+    DataLoaderService,
+    UserDataLoader,
+    RecordDataLoader,
+    MedicalRecordResolver,
+    PatientResolver,
+    RecordsResolver,
+    AccessGrantsResolver,
+    UsersResolver,
+    AuditLogsResolver,
+    TenantsResolver,
+    RealtimeEventsResolver,
+    QueryResolver,
+    MedicalRecordFieldResolver,
+    AccessGrantFieldResolver,
+    AuditLogFieldResolver,
+    MutationResolver,
+    RecordEventsResolver,
+    IdempotencyService,
+    ApqService,
+    ComplexityPlugin,
+    ApqPlugin,
+    {
+      provide: PUB_SUB,
+      useFactory: () => new PubSub(),
+    },
+  ],
+  exports: [DataLoaderService, IdempotencyService, ApqService],
+})
+export class HealthyGraphQLModule {}

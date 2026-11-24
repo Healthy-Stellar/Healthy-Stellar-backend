@@ -3,11 +3,11 @@ import { MultiSigController } from './multi-sig.controller';
 import { MultiSigTransactionService } from '../services/multi-sig-transaction.service';
 import {
   CreateMultiSigPaymentDto,
-  ApproveRejectDto,
   MultiSigTransactionResponse,
   MultiSigTransactionStatus,
   SignatureStatus,
 } from '../interfaces/multi-sig.interface';
+import { UserRole } from '../../auth/entities/user.entity';
 
 describe('MultiSigController', () => {
   let controller: MultiSigController;
@@ -62,7 +62,6 @@ describe('MultiSigController', () => {
   describe('createPayment', () => {
     it('should extract requesterId from req.user.userId and call createMultiSigPayment', async () => {
       const dto: CreateMultiSigPaymentDto = {
-        tenantId: 'tenant-test',
         destination: 'GBZXN7PIRZGNMHGA728R374UOGSDKAEEVYNOAO6B4OAXF7YR3K2N45UA',
         amount: '50000',
         asset: 'XLM',
@@ -70,7 +69,7 @@ describe('MultiSigController', () => {
       const req = {
         user: {
           userId: 'user-auth-123',
-          tenantId: 'tenant-test',
+          organizationId: 'tenant-test',
         },
       };
 
@@ -82,35 +81,24 @@ describe('MultiSigController', () => {
       expect(mockMultiSigService.createMultiSigPayment).toHaveBeenCalledWith(
         dto,
         'user-auth-123',
+        'tenant-test',
       );
     });
 
-    it('should pass undefined as requesterId if req.user is absent, with no system fallback', async () => {
+    it('should reject users without an organization', async () => {
       const dto: CreateMultiSigPaymentDto = {
-        tenantId: 'tenant-test',
         destination: 'GBZXN7PIRZGNMHGA728R374UOGSDKAEEVYNOAO6B4OAXF7YR3K2N45UA',
         amount: '50000',
         asset: 'XLM',
       };
-      const req = {};
-
-      mockMultiSigService.createMultiSigPayment.mockResolvedValue(mockResponse);
-
-      const result = await controller.createPayment(dto, req);
-
-      expect(result).toEqual(mockResponse);
-      expect(mockMultiSigService.createMultiSigPayment).toHaveBeenCalledWith(
-        dto,
-        undefined,
-      );
+      await expect(
+        controller.createPayment(dto, { user: { userId: 'user-auth-123', organizationId: '' } }),
+      ).rejects.toThrow('Authenticated user has no organization');
     });
   });
 
   describe('approvePayment', () => {
-    it('should delegate to multiSigService.approveTransaction with transaction id and dto', async () => {
-      const dto: ApproveRejectDto = {
-        signerId: 'signer-1',
-      };
+    it('should use the authenticated user as signer', async () => {
       const approvedResponse = {
         ...mockResponse,
         status: MultiSigTransactionStatus.APPROVED,
@@ -118,19 +106,22 @@ describe('MultiSigController', () => {
 
       mockMultiSigService.approveTransaction.mockResolvedValue(approvedResponse);
 
-      const result = await controller.approvePayment('tx-12345', dto);
+      const result = await controller.approvePayment('tx-12345', {
+        user: { userId: 'signer-1', organizationId: 'tenant-test' },
+      });
 
       expect(result).toEqual(approvedResponse);
-      expect(mockMultiSigService.approveTransaction).toHaveBeenCalledWith('tx-12345', dto);
+      expect(mockMultiSigService.approveTransaction).toHaveBeenCalledWith(
+        'tx-12345',
+        'tenant-test',
+        'signer-1',
+      );
     });
   });
 
   describe('rejectPayment', () => {
-    it('should delegate to multiSigService.rejectTransaction with transaction id and reason', async () => {
-      const dto: ApproveRejectDto = {
-        signerId: 'signer-2',
-        reason: 'Unauthorized amount',
-      };
+    it('should use the authenticated user as signer and pass the rejection reason', async () => {
+      const dto = { reason: 'Unauthorized amount' };
       const rejectedResponse = {
         ...mockResponse,
         status: MultiSigTransactionStatus.REJECTED,
@@ -138,10 +129,17 @@ describe('MultiSigController', () => {
 
       mockMultiSigService.rejectTransaction.mockResolvedValue(rejectedResponse);
 
-      const result = await controller.rejectPayment('tx-12345', dto);
+      const result = await controller.rejectPayment('tx-12345', dto, {
+        user: { userId: 'signer-2', organizationId: 'tenant-test' },
+      });
 
       expect(result).toEqual(rejectedResponse);
-      expect(mockMultiSigService.rejectTransaction).toHaveBeenCalledWith('tx-12345', dto);
+      expect(mockMultiSigService.rejectTransaction).toHaveBeenCalledWith(
+        'tx-12345',
+        'tenant-test',
+        'signer-2',
+        'Unauthorized amount',
+      );
     });
   });
 
@@ -160,19 +158,24 @@ describe('MultiSigController', () => {
     it('should return transaction status from multiSigService', async () => {
       mockMultiSigService.getTransactionStatus.mockResolvedValue(mockResponse);
 
-      const result = await controller.getPaymentStatus('tx-12345');
+      const result = await controller.getPaymentStatus('tx-12345', {
+        user: { userId: 'user-auth-123', organizationId: 'tenant-test' },
+      });
 
       expect(result).toEqual(mockResponse);
-      expect(mockMultiSigService.getTransactionStatus).toHaveBeenCalledWith('tx-12345');
+      expect(mockMultiSigService.getTransactionStatus).toHaveBeenCalledWith(
+        'tx-12345',
+        'tenant-test',
+      );
     });
   });
 
   describe('listPending', () => {
-    it('should extract tenantId from req.user.tenantId, ignoring req.query spoofing', async () => {
+    it('should extract tenantId from req.user.organizationId, ignoring req.query spoofing', async () => {
       const req = {
         user: {
           userId: 'user-auth-123',
-          tenantId: 'authentic-tenant-id',
+          organizationId: 'authentic-tenant-id',
         },
         query: {
           tenantId: 'spoofed-tenant-id',
@@ -189,19 +192,15 @@ describe('MultiSigController', () => {
       );
     });
 
-    it('should pass undefined tenantId when user is absent', async () => {
-      const req = {
-        query: {
-          tenantId: 'spoofed-tenant-id',
-        },
-      };
-
-      mockMultiSigService.listPendingTransactions.mockResolvedValue([]);
-
-      const result = await controller.listPending(req);
-
-      expect(result).toEqual([]);
-      expect(mockMultiSigService.listPendingTransactions).toHaveBeenCalledWith(undefined);
+    it('should reject users without an organization', async () => {
+      await expect(
+        controller.listPending({ user: { userId: 'user-auth-123', organizationId: '' } }),
+      ).rejects.toThrow('Authenticated user has no organization');
     });
+  });
+
+  it('restricts sweep to admins', () => {
+    const roles = Reflect.getMetadata('roles', MultiSigController.prototype.sweepApprovedPayments);
+    expect(roles).toEqual([UserRole.ADMIN]);
   });
 });

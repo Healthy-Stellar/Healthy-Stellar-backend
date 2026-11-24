@@ -9,6 +9,10 @@ already have access to the production environment.
 > [`src/operator-runbook/`](../../src/operator-runbook/) and is unrelated to the
 > Markdown procedures in this directory.
 
+**Related:** for the release and rollback checklist, the migration step, required
+secrets, and how the API and worker processes are deployed, see the
+[Deployment Guide](../deployment.md).
+
 ## Runbooks
 
 | Procedure | Purpose |

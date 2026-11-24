@@ -21,6 +21,11 @@ import { QueueEventsListener } from './queue-events.listener';
 import { RecordsModule } from '../records/records.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuthModule } from '../auth/auth.module';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AccessGrant } from '../access-control/entities/access-grant.entity';
+import { AccessRequest } from '../access-control/entities/access-request.entity';
+import { SorobanQueueService } from '../access-control/services/soroban-queue.service';
+import { AccessGrantDispatchProcessor } from '../access-control/services/access-grant-dispatch.processor';
 
 /**
  * QueueModule
@@ -50,6 +55,8 @@ export class QueueModule {
         PanicAlertProcessor,
         // Pharmacy background processors
         PharmacyReorderAlertProcessor,
+        AccessGrantDispatchProcessor,
+        SorobanQueueService,
       ]
       : [QueueEventsListener];
 
@@ -59,6 +66,7 @@ export class QueueModule {
         // AuthModule provides AuthTokenService and SessionManagementService
         // required by BullBoardAuthMiddleware
         AuthModule,
+        TypeOrmModule.forFeature([AccessGrant, AccessRequest]),
 
         // BlockchainModule provides StellarContractService used by ContractWritesProcessor.
         BlockchainModule,
@@ -107,6 +115,7 @@ export class QueueModule {
           { name: QUEUE_NAMES.EHR_IMPORT },
           { name: QUEUE_NAMES.USER_CSV_IMPORT },
           { name: QUEUE_NAMES.PHARMACY_REORDER_ALERTS },
+          { name: QUEUE_NAMES.ACCESS_GRANT_DISPATCH },
         ),
 
         // Bull Board dashboard — only useful when the HTTP server is running.
@@ -144,6 +153,10 @@ export class QueueModule {
         }),
         BullBoardModule.forFeature({
           name: QUEUE_NAMES.PHARMACY_REORDER_ALERTS,
+          adapter: BullMQAdapter,
+        }),
+        BullBoardModule.forFeature({
+          name: QUEUE_NAMES.ACCESS_GRANT_DISPATCH,
           adapter: BullMQAdapter,
         }),
 

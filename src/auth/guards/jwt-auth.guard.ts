@@ -1,16 +1,34 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { AuthTokenService } from '../services/auth-token.service';
-import { SessionManagementService } from '../services/session-management.service';
-import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
-import { ALLOW_MFA_PENDING_KEY } from '../decorators/allow-mfa-pending.decorator';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { Request } from 'express';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { TenantContext } from '../../tenant/context/tenant.context';
+
+interface AuthenticatedUser {
+  id?: string;
+  sub?: string;
+  organizationId?: string;
+  tenantId?: string;
+  role?: string;
+  roles?: string[];
+  [key: string]: unknown;
+}
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
-    private authTokenService: AuthTokenService,
-    private sessionManagementService: SessionManagementService,
-    private reflector: Reflector,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+    private readonly reflector: Reflector,
+    private readonly tenantContext: TenantContext,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -18,68 +36,60 @@ export class JwtAuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-
     if (isPublic) {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<Request>();
     const token = this.extractTokenFromHeader(request);
-
     if (!token) {
-      throw new UnauthorizedException('No token provided');
+      throw new UnauthorizedException('Authentication token is missing');
     }
 
-    const allowMfaPending =
-      this.reflector.getAllAndOverride<boolean>(ALLOW_MFA_PENDING_KEY, [
-        context.getHandler(),
-        context.getClass(),
-      ]) === true;
-
+    let payload: AuthenticatedUser;
     try {
-      // MFA-pending tokens (password step only) are refused here unless the
-      // route is one of the MFA challenge endpoints.
-      const payload = this.authTokenService.verifyAccessToken(token, { allowMfaPending });
-
-      if (!payload) {
-        throw new UnauthorizedException('Invalid token');
-      }
-
-      // Verify session is still active
-      const isSessionValid = await this.sessionManagementService.isSessionValid(payload.sessionId);
-
-      if (!isSessionValid) {
-        throw new UnauthorizedException('Session expired or revoked');
-      }
-
-      // Update session activity
-      await this.sessionManagementService.updateSessionActivity(payload.sessionId);
-
-      // Attach user info to request
-      request.user = payload;
-      request.sessionId = payload.sessionId;
-
-      // Propagate the verified identity to the AsyncLocalStorage request
-      // context so services (appointment / consultation scoping, audit
-      // actorId) see the real caller rather than undefined.
-      setRequestContextUser(payload);
-
-      return true;
-    } catch (error) {
-      if (error instanceof UnauthorizedException) {
-        throw error;
-      }
-      throw new UnauthorizedException('Invalid or expired token');
+      payload = await this.jwtService.verifyAsync<AuthenticatedUser>(token, {
+        secret: this.configService.get<string>('JWT_SECRET'),
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired authentication token');
     }
+
+    (request as Request & { user?: AuthenticatedUser }).user = payload;
+
+    // Resolve the tenant from the authenticated principal. The client header is
+    // only a hint and must match the principal's tenant (SUPER_ADMIN may switch).
+    const principalTenantId = payload.organizationId ?? payload.tenantId;
+    const headerTenantId = this.extractTenantFromHeader(request);
+    const isSuperAdmin =
+      payload.role === 'SUPER_ADMIN' ||
+      (Array.isArray(payload.roles) && payload.roles.includes('SUPER_ADMIN'));
+
+    if (headerTenantId && !isSuperAdmin && headerTenantId !== principalTenantId) {
+      throw new ForbiddenException('Access to the requested tenant is denied');
+    }
+
+    const resolvedTenantId = isSuperAdmin
+      ? headerTenantId ?? principalTenantId
+      : principalTenantId;
+
+    if (resolvedTenantId) {
+      this.tenantContext.setTenantId(resolvedTenantId);
+    }
+
+    return true;
   }
 
-  private extractTokenFromHeader(request: any): string | undefined {
-    const authHeader = request.headers.authorization;
-    if (!authHeader) {
-      return undefined;
-    }
-
-    const [type, token] = authHeader.split(' ');
+  private extractTokenFromHeader(request: Request): string | undefined {
+    const [type, token] = request.headers.authorization?.split(' ') ?? [];
     return type === 'Bearer' ? token : undefined;
+  }
+
+  private extractTenantFromHeader(request: Request): string | undefined {
+    const header = request.headers['x-tenant-id'];
+    if (Array.isArray(header)) {
+      return header[0];
+    }
+    return header;
   }
 }
