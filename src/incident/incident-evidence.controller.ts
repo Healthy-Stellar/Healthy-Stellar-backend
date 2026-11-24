@@ -6,12 +6,10 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { API_BEARER_AUTH_SCHEME } from '../common/constants/swagger.constants';
-import { Request } from 'express';
 import { IncidentEvidenceService } from './incident-evidence.service';
 import {
   CaptureIncidentDto,
@@ -20,20 +18,25 @@ import {
   UpdateIncidentNotesDto,
 } from './dto/incident.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { UserRole } from '../auth/entities/user.entity';
+import { JwtPayload } from '../auth/services/auth-token.service';
 
-@ApiTags('incidents')
+@ApiTags('incident-evidence')
 @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
-@UseGuards(JwtAuthGuard)
-@Controller('incidents')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.COMPLIANCE_OFFICER)
+@Controller('incidents/evidence')
 export class IncidentEvidenceController {
   constructor(private readonly service: IncidentEvidenceService) {}
 
   @Post()
   @ApiOperation({ summary: 'Capture a structured incident evidence bundle' })
   @ApiResponse({ status: 201, description: 'Evidence bundle persisted' })
-  capture(@Body() dto: CaptureIncidentDto, @Req() req: Request) {
-    const triggeredBy = dto.triggeredBy ?? (req.user as any)?.id ?? 'unknown';
-    return this.service.capture({ ...dto, triggeredBy });
+  capture(@Body() dto: CaptureIncidentDto, @CurrentUser() user: JwtPayload) {
+    return this.service.capture({ ...dto, triggeredBy: user.userId });
   }
 
   @Get()
@@ -49,14 +52,13 @@ export class IncidentEvidenceController {
   }
 
   @Patch(':id/resolve')
-  @ApiOperation({ summary: 'Mark an incident as resolved' })
+  @ApiOperation({ summary: 'Mark an incident evidence bundle as resolved' })
   resolve(
     @Param('id') id: string,
     @Body() dto: ResolveIncidentDto,
-    @Req() req: Request,
+    @CurrentUser() user: JwtPayload,
   ) {
-    const resolvedBy = (req.user as any)?.id ?? 'unknown';
-    return this.service.resolve(id, dto, resolvedBy);
+    return this.service.resolve(id, dto, user.userId);
   }
 
   @Patch(':id/notes')
