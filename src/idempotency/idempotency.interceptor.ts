@@ -61,7 +61,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
       throw new UnprocessableEntityException('Idempotency-Key must be 256 characters or fewer');
     }
 
-    // Principal is populated by JwtStrategy; tenant is the DB-validated one set by TenantInterceptor.
+    // Principal is populated by JwtAuthGuard; tenant is the DB-validated one set by TenantInterceptor.
     // Client-supplied headers are never used for namespacing. Anonymous requests are not cached.
     const userId: string | undefined = req.medicalUser?.id;
     const tenantId: string | undefined = TenantContext.getTenantId();

@@ -50,7 +50,7 @@ export class PhiAuditInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest();
     const { method, url, user, ip, headers, params, query, body } = request;
 
-    // The JWT principal (see JwtStrategy) carries `userId` and `organizationId`.
+    // The JWT principal (see JwtAuthGuard) carries `userId` and `organizationId`.
     const actorAddress: string = user?.userId ?? user?.id ?? ANONYMOUS_ACTOR;
     const actorRole: string | null = user?.role ?? null;
     const tenantId: string | null = user?.organizationId ?? user?.tenantId ?? null;

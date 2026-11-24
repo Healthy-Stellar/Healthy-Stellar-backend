@@ -33,6 +33,17 @@ export interface VerifyAccessTokenOptions {
 /** Lifetime of the MFA-pending token returned by POST /auth/login. */
 export const MFA_PENDING_TOKEN_TTL_SECONDS = 5 * 60;
 
+/**
+ * The single MFA-pending rule. Every verifier (REST guard, GraphQL, WS, Bull
+ * Board) goes through this so the rule cannot drift between transports.
+ */
+export function isMfaPendingRejected(
+  payload: { mfaPending?: boolean },
+  allowMfaPending: boolean = false,
+): boolean {
+  return payload.mfaPending === true && !allowMfaPending;
+}
+
 export interface TokenPair {
   accessToken: string;
   refreshToken: string;
@@ -130,7 +141,7 @@ export class AuthTokenService {
       return null;
     }
 
-    if (payload.mfaPending && !options.allowMfaPending) {
+    if (isMfaPendingRejected(payload, options.allowMfaPending)) {
       return null;
     }
 
