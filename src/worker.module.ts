@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { createRedisRetryStrategy } from './common/utils/connection-retry.util';
 import { QUEUE_NAMES } from './queues/queue.constants';
 import { ContractWritesProcessor } from './queues/processors/contract-writes.processor';
@@ -11,6 +12,7 @@ import { QueueEventsListener } from './queues/queue-events.listener';
 import { DatabaseModule } from './database/database.module';
 import { CommonModule } from './common/common.module';
 import { QueueModule } from './queues/queue.module';
+import { DatabaseConfig } from './config/database.config';
 
 /**
  * WorkerModule
@@ -26,6 +28,9 @@ import { QueueModule } from './queues/queue.module';
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
+
+    // The access-grant worker persists confirmation state in the primary database.
+    TypeOrmModule.forRootAsync({ useClass: DatabaseConfig }),
 
     // Database (needed for processors)
     DatabaseModule,
