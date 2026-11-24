@@ -158,10 +158,22 @@ export class OAuth2Controller {
 
     let decodedToken: any;
     try {
-      // Decode the JWT to get the user ID, scopes, and original sessionId
-      decodedToken = this.jwt.verify(dto.refresh_token, { ignoreExpiration: true });
+      // Decode the JWT to get the user ID, scopes, and original sessionId.
+      // Expiration is enforced here so an expired refresh token is rejected
+      // regardless of the TTL applied by the Redis store.
+      decodedToken = this.jwt.verify(dto.refresh_token);
     } catch (err) {
       throw new UnauthorizedException('invalid_grant: invalid refresh token');
+    }
+
+    if (decodedToken.type !== 'refresh') {
+      throw new UnauthorizedException('invalid_grant: token is not a refresh token');
+    }
+
+    if (decodedToken.client_id !== dto.client_id) {
+      throw new UnauthorizedException(
+        'invalid_grant: refresh token was not issued to this client',
+      );
     }
 
     const sessionId = decodedToken.sessionId;
@@ -172,7 +184,16 @@ export class OAuth2Controller {
     // This validates rotation and detects reuse via the Redis store
     await this.refreshTokenStore.consumeAndValidate(sessionId, dto.refresh_token);
 
-    const smartScopes = this.filterSmartScopes(decodedToken.scope);
+    // Constrain the new grant to the original grant intersected with the
+    // scopes the client is registered for.
+    const grantedScopes = this.filterSmartScopes(decodedToken.scope);
+    const allowedScopes = client.allowedScopes ?? [];
+    const smartScopes = grantedScopes.filter((scope) => allowedScopes.includes(scope));
+
+    if (smartScopes.length === 0) {
+      throw new BadRequestException('invalid_scope: no granted scope is allowed for this client');
+    }
+
     return this.generateTokenResponse(decodedToken.sub, smartScopes, dto.client_id, ctx, sessionId);
   }
 
