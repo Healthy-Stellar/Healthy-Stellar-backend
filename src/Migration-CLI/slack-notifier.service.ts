@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { redactConnectionStrings } from './redact';
 
 export interface SlackMigrationPayload {
   event: 'migration_started' | 'migration_success' | 'migration_failed' | 'migration_reverted';
@@ -119,7 +120,7 @@ export class SlackNotifierService {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Error*:\n\`\`\`${payload.error.substring(0, 1000)}\`\`\``,
+          text: `*Error*:\n\`\`\`${redactConnectionStrings(payload.error).substring(0, 1000)}\`\`\``,
         },
       });
     }

@@ -1,12 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
+import { redactConnectionStrings } from './redact';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface BackupResult {
   success: boolean;
@@ -57,22 +58,21 @@ export class BackupService {
         fs.mkdirSync(backupDir, { recursive: true });
       }
 
-      const { connectionString, pgDumpArgs } = this.buildPgDumpArgs(backupPath);
-
-      const { stdout, stderr } = await execAsync(
-        `pg_dump ${pgDumpArgs}`,
+      // No shell, no credentials in argv. A non-zero exit code rejects the promise.
+      await execFileAsync(
+        'pg_dump',
+        [
+          '--format=custom',
+          '--compress=6',
+          `--file=${backupPath}`,
+          '--no-owner',
+          '--no-acl',
+        ],
         {
-          env: {
-            ...process.env,
-            PGPASSWORD: this.extractPassword(connectionString),
-          },
+          env: { ...process.env, ...this.buildPgEnv() },
           timeout: parseInt(process.env.MIGRATION_BACKUP_TIMEOUT_MS ?? '120000', 10),
         },
       );
-
-      if (stderr && !stderr.includes('warning')) {
-        throw new Error(`pg_dump stderr: ${stderr}`);
-      }
 
       const durationMs = Date.now() - startMs;
       const stats = fs.statSync(backupPath);
@@ -89,7 +89,9 @@ export class BackupService {
       };
     } catch (err: unknown) {
       const durationMs = Date.now() - startMs;
-      const message = err instanceof Error ? err.message : String(err);
+      const message = redactConnectionStrings(
+        err instanceof Error ? err.message : String(err),
+      );
       this.logger.error(`Pre-migration backup failed: ${message}`);
 
       const blockOnFailure =
@@ -114,45 +116,31 @@ export class BackupService {
     }
   }
 
-  private buildPgDumpArgs(outputPath: string): {
-    connectionString: string;
-    pgDumpArgs: string;
-  } {
-    const connectionString =
-      process.env.DATABASE_URL ??
-      this.buildConnectionStringFromParts();
-
-    // Use custom format for efficient, restoreable backups
-    const pgDumpArgs = [
-      `"${connectionString}"`,
-      '--format=custom',
-      '--compress=6',
-      `--file="${outputPath}"`,
-      '--no-owner',
-      '--no-acl',
-      '--verbose',
-    ].join(' ');
-
-    return { connectionString, pgDumpArgs };
-  }
-
-  private buildConnectionStringFromParts(): string {
-    const options = this.dataSource.options as Record<string, unknown>;
-    const host = options.host ?? 'localhost';
-    const port = options.port ?? 5432;
-    const database = options.database ?? 'postgres';
-    const username = options.username ?? 'postgres';
-    const password = options.password ?? '';
-    return `postgresql://${username}:${password}@${host}:${port}/${database}`;
-  }
-
-  private extractPassword(connectionString: string): string {
-    try {
-      const url = new URL(connectionString);
-      return url.password ?? '';
-    } catch {
-      return process.env.DB_PASSWORD ?? '';
+  /** Connection params go in PG* env vars so they never appear in `ps` output. */
+  private buildPgEnv(): Record<string, string> {
+    if (process.env.DATABASE_URL) {
+      const url = new URL(process.env.DATABASE_URL);
+      const env: Record<string, string> = {
+        PGHOST: url.hostname,
+        PGPORT: url.port || '5432',
+        PGUSER: decodeURIComponent(url.username),
+        PGPASSWORD: decodeURIComponent(url.password),
+        PGDATABASE: decodeURIComponent(url.pathname.replace(/^\//, '')),
+      };
+      // shortcut: only sslmode is forwarded from DATABASE_URL query params; add others (sslrootcert, ...) when needed
+      const sslmode = url.searchParams.get('sslmode');
+      if (sslmode) env.PGSSLMODE = sslmode;
+      return env;
     }
+
+    const options = this.dataSource.options as Record<string, unknown>;
+    return {
+      PGHOST: String(options.host ?? 'localhost'),
+      PGPORT: String(options.port ?? 5432),
+      PGUSER: String(options.username ?? 'postgres'),
+      PGPASSWORD: String(options.password ?? ''),
+      PGDATABASE: String(options.database ?? 'postgres'),
+    };
   }
 
   private isBackupEnabled(): boolean {
