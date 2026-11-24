@@ -100,12 +100,16 @@ describe('MultiSigTransactionService', () => {
   let stellar: { buildPaymentTransaction: jest.Mock; submitSignedTransaction: jest.Mock };
 
   const createDto: CreateMultiSigPaymentDto = {
-    tenantId: 'default',
     destination: DESTINATION,
     amount: '15000',
     asset: 'XLM',
     memo: 'test payment',
   };
+
+  const createPayment = (
+    dto: CreateMultiSigPaymentDto = createDto,
+    tenantId = 'default',
+  ) => service.createMultiSigPayment(dto, 'requester-1', tenantId);
 
   /** Drain the fake queue through the real processor, as a Bull worker would. */
   async function runQueuedJobs() {
@@ -155,7 +159,7 @@ describe('MultiSigTransactionService', () => {
 
   describe('createMultiSigPayment', () => {
     it('creates a pending request and notifies every signer', async () => {
-      const result = await service.createMultiSigPayment(createDto, 'requester-1');
+      const result = await createPayment();
 
       expect(result.status).toBe(MultiSigTransactionStatus.PENDING_SIGNATURES);
       expect(result.amount).toBe('15000');
@@ -173,20 +177,20 @@ describe('MultiSigTransactionService', () => {
 
     it('rejects payments below threshold', async () => {
       await expect(
-        service.createMultiSigPayment({ ...createDto, amount: '100' }, 'requester-1'),
+        createPayment({ ...createDto, amount: '100' }),
       ).rejects.toThrow('Amount below threshold');
     });
   });
 
   describe('approve → enqueue → execute', () => {
     it('enqueues on quorum and the processor submits the payment with a real hash', async () => {
-      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
+      const { id } = await createPayment();
 
-      const first = await service.approveTransaction(id, { signerId: 'signer-1' });
+      const first = await service.approveTransaction(id, 'default', 'signer-1');
       expect(first.status).toBe(MultiSigTransactionStatus.PENDING_SIGNATURES);
       expect(queue.add).not.toHaveBeenCalled();
 
-      const second = await service.approveTransaction(id, { signerId: 'signer-2' });
+      const second = await service.approveTransaction(id, 'default', 'signer-2');
       expect(second.status).toBe(MultiSigTransactionStatus.APPROVED);
       expect(repo.manager.transaction).toHaveBeenCalledTimes(2);
       expect(queue.add).toHaveBeenCalledWith(
@@ -210,16 +214,16 @@ describe('MultiSigTransactionService', () => {
       expect(stored.stellarTxHash).toBe(TX_HASH);
       expect(stored.xdr).toBe('signed-xdr');
 
-      const status = await service.getTransactionStatus(id);
+      const status = await service.getTransactionStatus(id, 'default');
       expect(status.stellarTxHash).toBe(TX_HASH);
     });
 
     it('keeps the approval when enqueueing fails, and the sweep enqueues it later', async () => {
-      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
-      await service.approveTransaction(id, { signerId: 'signer-1' });
+      const { id } = await createPayment();
+      await service.approveTransaction(id, 'default', 'signer-1');
 
       queue.add.mockRejectedValueOnce(new Error('redis down'));
-      const approved = await service.approveTransaction(id, { signerId: 'signer-2' });
+      const approved = await service.approveTransaction(id, 'default', 'signer-2');
       expect(approved.status).toBe(MultiSigTransactionStatus.APPROVED);
       expect(queue.jobs).toHaveLength(0);
 
@@ -231,9 +235,9 @@ describe('MultiSigTransactionService', () => {
     });
 
     it('leaves a retryable failure APPROVED and resubmits the same signed envelope', async () => {
-      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
-      await service.approveTransaction(id, { signerId: 'signer-1' });
-      await service.approveTransaction(id, { signerId: 'signer-2' });
+      const { id } = await createPayment();
+      await service.approveTransaction(id, 'default', 'signer-1');
+      await service.approveTransaction(id, 'default', 'signer-2');
 
       stellar.submitSignedTransaction.mockRejectedValueOnce(
         new StellarPaymentError('Payment submission failed (timeout)', true),
@@ -257,9 +261,9 @@ describe('MultiSigTransactionService', () => {
     });
 
     it('marks a terminal failure EXECUTION_FAILED and does not sweep it again', async () => {
-      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
-      await service.approveTransaction(id, { signerId: 'signer-1' });
-      await service.approveTransaction(id, { signerId: 'signer-2' });
+      const { id } = await createPayment();
+      await service.approveTransaction(id, 'default', 'signer-1');
+      await service.approveTransaction(id, 'default', 'signer-2');
 
       stellar.submitSignedTransaction.mockRejectedValueOnce(
         new StellarPaymentError('insufficient funds (op_underfunded)', false, 'op_underfunded'),
@@ -271,9 +275,9 @@ describe('MultiSigTransactionService', () => {
     });
 
     it('gives up after MULTI_SIG_MAX_EXECUTION_ATTEMPTS retryable failures', async () => {
-      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
-      await service.approveTransaction(id, { signerId: 'signer-1' });
-      await service.approveTransaction(id, { signerId: 'signer-2' });
+      const { id } = await createPayment();
+      await service.approveTransaction(id, 'default', 'signer-1');
+      await service.approveTransaction(id, 'default', 'signer-2');
       stellar.submitSignedTransaction.mockRejectedValue(new StellarPaymentError('horizon 503', true));
 
       for (let i = 0; i < 3; i++) {
@@ -287,9 +291,9 @@ describe('MultiSigTransactionService', () => {
     });
 
     it('does not execute a transaction twice', async () => {
-      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
-      await service.approveTransaction(id, { signerId: 'signer-1' });
-      await service.approveTransaction(id, { signerId: 'signer-2' });
+      const { id } = await createPayment();
+      await service.approveTransaction(id, 'default', 'signer-1');
+      await service.approveTransaction(id, 'default', 'signer-2');
       await runQueuedJobs();
 
       await service.executeApprovedTransaction(id);
@@ -298,9 +302,9 @@ describe('MultiSigTransactionService', () => {
     });
 
     it('de-duplicates repeated sweeps while a job is still queued', async () => {
-      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
-      await service.approveTransaction(id, { signerId: 'signer-1' });
-      await service.approveTransaction(id, { signerId: 'signer-2' });
+      const { id } = await createPayment();
+      await service.approveTransaction(id, 'default', 'signer-1');
+      await service.approveTransaction(id, 'default', 'signer-2');
 
       await service.sweepApprovedTransactions();
       await service.sweepApprovedTransactions();
@@ -327,44 +331,48 @@ describe('MultiSigTransactionService', () => {
     let id: string;
 
     beforeEach(async () => {
-      ({ id } = await service.createMultiSigPayment(createDto, 'requester-1'));
+      ({ id } = await createPayment());
     });
 
     it('rejects and cancels the transaction', async () => {
-      const result = await service.rejectTransaction(id, { signerId: 'signer-1', reason: 'Insufficient funds' });
+      const result = await service.rejectTransaction(id, 'default', 'signer-1', 'Insufficient funds');
       expect(result.status).toBe(MultiSigTransactionStatus.REJECTED);
     });
 
     it('rejects duplicate approvals', async () => {
-      await service.approveTransaction(id, { signerId: 'signer-1' });
-      await expect(service.approveTransaction(id, { signerId: 'signer-1' })).rejects.toThrow('Already approved');
+      await service.approveTransaction(id, 'default', 'signer-1');
+      await expect(service.approveTransaction(id, 'default', 'signer-1')).rejects.toThrow('Already approved');
     });
 
     it('rejects unknown signers', async () => {
-      await expect(service.approveTransaction(id, { signerId: 'intruder' })).rejects.toThrow('Not authorised');
+      await expect(service.approveTransaction(id, 'default', 'intruder')).rejects.toThrow('Not authorised');
+    });
+
+    it('does not allow approval from another tenant', async () => {
+      await expect(service.approveTransaction(id, 'other-tenant', 'signer-1')).rejects.toThrow('Not found');
     });
 
     it('rejects approval of an already rejected signature', async () => {
       repo.store.get(id).signatures[0].status = SignatureStatus.REJECTED;
-      await expect(service.approveTransaction(id, { signerId: 'signer-1' })).rejects.toThrow('Already rejected');
+      await expect(service.approveTransaction(id, 'default', 'signer-1')).rejects.toThrow('Already rejected');
     });
 
     it('persists EXPIRED and rejects approval of an expired transaction', async () => {
       repo.store.get(id).expiresAt = new Date(Date.now() - 1000);
 
-      await expect(service.approveTransaction(id, { signerId: 'signer-1' })).rejects.toThrow('expired');
+      await expect(service.approveTransaction(id, 'default', 'signer-1')).rejects.toThrow('expired');
       expect(repo.store.get(id).status).toBe(MultiSigTransactionStatus.EXPIRED);
       expect(queue.add).not.toHaveBeenCalled();
     });
 
     it('throws NotFound for an unknown transaction', async () => {
-      await expect(service.approveTransaction('missing', { signerId: 'signer-1' })).rejects.toThrow('Not found');
+      await expect(service.approveTransaction('missing', 'default', 'signer-1')).rejects.toThrow('Not found');
     });
   });
 
   describe('queries', () => {
     it('expires stale pending transactions', async () => {
-      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
+      const { id } = await createPayment();
       repo.store.get(id).expiresAt = new Date(Date.now() - 1000);
 
       await expect(service.expireStaleTransactions()).resolves.toBe(1);
@@ -372,14 +380,15 @@ describe('MultiSigTransactionService', () => {
     });
 
     it('returns transaction status and throws for unknown ids', async () => {
-      const { id } = await service.createMultiSigPayment(createDto, 'requester-1');
-      await expect(service.getTransactionStatus(id)).resolves.toEqual(expect.objectContaining({ id }));
-      await expect(service.getTransactionStatus('nonexistent')).rejects.toThrow('Transaction not found');
+      const { id } = await createPayment();
+      await expect(service.getTransactionStatus(id, 'default')).resolves.toEqual(expect.objectContaining({ id }));
+      await expect(service.getTransactionStatus(id, 'other-tenant')).rejects.toThrow('Transaction not found');
+      await expect(service.getTransactionStatus('nonexistent', 'default')).rejects.toThrow('Transaction not found');
     });
 
     it('lists pending transactions for a tenant', async () => {
-      await service.createMultiSigPayment(createDto, 'requester-1');
-      await service.createMultiSigPayment({ ...createDto, tenantId: 'other' }, 'requester-1');
+      await createPayment();
+      await createPayment(createDto, 'other');
 
       await expect(service.listPendingTransactions('default')).resolves.toHaveLength(1);
     });
