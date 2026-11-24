@@ -15,7 +15,15 @@ services:
       - DB_NAME=healthy_stellar
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
       - JWT_SECRET_FILE=/run/secrets/jwt_secret
+      - JWT_REFRESH_SECRET_FILE=/run/secrets/jwt_refresh_secret
+      - STELLAR_SECRET_KEY_FILE=/run/secrets/stellar_secret_key
+      - STELLAR_CONTRACT_ID=${STELLAR_CONTRACT_ID:-CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4}
+      - ENCRYPTION_KEY_FILE=/run/secrets/encryption_key
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
+      - METRICS_TOKEN_FILE=/run/secrets/metrics_token
+      - QUEUE_HMAC_SECRET_FILE=/run/secrets/queue_hmac_secret
       - LOG_LEVEL=info
       - LOKI_HOST=http://loki:3100
       - APP_LOG_RETENTION_DAYS=30
@@ -23,7 +31,13 @@ services:
       - SLOW_REQUEST_THRESHOLD_MS=1000
     secrets:
       - db_password
+      - redis_password
       - jwt_secret
+      - jwt_refresh_secret
+      - stellar_secret_key
+      - encryption_key
+      - metrics_token
+      - queue_hmac_secret
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,7 +47,7 @@ services:
       - medical_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -51,14 +65,28 @@ services:
       - DB_NAME=healthy_stellar
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
       - JWT_SECRET_FILE=/run/secrets/jwt_secret
+      - JWT_REFRESH_SECRET_FILE=/run/secrets/jwt_refresh_secret
+      - STELLAR_SECRET_KEY_FILE=/run/secrets/stellar_secret_key
+      - STELLAR_CONTRACT_ID=${STELLAR_CONTRACT_ID:-CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4}
+      - ENCRYPTION_KEY_FILE=/run/secrets/encryption_key
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
+      - METRICS_TOKEN_FILE=/run/secrets/metrics_token
+      - QUEUE_HMAC_SECRET_FILE=/run/secrets/queue_hmac_secret
       - LOG_LEVEL=info
       - LOKI_HOST=http://loki:3100
       - APP_LOG_RETENTION_DAYS=30
       - AUDIT_LOG_RETENTION_DAYS=2555
     secrets:
       - db_password
+      - redis_password
       - jwt_secret
+      - jwt_refresh_secret
+      - stellar_secret_key
+      - encryption_key
+      - metrics_token
+      - queue_hmac_secret
     depends_on:
       postgres:
         condition: service_healthy
@@ -247,6 +275,16 @@ secrets:
     file: ./secrets/redis_password.txt
   jwt_secret:
     file: ./secrets/jwt_secret.txt
+  jwt_refresh_secret:
+    file: ./secrets/jwt_refresh_secret.txt
+  stellar_secret_key:
+    file: ./secrets/stellar_secret_key.txt
+  encryption_key:
+    file: ./secrets/encryption_key.txt
+  metrics_token:
+    file: ./secrets/metrics_token.txt
+  queue_hmac_secret:
+    file: ./secrets/queue_hmac_secret.txt
   grafana_password:
     file: ./secrets/grafana_password.txt
   backup_encryption_key:
