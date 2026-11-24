@@ -1,15 +1,12 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsOptional, IsUUID } from 'class-validator';
 
 export class CreateErasureRequestDto {
-  @IsUUID()
-  @IsNotEmpty()
-  patientId: string;
-
-  @IsString()
-  @IsNotEmpty()
-  requestorIdentity: string;
-
+  /**
+   * Optional target subject for DPO/admin on-behalf-of flows.
+   * Ignored for normal users; the service derives the subject from the
+   * authenticated user and verifies the caller's role before honoring it.
+   */
   @IsOptional()
-  @IsString()
-  tenantId?: string;
+  @IsUUID()
+  subjectUserId?: string;
 }

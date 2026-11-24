@@ -129,6 +129,11 @@ export class SessionManagementService {
         this.lastActivityUpdates.delete(session.id);
       }
       await this.sessionRepository.save(toRevoke);
+
+      // Propagate revocation to open WebSocket connections immediately.
+      for (const session of toRevoke) {
+        await this.sessionRevocationService.notifySessionRevoked(session.id);
+      }
     }
   }
 
