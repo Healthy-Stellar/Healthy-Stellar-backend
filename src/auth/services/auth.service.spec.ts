@@ -62,11 +62,18 @@ function buildMocks() {
     createSession: jest.fn().mockResolvedValue({ id: 'session-1' }),
     completeMfaChallenge: jest.fn().mockResolvedValue({ id: 'session-1', mfaVerified: true }),
     revokeSession: jest.fn().mockResolvedValue(undefined),
+    revokeAllUserSessions: jest.fn().mockResolvedValue(2),
+    revokeAllUserSessionsExcept: jest.fn().mockResolvedValue(['session-2', 'session-3']),
+    getUserSessions: jest.fn().mockResolvedValue([
+      { id: 'session-1' },
+      { id: 'session-2' },
+    ]),
   };
 
   const refreshTokenStore = {
     store: jest.fn().mockResolvedValue(undefined),
     revokeSession: jest.fn().mockResolvedValue(undefined),
+    revokeSessionIds: jest.fn().mockResolvedValue(undefined),
   };
 
   const auditLogService = {
@@ -395,5 +402,120 @@ describe('AuthService.resetPassword (#1277)', () => {
       'Reset token has expired',
     );
     expect(mocks.userRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('revokes all sessions and their Redis refresh tokens on successful reset', async () => {
+    const { service, mocks } = await buildService();
+    const rawToken = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const hashedToken = createHash('sha256').update(rawToken).digest('hex');
+
+    const queryBuilder = {
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({
+        ...mockUser,
+        passwordResetToken: hashedToken,
+        passwordResetTokenExpiresAt: new Date(Date.now() + 60000),
+      }),
+    };
+    mocks.userRepo.createQueryBuilder.mockReturnValue(queryBuilder);
+
+    await service.resetPassword(rawToken, 'NewStrongP@ss123');
+
+    expect(mocks.sessionManagementService.revokeAllUserSessions).toHaveBeenCalledWith(mockUser.id);
+    expect(mocks.refreshTokenStore.revokeSessionIds).toHaveBeenCalledWith(
+      expect.arrayContaining(['session-1', 'session-2']),
+    );
+  });
+
+  it('records sessionsRevoked count in the audit log on reset', async () => {
+    const { service, mocks } = await buildService();
+    const rawToken = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const hashedToken = createHash('sha256').update(rawToken).digest('hex');
+
+    mocks.sessionManagementService.revokeAllUserSessions.mockResolvedValue(3);
+
+    const queryBuilder = {
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({
+        ...mockUser,
+        passwordResetToken: hashedToken,
+        passwordResetTokenExpiresAt: new Date(Date.now() + 60000),
+      }),
+    };
+    mocks.userRepo.createQueryBuilder.mockReturnValue(queryBuilder);
+
+    await service.resetPassword(rawToken, 'NewStrongP@ss123');
+
+    expect(mocks.auditLogService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'PASSWORD_RESET_COMPLETED',
+        metadata: expect.objectContaining({ sessionsRevoked: 3, success: true }),
+      }),
+    );
+  });
+});
+
+describe('AuthService.changePassword — session revocation', () => {
+  const baseChangePasswordDto = {
+    currentPassword: 'OldP@ssw0rd!1',
+    newPassword: 'NewStr0ng!P@ss',
+    confirmPassword: 'NewStr0ng!P@ss',
+  };
+
+  it('revokes all sessions except the current one on a successful password change', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(mockUser);
+
+    await service.changePassword('user-1', baseChangePasswordDto, '127.0.0.1', 'session-1');
+
+    expect(mocks.sessionManagementService.revokeAllUserSessionsExcept).toHaveBeenCalledWith(
+      'user-1',
+      'session-1',
+    );
+  });
+
+  it('revokes Redis refresh tokens for every revoked session', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(mockUser);
+    mocks.sessionManagementService.revokeAllUserSessionsExcept.mockResolvedValue([
+      'session-2',
+      'session-3',
+    ]);
+
+    await service.changePassword('user-1', baseChangePasswordDto, '127.0.0.1', 'session-1');
+
+    expect(mocks.refreshTokenStore.revokeSessionIds).toHaveBeenCalledWith(['session-2', 'session-3']);
+  });
+
+  it('records sessionsRevoked count in the audit log', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(mockUser);
+    mocks.sessionManagementService.revokeAllUserSessionsExcept.mockResolvedValue([
+      'session-2',
+    ]);
+
+    await service.changePassword('user-1', baseChangePasswordDto, '127.0.0.1', 'session-1');
+
+    expect(mocks.auditLogService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'PASSWORD_CHANGE',
+        metadata: expect.objectContaining({ sessionsRevoked: 1, success: true }),
+      }),
+    );
+  });
+
+  it('does not revoke sessions when the current password is wrong', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(mockUser);
+    mocks.passwordValidation.verifyPassword.mockResolvedValue(false);
+
+    await expect(
+      service.changePassword('user-1', baseChangePasswordDto, '127.0.0.1', 'session-1'),
+    ).rejects.toThrow('Current password is incorrect');
+
+    expect(mocks.sessionManagementService.revokeAllUserSessionsExcept).not.toHaveBeenCalled();
+    expect(mocks.refreshTokenStore.revokeSessionIds).not.toHaveBeenCalled();
   });
 });

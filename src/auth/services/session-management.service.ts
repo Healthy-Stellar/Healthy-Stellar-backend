@@ -292,9 +292,9 @@ export class SessionManagementService {
   }
 
   /**
-   * Revoke all sessions for user.
+   * Revoke all sessions for user. Returns the number of sessions revoked.
    */
-  async revokeAllUserSessions(userId: string): Promise<void> {
+  async revokeAllUserSessions(userId: string): Promise<number> {
     const sessions = await this.sessionRepository.find({
       where: {
         userId,
@@ -302,16 +302,56 @@ export class SessionManagementService {
       },
     });
 
+    const now = new Date();
     for (const session of sessions) {
       session.isActive = false;
-      session.revokedAt = new Date();
-      this.lastActivityUpdates.delete(session.id);
+      session.revokedAt = now;
     }
 
     await this.sessionRepository.save(sessions);
 
     // Propagate revocation to open WebSocket connections immediately.
     await this.sessionRevocationService.notifyUserSessionsRevoked(userId);
+
+    return sessions.length;
+  }
+
+  /**
+   * Revoke all active sessions for a user except the one specified by excludeSessionId.
+   * Used by changePassword so the acting session stays valid. Returns the session IDs
+   * that were revoked so callers can clean up their Redis refresh-token keys.
+   */
+  async revokeAllUserSessionsExcept(
+    userId: string,
+    excludeSessionId: string,
+  ): Promise<string[]> {
+    const sessions = await this.sessionRepository.find({
+      where: {
+        userId,
+        isActive: true,
+      },
+    });
+
+    const toRevoke = sessions.filter((s) => s.id !== excludeSessionId);
+    if (toRevoke.length === 0) {
+      return [];
+    }
+
+    const now = new Date();
+    for (const session of toRevoke) {
+      session.isActive = false;
+      session.revokedAt = now;
+    }
+
+    await this.sessionRepository.save(toRevoke);
+
+    // Notify WebSocket subscribers for each revoked session individually so
+    // only those connections are closed, not the still-active current session.
+    await Promise.all(
+      toRevoke.map((s) => this.sessionRevocationService.notifySessionRevoked(s.id)),
+    );
+
+    return toRevoke.map((s) => s.id);
   }
 
   /**
