@@ -25,3 +25,14 @@ jobs:
             exit 1
           fi
           echo "No branch-name debris found."
+
+      - name: Fail on committed .js files under src/
+        # Compiled .js files must not be tracked under src/ — they shadow the
+        # .ts sources (Jest resolves .js ahead of .ts) and drift out of date.
+        run: |
+          if git ls-files 'src/**/*.js' | grep -q .; then
+            echo "ERROR: committed .js files under src/ — remove them and rely on the .ts sources"
+            git ls-files 'src/**/*.js'
+            exit 1
+          fi
+          echo "No committed .js files under src/."

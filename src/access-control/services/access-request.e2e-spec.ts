@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { getQueueToken } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
 import * as request from 'supertest';
 
@@ -8,11 +9,11 @@ import { AccessRequestService } from '../services/access-request.service';
 import { AccessRequestController } from '../controllers/access-request.controller';
 import { AccessRequest, AccessRequestStatus } from '../entities/access-request.entity';
 import { AccessGrant, AccessLevel, GrantStatus } from '../entities/access-grant.entity';
-import { SorobanQueueService } from '../services/soroban-queue.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { UserRole } from '../../auth/entities/user.entity';
+import { QUEUE_NAMES } from '../../queues/queue.constants';
 
 // ── Auth guard stubs ──────────────────────────────────────────────────────────
 
@@ -28,8 +29,8 @@ function makeJwtGuard(userId: string, role: UserRole) {
   };
 }
 
-const mockSoroban = {
-  dispatchGrant: jest.fn().mockResolvedValue('0xmock-soroban-hash'),
+const mockGrantDispatchQueue = {
+  add: jest.fn().mockResolvedValue({ id: 'mock-access-grant-job' }),
 };
 
 const mockNotifications = {
@@ -56,7 +57,10 @@ async function buildApp(userId: string, role: UserRole): Promise<INestApplicatio
     controllers: [AccessRequestController],
     providers: [
       AccessRequestService,
-      { provide: SorobanQueueService, useValue: mockSoroban },
+      {
+        provide: getQueueToken(QUEUE_NAMES.ACCESS_GRANT_DISPATCH),
+        useValue: mockGrantDispatchQueue,
+      },
       { provide: NotificationsService, useValue: mockNotifications },
     ],
   })
@@ -160,17 +164,17 @@ describe('Access Request Workflow (integration)', () => {
 
   // ── PATCH /access/requests/:id/approve ─────────────────────────────────────
   describe('PATCH /access/requests/:id/approve', () => {
-    it('200 — patient approves; grant created and Soroban dispatched', async () => {
+    it('200 — patient approves; pending-chain grant is queued', async () => {
       const res = await request(patientApp.getHttpServer())
         .patch(`/access/requests/${createdRequestId}/approve`)
         .expect(200);
 
       expect(res.body.request.status).toBe(AccessRequestStatus.APPROVED);
-      expect(res.body.request.sorobanTxHash).toBe('0xmock-soroban-hash');
+      expect(res.body.request.sorobanTxHash).toBeNull();
       expect(res.body.grant.granteeId).toBe(PROVIDER_ID);
       expect(res.body.grant.accessLevel).toBe(AccessLevel.READ);
-      expect(res.body.grant.status).toBe(GrantStatus.ACTIVE);
-      expect(mockSoroban.dispatchGrant).toHaveBeenCalledTimes(1);
+      expect(res.body.grant.status).toBe(GrantStatus.PENDING_CHAIN);
+      expect(mockGrantDispatchQueue.add).toHaveBeenCalledTimes(1);
     });
 
     it('409 — cannot approve an already-approved request', async () => {

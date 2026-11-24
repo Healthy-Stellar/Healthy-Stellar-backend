@@ -158,10 +158,22 @@ export class OAuth2Controller {
 
     let decodedToken: any;
     try {
-      // Decode the JWT to get the user ID, scopes, and original sessionId
-      decodedToken = this.jwt.verify(dto.refresh_token, { ignoreExpiration: true });
+      // Decode the JWT to get the user ID, scopes, and original sessionId.
+      // Expiration is enforced here so an expired refresh token is rejected
+      // regardless of the TTL applied by the Redis store.
+      decodedToken = this.jwt.verify(dto.refresh_token);
     } catch (err) {
       throw new UnauthorizedException('invalid_grant: invalid refresh token');
+    }
+
+    if (decodedToken.type !== 'refresh') {
+      throw new UnauthorizedException('invalid_grant: token is not a refresh token');
+    }
+
+    if (decodedToken.client_id !== dto.client_id) {
+      throw new UnauthorizedException(
+        'invalid_grant: refresh token was not issued to this client',
+      );
     }
 
     const sessionId = decodedToken.sessionId;
@@ -172,7 +184,16 @@ export class OAuth2Controller {
     // This validates rotation and detects reuse via the Redis store
     await this.refreshTokenStore.consumeAndValidate(sessionId, dto.refresh_token);
 
-    const smartScopes = this.filterSmartScopes(decodedToken.scope);
+    // Constrain the new grant to the original grant intersected with the
+    // scopes the client is registered for.
+    const grantedScopes = this.filterSmartScopes(decodedToken.scope);
+    const allowedScopes = client.allowedScopes ?? [];
+    const smartScopes = grantedScopes.filter((scope) => allowedScopes.includes(scope));
+
+    if (smartScopes.length === 0) {
+      throw new BadRequestException('invalid_scope: no granted scope is allowed for this client');
+    }
+
     return this.generateTokenResponse(decodedToken.sub, smartScopes, dto.client_id, ctx, sessionId);
   }
 
@@ -212,9 +233,9 @@ export class OAuth2Controller {
     };
 
     if (scopes.includes('fhirUser')) {
-      const fhirBaseUrl =
+      const fhirBase =
         process.env.FHIR_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
-      tokenPayload.fhirUser = `${fhirBaseUrl}/fhir/r4/Patient/${userId}`;
+      tokenPayload.fhirUser = `${fhirBase}/fhir/r4/Patient/${userId}`;
     }
 
     const accessToken = this.jwt.sign(tokenPayload);
@@ -232,50 +253,35 @@ export class OAuth2Controller {
 
     if (existingSessionId) {
       // Throws if the session was revoked, expired or never existed.
-      await this.sessionManagement.refreshSession(
-        sessionId,
-        accessToken,
-        refreshToken,
-        expiresAt,
-        refreshTokenExpiresAt,
-      );
+      await this.sessionManagement.rotateSession(existingSessionId, refreshToken, refreshTokenExpiresAt);
     } else {
-      await this.sessionManagement.createSession(
+      await this.sessionManagement.createSession({
+        sessionId,
         userId,
-        accessToken,
+        clientId,
+        ipAddress: ctx.ipAddress,
+        userAgent: ctx.userAgent,
         refreshToken,
-        expiresAt,
         refreshTokenExpiresAt,
-        ctx.ipAddress,
-        ctx.userAgent,
-        `oauth2:${clientId}`,
-        { id: sessionId },
-      );
+      });
     }
 
-    const response: Record<string, any> = {
+    return {
       access_token: accessToken,
       token_type: 'Bearer',
       expires_in: OAUTH2_ACCESS_TOKEN_TTL_SECONDS,
+      refresh_token: refreshToken ?? undefined,
       scope: scopes.join(' '),
+      patient: patientId,
     };
-
-    if (refreshToken) {
-      await this.refreshTokenStore.store(sessionId, refreshToken);
-      response.refresh_token = refreshToken;
-    }
-
-    if (patientId) {
-      response.patient = patientId;
-    }
-
-    return response;
   }
 
-  private filterSmartScopes(scopeString: string): string[] {
-    return scopeString
+  private filterSmartScopes(scope: string | string[] | undefined): string[] {
+    const raw = Array.isArray(scope) ? scope.join(' ') : scope ?? '';
+    return raw
       .split(/\s+/)
-      .filter((s) => s.startsWith('patient/') || s.startsWith('user/') || s === 'launch/patient' || s === 'openid' || s === 'fhirUser' || s === 'offline_access');
+      .filter((s) => s.length > 0)
+      .filter((s) => SMART_SCOPES.has(s));
   }
 
   private isClientSecretValid(provided: string, expected: string): boolean {
@@ -287,3 +293,17 @@ export class OAuth2Controller {
     return crypto.timingSafeEqual(providedBuf, expectedBuf);
   }
 }
+
+const SMART_SCOPES = new Set([
+  'openid',
+  'profile',
+  'email',
+  'fhirUser',
+  'launch',
+  'launch/patient',
+  'offline_access',
+  'patient/*.read',
+  'patient/*.write',
+  'user/*.read',
+  'user/*.write',
+]);

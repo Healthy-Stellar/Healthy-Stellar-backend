@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Param,
+  Req,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -22,6 +23,21 @@ import { API_BEARER_AUTH_SCHEME } from '../common/constants/swagger.constants';
 import { QueueService } from './queue.service';
 import { JobStatusResponse, JobNotFoundResponse } from './dto/job-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
+/**
+ * Minimal shape of the authenticated principal attached to the request by
+ * JwtAuthGuard. Only the fields needed for job ownership checks are declared.
+ */
+interface AuthenticatedRequest {
+  user?: {
+    id?: string;
+    userId?: string;
+    sub?: string;
+    tenantId?: string;
+    role?: string;
+    roles?: string[];
+  };
+}
 
 @ApiTags('jobs')
 @Controller('jobs')
@@ -59,11 +75,15 @@ export class QueueController {
   })
   async getJobStatus(
     @Param('jobId') jobId: string,
+    @Req() req: AuthenticatedRequest,
   ): Promise<JobStatusResponse> {
     this.logger.debug(`Fetching job status: ${jobId}`);
 
     try {
-      const jobStatus = await this.queueService.getJobStatusById(jobId);
+      const jobStatus = await this.queueService.getAuthorizedJobStatusById(
+        jobId,
+        this.getCallerContext(req),
+      );
       return this.formatStatusResponse(jobStatus);
     } catch (error) {
       if (error instanceof NotFoundException) {
@@ -87,9 +107,13 @@ export class QueueController {
     description:
       'Opens a Server-Sent Events stream for real-time updates on a job\'s lifecycle.',
   })
-  streamJobStatus(@Param('jobId') jobId: string): Observable<MessageEvent> {
+  streamJobStatus(
+    @Param('jobId') jobId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Observable<MessageEvent> {
     this.logger.debug(`Streaming job status for: ${jobId}`);
-    return this.queueService.subscribeToJob(jobId).pipe(
+    const caller = this.getCallerContext(req);
+    return this.queueService.subscribeToAuthorizedJob(jobId, caller).pipe(
       map((status) => ({
         data: this.formatStatusResponse(status),
       } as MessageEvent)),
@@ -125,11 +149,15 @@ export class QueueController {
   })
   async getJobStatusByCorrelationId(
     @Param('correlationId') correlationId: string,
+    @Req() req: AuthenticatedRequest,
   ): Promise<JobStatusResponse> {
     this.logger.debug(`Fetching job by correlation ID: ${correlationId}`);
 
     try {
-      const jobStatus = await this.queueService.getJobStatus(correlationId);
+      const jobStatus = await this.queueService.getAuthorizedJobStatus(
+        correlationId,
+        this.getCallerContext(req),
+      );
       return this.formatStatusResponse(jobStatus);
     } catch (error) {
       if (error instanceof NotFoundException) {
@@ -143,17 +171,43 @@ export class QueueController {
   }
 
   /**
-   * Format job status to API response format
+   * Extract the caller identity used for job ownership checks from the request.
+   */
+  private getCallerContext(req: AuthenticatedRequest): {
+    userId?: string;
+    tenantId?: string;
+    isAdmin: boolean;
+  } {
+    const user = req?.user ?? {};
+    const roles = user.roles ?? (user.role ? [user.role] : []);
+    return {
+      userId: user.id ?? user.userId ?? user.sub,
+      tenantId: user.tenantId,
+      isAdmin: roles.some((role) =>
+        ['admin', 'tenant_admin', 'super_admin'].includes(
+          String(role).toLowerCase(),
+        ),
+      ),
+    };
+  }
+
+  /**
+   * Format job status to API response format.
+   *
+   * Sensitive fields (`result`, `error`) are only included when the service
+   * has marked the caller as the owner (or an admin of the owning tenant).
+   * Non-owners receive status/progress metadata only.
    */
   private formatStatusResponse(jobStatus: any): JobStatusResponse {
+    const isOwner = jobStatus?.isOwner !== false;
     return {
       jobId: jobStatus.jobId,
       correlationId: jobStatus.correlationId,
       status: jobStatus.status,
       progress: jobStatus.progress,
       attempts: jobStatus.attempts,
-      error: jobStatus.error,
-      result: jobStatus.result,
+      error: isOwner ? jobStatus.error : undefined,
+      result: isOwner ? jobStatus.result : undefined,
       createdAt: jobStatus.createdAt,
       startedAt: jobStatus.startedAt,
       completedAt: jobStatus.completedAt,

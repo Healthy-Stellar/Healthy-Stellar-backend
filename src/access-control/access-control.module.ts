@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AccessGrant } from './entities/access-grant.entity';
@@ -15,9 +16,14 @@ import { BreakGlassController } from './controllers/break-glass.controller';
 import { EmergencyAccessCleanupService } from './services/emergency-access-cleanup.service';
 import { AccessRequestService } from './services/access-request.service';
 import { RedisLockService } from '../common/utils/redis-lock.service';
+import { QUEUE_NAMES } from '../queues/queue.constants';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AccessGrant, AccessRequest, BreakGlassAccess, User]), NotificationsModule],
+  imports: [
+    TypeOrmModule.forFeature([AccessGrant, AccessRequest, BreakGlassAccess, User]),
+    BullModule.registerQueue({ name: QUEUE_NAMES.ACCESS_GRANT_DISPATCH }),
+    NotificationsModule,
+  ],
   controllers: [AccessControlController, UsersEmergencyAccessController, AccessRequestController, BreakGlassController],
   providers: [AccessControlService, SorobanQueueService, EmergencyAccessCleanupService, AccessRequestService, BreakGlassService, RedisLockService],
   exports: [AccessControlService, AccessRequestService, EmergencyAccessCleanupService, BreakGlassService],

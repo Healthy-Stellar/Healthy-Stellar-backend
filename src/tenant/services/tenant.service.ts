@@ -3,6 +3,7 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
@@ -27,6 +28,8 @@ function assertSafeSlug(slug: string): void {
 
 @Injectable()
 export class TenantService {
+  private readonly logger = new Logger(TenantService.name);
+
   constructor(
     @InjectRepository(Tenant)
     private tenantRepository: Repository<Tenant>,
@@ -63,6 +66,12 @@ export class TenantService {
    *    is already held the call fails fast with a ConflictException rather than
    *    producing a half-initialised duplicate schema.
    *
+   *    The lock is acquired, used, and released on a single dedicated
+   *    QueryRunner connection. Session-level advisory locks are owned by the
+   *    connection that acquired them, so all lock-related statements MUST run
+   *    on the same connection — otherwise the unlock runs on a different pooled
+   *    connection, returns false, and the lock leaks forever.
+   *
    * 3. Compensating saga — DDL statements (CREATE SCHEMA, CREATE TABLE) are
    *    auto-committed by PostgreSQL and cannot be rolled back inside a
    *    transaction. Instead we wrap the provisioning steps in try/catch and
@@ -75,51 +84,95 @@ export class TenantService {
     // only [a-z0-9_] — no characters that can escape a double-quoted identifier.
     const schemaName = `tenant_${slug}`;
 
-    // ── Advisory lock ────────────────────────────────────────────────────────
-    // Use a session-level advisory lock keyed on the schema name so concurrent
-    // provisioning attempts for the same slug are serialised. The lock is
-    // released automatically when the connection is returned to the pool.
-    const [{ acquired }] = await this.dataSource.query<[{ acquired: boolean }]>(
-      `SELECT pg_try_advisory_lock(hashtext($1)) AS acquired`,
-      [schemaName],
-    );
+    // ── Dedicated connection ─────────────────────────────────────────────────
+    // A session-level advisory lock is bound to the connection that acquired
+    // it. Use a single QueryRunner for the lock, the DDL, and the unlock so
+    // they all run on the same physical connection.
+    const runner = this.dataSource.createQueryRunner();
+    await runner.connect();
 
-    if (!acquired) {
-      throw new ConflictException(
-        `Schema provisioning for "${slug}" is already in progress`,
-      );
-    }
-
-    // ── Compensating saga ────────────────────────────────────────────────────
-    // CREATE SCHEMA is DDL and auto-commits, so we track whether the schema was
-    // created and drop it on any subsequent failure (compensating transaction).
-    let schemaCreated = false;
+    let lockAcquired = false;
 
     try {
-      await this.dataSource.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
-      schemaCreated = true;
+      // ── Advisory lock ──────────────────────────────────────────────────────
+      const [{ acquired }] = await runner.query<
+        [{ acquired: boolean }]
+      >(`SELECT pg_try_advisory_lock(hashtext($1)) AS acquired`, [schemaName]);
 
-      await this.runTenantMigrations(schemaName);
-      await this.seedTenantData(schemaName);
-    } catch (err) {
-      if (schemaCreated) {
-        // Best-effort rollback: drop the partially initialised schema.
-        await this.dataSource
-          .query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`)
-          .catch(() => {
-            // Log but do not mask the original error.
-          });
+      if (!acquired) {
+        throw new ConflictException(
+          `Schema provisioning for "${slug}" is already in progress`,
+        );
       }
-      throw err;
+      lockAcquired = true;
+
+      // ── Compensating saga ──────────────────────────────────────────────────
+      // CREATE SCHEMA is DDL and auto-commits, so we track whether the schema
+      // was created and drop it on any subsequent failure (compensating
+      // transaction).
+      let schemaCreated = false;
+
+      try {
+        await runner.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
+        schemaCreated = true;
+
+        await this.runTenantMigrations(runner, schemaName);
+        await this.seedTenantData(runner, schemaName);
+      } catch (err) {
+        if (schemaCreated) {
+          // Best-effort rollback: drop the partially initialised schema.
+          await runner
+            .query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`)
+            .catch((dropErr) => {
+              // Log but do not mask the original error.
+              this.logger.error(
+                `Failed to drop partially initialised schema "${schemaName}" during compensation: ${
+                  dropErr instanceof Error ? dropErr.message : String(dropErr)
+                }`,
+              );
+            });
+        }
+        throw err;
+      }
     } finally {
-      // Release the advisory lock regardless of outcome.
-      await this.dataSource
-        .query(`SELECT pg_advisory_unlock(hashtext($1))`, [schemaName])
-        .catch(() => {});
+      // ── Release the advisory lock ──────────────────────────────────────────
+      // Must run on the same connection that acquired the lock. Log (do not
+      // swallow) any failure so a leaked lock is diagnosable.
+      if (lockAcquired) {
+        try {
+          const [{ unlocked }] = await runner.query<[{ unlocked: boolean }]>(
+            `SELECT pg_advisory_unlock(hashtext($1)) AS unlocked`,
+            [schemaName],
+          );
+          if (!unlocked) {
+            this.logger.warn(
+              `Advisory lock for schema "${schemaName}" was not held by this connection on unlock; it may have leaked`,
+            );
+          }
+        } catch (unlockErr) {
+          this.logger.error(
+            `Failed to release advisory lock for schema "${schemaName}": ${
+              unlockErr instanceof Error ? unlockErr.message : String(unlockErr)
+            }`,
+          );
+        }
+      }
+
+      // Return the connection to the pool.
+      await runner.release().catch((releaseErr) => {
+        this.logger.error(
+          `Failed to release QueryRunner for schema "${schemaName}": ${
+            releaseErr instanceof Error ? releaseErr.message : String(releaseErr)
+          }`,
+        );
+      });
     }
   }
 
-  private async runTenantMigrations(schemaName: string): Promise<void> {
+  private async runTenantMigrations(
+    runner: { query: (sql: string) => Promise<unknown> },
+    schemaName: string,
+  ): Promise<void> {
     const tables = [
       `CREATE TABLE IF NOT EXISTS "${schemaName}".medical_records (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -154,25 +207,28 @@ export class TenantService {
     ];
 
     for (const sql of tables) {
-      await this.dataSource.query(sql);
+      await runner.query(sql);
     }
 
-    await this.dataSource.query(
+    await runner.query(
       `CREATE INDEX IF NOT EXISTS idx_medical_records_patient ON "${schemaName}".medical_records(patient_id)`,
     );
-    await this.dataSource.query(
+    await runner.query(
       `CREATE INDEX IF NOT EXISTS idx_billings_patient ON "${schemaName}".billings(patient_id)`,
     );
-    await this.dataSource.query(
+    await runner.query(
       `CREATE INDEX IF NOT EXISTS idx_prescriptions_patient ON "${schemaName}".prescriptions(patient_id)`,
     );
-    await this.dataSource.query(
+    await runner.query(
       `CREATE INDEX IF NOT EXISTS idx_lab_orders_patient ON "${schemaName}".lab_orders(patient_id)`,
     );
   }
 
-  private async seedTenantData(schemaName: string): Promise<void> {
-    await this.dataSource.query(`
+  private async seedTenantData(
+    runner: { query: (sql: string) => Promise<unknown> },
+    schemaName: string,
+  ): Promise<void> {
+    await runner.query(`
       INSERT INTO "${schemaName}".medical_records (patient_id, record_type)
       VALUES ('system', 'initialization')
       ON CONFLICT DO NOTHING

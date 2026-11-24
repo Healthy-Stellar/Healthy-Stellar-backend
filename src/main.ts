@@ -12,6 +12,7 @@ import { Logger } from 'nestjs-pino';
 import { applySecurityHeaders } from './security/http-security.config';
 import { ApiVersionLifecycleInterceptor } from './versioning/api-version-lifecycle.interceptor';
 import { API_BEARER_AUTH_SCHEME } from './common/constants/swagger.constants';
+import { resolveTrustProxy } from './config/trust-proxy';
 
 /**
  * Parse a comma-separated list of `Name|URL` (or bare `URL`) entries into
@@ -43,9 +44,28 @@ async function bootstrap() {
   // Run onModuleDestroy/onApplicationShutdown hooks (Redis locks, DB pools, etc.) on SIGTERM/SIGINT
   app.enableShutdownHooks();
 
+  // Express only derives req.ip from forwarding headers when the immediate peer
+  // matches this setting. Fail fast on a malformed value instead of silently
+  // trusting spoofable headers.
+  const httpAdapter = app.getHttpAdapter();
+  const expressApp = httpAdapter.getInstance() as {
+    set(setting: string, value: unknown): void;
+    disable(setting: string): void;
+  };
+  const trustProxy = resolveTrustProxy(process.env.TRUST_PROXY);
+  expressApp.set('trust proxy', trustProxy);
+
   // Use Pino logger
   app.useLogger(app.get(Logger));
   app.flushLogs();
+
+  if (trustProxy === true && process.env.NODE_ENV === 'production') {
+    app
+      .get(Logger)
+      .warn(
+        'TRUST_PROXY=true trusts X-Forwarded-For from every peer. Configure explicit proxy IPs/CIDRs instead.',
+      );
+  }
 
   // Enable URI-based API Versioning
   app.enableVersioning({
@@ -60,7 +80,7 @@ async function bootstrap() {
   applySecurityHeaders(app);
 
   // Remove X-Powered-By header
-  app.getHttpAdapter().getInstance().disable('x-powered-by');
+  expressApp.disable('x-powered-by');
 
   // CORS Configuration
   const isProd = process.env.NODE_ENV === 'production';
@@ -226,6 +246,15 @@ async function bootstrap() {
         description: 'API key for service-to-service integrations',
       },
       'api-key',
+    )
+    .addApiKey(
+      {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-Metrics-Token',
+        description: 'Token required to scrape the metrics endpoints',
+      },
+      'metrics-token',
     )
     .addTag('Medical Records', 'Patient medical record management')
     .addTag('Clinical Templates', 'Standardized clinical documentation')

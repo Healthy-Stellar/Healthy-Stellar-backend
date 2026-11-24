@@ -9,7 +9,7 @@ import {
   UserinfoResponse,
 } from 'openid-client';
 import { Strategy } from 'passport-custom';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { OidcProviderConfig } from '../oidc.config';
 
 export interface OidcVerifiedProfile {
@@ -21,6 +21,26 @@ export interface OidcVerifiedProfile {
   familyName: string | null;
   rawClaims: Record<string, unknown>;
   tokenSet: TokenSet;
+}
+
+/**
+ * Name of the short-lived, signed, HttpOnly cookie used to carry the OIDC
+ * state/nonce/PKCE verifier between the authorization redirect and the
+ * callback. We deliberately avoid a server-side session (no express-session
+ * is installed) and instead persist the transient values in a cookie that is
+ * scoped to the callback path and expires quickly.
+ */
+export const OIDC_STATE_COOKIE = 'oidc_state';
+
+/** Lifetime of the transient OIDC state cookie (10 minutes). */
+export const OIDC_STATE_COOKIE_MAX_AGE_MS = 10 * 60 * 1000;
+
+export interface OidcStateCookiePayload {
+  provider: string;
+  state: string;
+  nonce: string;
+  codeVerifier: string;
+  redirect?: string;
 }
 
 /**
@@ -122,28 +142,34 @@ export class OidcStrategy extends PassportStrategy(Strategy, 'oidc') {
     const client = await this.registry.getClient(providerName);
     const config = this.registry.getProviderConfig(providerName)!;
 
-    // Retrieve and validate state from session
-    const sessionState: string | undefined = (req.session as any)?.[`oidc_state_${providerName}`];
+    // Retrieve the transient state/nonce/verifier from the signed cookie set
+    // during initiation. No server-side session is required.
+    const cookiePayload = readOidcStateCookie(req);
     const callbackParams: CallbackParamsType = client.callbackParams(req);
 
-    if (!sessionState || callbackParams.state !== sessionState) {
+    if (
+      !cookiePayload ||
+      cookiePayload.provider !== providerName ||
+      !cookiePayload.state ||
+      callbackParams.state !== cookiePayload.state
+    ) {
       throw new UnauthorizedException('CSRF state mismatch');
     }
 
     let tokenSet: TokenSet;
     try {
       tokenSet = await client.callback(config.redirectUri, callbackParams, {
-        state: sessionState,
-        nonce: (req.session as any)?.[`oidc_nonce_${providerName}`],
+        state: cookiePayload.state,
+        nonce: cookiePayload.nonce,
+        code_verifier: cookiePayload.codeVerifier,
       });
     } catch (err) {
       this.logger.error(`Token exchange failed for ${providerName}`, err);
       throw new UnauthorizedException('OIDC token exchange failed');
     }
 
-    // Clean up session nonce/state
-    delete (req.session as any)[`oidc_state_${providerName}`];
-    delete (req.session as any)[`oidc_nonce_${providerName}`];
+    // Clear the transient state cookie now that the exchange succeeded.
+    clearOidcStateCookie(req);
 
     let userInfo: UserinfoResponse;
     try {
@@ -185,10 +211,16 @@ export class OidcStrategy extends PassportStrategy(Strategy, 'oidc') {
 // Helper: generate authorization URL + state/nonce for initiation
 // ---------------------------------------------------------------------------
 
+/**
+ * Build the provider authorization URL and persist the transient state/nonce/
+ * PKCE verifier in a signed, HttpOnly, SameSite=Lax, short-lived cookie on the
+ * response. This replaces the previous (broken) reliance on `req.session`.
+ */
 export async function buildAuthorizationUrl(
   registry: OidcClientRegistry,
   providerName: string,
-  session: Record<string, unknown>,
+  res: Response,
+  redirect?: string,
 ): Promise<string> {
   const client = await registry.getClient(providerName);
   const config = registry.getProviderConfig(providerName)!;
@@ -198,9 +230,15 @@ export async function buildAuthorizationUrl(
   const codeVerifier = generators.codeVerifier();
   const codeChallenge = generators.codeChallenge(codeVerifier);
 
-  session[`oidc_state_${providerName}`] = state;
-  session[`oidc_nonce_${providerName}`] = nonce;
-  session[`oidc_verifier_${providerName}`] = codeVerifier;
+  const payload: OidcStateCookiePayload = {
+    provider: providerName,
+    state,
+    nonce,
+    codeVerifier,
+    ...(redirect ? { redirect } : {}),
+  };
+
+  writeOidcStateCookie(res, payload);
 
   return client.authorizationUrl({
     scope: config.scope,
@@ -209,4 +247,41 @@ export async function buildAuthorizationUrl(
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
   });
+}
+
+// ---------------------------------------------------------------------------
+// Cookie helpers for the transient OIDC state
+// ---------------------------------------------------------------------------
+
+function writeOidcStateCookie(res: Response, payload: OidcStateCookiePayload): void {
+  const value = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  res.cookie(OIDC_STATE_COOKIE, value, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    signed: true,
+    path: '/',
+    maxAge: OIDC_STATE_COOKIE_MAX_AGE_MS,
+  });
+}
+
+function readOidcStateCookie(req: Request): OidcStateCookiePayload | null {
+  const raw = (req as Request & { signedCookies?: Record<string, string> })
+    .signedCookies?.[OIDC_STATE_COOKIE];
+  if (!raw) return null;
+  try {
+    const decoded = Buffer.from(raw, 'base64url').toString('utf8');
+    const parsed = JSON.parse(decoded) as OidcStateCookiePayload;
+    if (!parsed || typeof parsed.state !== 'string') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearOidcStateCookie(req: Request): void {
+  const res = (req as Request & { res?: Response }).res;
+  if (res && typeof res.clearCookie === 'function') {
+    res.clearCookie(OIDC_STATE_COOKIE, { path: '/' });
+  }
 }

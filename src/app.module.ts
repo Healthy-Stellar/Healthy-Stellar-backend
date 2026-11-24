@@ -98,6 +98,15 @@ import { TelemedicineModule } from './telemedicine-and-remote/src/telemedicine/T
 import { User } from './auth/entities/user.entity';
 import { MigrationCliModule } from './Migration-CLI/migration-cli.module';
 
+/**
+ * Schedulers must run in exactly one process. When `SCHEDULER_ENABLED` is
+ * `false` (the default for API replicas), `ScheduleModule` is not registered
+ * here so no `@Cron` job is scheduled in this process. The dedicated worker
+ * process (see `WorkerModule`) sets `SCHEDULER_ENABLED=true` and is the only
+ * process that runs cron jobs. See deployment docs for details.
+ */
+const schedulerEnabled = process.env.SCHEDULER_ENABLED === 'true';
+
 @Module({
   imports: [
     LoggerModule,
@@ -112,7 +121,7 @@ import { MigrationCliModule } from './Migration-CLI/migration-cli.module';
       useClass: DatabaseConfig,
     }),
     TypeOrmModule.forFeature([User]),
-    ScheduleModule.forRoot(),
+    ...(schedulerEnabled ? [ScheduleModule.forRoot()] : []),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       useClass: ThrottlerConfigService,
@@ -131,4 +140,4 @@ import { MigrationCliModule } from './Migration-CLI/migration-cli.module';
     }),
     // Applica
 
-/* … truncated 3397 chars — edit only what you need near the top … */
+/* … truncated 72 chars — edit only what you need near the top … */

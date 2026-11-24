@@ -1,9 +1,15 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import * as crypto from 'crypto';
+import type { Redis } from 'ioredis';
+
+/** DI token for the shared ioredis client used by the OAuth2 module. */
+export const OAUTH2_REDIS = 'OAUTH2_REDIS';
 
 /**
- * In-memory store for authorization codes.
- * In production, swap for Redis with TTL.
+ * Redis-backed store for authorization codes.
+ * Codes live under `oauth2:code:<code>` with a 60 s TTL and are consumed
+ * atomically via GETDEL so they can only be redeemed once, even across
+ * multiple API replicas.
  */
 interface AuthCodeEntry {
   clientId: string;
@@ -19,15 +25,17 @@ interface AuthCodeEntry {
 
 @Injectable()
 export class PkceService {
-  private readonly codes = new Map<string, AuthCodeEntry>();
-  /** 10-minute code TTL */
-  private readonly CODE_TTL_MS = 10 * 60 * 1000;
+  /** Authorization code TTL in seconds (Redis EX). */
+  private readonly CODE_TTL_SECONDS = 60;
+  private readonly KEY_PREFIX = 'oauth2:code:';
+
+  constructor(@Inject(OAUTH2_REDIS) private readonly redis: Redis) {}
 
   // ---------------------------------------------------------------------------
   // Authorization code lifecycle
   // ---------------------------------------------------------------------------
 
-  issueCode(
+  async issueCode(
     clientId: string,
     redirectUri: string,
     userId: string,
@@ -35,18 +43,24 @@ export class PkceService {
     codeChallenge?: string,
     codeChallengeMethod?: 'S256',
     launch?: string,
-  ): string {
+  ): Promise<string> {
     const code = crypto.randomBytes(32).toString('base64url');
-    this.codes.set(code, {
+    const entry: AuthCodeEntry = {
       clientId,
       redirectUri,
       userId,
       scope,
       codeChallenge,
       codeChallengeMethod,
-      expiresAt: Date.now() + this.CODE_TTL_MS,
+      expiresAt: Date.now() + this.CODE_TTL_SECONDS * 1000,
       launch,
-    });
+    };
+    await this.redis.set(
+      this.KEY_PREFIX + code,
+      JSON.stringify(entry),
+      'EX',
+      this.CODE_TTL_SECONDS,
+    );
     return code;
   }
 
@@ -54,16 +68,27 @@ export class PkceService {
    * Consume and validate an authorization code.
    * Throws on any mismatch so callers can return 400.
    */
-  consumeCode(
+  async consumeCode(
     code: string,
     clientId: string,
     redirectUri: string,
     codeVerifier?: string,
-  ): AuthCodeEntry {
-    const entry = this.codes.get(code);
-    this.codes.delete(code); // one-time use
+  ): Promise<AuthCodeEntry> {
+    // Atomic get-and-delete: a code can only ever be redeemed once.
+    const raw = await this.redis.getdel(this.KEY_PREFIX + code);
 
-    if (!entry || Date.now() > entry.expiresAt) {
+    if (!raw) {
+      throw new BadRequestException('invalid_grant: authorization code expired or not found');
+    }
+
+    let entry: AuthCodeEntry;
+    try {
+      entry = JSON.parse(raw) as AuthCodeEntry;
+    } catch {
+      throw new BadRequestException('invalid_grant: authorization code expired or not found');
+    }
+
+    if (Date.now() > entry.expiresAt) {
       throw new BadRequestException('invalid_grant: authorization code expired or not found');
     }
 
