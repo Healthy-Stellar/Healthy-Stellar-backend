@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bull';
@@ -8,7 +8,6 @@ import {
   MultiSigTransactionStatus,
   SignatureStatus,
   CreateMultiSigPaymentDto,
-  ApproveRejectDto,
   MultiSigTransactionResponse,
 } from '../interfaces/multi-sig.interface';
 import { StellarPaymentService } from './stellar-payment.service';
@@ -44,15 +43,15 @@ export class MultiSigTransactionService {
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
-  async createMultiSigPayment(dto: CreateMultiSigPaymentDto, requesterId: string): Promise<MultiSigTransactionResponse> {
-    const thresholdAmount = this.config.get<string>('MULTI_SIG_THRESHOLD_' + dto.tenantId, DEFAULT_THRESHOLD);
+  async createMultiSigPayment(dto: CreateMultiSigPaymentDto, requesterId: string, tenantId: string): Promise<MultiSigTransactionResponse> {
+    const thresholdAmount = this.config.get<string>('MULTI_SIG_THRESHOLD_' + tenantId, DEFAULT_THRESHOLD);
     if (BigInt(dto.amount) < BigInt(thresholdAmount)) throw new BadRequestException('Amount below threshold');
-    const quorumSize = parseInt(this.config.get<string>('MULTI_SIG_QUORUM_' + dto.tenantId) || String(DEFAULT_QUORUM), 10);
-    const signers = (this.config.get<string>('MULTI_SIG_SIGNERS_' + dto.tenantId, '') || '').split(',').filter(Boolean).map(s => s.trim());
-    const ttlMinutes = parseInt(this.config.get<string>('MULTI_SIG_TTL_MINUTES_' + dto.tenantId) || String(DEFAULT_TTL_MINUTES), 10);
+    const quorumSize = parseInt(this.config.get<string>('MULTI_SIG_QUORUM_' + tenantId) || String(DEFAULT_QUORUM), 10);
+    const signers = (this.config.get<string>('MULTI_SIG_SIGNERS_' + tenantId, '') || '').split(',').filter(Boolean).map(s => s.trim());
+    const ttlMinutes = parseInt(this.config.get<string>('MULTI_SIG_TTL_MINUTES_' + tenantId) || String(DEFAULT_TTL_MINUTES), 10);
     const expiresAt = new Date(Date.now() + ttlMinutes * 60000);
     const entity = this.repo.create({
-      tenantId: dto.tenantId, destination: dto.destination, amount: dto.amount,
+      tenantId, destination: dto.destination, amount: dto.amount,
       asset: dto.asset || 'XLM', status: MultiSigTransactionStatus.PENDING_SIGNATURES,
       threshold: quorumSize, totalSigners: signers.length || DEFAULT_TOTAL_SIGNERS, ttlMinutes, expiresAt,
       requesterId, signatures: signers.map(s => ({ signerId: s, status: SignatureStatus.PENDING })), memo: dto.memo,
@@ -75,10 +74,10 @@ export class MultiSigTransactionService {
    * The read-modify-write runs inside a DB transaction holding a row lock, so
    * concurrent approvals can't overwrite each other's signatures.
    */
-  async approveTransaction(transactionId: string, dto: ApproveRejectDto): Promise<MultiSigTransactionResponse> {
+  async approveTransaction(transactionId: string, tenantId: string, signerId: string): Promise<MultiSigTransactionResponse> {
     const outcome = await this.repo.manager.transaction(async (manager) => {
       const repo = manager.getRepository(MultiSigTransactionEntity);
-      const entity = await repo.findOne({ where: { id: transactionId }, lock: { mode: 'pessimistic_write' } });
+      const entity = await repo.findOne({ where: { id: transactionId, tenantId }, lock: { mode: 'pessimistic_write' } });
       if (!entity) throw new NotFoundException('Not found');
       if (entity.status !== MultiSigTransactionStatus.PENDING_SIGNATURES) { throw new BadRequestException('Already ' + entity.status); }
       if (new Date() > entity.expiresAt) {
@@ -87,8 +86,8 @@ export class MultiSigTransactionService {
         await repo.save(entity);
         return { entity, expired: true, reachedQuorum: false };
       }
-      const se = entity.signatures?.find(s => s.signerId === dto.signerId);
-      if (!se) throw new BadRequestException('Not authorised');
+      const se = entity.signatures?.find(s => s.signerId === signerId);
+      if (!se) throw new ForbiddenException('Not authorised');
       if (se.status === SignatureStatus.REJECTED) throw new BadRequestException('Already rejected');
       if (se.status === SignatureStatus.APPROVED) throw new BadRequestException('Already approved');
       se.status = SignatureStatus.APPROVED;
@@ -114,17 +113,17 @@ export class MultiSigTransactionService {
     return this.toResponse(outcome.entity);
   }
 
-  async rejectTransaction(transactionId: string, dto: ApproveRejectDto): Promise<MultiSigTransactionResponse> {
-    const entity = await this.findPendingOrThrow(transactionId);
-    const se = entity.signatures?.find(s => s.signerId === dto.signerId);
-    if (!se) throw new BadRequestException('Not authorised');
-    se.status = SignatureStatus.REJECTED; se.signedAt = new Date().toISOString(); se.reason = dto.reason;
+  async rejectTransaction(transactionId: string, tenantId: string, signerId: string, reason?: string): Promise<MultiSigTransactionResponse> {
+    const entity = await this.findPendingOrThrow(transactionId, tenantId);
+    const se = entity.signatures?.find(s => s.signerId === signerId);
+    if (!se) throw new ForbiddenException('Not authorised');
+    se.status = SignatureStatus.REJECTED; se.signedAt = new Date().toISOString(); se.reason = reason;
     entity.status = MultiSigTransactionStatus.REJECTED; await this.repo.save(entity);
     return this.toResponse(entity);
   }
 
-  async getTransactionStatus(transactionId: string): Promise<MultiSigTransactionResponse> {
-    const entity = await this.repo.findOne({ where: { id: transactionId } });
+  async getTransactionStatus(transactionId: string, tenantId: string): Promise<MultiSigTransactionResponse> {
+    const entity = await this.repo.findOne({ where: { id: transactionId, tenantId } });
     if (!entity) throw new NotFoundException('Transaction not found');
     return this.toResponse(entity);
   }
@@ -216,8 +215,8 @@ export class MultiSigTransactionService {
     }
   }
 
-  private async findPendingOrThrow(id: string): Promise<MultiSigTransactionEntity> {
-    const e = await this.repo.findOne({ where: { id } });
+  private async findPendingOrThrow(id: string, tenantId: string): Promise<MultiSigTransactionEntity> {
+    const e = await this.repo.findOne({ where: { id, tenantId } });
     if (!e) throw new NotFoundException('Not found');
     if (e.status !== MultiSigTransactionStatus.PENDING_SIGNATURES) { throw new BadRequestException('Already ' + e.status); }
     return e;
