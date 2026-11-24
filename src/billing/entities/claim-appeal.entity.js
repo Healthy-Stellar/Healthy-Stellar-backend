@@ -1,0 +1,226 @@
+"use strict";
+var __esDecorate = (this && this.__esDecorate) || function (ctor, descriptorIn, decorators, contextIn, initializers, extraInitializers) {
+    function accept(f) { if (f !== void 0 && typeof f !== "function") throw new TypeError("Function expected"); return f; }
+    var kind = contextIn.kind, key = kind === "getter" ? "get" : kind === "setter" ? "set" : "value";
+    var target = !descriptorIn && ctor ? contextIn["static"] ? ctor : ctor.prototype : null;
+    var descriptor = descriptorIn || (target ? Object.getOwnPropertyDescriptor(target, contextIn.name) : {});
+    var _, done = false;
+    for (var i = decorators.length - 1; i >= 0; i--) {
+        var context = {};
+        for (var p in contextIn) context[p] = p === "access" ? {} : contextIn[p];
+        for (var p in contextIn.access) context.access[p] = contextIn.access[p];
+        context.addInitializer = function (f) { if (done) throw new TypeError("Cannot add initializers after decoration has completed"); extraInitializers.push(accept(f || null)); };
+        var result = (0, decorators[i])(kind === "accessor" ? { get: descriptor.get, set: descriptor.set } : descriptor[key], context);
+        if (kind === "accessor") {
+            if (result === void 0) continue;
+            if (result === null || typeof result !== "object") throw new TypeError("Object expected");
+            if (_ = accept(result.get)) descriptor.get = _;
+            if (_ = accept(result.set)) descriptor.set = _;
+            if (_ = accept(result.init)) initializers.unshift(_);
+        }
+        else if (_ = accept(result)) {
+            if (kind === "field") initializers.unshift(_);
+            else descriptor[key] = _;
+        }
+    }
+    if (target) Object.defineProperty(target, contextIn.name, descriptor);
+    done = true;
+};
+var __runInitializers = (this && this.__runInitializers) || function (thisArg, initializers, value) {
+    var useValue = arguments.length > 2;
+    for (var i = 0; i < initializers.length; i++) {
+        value = useValue ? initializers[i].call(thisArg, value) : initializers[i].call(thisArg);
+    }
+    return useValue ? value : void 0;
+};
+var __setFunctionName = (this && this.__setFunctionName) || function (f, name, prefix) {
+    if (typeof name === "symbol") name = name.description ? "[".concat(name.description, "]") : "";
+    return Object.defineProperty(f, "name", { configurable: true, value: prefix ? "".concat(prefix, " ", name) : name });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ClaimAppeal = void 0;
+var typeorm_1 = require("typeorm");
+var enums_1 = require("../../common/enums");
+var claim_denial_entity_1 = require("./claim-denial.entity");
+var ClaimAppeal = function () {
+    var _classDecorators = [(0, typeorm_1.Entity)('claim_appeals')];
+    var _classDescriptor;
+    var _classExtraInitializers = [];
+    var _classThis;
+    var _id_decorators;
+    var _id_initializers = [];
+    var _id_extraInitializers = [];
+    var _appealNumber_decorators;
+    var _appealNumber_initializers = [];
+    var _appealNumber_extraInitializers = [];
+    var _denialId_decorators;
+    var _denialId_initializers = [];
+    var _denialId_extraInitializers = [];
+    var _denial_decorators;
+    var _denial_initializers = [];
+    var _denial_extraInitializers = [];
+    var _claimId_decorators;
+    var _claimId_initializers = [];
+    var _claimId_extraInitializers = [];
+    var _appealLevel_decorators;
+    var _appealLevel_initializers = [];
+    var _appealLevel_extraInitializers = [];
+    var _status_decorators;
+    var _status_initializers = [];
+    var _status_extraInitializers = [];
+    var _submittedDate_decorators;
+    var _submittedDate_initializers = [];
+    var _submittedDate_extraInitializers = [];
+    var _receivedDate_decorators;
+    var _receivedDate_initializers = [];
+    var _receivedDate_extraInitializers = [];
+    var _decisionDate_decorators;
+    var _decisionDate_initializers = [];
+    var _decisionDate_extraInitializers = [];
+    var _deadline_decorators;
+    var _deadline_initializers = [];
+    var _deadline_extraInitializers = [];
+    var _appealReason_decorators;
+    var _appealReason_initializers = [];
+    var _appealReason_extraInitializers = [];
+    var _clinicalJustification_decorators;
+    var _clinicalJustification_initializers = [];
+    var _clinicalJustification_extraInitializers = [];
+    var _supportingDocuments_decorators;
+    var _supportingDocuments_initializers = [];
+    var _supportingDocuments_extraInitializers = [];
+    var _additionalCodes_decorators;
+    var _additionalCodes_initializers = [];
+    var _additionalCodes_extraInitializers = [];
+    var _payerResponse_decorators;
+    var _payerResponse_initializers = [];
+    var _payerResponse_extraInitializers = [];
+    var _payerReferenceNumber_decorators;
+    var _payerReferenceNumber_initializers = [];
+    var _payerReferenceNumber_extraInitializers = [];
+    var _appealedAmount_decorators;
+    var _appealedAmount_initializers = [];
+    var _appealedAmount_extraInitializers = [];
+    var _approvedAmount_decorators;
+    var _approvedAmount_initializers = [];
+    var _approvedAmount_extraInitializers = [];
+    var _timeline_decorators;
+    var _timeline_initializers = [];
+    var _timeline_extraInitializers = [];
+    var _assignedTo_decorators;
+    var _assignedTo_initializers = [];
+    var _assignedTo_extraInitializers = [];
+    var _internalNotes_decorators;
+    var _internalNotes_initializers = [];
+    var _internalNotes_extraInitializers = [];
+    var _externalReviewOrganization_decorators;
+    var _externalReviewOrganization_initializers = [];
+    var _externalReviewOrganization_extraInitializers = [];
+    var _isExternalReview_decorators;
+    var _isExternalReview_initializers = [];
+    var _isExternalReview_extraInitializers = [];
+    var _createdAt_decorators;
+    var _createdAt_initializers = [];
+    var _createdAt_extraInitializers = [];
+    var _updatedAt_decorators;
+    var _updatedAt_initializers = [];
+    var _updatedAt_extraInitializers = [];
+    var ClaimAppeal = _classThis = /** @class */ (function () {
+        function ClaimAppeal_1() {
+            this.id = __runInitializers(this, _id_initializers, void 0);
+            this.appealNumber = (__runInitializers(this, _id_extraInitializers), __runInitializers(this, _appealNumber_initializers, void 0));
+            this.denialId = (__runInitializers(this, _appealNumber_extraInitializers), __runInitializers(this, _denialId_initializers, void 0));
+            this.denial = (__runInitializers(this, _denialId_extraInitializers), __runInitializers(this, _denial_initializers, void 0));
+            this.claimId = (__runInitializers(this, _denial_extraInitializers), __runInitializers(this, _claimId_initializers, void 0));
+            this.appealLevel = (__runInitializers(this, _claimId_extraInitializers), __runInitializers(this, _appealLevel_initializers, void 0));
+            this.status = (__runInitializers(this, _appealLevel_extraInitializers), __runInitializers(this, _status_initializers, void 0));
+            this.submittedDate = (__runInitializers(this, _status_extraInitializers), __runInitializers(this, _submittedDate_initializers, void 0));
+            this.receivedDate = (__runInitializers(this, _submittedDate_extraInitializers), __runInitializers(this, _receivedDate_initializers, void 0));
+            this.decisionDate = (__runInitializers(this, _receivedDate_extraInitializers), __runInitializers(this, _decisionDate_initializers, void 0));
+            this.deadline = (__runInitializers(this, _decisionDate_extraInitializers), __runInitializers(this, _deadline_initializers, void 0));
+            this.appealReason = (__runInitializers(this, _deadline_extraInitializers), __runInitializers(this, _appealReason_initializers, void 0));
+            this.clinicalJustification = (__runInitializers(this, _appealReason_extraInitializers), __runInitializers(this, _clinicalJustification_initializers, void 0));
+            this.supportingDocuments = (__runInitializers(this, _clinicalJustification_extraInitializers), __runInitializers(this, _supportingDocuments_initializers, void 0));
+            this.additionalCodes = (__runInitializers(this, _supportingDocuments_extraInitializers), __runInitializers(this, _additionalCodes_initializers, void 0));
+            this.payerResponse = (__runInitializers(this, _additionalCodes_extraInitializers), __runInitializers(this, _payerResponse_initializers, void 0));
+            this.payerReferenceNumber = (__runInitializers(this, _payerResponse_extraInitializers), __runInitializers(this, _payerReferenceNumber_initializers, void 0));
+            this.appealedAmount = (__runInitializers(this, _payerReferenceNumber_extraInitializers), __runInitializers(this, _appealedAmount_initializers, void 0));
+            this.approvedAmount = (__runInitializers(this, _appealedAmount_extraInitializers), __runInitializers(this, _approvedAmount_initializers, void 0));
+            this.timeline = (__runInitializers(this, _approvedAmount_extraInitializers), __runInitializers(this, _timeline_initializers, void 0));
+            this.assignedTo = (__runInitializers(this, _timeline_extraInitializers), __runInitializers(this, _assignedTo_initializers, void 0));
+            this.internalNotes = (__runInitializers(this, _assignedTo_extraInitializers), __runInitializers(this, _internalNotes_initializers, void 0));
+            this.externalReviewOrganization = (__runInitializers(this, _internalNotes_extraInitializers), __runInitializers(this, _externalReviewOrganization_initializers, void 0));
+            this.isExternalReview = (__runInitializers(this, _externalReviewOrganization_extraInitializers), __runInitializers(this, _isExternalReview_initializers, void 0));
+            this.createdAt = (__runInitializers(this, _isExternalReview_extraInitializers), __runInitializers(this, _createdAt_initializers, void 0));
+            this.updatedAt = (__runInitializers(this, _createdAt_extraInitializers), __runInitializers(this, _updatedAt_initializers, void 0));
+            __runInitializers(this, _updatedAt_extraInitializers);
+        }
+        return ClaimAppeal_1;
+    }());
+    __setFunctionName(_classThis, "ClaimAppeal");
+    (function () {
+        var _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(null) : void 0;
+        _id_decorators = [(0, typeorm_1.PrimaryGeneratedColumn)('uuid')];
+        _appealNumber_decorators = [(0, typeorm_1.Column)({ type: 'varchar', length: 50, unique: true }), (0, typeorm_1.Index)()];
+        _denialId_decorators = [(0, typeorm_1.Column)({ type: 'varchar', length: 100 }), (0, typeorm_1.Index)()];
+        _denial_decorators = [(0, typeorm_1.ManyToOne)(function () { return claim_denial_entity_1.ClaimDenial; }, function (denial) { return denial.appeals; }), (0, typeorm_1.JoinColumn)({ name: 'denialId' })];
+        _claimId_decorators = [(0, typeorm_1.Column)({ type: 'varchar', length: 100 }), (0, typeorm_1.Index)()];
+        _appealLevel_decorators = [(0, typeorm_1.Column)({ type: 'integer', default: 1 })];
+        _status_decorators = [(0, typeorm_1.Column)({
+                type: 'varchar',
+                enum: enums_1.AppealStatus,
+                default: enums_1.AppealStatus.DRAFT,
+            }), (0, typeorm_1.Index)()];
+        _submittedDate_decorators = [(0, typeorm_1.Column)({ type: 'date', nullable: true })];
+        _receivedDate_decorators = [(0, typeorm_1.Column)({ type: 'date', nullable: true })];
+        _decisionDate_decorators = [(0, typeorm_1.Column)({ type: 'date', nullable: true })];
+        _deadline_decorators = [(0, typeorm_1.Column)({ type: 'date', nullable: true })];
+        _appealReason_decorators = [(0, typeorm_1.Column)({ type: 'text' })];
+        _clinicalJustification_decorators = [(0, typeorm_1.Column)({ type: 'text', nullable: true })];
+        _supportingDocuments_decorators = [(0, typeorm_1.Column)({ type: 'simple-json', nullable: true })];
+        _additionalCodes_decorators = [(0, typeorm_1.Column)({ type: 'simple-json', nullable: true })];
+        _payerResponse_decorators = [(0, typeorm_1.Column)({ type: 'text', nullable: true })];
+        _payerReferenceNumber_decorators = [(0, typeorm_1.Column)({ type: 'varchar', length: 50, nullable: true })];
+        _appealedAmount_decorators = [(0, typeorm_1.Column)({ type: 'decimal', precision: 12, scale: 2 })];
+        _approvedAmount_decorators = [(0, typeorm_1.Column)({ type: 'decimal', precision: 12, scale: 2, nullable: true })];
+        _timeline_decorators = [(0, typeorm_1.Column)({ type: 'simple-json', nullable: true })];
+        _assignedTo_decorators = [(0, typeorm_1.Column)({ type: 'varchar', length: 100, nullable: true })];
+        _internalNotes_decorators = [(0, typeorm_1.Column)({ type: 'text', nullable: true })];
+        _externalReviewOrganization_decorators = [(0, typeorm_1.Column)({ type: 'varchar', length: 100, nullable: true })];
+        _isExternalReview_decorators = [(0, typeorm_1.Column)({ type: 'boolean', default: false })];
+        _createdAt_decorators = [(0, typeorm_1.CreateDateColumn)()];
+        _updatedAt_decorators = [(0, typeorm_1.UpdateDateColumn)()];
+        __esDecorate(null, null, _id_decorators, { kind: "field", name: "id", static: false, private: false, access: { has: function (obj) { return "id" in obj; }, get: function (obj) { return obj.id; }, set: function (obj, value) { obj.id = value; } }, metadata: _metadata }, _id_initializers, _id_extraInitializers);
+        __esDecorate(null, null, _appealNumber_decorators, { kind: "field", name: "appealNumber", static: false, private: false, access: { has: function (obj) { return "appealNumber" in obj; }, get: function (obj) { return obj.appealNumber; }, set: function (obj, value) { obj.appealNumber = value; } }, metadata: _metadata }, _appealNumber_initializers, _appealNumber_extraInitializers);
+        __esDecorate(null, null, _denialId_decorators, { kind: "field", name: "denialId", static: false, private: false, access: { has: function (obj) { return "denialId" in obj; }, get: function (obj) { return obj.denialId; }, set: function (obj, value) { obj.denialId = value; } }, metadata: _metadata }, _denialId_initializers, _denialId_extraInitializers);
+        __esDecorate(null, null, _denial_decorators, { kind: "field", name: "denial", static: false, private: false, access: { has: function (obj) { return "denial" in obj; }, get: function (obj) { return obj.denial; }, set: function (obj, value) { obj.denial = value; } }, metadata: _metadata }, _denial_initializers, _denial_extraInitializers);
+        __esDecorate(null, null, _claimId_decorators, { kind: "field", name: "claimId", static: false, private: false, access: { has: function (obj) { return "claimId" in obj; }, get: function (obj) { return obj.claimId; }, set: function (obj, value) { obj.claimId = value; } }, metadata: _metadata }, _claimId_initializers, _claimId_extraInitializers);
+        __esDecorate(null, null, _appealLevel_decorators, { kind: "field", name: "appealLevel", static: false, private: false, access: { has: function (obj) { return "appealLevel" in obj; }, get: function (obj) { return obj.appealLevel; }, set: function (obj, value) { obj.appealLevel = value; } }, metadata: _metadata }, _appealLevel_initializers, _appealLevel_extraInitializers);
+        __esDecorate(null, null, _status_decorators, { kind: "field", name: "status", static: false, private: false, access: { has: function (obj) { return "status" in obj; }, get: function (obj) { return obj.status; }, set: function (obj, value) { obj.status = value; } }, metadata: _metadata }, _status_initializers, _status_extraInitializers);
+        __esDecorate(null, null, _submittedDate_decorators, { kind: "field", name: "submittedDate", static: false, private: false, access: { has: function (obj) { return "submittedDate" in obj; }, get: function (obj) { return obj.submittedDate; }, set: function (obj, value) { obj.submittedDate = value; } }, metadata: _metadata }, _submittedDate_initializers, _submittedDate_extraInitializers);
+        __esDecorate(null, null, _receivedDate_decorators, { kind: "field", name: "receivedDate", static: false, private: false, access: { has: function (obj) { return "receivedDate" in obj; }, get: function (obj) { return obj.receivedDate; }, set: function (obj, value) { obj.receivedDate = value; } }, metadata: _metadata }, _receivedDate_initializers, _receivedDate_extraInitializers);
+        __esDecorate(null, null, _decisionDate_decorators, { kind: "field", name: "decisionDate", static: false, private: false, access: { has: function (obj) { return "decisionDate" in obj; }, get: function (obj) { return obj.decisionDate; }, set: function (obj, value) { obj.decisionDate = value; } }, metadata: _metadata }, _decisionDate_initializers, _decisionDate_extraInitializers);
+        __esDecorate(null, null, _deadline_decorators, { kind: "field", name: "deadline", static: false, private: false, access: { has: function (obj) { return "deadline" in obj; }, get: function (obj) { return obj.deadline; }, set: function (obj, value) { obj.deadline = value; } }, metadata: _metadata }, _deadline_initializers, _deadline_extraInitializers);
+        __esDecorate(null, null, _appealReason_decorators, { kind: "field", name: "appealReason", static: false, private: false, access: { has: function (obj) { return "appealReason" in obj; }, get: function (obj) { return obj.appealReason; }, set: function (obj, value) { obj.appealReason = value; } }, metadata: _metadata }, _appealReason_initializers, _appealReason_extraInitializers);
+        __esDecorate(null, null, _clinicalJustification_decorators, { kind: "field", name: "clinicalJustification", static: false, private: false, access: { has: function (obj) { return "clinicalJustification" in obj; }, get: function (obj) { return obj.clinicalJustification; }, set: function (obj, value) { obj.clinicalJustification = value; } }, metadata: _metadata }, _clinicalJustification_initializers, _clinicalJustification_extraInitializers);
+        __esDecorate(null, null, _supportingDocuments_decorators, { kind: "field", name: "supportingDocuments", static: false, private: false, access: { has: function (obj) { return "supportingDocuments" in obj; }, get: function (obj) { return obj.supportingDocuments; }, set: function (obj, value) { obj.supportingDocuments = value; } }, metadata: _metadata }, _supportingDocuments_initializers, _supportingDocuments_extraInitializers);
+        __esDecorate(null, null, _additionalCodes_decorators, { kind: "field", name: "additionalCodes", static: false, private: false, access: { has: function (obj) { return "additionalCodes" in obj; }, get: function (obj) { return obj.additionalCodes; }, set: function (obj, value) { obj.additionalCodes = value; } }, metadata: _metadata }, _additionalCodes_initializers, _additionalCodes_extraInitializers);
+        __esDecorate(null, null, _payerResponse_decorators, { kind: "field", name: "payerResponse", static: false, private: false, access: { has: function (obj) { return "payerResponse" in obj; }, get: function (obj) { return obj.payerResponse; }, set: function (obj, value) { obj.payerResponse = value; } }, metadata: _metadata }, _payerResponse_initializers, _payerResponse_extraInitializers);
+        __esDecorate(null, null, _payerReferenceNumber_decorators, { kind: "field", name: "payerReferenceNumber", static: false, private: false, access: { has: function (obj) { return "payerReferenceNumber" in obj; }, get: function (obj) { return obj.payerReferenceNumber; }, set: function (obj, value) { obj.payerReferenceNumber = value; } }, metadata: _metadata }, _payerReferenceNumber_initializers, _payerReferenceNumber_extraInitializers);
+        __esDecorate(null, null, _appealedAmount_decorators, { kind: "field", name: "appealedAmount", static: false, private: false, access: { has: function (obj) { return "appealedAmount" in obj; }, get: function (obj) { return obj.appealedAmount; }, set: function (obj, value) { obj.appealedAmount = value; } }, metadata: _metadata }, _appealedAmount_initializers, _appealedAmount_extraInitializers);
+        __esDecorate(null, null, _approvedAmount_decorators, { kind: "field", name: "approvedAmount", static: false, private: false, access: { has: function (obj) { return "approvedAmount" in obj; }, get: function (obj) { return obj.approvedAmount; }, set: function (obj, value) { obj.approvedAmount = value; } }, metadata: _metadata }, _approvedAmount_initializers, _approvedAmount_extraInitializers);
+        __esDecorate(null, null, _timeline_decorators, { kind: "field", name: "timeline", static: false, private: false, access: { has: function (obj) { return "timeline" in obj; }, get: function (obj) { return obj.timeline; }, set: function (obj, value) { obj.timeline = value; } }, metadata: _metadata }, _timeline_initializers, _timeline_extraInitializers);
+        __esDecorate(null, null, _assignedTo_decorators, { kind: "field", name: "assignedTo", static: false, private: false, access: { has: function (obj) { return "assignedTo" in obj; }, get: function (obj) { return obj.assignedTo; }, set: function (obj, value) { obj.assignedTo = value; } }, metadata: _metadata }, _assignedTo_initializers, _assignedTo_extraInitializers);
+        __esDecorate(null, null, _internalNotes_decorators, { kind: "field", name: "internalNotes", static: false, private: false, access: { has: function (obj) { return "internalNotes" in obj; }, get: function (obj) { return obj.internalNotes; }, set: function (obj, value) { obj.internalNotes = value; } }, metadata: _metadata }, _internalNotes_initializers, _internalNotes_extraInitializers);
+        __esDecorate(null, null, _externalReviewOrganization_decorators, { kind: "field", name: "externalReviewOrganization", static: false, private: false, access: { has: function (obj) { return "externalReviewOrganization" in obj; }, get: function (obj) { return obj.externalReviewOrganization; }, set: function (obj, value) { obj.externalReviewOrganization = value; } }, metadata: _metadata }, _externalReviewOrganization_initializers, _externalReviewOrganization_extraInitializers);
+        __esDecorate(null, null, _isExternalReview_decorators, { kind: "field", name: "isExternalReview", static: false, private: false, access: { has: function (obj) { return "isExternalReview" in obj; }, get: function (obj) { return obj.isExternalReview; }, set: function (obj, value) { obj.isExternalReview = value; } }, metadata: _metadata }, _isExternalReview_initializers, _isExternalReview_extraInitializers);
+        __esDecorate(null, null, _createdAt_decorators, { kind: "field", name: "createdAt", static: false, private: false, access: { has: function (obj) { return "createdAt" in obj; }, get: function (obj) { return obj.createdAt; }, set: function (obj, value) { obj.createdAt = value; } }, metadata: _metadata }, _createdAt_initializers, _createdAt_extraInitializers);
+        __esDecorate(null, null, _updatedAt_decorators, { kind: "field", name: "updatedAt", static: false, private: false, access: { has: function (obj) { return "updatedAt" in obj; }, get: function (obj) { return obj.updatedAt; }, set: function (obj, value) { obj.updatedAt = value; } }, metadata: _metadata }, _updatedAt_initializers, _updatedAt_extraInitializers);
+        __esDecorate(null, _classDescriptor = { value: _classThis }, _classDecorators, { kind: "class", name: _classThis.name, metadata: _metadata }, null, _classExtraInitializers);
+        ClaimAppeal = _classThis = _classDescriptor.value;
+        if (_metadata) Object.defineProperty(_classThis, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
+        __runInitializers(_classThis, _classExtraInitializers);
+    })();
+    return ClaimAppeal = _classThis;
+}();
+exports.ClaimAppeal = ClaimAppeal;

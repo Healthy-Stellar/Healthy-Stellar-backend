@@ -429,15 +429,12 @@ export class AuthService {
   }
 
   /**
-   * Change password.
-   * All sessions except the caller's current one are revoked immediately so
-   * other devices are forced to re-authenticate with the new password.
+   * Change password
    */
   async changePassword(
     userId: string,
     changePasswordDto: ChangePasswordDto,
     ipAddress: string,
-    currentSessionId: string,
   ): Promise<void> {
     const { currentPassword, newPassword, confirmPassword } = changePasswordDto;
 
@@ -483,19 +480,11 @@ export class AuthService {
 
     await this.userRepository.save(user);
 
-    // Revoke all sessions except the one that performed the change, then
-    // delete their Redis refresh-token keys so rotation is impossible.
-    const revokedSessionIds = await this.sessionManagementService.revokeAllUserSessionsExcept(
-      userId,
-      currentSessionId,
-    );
-    await this.refreshTokenStore.revokeSessionIds(revokedSessionIds);
-
     await this.auditLogService.log({
       actorAddress: userId,
       action: 'PASSWORD_CHANGE',
       ipAddress,
-      metadata: { success: true, sessionsRevoked: revokedSessionIds.length },
+      metadata: { success: true },
     });
   }
 
@@ -629,10 +618,6 @@ export class AuthService {
 
     const hashedPassword = await this.passwordValidationService.hashPassword(newPassword);
 
-    // Collect active session IDs before revoking so we can wipe their Redis keys.
-    const activeSessions = await this.sessionManagementService.getUserSessions(user.id);
-    const activeSessionIds = activeSessions.map((s) => s.id);
-
     await this.userRepository.update(user.id, {
       passwordHash: hashedPassword,
       passwordResetToken: null,
@@ -641,15 +626,10 @@ export class AuthService {
       requiresPasswordChange: false,
     });
 
-    // A password reset means the account was likely compromised — revoke every
-    // active session and its refresh token so the attacker is immediately locked out.
-    const revokedCount = await this.sessionManagementService.revokeAllUserSessions(user.id);
-    await this.refreshTokenStore.revokeSessionIds(activeSessionIds);
-
     await this.auditLogService.log({
       actorAddress: user.id,
       action: 'PASSWORD_RESET_COMPLETED',
-      metadata: { email: user.email, success: true, sessionsRevoked: revokedCount },
+      metadata: { email: user.email, success: true },
     });
   }
 

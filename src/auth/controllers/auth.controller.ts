@@ -238,12 +238,7 @@ export class AuthController {
     @Req() req: Request,
   ): Promise<{ message: string }> {
     const user = req.user as JwtPayload;
-    await this.authService.changePassword(
-      user.userId,
-      changePasswordDto,
-      this.getIpAddress(req),
-      user.sessionId,
-    );
+    await this.authService.changePassword(user.userId, changePasswordDto, this.getIpAddress(req));
     return { message: 'Password changed successfully' };
   }
 

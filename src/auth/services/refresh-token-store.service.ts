@@ -103,18 +103,4 @@ export class RefreshTokenStoreService {
     const client = await this.getClient();
     await client.del(this.activeKey(sessionId));
   }
-
-  /**
-   * Remove the active refresh tokens for a list of sessions in one pipeline call.
-   * Used after a password change/reset to invalidate all other devices' tokens.
-   */
-  async revokeSessionIds(sessionIds: string[]): Promise<void> {
-    if (sessionIds.length === 0) return;
-    const client = await this.getClient();
-    const pipeline = client.pipeline();
-    for (const id of sessionIds) {
-      pipeline.del(this.activeKey(id));
-    }
-    await pipeline.exec();
-  }
 }
