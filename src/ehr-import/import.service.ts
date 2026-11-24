@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -15,6 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { PaginatedErrorsDto } from './dto/paginated-errors.dto';
 
 const EHR_IMPORT_MAX_RETRIES = 3;
+const SOURCE_ROW_MAX_LENGTH = 200;
 
 export interface JobStatus {
   jobId: string;
@@ -51,6 +52,8 @@ export class ImportService {
     dryRun = false,
     columnMap?: CsvColumnMap,
     quarantineMode = false,
+    tenantId?: string,
+    createdBy?: string,
   ): Promise<{ jobId: string; importBatchId: string }> {
     const format = this._detectFormat(originalName, fileBuffer);
     const importBatchId = crypto
@@ -58,13 +61,13 @@ export class ImportService {
       .update(fileBuffer)
       .digest('hex');
 
-    const existing = await this.jobRepo.findOne({ where: { importBatchId } });
+    const existing = await this.jobRepo.findOne({ where: { importBatchId, tenantId } });
     if (existing && existing.status === ImportJobStatus.COMPLETED) {
       return { jobId: existing.id, importBatchId };
     }
 
     const job = await this.jobRepo.save(
-      this.jobRepo.create({ importBatchId, format, dryRun, quarantineMode }),
+      this.jobRepo.create({ importBatchId, format, dryRun, quarantineMode, tenantId, createdBy }),
     );
 
     const tempFilePath = await this.tempStorage.writeBuffer(job.id, fileBuffer, originalName);
@@ -77,6 +80,7 @@ export class ImportService {
       dryRun,
       quarantineMode,
       columnMap,
+      tenantId,
     };
 
     const maxRetries = this.configService.get<number>('EHR_IMPORT_MAX_RETRIES', EHR_IMPORT_MAX_RETRIES);
@@ -95,8 +99,8 @@ export class ImportService {
     return { jobId: job.id, importBatchId };
   }
 
-  async getStatus(jobId: string): Promise<JobStatus> {
-    const job = await this.jobRepo.findOneOrFail({ where: { id: jobId } });
+  async getStatus(jobId: string, tenantId?: string): Promise<JobStatus> {
+    const job = await this._findJobForTenant(jobId, tenantId);
     const errors = await this.errorRepo.find({ where: { jobId } });
     return {
       jobId: job.id,
@@ -111,18 +115,19 @@ export class ImportService {
     };
   }
 
-  async exportErrors(jobId: string): Promise<string> {
+  async exportErrors(jobId: string, tenantId?: string): Promise<string> {
+    await this._findJobForTenant(jobId, tenantId);
     const errors = await this.errorRepo.find({ where: { jobId } });
     const header = 'rowIndex,errorMessage,sourceRow';
     const rows = errors.map(
       (e) =>
-        `${e.rowIndex},"${e.errorMessage.replace(/"/g, '""')}","${e.sourceRow.replace(/"/g, '""')}"`,
+        `${e.rowIndex},"${e.errorMessage.replace(/"/g, '""')}","${this._redactSourceRow(e.sourceRow).replace(/"/g, '""')}"`,
     );
     return [header, ...rows].join('\n');
   }
 
-  async getErrors(jobId: string, page = 1, limit = 20): Promise<PaginatedErrorsDto> {
-    await this.jobRepo.findOneOrFail({ where: { id: jobId } });
+  async getErrors(jobId: string, page = 1, limit = 20, tenantId?: string): Promise<PaginatedErrorsDto> {
+    await this._findJobForTenant(jobId, tenantId);
     const [errors, total] = await this.errorRepo.findAndCount({
       where: { jobId },
       order: { rowIndex: 'ASC' },
@@ -133,7 +138,7 @@ export class ImportService {
       data: errors.map((e) => ({
         rowIndex: e.rowIndex,
         errorMessage: e.errorMessage,
-        sourceRow: e.sourceRow,
+        sourceRow: this._redactSourceRow(e.sourceRow),
       })),
       total,
       page,
@@ -141,8 +146,8 @@ export class ImportService {
     };
   }
 
-  async reprocess(jobId: string): Promise<{ newJobId: string; reprocessedCount: number }> {
-    const job = await this.jobRepo.findOneOrFail({ where: { id: jobId } });
+  async reprocess(jobId: string, tenantId?: string): Promise<{ newJobId: string; reprocessedCount: number }> {
+    const job = await this._findJobForTenant(jobId, tenantId);
     const failedErrors = await this.errorRepo.find({ where: { jobId } });
     if (failedErrors.length === 0) {
       return { newJobId: jobId, reprocessedCount: 0 };
@@ -153,6 +158,8 @@ export class ImportService {
         format: job.format,
         dryRun: job.dryRun,
         quarantineMode: job.quarantineMode,
+        tenantId: job.tenantId,
+        createdBy: job.createdBy,
       }),
     );
     const jobDto = {
@@ -163,6 +170,7 @@ export class ImportService {
       dryRun: job.dryRun,
       reprocessFromJobId: jobId,
       failedRowIndices: failedErrors.map((e) => e.rowIndex),
+      tenantId: job.tenantId,
     };
     const maxRetries = this.configService.get<number>('EHR_IMPORT_MAX_RETRIES', EHR_IMPORT_MAX_RETRIES);
     await this.importQueue.add('reprocess', jobDto, {
@@ -173,6 +181,20 @@ export class ImportService {
       removeOnFail: false,
     });
     return { newJobId: newJob.id, reprocessedCount: failedErrors.length };
+  }
+
+  private async _findJobForTenant(jobId: string, tenantId?: string): Promise<ImportJob> {
+    const job = await this.jobRepo.findOne({ where: { id: jobId } });
+    if (!job || (tenantId !== undefined && job.tenantId !== tenantId)) {
+      throw new NotFoundException(`Import job ${jobId} not found`);
+    }
+    return job;
+  }
+
+  private _redactSourceRow(sourceRow: string | null | undefined): string {
+    if (!sourceRow) return '';
+    if (sourceRow.length <= SOURCE_ROW_MAX_LENGTH) return sourceRow;
+    return `${sourceRow.slice(0, SOURCE_ROW_MAX_LENGTH)}…[truncated]`;
   }
 
   private _detectFormat(filename: string, buffer: Buffer): ImportFormat {

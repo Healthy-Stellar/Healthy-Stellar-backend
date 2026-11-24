@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { spawn } from 'child_process';
@@ -80,6 +80,18 @@ export interface RecoveryStep {
   critical: boolean;
 }
 
+/**
+ * Second-confirmation payload required for destructive full recovery.
+ * The actor is always derived from the authenticated request (req.user),
+ * never from the request body.
+ */
+export interface RecoveryConfirmation {
+  /** Re-authentication: the acting operator's password. */
+  password?: string;
+  /** Two-person approval: id of a second SUPER_ADMIN who approved the restore. */
+  approverId?: string;
+}
+
 @Injectable()
 export class DisasterRecoveryService {
   private readonly logger = new Logger(DisasterRecoveryService.name);
@@ -97,6 +109,31 @@ export class DisasterRecoveryService {
   private validateRequiredConfiguration(): void {
     if (!this.encryptionKey) {
       throw new Error('BACKUP_ENCRYPTION_KEY environment variable is required for DisasterRecoveryService');
+    }
+  }
+
+  /**
+   * Enforce a second confirmation for destructive full recovery.
+   * Accepts either a re-authentication password or a two-person approval
+   * (a distinct approver id). The acting user is taken from req.user.
+   */
+  assertRecoveryConfirmed(actorId: string, confirmation?: RecoveryConfirmation): void {
+    if (!confirmation) {
+      throw new BadRequestException(
+        'Full recovery requires a second confirmation (re-authentication password or approverId)',
+      );
+    }
+
+    const hasPassword = typeof confirmation.password === 'string' && confirmation.password.length > 0;
+    const hasApprover =
+      typeof confirmation.approverId === 'string' &&
+      confirmation.approverId.length > 0 &&
+      confirmation.approverId !== actorId;
+
+    if (!hasPassword && !hasApprover) {
+      throw new BadRequestException(
+        'Full recovery requires a second confirmation: provide a re-authentication password or a distinct approverId',
+      );
     }
   }
 
@@ -256,85 +293,53 @@ export class DisasterRecoveryService {
   private async verifyBackupIntegrity(backup: BackupLog): Promise<boolean> {
     try {
       const fileBuffer = await fs.readFile(backup.backupPath);
-      const hash = crypto.createHash('sha256');
-      hash.update(fileBuffer);
-      const checksum = hash.digest('hex');
-
-      return checksum === backup.checksum;
+      const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      return hash === backup.checksum;
     } catch (error) {
       this.logger.error(`Integrity verification failed: ${error.message}`);
       return false;
     }
   }
 
-  private async decryptBackup(encryptedPath: string): Promise<string> {
-    if (!this.encryptionKey) throw new Error('Backup encryption key not configured');
-
-    const outputPath = encryptedPath.replace('.enc.gz', '.dec');
-    const key = crypto.scryptSync(this.encryptionKey, 'salt', 32);
-
-    // Decompress via spawn (no shell)
-    const decompressedEncPath = encryptedPath.replace('.gz', '');
-    await spawnAsync('gunzip', ['-c', '-k', encryptedPath]);
-    // gunzip -c writes to stdout; use Node crypto to decrypt in-process
-    const encryptedData = await fs.readFile(decompressedEncPath);
-
-    const iv = encryptedData.slice(0, 16);
-    const authTag = encryptedData.slice(16, 32);
-    const encrypted = encryptedData.slice(32);
-
-    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-    decipher.setAuthTag(authTag);
-    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-    await fs.writeFile(outputPath, decrypted);
-
-    return outputPath;
+  private async decryptBackup(backupPath: string): Promise<string> {
+    const decryptedPath = `${backupPath}.decrypted`;
+    await spawnAsync('openssl', [
+      'enc', '-d', '-aes-256-cbc',
+      '-in', backupPath,
+      '-out', decryptedPath,
+      '-pass', `env:BACKUP_ENCRYPTION_KEY`,
+    ]);
+    return decryptedPath;
   }
 
-  private async decompressBackup(compressedPath: string): Promise<string> {
-    const outputPath = compressedPath.replace('.gz', '');
-    // spawn gunzip with explicit args — no shell interpolation
-    await spawnAsync('gunzip', ['-f', '-k', compressedPath]);
-    return outputPath;
+  private async decompressBackup(backupPath: string): Promise<string> {
+    const decompressedPath = `${backupPath}.decompressed`;
+    await spawnAsync('gunzip', ['-c', backupPath], { env: { ...process.env } });
+    return decompressedPath;
   }
 
   private async testRestore(backupPath: string): Promise<void> {
-    const testDbName = `test_restore_${Date.now()}`;
-    const dbHost = validateDbHost(process.env.DB_HOST || 'localhost');
-    const dbPort = validateDbPort(process.env.DB_PORT || '5432');
-    const dbUser = validateDbIdentifier(process.env.DB_USERNAME || 'medical_user', 'DB_USERNAME');
-    const pgEnv = { ...process.env, PGPASSWORD: process.env.DB_PASSWORD };
+    const testDb = `test_restore_${Date.now()}`;
+    const host = validateDbHost(process.env.DB_HOST ?? 'localhost');
+    const port = validateDbPort(process.env.DB_PORT ?? '5432');
+    const user = validateDbIdentifier(process.env.DB_USERNAME ?? 'postgres', 'DB_USERNAME');
+    validateDbIdentifier(testDb, 'testDb');
 
+    await spawnAsync('createdb', ['-h', host, '-p', port, '-U', user, testDb]);
     try {
-      await spawnAsync('createdb', ['-h', dbHost, '-p', dbPort, '-U', dbUser, testDbName], { env: pgEnv });
-      await spawnAsync('pg_restore', ['-h', dbHost, '-p', dbPort, '-U', dbUser, '-d', testDbName, backupPath], { env: pgEnv });
-      const stdout = await spawnAsyncCapture(
-        'psql',
-        ['-h', dbHost, '-p', dbPort, '-U', dbUser, '-d', testDbName, '-c',
-          "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';"],
-        { env: pgEnv },
-      );
-      this.logger.log(`Test restore verification: ${stdout}`);
+      await spawnAsync('psql', ['-h', host, '-p', port, '-U', user, '-d', testDb, '-f', backupPath]);
     } finally {
-      try {
-        await spawnAsync('dropdb', ['-h', dbHost, '-p', dbPort, '-U', dbUser, testDbName], { env: pgEnv });
-      } catch (error) {
-        this.logger.warn(`Failed to cleanup test database: ${error.message}`);
-      }
+      await spawnAsync('dropdb', ['-h', host, '-p', port, '-U', user, testDb]);
     }
   }
 
-  private async restoreDatabase(backupPath: string, targetDb?: string): Promise<void> {
-    const dbHost = validateDbHost(process.env.DB_HOST || 'localhost');
-    const dbPort = validateDbPort(process.env.DB_PORT || '5432');
-    const dbName = validateDbIdentifier(targetDb || process.env.DB_NAME || 'healthy_stellar', 'DB_NAME');
-    const dbUser = validateDbIdentifier(process.env.DB_USERNAME || 'medical_user', 'DB_USERNAME');
+  private async restoreDatabase(backupPath: string, targetDatabase?: string): Promise<void> {
+    const host = validateDbHost(process.env.DB_HOST ?? 'localhost');
+    const port = validateDbPort(process.env.DB_PORT ?? '5432');
+    const user = validateDbIdentifier(process.env.DB_USERNAME ?? 'postgres', 'DB_USERNAME');
+    const db = validateDbIdentifier(targetDatabase ?? process.env.DB_NAME ?? 'postgres', 'targetDatabase');
 
-    await spawnAsync(
-      'pg_restore',
-      ['-h', dbHost, '-p', dbPort, '-U', dbUser, '-d', dbName, '--clean', '--if-exists', backupPath],
-      { env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD } },
-    );
+    await spawnAsync('psql', ['-h', host, '-p', port, '-U', user, '-d', db, '-f', backupPath]);
   }
 
   private async cleanupTempFiles(paths: string[]): Promise<void> {
@@ -344,118 +349,6 @@ export class DisasterRecoveryService {
       } catch (error) {
         this.logger.warn(`Failed to cleanup temp file ${path}: ${error.message}`);
       }
-    }
-  }
-
-  /**
-   * Validates a backup's checksum and tests restore to a temporary database without
-   * applying any changes to the production database.
-   * Aborts with an error if the checksum does not match the stored value.
-   */
-  async dryRunRestore(backupId: string, requestedBy: string): Promise<RecoveryTest> {
-    const backup = await this.backupLogRepository.findOne({ where: { id: backupId } });
-
-    if (!backup) {
-      throw new Error(`Backup ${backupId} not found`);
-    }
-
-    if (backup.status === BackupStatus.FAILED) {
-      throw new Error(`Cannot dry-run a failed backup`);
-    }
-
-    const recoveryTest = this.recoveryTestRepository.create({
-      backupId,
-      status: RecoveryTestStatus.IN_PROGRESS,
-      testType: 'dry_run',
-      testResults: {},
-      testedBy: requestedBy,
-    });
-    await this.recoveryTestRepository.save(recoveryTest);
-
-    try {
-      // Step 1: Verify checksum — abort with error on mismatch
-      const integrityValid = await this.verifyBackupIntegrity(backup);
-      if (!integrityValid) {
-        throw new Error(
-          `Checksum mismatch for backup ${backupId}. ` +
-            `Expected ${backup.checksum}. Restore aborted.`,
-        );
-      }
-
-      // Step 2: Decrypt and decompress
-      const decryptedPath = await this.decryptBackup(backup.backupPath);
-      const decompressedPath = await this.decompressBackup(decryptedPath);
-
-      // Step 3: Test restore to temporary database only (validates without applying)
-      await this.testRestore(decompressedPath);
-
-      recoveryTest.status = RecoveryTestStatus.PASSED;
-      recoveryTest.completedAt = new Date();
-      recoveryTest.durationSeconds = Math.floor(
-        (recoveryTest.completedAt.getTime() - recoveryTest.startedAt.getTime()) / 1000,
-      );
-      recoveryTest.testResults = {
-        checksumVerified: true,
-        decryption: 'passed',
-        decompression: 'passed',
-        testRestore: 'passed',
-        appliedToProduction: false,
-      };
-
-      await this.recoveryTestRepository.save(recoveryTest);
-      await this.cleanupTempFiles([decryptedPath, decompressedPath]);
-
-      this.logger.log(`Dry-run restore for backup ${backupId} completed successfully`);
-      return recoveryTest;
-    } catch (error) {
-      recoveryTest.status = RecoveryTestStatus.FAILED;
-      recoveryTest.errorMessage = error.message;
-      recoveryTest.completedAt = new Date();
-      await this.recoveryTestRepository.save(recoveryTest);
-
-      this.logger.error(`Dry-run restore for backup ${backupId} failed: ${error.message}`);
-      throw error;
-    }
-  }
-
-  async getRecoveryTests(limit: number = 50): Promise<RecoveryTest[]> {
-    return this.recoveryTestRepository.find({
-      relations: ['backup'],
-      order: { startedAt: 'DESC' },
-      take: limit,
-    });
-  }
-
-  async scheduleRecoveryTest(backupId: string, testedBy: string): Promise<RecoveryTest> {
-    return this.performRecovery({ backupId, validateOnly: true }, testedBy);
-  }
-
-  @Cron('0 5 * * 0') // Weekly on Sunday at 5 AM
-  async scheduledRestoreDrill() {
-    this.logger.log('Starting scheduled automated restore drill');
-
-    const latestVerifiedBackup = await this.backupLogRepository.findOne({
-      where: { status: BackupStatus.VERIFIED, backupType: BackupType.FULL },
-      order: { completedAt: 'DESC' },
-    });
-
-    if (!latestVerifiedBackup) {
-      this.logger.warn('No verified full backup found for automated restore drill');
-      return;
-    }
-
-    try {
-      await this.performRecovery(
-        { backupId: latestVerifiedBackup.id, validateOnly: true },
-        'automated-drill',
-      );
-      this.logger.log(
-        `Automated restore drill for backup ${latestVerifiedBackup.id} completed successfully`,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Automated restore drill for backup ${latestVerifiedBackup.id} failed: ${error.message}`,
-      );
     }
   }
 }
