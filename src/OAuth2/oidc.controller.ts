@@ -24,6 +24,84 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OidcJwtPayload } from './oidc.service';
 import { ApiTags } from '@nestjs/swagger';
 
+/**
+ * Short-lived, signed, HttpOnly, SameSite=Lax cookie used to carry OIDC
+ * state/nonce/redirect across the initiate → callback round-trip.
+ *
+ * No server-side session middleware is installed, so we persist the flow
+ * data in a cookie instead of `req.session`. The cookie is signed with
+ * OIDC_COOKIE_SECRET (falling back to JWT_SECRET) so it cannot be tampered
+ * with, and it expires quickly to bound the CSRF window.
+ */
+const OIDC_FLOW_COOKIE_PREFIX = 'oidc_flow_';
+const OIDC_FLOW_COOKIE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
+
+interface OidcFlowCookie {
+  state: string;
+  nonce: string;
+  redirectTo?: string;
+}
+
+function flowCookieName(provider: string): string {
+  return `${OIDC_FLOW_COOKIE_PREFIX}${provider}`;
+}
+
+function cookieSecret(): string {
+  return process.env.OIDC_COOKIE_SECRET ?? process.env.JWT_SECRET ?? 'oidc-flow-dev-secret';
+}
+
+function base64UrlEncode(input: string): string {
+  return Buffer.from(input, 'utf8').toString('base64url');
+}
+
+function base64UrlDecode(input: string): string {
+  return Buffer.from(input, 'base64url').toString('utf8');
+}
+
+function signPayload(payload: string): string {
+  // Lazy require keeps this file free of a top-level crypto import churn.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const crypto = require('crypto') as typeof import('crypto');
+  return crypto.createHmac('sha256', cookieSecret()).update(payload).digest('base64url');
+}
+
+function encodeFlowCookie(flow: OidcFlowCookie): string {
+  const payload = base64UrlEncode(JSON.stringify(flow));
+  return `${payload}.${signPayload(payload)}`;
+}
+
+function decodeFlowCookie(raw: string | undefined): OidcFlowCookie | null {
+  if (!raw) return null;
+  const [payload, signature] = raw.split('.');
+  if (!payload || !signature) return null;
+  const expected = signPayload(payload);
+  if (
+    expected.length !== signature.length ||
+    !require('crypto').timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
+  ) {
+    return null;
+  }
+  try {
+    return JSON.parse(base64UrlDecode(payload)) as OidcFlowCookie;
+  } catch {
+    return null;
+  }
+}
+
+function setFlowCookie(res: Response, provider: string, flow: OidcFlowCookie): void {
+  res.cookie(flowCookieName(provider), encodeFlowCookie(flow), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: OIDC_FLOW_COOKIE_MAX_AGE_MS,
+    path: '/',
+  });
+}
+
+function clearFlowCookie(res: Response, provider: string): void {
+  res.clearCookie(flowCookieName(provider), { path: '/' });
+}
+
 @ApiTags('auth/oidc')
 @Controller('auth/oidc')
 export class OidcController {
@@ -52,14 +130,11 @@ export class OidcController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const session = req.session as Record<string, unknown>;
-
-    // Persist optional post-login redirect destination
-    if (query.redirectTo) {
-      session[`oidc_redirect_${provider}`] = query.redirectTo;
-    }
-
-    const authUrl = await buildAuthorizationUrl(this.registry, provider, session);
+    // Persist state/nonce/redirect in a signed, HttpOnly, SameSite=Lax cookie
+    // instead of req.session (no session middleware is installed).
+    const flow: OidcFlowCookie = { state: '', nonce: '', redirectTo: query.redirectTo };
+    const authUrl = await buildAuthorizationUrl(this.registry, provider, flow);
+    setFlowCookie(res, provider, flow);
     return res.redirect(authUrl);
   }
 
@@ -85,21 +160,17 @@ export class OidcController {
   @Get(':provider/callback')
   @UseGuards(OidcAuthGuard)
   async callbackGet(
-    @Param('provider') _provider: string,
+    @Param('provider') provider: string,
     @Req() req: Request,
     @Res() res: Response,
   ) {
     const profile = req.user as OidcVerifiedProfile;
     const result = await this.oidcService.handleOidcLogin(profile);
 
-    // Redirect to frontend with token in query (or use a code-exchange pattern)
-    const session = req.session as Record<string, unknown>;
-    const redirectTo =
-      (session[`oidc_redirect_${profile.provider}`] as string | undefined) ??
-      process.env.FRONTEND_URL ??
-      '/';
-
-    delete session[`oidc_redirect_${profile.provider}`];
+    // Read the post-login redirect from the signed flow cookie, then clear it.
+    const flow = decodeFlowCookie(req.cookies?.[flowCookieName(provider)]);
+    const redirectTo = flow?.redirectTo ?? process.env.FRONTEND_URL ?? '/';
+    clearFlowCookie(res, provider);
 
     // Attach token as a short-lived query param; frontend should exchange immediately
     const url = new URL(redirectTo);
@@ -132,8 +203,9 @@ export class OidcController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const session = req.session as Record<string, unknown>;
-    const authUrl = await buildAuthorizationUrl(this.registry, provider, session);
+    const flow: OidcFlowCookie = { state: '', nonce: '' };
+    const authUrl = await buildAuthorizationUrl(this.registry, provider, flow);
+    setFlowCookie(res, provider, flow);
     return res.redirect(authUrl);
   }
 
