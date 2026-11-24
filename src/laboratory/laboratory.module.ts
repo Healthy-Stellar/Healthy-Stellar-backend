@@ -23,6 +23,7 @@ import { OrderSetTemplatesController } from './controllers/order-set-templates.c
 import { OrderSetTemplatesService } from './services/order-set-templates.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuthModule } from '../auth/auth.module';
+import { RolesGuard } from '../auth/guards/roles.guard';
 
 @Module({
   imports: [
@@ -50,6 +51,8 @@ import { AuthModule } from '../auth/auth.module';
     OrderSetTemplatesController,
   ],
   providers: [
+    // RolesGuard is used by CriticalValuesController; ensure it resolves here.
+    RolesGuard,
     LaboratoryService,
     LabResultsService,
     CriticalAlertsService,
