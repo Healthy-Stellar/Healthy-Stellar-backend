@@ -45,6 +45,7 @@ function buildMocks() {
     hashPassword: jest.fn().mockResolvedValue('hashed'),
     verifyPassword: jest.fn().mockResolvedValue(true),
     isPasswordExpired: jest.fn().mockReturnValue(false),
+    getPolicy: jest.fn().mockReturnValue({ lockoutThreshold: 5, lockoutDurationMinutes: 30 }),
   };
 
   const authTokenService = {
@@ -136,6 +137,133 @@ describe('AuthService.login', () => {
     expect(storeRefreshToken).toBe(refreshTokenInSession);
     expect(typeof storeSessionId).toBe('string');
     expect(storeSessionId.length).toBeGreaterThan(0);
+  });
+});
+
+describe('AuthService.login — account lockout', () => {
+  const future = () => new Date(Date.now() + 10 * 60 * 1000);
+
+  it('rejects a locked account before verifying the password', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue({
+      ...mockUser,
+      failedLoginAttempts: 5,
+      lockedUntil: future(),
+    });
+
+    await expect(
+      service.login({ email: 'test@example.com', password: 'wrong' }, 'ip', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+
+    expect(mocks.passwordValidation.verifyPassword).not.toHaveBeenCalled();
+  });
+
+  it('returns the same generic error whether the password was correct or not', async () => {
+    const lockedUser = () => ({ ...mockUser, failedLoginAttempts: 5, lockedUntil: future() });
+
+    const withWrongPassword = await buildService();
+    withWrongPassword.mocks.userRepo.findOne.mockResolvedValue(lockedUser());
+    withWrongPassword.mocks.passwordValidation.verifyPassword.mockResolvedValue(false);
+
+    const withCorrectPassword = await buildService();
+    withCorrectPassword.mocks.userRepo.findOne.mockResolvedValue(lockedUser());
+    withCorrectPassword.mocks.passwordValidation.verifyPassword.mockResolvedValue(true);
+
+    await expect(
+      withWrongPassword.service.login({ email: 'test@example.com', password: 'wrong' }, 'ip', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+    await expect(
+      withCorrectPassword.service.login(
+        { email: 'test@example.com', password: 'correct' },
+        'ip',
+        'ua',
+      ),
+    ).rejects.toThrow('Invalid email or password');
+
+    expect(withWrongPassword.mocks.passwordValidation.verifyPassword).not.toHaveBeenCalled();
+    expect(withCorrectPassword.mocks.passwordValidation.verifyPassword).not.toHaveBeenCalled();
+  });
+
+  it('does not extend an active lock on further failed attempts', async () => {
+    const { service, mocks } = await buildService();
+    const lock = future();
+    const lockedUser = { ...mockUser, failedLoginAttempts: 5, lockedUntil: lock };
+    mocks.userRepo.findOne.mockResolvedValue(lockedUser);
+
+    await expect(
+      service.login({ email: 'test@example.com', password: 'wrong' }, 'ip', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+
+    // Nothing is persisted and neither the counter nor the lock moves, so
+    // repeated requests cannot keep the account locked indefinitely.
+    expect(mocks.userRepo.save).not.toHaveBeenCalled();
+    expect(lockedUser.lockedUntil).toBe(lock);
+    expect(lockedUser.failedLoginAttempts).toBe(5);
+  });
+
+  it('clears the counter once the lock has expired so one typo does not re-lock', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue({
+      ...mockUser,
+      failedLoginAttempts: 5,
+      lockedUntil: new Date(Date.now() - 60 * 1000),
+    });
+    mocks.passwordValidation.verifyPassword.mockResolvedValue(false);
+
+    await expect(
+      service.login({ email: 'test@example.com', password: 'wrong' }, 'ip', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+
+    const saved = mocks.userRepo.save.mock.calls[0][0];
+    expect(saved.failedLoginAttempts).toBe(1);
+    expect(saved.lockedUntil).toBeNull();
+    expect(mocks.auditLogService.log).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'ACCOUNT_LOCKED' }),
+    );
+  });
+
+  it('runs a dummy password verification for unknown emails', async () => {
+    const { service, mocks } = await buildService();
+    mocks.userRepo.findOne.mockResolvedValue(null);
+    mocks.passwordValidation.verifyPassword.mockResolvedValue(false);
+
+    await expect(
+      service.login({ email: 'nobody@example.com', password: 'pw' }, 'ip', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+
+    // A verification still runs (against the dummy hash) so response timing does
+    // not reveal whether the email is registered.
+    expect(mocks.passwordValidation.verifyPassword).toHaveBeenCalledTimes(1);
+    expect(mocks.passwordValidation.verifyPassword).toHaveBeenCalledWith(
+      'pw',
+      expect.any(String),
+    );
+    expect(mocks.userRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('locks the account using the configured threshold and duration', async () => {
+    const { service, mocks } = await buildService();
+    mocks.passwordValidation.getPolicy.mockReturnValue({
+      lockoutThreshold: 3,
+      lockoutDurationMinutes: 10,
+    });
+    mocks.userRepo.findOne.mockResolvedValue({ ...mockUser, failedLoginAttempts: 2 });
+    mocks.passwordValidation.verifyPassword.mockResolvedValue(false);
+
+    const before = Date.now();
+    await expect(
+      service.login({ email: 'test@example.com', password: 'wrong' }, 'ip', 'ua'),
+    ).rejects.toThrow('Invalid email or password');
+
+    const saved = mocks.userRepo.save.mock.calls[0][0];
+    expect(saved.failedLoginAttempts).toBe(3);
+    expect(saved.lockedUntil).toBeInstanceOf(Date);
+    const lockMinutes = (saved.lockedUntil.getTime() - before) / 60000;
+    expect(lockMinutes).toBeGreaterThan(9.9);
+    expect(lockMinutes).toBeLessThanOrEqual(10);
+    expect(mocks.auditLogService.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'ACCOUNT_LOCKED' }),
+    );
   });
 });
 

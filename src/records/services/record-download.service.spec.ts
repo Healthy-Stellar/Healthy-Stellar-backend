@@ -126,6 +126,50 @@ describe('RecordDownloadService', () => {
     expect(result.filename).toContain('record-uuid');
   });
 
+  // ── Plaintext survives an async hop before the stream is consumed ─────────
+  it('keeps the plaintext bytes intact when an async hop occurs before the stream is read', async () => {
+    recordRepo.findOne.mockResolvedValue(mockRecord);
+    accessControl.verifyAccess.mockResolvedValue(true);
+    encryption.decryptRecord.mockResolvedValue(Buffer.from('intact-bytes'));
+
+    const result = await service.download('record-uuid', 'req-id', '127.0.0.1', 'jest');
+
+    // Simulate the I/O that happens between download() resolving and the
+    // response being piped (interceptors, audit writes, Nest response
+    // handling). The previous setImmediate wipe ran here and zeroed the buffer
+    // the lazily-read stream still referenced.
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of result.stream) chunks.push(Buffer.from(chunk));
+
+    expect(Buffer.concat(chunks).toString()).toBe('intact-bytes');
+  });
+
+  // ── Buffer is wiped once streaming finishes (security property preserved) ─
+  it('wipes the plaintext buffer once the stream has been fully consumed', async () => {
+    recordRepo.findOne.mockResolvedValue(mockRecord);
+    accessControl.verifyAccess.mockResolvedValue(true);
+    const plaintext = Buffer.from('wipe-after-stream');
+    encryption.decryptRecord.mockResolvedValue(plaintext);
+
+    const result = await service.download('record-uuid', 'req-id', '127.0.0.1', 'jest');
+
+    // Still intact before the stream is drained.
+    expect(plaintext.toString()).toBe('wipe-after-stream');
+
+    await new Promise<void>((resolve, reject) => {
+      result.stream.on('data', () => undefined);
+      result.stream.on('end', () => resolve());
+      result.stream.on('error', reject);
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(plaintext.length).toBe('wipe-after-stream'.length);
+    expect(plaintext.every((byte) => byte === 0)).toBe(true);
+  });
+
   // ── Decryption failure → 500 ──────────────────────────────────────────────
   it('throws InternalServerErrorException when decryption fails', async () => {
     recordRepo.findOne.mockResolvedValue(mockRecord);

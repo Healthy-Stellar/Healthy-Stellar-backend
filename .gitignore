@@ -94,6 +94,8 @@ yarn.lock
 .eslintcache
 .npm
 .yarn
+.pnpm-cache/
+.pnpm-store/
 
 # Docker
 docker-compose.override.yml

@@ -230,6 +230,15 @@ async function bootstrap() {
     .addTag('Medical Records', 'Patient medical record management')
     .addTag('Clinical Templates', 'Standardized clinical documentation')
     .addTag('Consent Management', 'Patient consent and data sharing')
+    .addTag(
+      'Research Export',
+      'De-identified, k-anonymised datasets for research. Two pipelines with different guarantees: ' +
+        'a k-anonymised NDJSON stream (`POST /research-export/anonymized`, HMAC pseudo-ids, k fixed at 5) ' +
+        'and an S3 dispatch export (keyed pseudo-ids, configurable k floored at 5, admin approval). ' +
+        'Requires the `RESEARCH_EXPORT` permission and an active research access grant. ' +
+        'Full de-identification rules, consent revocation behaviour, storage/retention and `RESEARCH_*` ' +
+        'env vars: https://github.com/big14way/Healthy-Stellar-backend/blob/main/docs/research-export.md',
+    )
     .addTag('File Attachments', 'Medical document and image management')
     .addTag('Reporting', 'Medical analytics and compliance reports')
     .addTag('Billing & Invoicing', 'Patient billing and invoice management')

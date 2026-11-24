@@ -22,6 +22,12 @@ import { RefreshTokenStoreService } from './refresh-token-store.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { RegisterDto, RegisterStaffDto, LoginDto, ChangePasswordDto } from '../dto/auth.dto';
 
+/**
+ * Returned for every credential failure — unknown email, wrong password, or a
+ * locked account — so the login response never reveals which of those applies.
+ */
+const INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password';
+
 export interface AuthResponse {
   user: {
     id: string;
@@ -67,6 +73,9 @@ export class AuthService {
     private refreshTokenStore: RefreshTokenStoreService,
     private auditLogService: AuditLogService,
   ) {}
+
+  /** Cached dummy hash for unknown-email logins; see {@link getDummyPasswordHash}. */
+  private dummyPasswordHash?: string;
 
   /**
    * Register new user (healthcare staff)
@@ -206,19 +215,49 @@ export class AuthService {
    */
   async login(loginDto: LoginDto, ipAddress: string, userAgent: string): Promise<AuthResponse> {
     const { email, password } = loginDto;
+    const passwordPolicy = this.passwordValidationService.getPolicy();
+    const now = new Date();
 
     // Find user
     const user = await this.userRepository.findOne({ where: { email } });
 
-    if (
-      !user ||
-      !(await this.passwordValidationService.verifyPassword(password, user.passwordHash))
-    ) {
+    // Gate on the lock BEFORE verifying the password. Checking the lock first
+    // means (a) guessing against a locked account is pointless, and (b) the
+    // response cannot be used to tell a correct password from an incorrect one,
+    // because a locked account always gets the same generic error.
+    if (user && user.lockedUntil && user.lockedUntil > now) {
+      await this.auditLogService.log({
+        actorAddress: user.id,
+        action: 'LOGIN_FAILED',
+        ipAddress,
+        metadata: { reason: 'Account is locked', success: false },
+      });
+
+      // No counter increment and no re-arm here, so repeatedly hitting a locked
+      // account cannot extend the lock.
+      throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    // An elapsed lock is cleared here so the attempt counter starts fresh and a
+    // single typo after expiry cannot immediately re-lock the account.
+    if (user && user.lockedUntil) {
+      user.lockedUntil = null;
+      user.failedLoginAttempts = 0;
+    }
+
+    // Always run a password verification, even when the email is unknown (against
+    // a dummy hash), so response latency does not reveal which emails exist.
+    const passwordHash = user?.passwordHash ?? (await this.getDummyPasswordHash());
+    const passwordMatches = await this.passwordValidationService.verifyPassword(
+      password,
+      passwordHash,
+    );
+
+    if (!user || !passwordMatches) {
       // Increment failed login attempts
       if (user) {
         user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
 
-        const passwordPolicy = this.passwordValidationService.getPolicy();
         if (user.failedLoginAttempts >= passwordPolicy.lockoutThreshold) {
           user.lockedUntil = new Date(
             Date.now() + passwordPolicy.lockoutDurationMinutes * 60 * 1000,
@@ -241,18 +280,7 @@ export class AuthService {
         metadata: { reason: 'Invalid credentials', success: false },
       });
 
-      throw new UnauthorizedException('Invalid email or password');
-    }
-
-    // Check if account is locked
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
-      await this.auditLogService.log({
-        actorAddress: user.id,
-        action: 'LOGIN_FAILED',
-        ipAddress,
-        metadata: { reason: 'Account is locked', success: false },
-      });
-      throw new UnauthorizedException('Account is locked. Try again later');
+      throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
     // Check if user is active
@@ -415,6 +443,21 @@ export class AuthService {
       refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
     };
+  }
+
+  /**
+   * A fixed, process-local hash used to keep password verification roughly
+   * constant-time for unknown emails: `login` always runs one verification, even
+   * when there is no user, so latency does not reveal which emails are
+   * registered. Computed lazily and cached.
+   */
+  private async getDummyPasswordHash(): Promise<string> {
+    if (!this.dummyPasswordHash) {
+      this.dummyPasswordHash = await this.passwordValidationService.hashPassword(
+        randomBytes(32).toString('hex'),
+      );
+    }
+    return this.dummyPasswordHash;
   }
 
   private isClinicalRole(role: UserRole): boolean {

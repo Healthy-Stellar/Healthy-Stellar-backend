@@ -132,10 +132,15 @@ export class RecordDownloadService {
     // ── 7. Build one-shot Readable — plaintext never stored anywhere ──────────
     const stream = Readable.from(plaintext);
 
-    // Zero out the plaintext buffer immediately after handing it to the stream
-    // The stream holds a reference to the original buffer; we schedule a wipe
-    // after the current tick so the stream can read it first.
-    setImmediate(() => plaintext.fill(0));
+    // Zero the plaintext buffer once the stream has fully released it. Wiping on
+    // a timer (the previous `setImmediate`) raced the lazily-read stream: any I/O
+    // between returning here and the response being piped (interceptors, audit
+    // writes, Nest's response handling) could run the wipe first, so the client
+    // received a file of zeros. Tying the wipe to the stream lifecycle guarantees
+    // the consumer always sees the real bytes.
+    const wipePlaintext = () => plaintext.fill(0);
+    stream.once('end', wipePlaintext);
+    stream.once('close', wipePlaintext);
 
     return {
       stream,

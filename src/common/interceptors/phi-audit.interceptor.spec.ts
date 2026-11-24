@@ -1,10 +1,14 @@
 import { ExecutionContext, CallHandler } from '@nestjs/common';
 import { of } from 'rxjs';
-import { PhiAuditInterceptor } from './phi-audit.interceptor';
+import { ANONYMOUS_ACTOR, PhiAuditInterceptor } from './phi-audit.interceptor';
 import { SensitiveAuditAction } from '../entities/sensitive-audit-log.entity';
 
 const makeMockAuditLogService = () => ({
   log: jest.fn().mockResolvedValue({}),
+});
+
+const makeMockMetrics = () => ({
+  inc: jest.fn(),
 });
 
 const makeContext = (overrides: Partial<{
@@ -20,7 +24,7 @@ const makeContext = (overrides: Partial<{
   const request = {
     method: 'GET',
     url: '/medical-records/abc-123',
-    user: { id: 'user-uuid', role: 'DOCTOR', tenantId: 'tenant-1' },
+    user: { userId: 'user-uuid', role: 'DOCTOR', organizationId: 'tenant-1' },
     params: {},
     query: {},
     body: {},
@@ -41,10 +45,15 @@ const makeHandler = (): CallHandler => ({
 describe('PhiAuditInterceptor', () => {
   let interceptor: PhiAuditInterceptor;
   let auditLogService: ReturnType<typeof makeMockAuditLogService>;
+  let anonymousRowsCounter: ReturnType<typeof makeMockMetrics>;
 
   beforeEach(() => {
     auditLogService = makeMockAuditLogService();
-    interceptor = new PhiAuditInterceptor(auditLogService as any);
+    anonymousRowsCounter = makeMockMetrics();
+    interceptor = new PhiAuditInterceptor(
+      auditLogService as any,
+      anonymousRowsCounter as any,
+    );
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -85,20 +94,110 @@ describe('PhiAuditInterceptor', () => {
     });
   });
 
-  it('captures actor id, role and tenant from request user', (done) => {
+  it('captures actorAddress, actorRole and tenantId for an authenticated request', (done) => {
     interceptor
       .intercept(
-        makeContext({ user: { id: 'doc-1', role: 'NURSE', tenantId: 'org-99' } }),
+        makeContext({
+          user: { userId: 'user-1', role: 'NURSE', organizationId: 'org-99' },
+        }),
         makeHandler(),
       )
       .subscribe(() => {
         expect(auditLogService.log).toHaveBeenCalledWith(
           expect.objectContaining({
-            actorAddress: 'doc-1',
+            actorAddress: 'user-1',
             actorRole: 'NURSE',
             tenantId: 'org-99',
           }),
         );
+        done();
+      });
+  });
+
+  it('does not alert when an authenticated request is fully attributable', (done) => {
+    interceptor
+      .intercept(
+        makeContext({
+          user: { userId: 'user-1', role: 'NURSE', organizationId: 'org-99' },
+        }),
+        makeHandler(),
+      )
+      .subscribe(() => {
+        expect(anonymousRowsCounter.inc).not.toHaveBeenCalled();
+        done();
+      });
+  });
+
+  // Requirement: every authenticated PHI access must be attributable — a
+  // non-anonymous actor and a non-null tenant — for all PHI resource types.
+  describe.each([
+    ['GET', '/medical-records/abc-123', 'MedicalRecord'],
+    ['POST', '/medical-records', 'MedicalRecord'],
+    ['PUT', '/medical-records/abc-123', 'MedicalRecord'],
+    ['PATCH', '/medical-records/abc-123', 'MedicalRecord'],
+    ['DELETE', '/medical-records/abc-123', 'MedicalRecord'],
+    ['GET', '/clinical-notes/abc-123', 'ClinicalNote'],
+    ['GET', '/ehr/abc-123', 'EHR'],
+    ['GET', '/patients/abc-123', 'Patient'],
+  ])('authenticated PHI access: %s %s', (method, url, resourceType) => {
+    it('records a non-anonymous actor and a non-null tenant', (done) => {
+      interceptor
+        .intercept(makeContext({ method, url }), makeHandler())
+        .subscribe(() => {
+          expect(auditLogService.log).toHaveBeenCalledTimes(1);
+          const entry = auditLogService.log.mock.calls[0][0];
+
+          // Actor must be the real user id, never the anonymous placeholder.
+          expect(entry.actorAddress).toBe('user-uuid');
+          expect(entry.actorAddress).not.toBe(ANONYMOUS_ACTOR);
+
+          // Tenant must come from the principal's organizationId.
+          expect(entry.tenantId).toBe('tenant-1');
+          expect(entry.tenantId).not.toBeNull();
+          expect(entry.tenantId).not.toBeUndefined();
+
+          expect(entry.resourceType).toBe(resourceType);
+          expect(anonymousRowsCounter.inc).not.toHaveBeenCalled();
+          done();
+        });
+    });
+  });
+
+  it('fails loudly when an authenticated request has no resolvable actor', (done) => {
+    interceptor
+      .intercept(
+        makeContext({ user: { role: 'DOCTOR', organizationId: 'org-99' } }),
+        makeHandler(),
+      )
+      .subscribe(() => {
+        expect(auditLogService.log).toHaveBeenCalledWith(
+          expect.objectContaining({ actorAddress: ANONYMOUS_ACTOR }),
+        );
+        expect(anonymousRowsCounter.inc).toHaveBeenCalledWith({ reason: 'missing_actor' });
+        done();
+      });
+  });
+
+  it('fails loudly when an authenticated request has no tenant', (done) => {
+    interceptor
+      .intercept(
+        makeContext({ user: { userId: 'user-1', role: 'DOCTOR' } }),
+        makeHandler(),
+      )
+      .subscribe(() => {
+        expect(auditLogService.log).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: null }),
+        );
+        expect(anonymousRowsCounter.inc).toHaveBeenCalledWith({ reason: 'missing_tenant' });
+        done();
+      });
+  });
+
+  it('does not alert for unauthenticated requests', (done) => {
+    interceptor
+      .intercept(makeContext({ user: undefined }), makeHandler())
+      .subscribe(() => {
+        expect(anonymousRowsCounter.inc).not.toHaveBeenCalled();
         done();
       });
   });
@@ -173,7 +272,7 @@ describe('PhiAuditInterceptor', () => {
       .intercept(makeContext({ user: undefined }), makeHandler())
       .subscribe(() => {
         expect(auditLogService.log).toHaveBeenCalledWith(
-          expect.objectContaining({ actorAddress: 'anonymous' }),
+          expect.objectContaining({ actorAddress: ANONYMOUS_ACTOR }),
         );
         done();
       });

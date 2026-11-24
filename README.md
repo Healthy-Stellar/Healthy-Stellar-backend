@@ -121,7 +121,7 @@ Modules are grouped below by domain. Each entry is a top-level directory under `
 | `gdpr/` | GDPR data-subject requests (access, erasure, portability) |
 | `data-residency/` | Geo-based data residency enforcement |
 | `fhir/` | FHIR R4 resource mapping and bulk export |
-| `research-export/` | De-identified, k-anonymous data exports for research |
+| [`research-export/`](docs/research-export.md) | De-identified, k-anonymous data exports for research — see the [research export & de-identification guide](docs/research-export.md) |
 | `ehr-import/` | Structured import of external EHR data (HL7, CSV) |
 | `governance-analytics/` | Compliance dashboards and governance metrics |
 | `consistency-checker/` | Cross-system data consistency validation |
@@ -289,7 +289,7 @@ cp .env.example .env
 | IPFS | `IPFS_NODE_URL`, `IPFS_GATEWAY`, `IPFS_FALLBACK_GATEWAY` |
 | Email / SMTP | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM_ADDRESS` |
 | Telemedicine | `TELEMEDICINE_SIGNALING_URL`, `TELEMEDICINE_TOKEN_SECRET` |
-| Research export | `RESEARCH_EXPORT_BUCKET`, `RESEARCH_K_ANONYMITY` |
+| Research export | `RESEARCH_EXPORT_BUCKET`, `RESEARCH_EXPORT_HASH_SALT`, `RESEARCH_K_ANONYMITY` (+ `ANONYMIZATION_SALT`) — see [docs/research-export.md](docs/research-export.md) |
 | EHR import | `EHR_IMPORT_S3_BUCKET`, `EHR_IMPORT_MAX_RETRIES` |
 | GraphQL subscriptions | `SUBSCRIPTIONS_IDLE_TIMEOUT_MS`, `SUBSCRIPTIONS_MAX_PER_CONNECTION` |
 | Ops / alerting | `OPS_SLACK_WEBHOOK_URL`, `QUEUE_DEPTH_THRESHOLD` |
