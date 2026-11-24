@@ -11,6 +11,7 @@ export const QUEUE_NAMES = {
   COMPLIANCE_REPORTS: 'compliance-reports',
   USER_CSV_IMPORT: 'user-csv-import',
   PHARMACY_REORDER_ALERTS: 'pharmacy-reorder-alerts',
+  ACCESS_GRANT_DISPATCH: 'access-grant-dispatch',
 } as const;
 
 export const JOB_TYPES = {

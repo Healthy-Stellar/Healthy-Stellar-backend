@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Query, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  UseGuards,
+  Query,
+  DefaultValuePipe,
+  ParseIntPipe,
+  Req,
+  ForbiddenException,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -21,19 +33,19 @@ export class BackupController {
   ) {}
 
   @Post('full')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   async createFullBackup() {
     return this.backupService.createFullBackup();
   }
 
   @Post('incremental')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   async createIncrementalBackup() {
     return this.backupService.createIncrementalBackup();
   }
 
   @Get('history')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   async getBackupHistory(
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit = 50,
   ) {
@@ -41,49 +53,56 @@ export class BackupController {
   }
 
   @Get(':id')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   async getBackup(@Param('id') id: string) {
     return this.backupService.getBackupById(id);
   }
 
   @Post(':id/verify')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
-  async verifyBackup(@Param('id') id: string, @Body('verifiedBy') verifiedBy: string) {
-    return this.verificationService.verifyBackup(id, verifiedBy);
+  @Roles(UserRole.SUPER_ADMIN)
+  async verifyBackup(@Param('id') id: string, @Req() req: any) {
+    return this.verificationService.verifyBackup(id, req.user?.id);
   }
 
   @Get('verification/status')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   async getVerificationStatus() {
     return this.verificationService.getVerificationStatus();
   }
 
   @Post('recovery/plan')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   async createRecoveryPlan(@Body('backupId') backupId: string) {
     return this.recoveryService.createRecoveryPlan(backupId);
   }
 
   @Post('recovery/execute')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   async executeRecovery(
     @Body() options: RecoveryOptions,
-    @Body('performedBy') performedBy: string,
+    @Body('confirmationToken') confirmationToken: string,
+    @Req() req: any,
   ) {
-    return this.recoveryService.performRecovery(options, performedBy);
+    // Second confirmation: the caller must re-supply a confirmation token that
+    // matches the authenticated operator's id. This prevents a single stolen
+    // session from triggering a full platform restore without re-auth.
+    const actorId = req.user?.id;
+    if (!actorId || !confirmationToken || confirmationToken !== actorId) {
+      throw new ForbiddenException(
+        'Recovery execution requires a second confirmation (confirmationToken must match the authenticated operator)',
+      );
+    }
+    return this.recoveryService.performRecovery(options, actorId);
   }
 
   @Post('recovery/test')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
-  async scheduleRecoveryTest(
-    @Body('backupId') backupId: string,
-    @Body('testedBy') testedBy: string,
-  ) {
-    return this.recoveryService.scheduleRecoveryTest(backupId, testedBy);
+  @Roles(UserRole.SUPER_ADMIN)
+  async scheduleRecoveryTest(@Body('backupId') backupId: string, @Req() req: any) {
+    return this.recoveryService.scheduleRecoveryTest(backupId, req.user?.id);
   }
 
   @Get('recovery/tests')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   async getRecoveryTests(
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit = 50,
   ) {
@@ -91,13 +110,13 @@ export class BackupController {
   }
 
   @Get('monitoring/health')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.PHYSICIAN, UserRole.NURSE)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.PHYSICIAN, UserRole.NURSE)
   async getHealthMetrics() {
     return this.monitoringService.getHealthMetrics();
   }
 
   @Get('monitoring/alerts')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   async getRecentAlerts(
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit = 50,
   ) {
@@ -105,22 +124,19 @@ export class BackupController {
   }
 
   @Get('monitoring/statistics')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   async getStatistics(@Query('days') days?: number) {
     return this.monitoringService.getBackupStatistics(days ? parseInt(days as any, 10) : 30);
   }
 
   @Post('restore/:id/dry-run')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
-  async dryRunRestore(
-    @Param('id') id: string,
-    @Body('requestedBy') requestedBy: string,
-  ) {
-    return this.recoveryService.dryRunRestore(id, requestedBy ?? 'admin');
+  @Roles(UserRole.SUPER_ADMIN)
+  async dryRunRestore(@Param('id') id: string, @Req() req: any) {
+    return this.recoveryService.dryRunRestore(id, req.user?.id ?? 'super-admin');
   }
 
   @Post('recovery/drill/trigger')
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN)
   async triggerRestoreDrill() {
     return this.recoveryService.scheduledRestoreDrill();
   }

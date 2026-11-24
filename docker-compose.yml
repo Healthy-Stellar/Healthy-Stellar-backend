@@ -172,6 +172,8 @@ services:
     volumes:
       - ./docker/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
+    secrets:
+      - metrics_token
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -287,3 +289,5 @@ secrets:
     file: ./secrets/grafana_password.txt
   backup_encryption_key:
     file: ./secrets/backup_encryption_key.txt
+  metrics_token:
+    file: ./secrets/metrics_token.txt

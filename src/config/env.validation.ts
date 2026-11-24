@@ -131,8 +131,12 @@ export const envValidationSchema = Joi.object({
   // CORS
   ALLOWED_ORIGINS: Joi.string().required(),
 
+  // Reverse proxy / client IP derivation
+  TRUST_PROXY: Joi.string().allow('').default('false'),
+
   // Metrics
   METRICS_TOKEN: Joi.string().required(),
+  METRICS_ALLOWED_NETWORKS: Joi.string().allow('').default(''),
 
   // Queue integrity
   QUEUE_HMAC_SECRET: Joi.string().min(32).required(),

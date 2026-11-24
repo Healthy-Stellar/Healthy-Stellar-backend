@@ -1,15 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { getQueueToken } from '@nestjs/bullmq';
 import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { AccessRequestService } from './access-request.service';
 import { AccessRequest, AccessRequestStatus } from '../entities/access-request.entity';
 import { AccessGrant, AccessLevel, GrantStatus } from '../entities/access-grant.entity';
-import { SorobanQueueService } from './soroban-queue.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { AccessRequestService } from './access-request.service';
+import { QUEUE_NAMES } from '../../queues/queue.constants';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -59,22 +60,45 @@ function makeGrant(overrides: Partial<AccessGrant> = {}): AccessGrant {
 // ── Mock factories ────────────────────────────────────────────────────────────
 
 function makeMocks() {
+  const savedRequest = makeRequest({
+    status: AccessRequestStatus.APPROVED,
+    respondedAt: new Date(),
+  });
+  const conditionalUpdate = {
+    execute: jest.fn().mockResolvedValue({ affected: 1 }),
+  };
+  const grantRepo = {
+    create: jest.fn(),
+    save: jest.fn(),
+  };
   const requestRepo = {
     findOne: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
     update: jest.fn(),
     createQueryBuilder: jest.fn(),
+    manager: {
+      transaction: jest.fn(async (callback) =>
+        callback({
+          getRepository: (entity: unknown) =>
+            entity === AccessRequest
+              ? {
+                  createQueryBuilder: () => ({
+                    update: jest.fn().mockReturnThis(),
+                    set: jest.fn().mockReturnThis(),
+                    where: jest.fn().mockReturnThis(),
+                    andWhere: jest.fn().mockReturnThis(),
+                    execute: conditionalUpdate.execute,
+                  }),
+                  findOneByOrFail: jest.fn().mockResolvedValue(savedRequest),
+                }
+              : grantRepo,
+        }),
+      ),
+    },
   };
 
-  const grantRepo = {
-    create: jest.fn(),
-    save: jest.fn(),
-  };
-
-  const soroban = {
-    dispatchGrant: jest.fn().mockResolvedValue('0xsoroban-tx-hash'),
-  };
+  const grantDispatchQueue = { add: jest.fn().mockResolvedValue({ id: 'job-1' }) };
 
   const notifications = {
     sendPatientEmailNotification: jest.fn().mockResolvedValue(undefined),
@@ -82,7 +106,13 @@ function makeMocks() {
     emitAccessRevoked: jest.fn(),
   };
 
-  return { requestRepo, grantRepo, soroban, notifications };
+  return {
+    requestRepo,
+    grantRepo,
+    grantDispatchQueue,
+    notifications,
+    conditionalUpdate,
+  };
 }
 
 async function buildService(mocks: ReturnType<typeof makeMocks>) {
@@ -91,7 +121,10 @@ async function buildService(mocks: ReturnType<typeof makeMocks>) {
       AccessRequestService,
       { provide: getRepositoryToken(AccessRequest), useValue: mocks.requestRepo },
       { provide: getRepositoryToken(AccessGrant), useValue: mocks.grantRepo },
-      { provide: SorobanQueueService, useValue: mocks.soroban },
+      {
+        provide: getQueueToken(QUEUE_NAMES.ACCESS_GRANT_DISPATCH),
+        useValue: mocks.grantDispatchQueue,
+      },
       { provide: NotificationsService, useValue: mocks.notifications },
     ],
   }).compile();
@@ -219,7 +252,7 @@ describe('AccessRequestService', () => {
   describe('approveRequest', () => {
     beforeEach(() => {
       mocks.requestRepo.findOne.mockResolvedValue(makeRequest());
-      const grant = makeGrant();
+      const grant = makeGrant({ status: GrantStatus.PENDING_CHAIN });
       mocks.grantRepo.create.mockReturnValue(grant);
       mocks.grantRepo.save.mockResolvedValue(grant);
       mocks.requestRepo.save.mockResolvedValue(
@@ -227,11 +260,12 @@ describe('AccessRequestService', () => {
       );
     });
 
-    it('transitions request to APPROVED and returns both request and grant', async () => {
+    it('atomically approves the request and returns a pending-chain grant', async () => {
       const result = await service.approveRequest('req-1', PATIENT);
 
       expect(result.request.status).toBe(AccessRequestStatus.APPROVED);
-      expect(result.grant).toBeDefined();
+      expect(result.grant.status).toBe(GrantStatus.PENDING_CHAIN);
+      expect(mocks.requestRepo.manager.transaction).toHaveBeenCalledTimes(1);
     });
 
     it('creates an AccessGrant with READ access for all records', async () => {
@@ -243,18 +277,30 @@ describe('AccessRequestService', () => {
           granteeId: PROVIDER,
           recordIds: ['*'],
           accessLevel: AccessLevel.READ,
-          status: GrantStatus.ACTIVE,
+          status: GrantStatus.PENDING_CHAIN,
         }),
       );
     });
 
-    it('dispatches grant to Soroban and stores the tx hash', async () => {
+    it('enqueues grant dispatch without waiting for Soroban', async () => {
       await service.approveRequest('req-1', PATIENT);
 
-      expect(mocks.soroban.dispatchGrant).toHaveBeenCalledTimes(1);
-      expect(mocks.requestRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ sorobanTxHash: '0xsoroban-tx-hash' }),
+      expect(mocks.grantDispatchQueue.add).toHaveBeenCalledWith(
+        'dispatch-access-grant',
+        { grantId: 'grant-1', requestId: 'req-1' },
+        expect.objectContaining({ jobId: 'access-grant-grant-1' }),
       );
+    });
+
+    it('does not create or enqueue a grant when the conditional transition loses a race', async () => {
+      mocks.conditionalUpdate.execute.mockResolvedValue({ affected: 0 });
+
+      await expect(service.approveRequest('req-1', PATIENT)).rejects.toThrow(
+        ConflictException,
+      );
+
+      expect(mocks.grantRepo.save).not.toHaveBeenCalled();
+      expect(mocks.grantDispatchQueue.add).not.toHaveBeenCalled();
     });
 
     it('notifies the provider of approval', async () => {
