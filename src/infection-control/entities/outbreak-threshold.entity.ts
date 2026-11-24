@@ -46,6 +46,10 @@ export class OutbreakThreshold {
   @Column({ type: 'simple-array', nullable: true })
   notifyUserIds: string[] | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  @Index()
+  tenantId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

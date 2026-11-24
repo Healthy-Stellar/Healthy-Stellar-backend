@@ -44,12 +44,13 @@ export class InfectionControlService {
   private async triggerConfirmedWorkflow(infectionCase: InfectionCase): Promise<void> {
     // 1. Auto-create draft IsolationPrecaution
     const existing = await this.isolationPrecautionRepository.findOne({
-      where: { patientId: infectionCase.patientId, isActive: true }
+      where: { patientId: infectionCase.patientId, isActive: true, tenantId: infectionCase.tenantId }
     });
 
     if (!existing) {
       await this.isolationPrecautionRepository.save(
         this.isolationPrecautionRepository.create({
+          tenantId: infectionCase.tenantId,
           patientId: infectionCase.patientId,
           precautionType: PrecautionType.CONTACT,
           startDate: new Date(),
@@ -91,30 +92,30 @@ export class InfectionControlService {
 
   // ---- Infection Cases ----
 
-  async createInfectionCase(dto: CreateInfectionCaseDto): Promise<InfectionCase> {
-    const infectionCase = this.infectionCaseRepository.create(dto);
+  async createInfectionCase(dto: CreateInfectionCaseDto, tenantId: string): Promise<InfectionCase> {
+    const infectionCase = this.infectionCaseRepository.create({ ...dto, tenantId });
     const saved = await this.infectionCaseRepository.save(infectionCase);
-    
+
     if (saved.status === InfectionStatus.CONFIRMED) {
       await this.triggerConfirmedWorkflow(saved);
     }
     return saved;
   }
 
-  async findAllInfectionCases(): Promise<InfectionCase[]> {
-    return this.infectionCaseRepository.find();
+  async findAllInfectionCases(tenantId: string): Promise<InfectionCase[]> {
+    return this.infectionCaseRepository.find({ where: { tenantId } });
   }
 
-  async findOneInfectionCase(id: string): Promise<InfectionCase> {
-    const infectionCase = await this.infectionCaseRepository.findOne({ where: { id } });
+  async findOneInfectionCase(id: string, tenantId: string): Promise<InfectionCase> {
+    const infectionCase = await this.infectionCaseRepository.findOne({ where: { id, tenantId } });
     if (!infectionCase) throw new NotFoundException(`Infection case with ID ${id} not found`);
     return infectionCase;
   }
 
-  async updateInfectionCase(id: string, dto: UpdateInfectionCaseDto): Promise<InfectionCase> {
-    const before = await this.findOneInfectionCase(id);
-    await this.infectionCaseRepository.update(id, dto);
-    const after = await this.findOneInfectionCase(id);
+  async updateInfectionCase(id: string, dto: UpdateInfectionCaseDto, tenantId: string): Promise<InfectionCase> {
+    const before = await this.findOneInfectionCase(id, tenantId);
+    await this.infectionCaseRepository.update({ id, tenantId }, dto);
+    const after = await this.findOneInfectionCase(id, tenantId);
 
     // Trigger workflow only on transition to CONFIRMED
     if (before.status !== InfectionStatus.CONFIRMED && after.status === InfectionStatus.CONFIRMED) {
@@ -125,82 +126,83 @@ export class InfectionControlService {
 
   // ---- Dashboard AC ----
   
-  async getCasesMissingPrecautions(): Promise<InfectionCase[]> {
+  async getCasesMissingPrecautions(tenantId: string): Promise<InfectionCase[]> {
     return this.infectionCaseRepository.createQueryBuilder('case')
-      .leftJoin(IsolationPrecaution, 'precaution', 'precaution."patientId" = case."patientId" AND precaution."isActive" = true')
+      .leftJoin(IsolationPrecaution, 'precaution', 'precaution."patientId" = case."patientId" AND precaution."isActive" = true AND precaution."tenantId" = case."tenantId"')
       .where('case.status = :status', { status: InfectionStatus.CONFIRMED })
+      .andWhere('case."tenantId" = :tenantId', { tenantId })
       .andWhere('precaution.id IS NULL')
       .getMany();
   }
 
   // Isolation Precautions
-  async createIsolationPrecaution(dto: CreateIsolationPrecautionDto): Promise<IsolationPrecaution> {
-    const precaution = this.isolationPrecautionRepository.create(dto);
+  async createIsolationPrecaution(dto: CreateIsolationPrecautionDto, tenantId: string): Promise<IsolationPrecaution> {
+    const precaution = this.isolationPrecautionRepository.create({ ...dto, tenantId });
     return this.isolationPrecautionRepository.save(precaution);
   }
 
-  async findAllIsolationPrecautions(): Promise<IsolationPrecaution[]> {
-    return this.isolationPrecautionRepository.find();
+  async findAllIsolationPrecautions(tenantId: string): Promise<IsolationPrecaution[]> {
+    return this.isolationPrecautionRepository.find({ where: { tenantId } });
   }
 
-  async updateIsolationPrecaution(id: string, dto: UpdateIsolationPrecautionDto): Promise<IsolationPrecaution> {
-    await this.isolationPrecautionRepository.update(id, dto);
-    const precaution = await this.isolationPrecautionRepository.findOne({ where: { id } });
+  async updateIsolationPrecaution(id: string, dto: UpdateIsolationPrecautionDto, tenantId: string): Promise<IsolationPrecaution> {
+    await this.isolationPrecautionRepository.update({ id, tenantId }, dto);
+    const precaution = await this.isolationPrecautionRepository.findOne({ where: { id, tenantId } });
     if (!precaution) throw new NotFoundException(`Isolation precaution with ID ${id} not found`);
     return precaution;
   }
 
   // Antibiotic Resistance
-  async createAntibioticResistance(dto: CreateAntibioticResistanceDto): Promise<AntibioticResistance> {
-    const resistance = this.antibioticResistanceRepository.create(dto);
+  async createAntibioticResistance(dto: CreateAntibioticResistanceDto, tenantId: string): Promise<AntibioticResistance> {
+    const resistance = this.antibioticResistanceRepository.create({ ...dto, tenantId });
     return this.antibioticResistanceRepository.save(resistance);
   }
 
-  async findAllAntibioticResistance(): Promise<AntibioticResistance[]> {
-    return this.antibioticResistanceRepository.find();
+  async findAllAntibioticResistance(tenantId: string): Promise<AntibioticResistance[]> {
+    return this.antibioticResistanceRepository.find({ where: { tenantId } });
   }
 
   // Policies
-  async createPolicy(dto: CreateInfectionControlPolicyDto): Promise<InfectionControlPolicy> {
-    const policy = this.policyRepository.create(dto);
+  async createPolicy(dto: CreateInfectionControlPolicyDto, tenantId: string): Promise<InfectionControlPolicy> {
+    const policy = this.policyRepository.create({ ...dto, tenantId });
     return this.policyRepository.save(policy);
   }
 
-  async findAllPolicies(): Promise<InfectionControlPolicy[]> {
-    return this.policyRepository.find({ where: { isActive: true } });
+  async findAllPolicies(tenantId: string): Promise<InfectionControlPolicy[]> {
+    return this.policyRepository.find({ where: { isActive: true, tenantId } });
   }
 
-  async updatePolicy(id: string, dto: UpdateInfectionControlPolicyDto): Promise<InfectionControlPolicy> {
-    await this.policyRepository.update(id, dto);
-    const policy = await this.policyRepository.findOne({ where: { id } });
+  async updatePolicy(id: string, dto: UpdateInfectionControlPolicyDto, tenantId: string): Promise<InfectionControlPolicy> {
+    await this.policyRepository.update({ id, tenantId }, dto);
+    const policy = await this.policyRepository.findOne({ where: { id, tenantId } });
     if (!policy) throw new NotFoundException(`Policy with ID ${id} not found`);
     return policy;
   }
 
   // Outbreaks
-  async createOutbreak(dto: CreateOutbreakIncidentDto): Promise<OutbreakIncident> {
-    const outbreak = this.outbreakIncidentRepository.create(dto);
+  async createOutbreak(dto: CreateOutbreakIncidentDto, tenantId: string): Promise<OutbreakIncident> {
+    const outbreak = this.outbreakIncidentRepository.create({ ...dto, tenantId });
     return this.outbreakIncidentRepository.save(outbreak);
   }
 
-  async findAllOutbreaks(): Promise<OutbreakIncident[]> {
-    return this.outbreakIncidentRepository.find();
+  async findAllOutbreaks(tenantId: string): Promise<OutbreakIncident[]> {
+    return this.outbreakIncidentRepository.find({ where: { tenantId } });
   }
 
-  async updateOutbreak(id: string, dto: UpdateOutbreakIncidentDto): Promise<OutbreakIncident> {
-    await this.outbreakIncidentRepository.update(id, dto);
-    const outbreak = await this.outbreakIncidentRepository.findOne({ where: { id } });
+  async updateOutbreak(id: string, dto: UpdateOutbreakIncidentDto, tenantId: string): Promise<OutbreakIncident> {
+    await this.outbreakIncidentRepository.update({ id, tenantId }, dto);
+    const outbreak = await this.outbreakIncidentRepository.findOne({ where: { id, tenantId } });
     if (!outbreak) throw new NotFoundException(`Outbreak with ID ${id} not found`);
     return outbreak;
   }
 
   // Hand Hygiene
-  async createHandHygieneAudit(dto: CreateHandHygieneAuditDto): Promise<HandHygieneAudit> {
-    const audit = this.handHygieneAuditRepository.create(dto);
+  async createHandHygieneAudit(dto: CreateHandHygieneAuditDto, tenantId: string): Promise<HandHygieneAudit> {
+    const audit = this.handHygieneAuditRepository.create({ ...dto, tenantId });
     return this.handHygieneAuditRepository.save(audit);
   }
 
-  async findAllHandHygieneAudits(): Promise<HandHygieneAudit[]> {
-    return this.handHygieneAuditRepository.find();
+  async findAllHandHygieneAudits(tenantId: string): Promise<HandHygieneAudit[]> {
+    return this.handHygieneAuditRepository.find({ where: { tenantId } });
   }
 }

@@ -3,6 +3,7 @@ import {
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
+  Index,
   UpdateDateColumn,
 } from 'typeorm';
 
@@ -35,6 +36,10 @@ export class IsolationPrecaution {
 
   @Column({ nullable: true })
   reason: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  @Index()
+  tenantId: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

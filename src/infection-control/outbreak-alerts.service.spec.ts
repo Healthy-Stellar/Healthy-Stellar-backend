@@ -170,7 +170,9 @@ describe('OutbreakAlertsService', () => {
 
       const results = await service.evaluateAllThresholds();
 
-      expect(thresholdRepo.find).toHaveBeenCalledWith({ where: { isActive: true } });
+      expect(thresholdRepo.find).toHaveBeenCalledWith({
+        where: expect.objectContaining({ isActive: true }),
+      });
       expect(results).toHaveLength(2);
       expect(results[0].alertCreated).toBeNull();
       expect(results[1].alertCreated).not.toBeNull();
@@ -184,21 +186,25 @@ describe('OutbreakAlertsService', () => {
       thresholdRepo.create.mockImplementation((d) => d);
       thresholdRepo.save.mockImplementation((d) => Promise.resolve({ id: 'new-id', ...d }));
 
-      const result = await service.createThreshold({
-        pathogen: 'Influenza',
-        location: 'Ward B',
-        thresholdCount: 5,
-      });
+      const result = await service.createThreshold(
+        {
+          pathogen: 'Influenza',
+          location: 'Ward B',
+          thresholdCount: 5,
+        },
+        'tenant-a',
+      );
 
       expect(result.windowMinutes).toBe(1440);
       expect(result.isActive).toBe(true);
+      expect(result.tenantId).toBe('tenant-a');
     });
   });
 
   describe('findOneThreshold', () => {
     it('throws NotFoundException when the threshold does not exist', async () => {
       thresholdRepo.findOne.mockResolvedValue(null);
-      await expect(service.findOneThreshold('missing')).rejects.toThrow(NotFoundException);
+      await expect(service.findOneThreshold('missing', 'tenant-a')).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -208,10 +214,10 @@ describe('OutbreakAlertsService', () => {
     it('returns only ACTIVE alerts ordered by most recent', async () => {
       alertRepo.find.mockResolvedValue([{ id: 'a1', status: OutbreakAlertStatus.ACTIVE }]);
 
-      const alerts = await service.findActiveAlerts();
+      const alerts = await service.findActiveAlerts('tenant-a');
 
       expect(alertRepo.find).toHaveBeenCalledWith({
-        where: { status: OutbreakAlertStatus.ACTIVE },
+        where: { status: OutbreakAlertStatus.ACTIVE, tenantId: 'tenant-a' },
         order: { triggeredAt: 'DESC' },
       });
       expect(alerts).toHaveLength(1);
@@ -223,7 +229,7 @@ describe('OutbreakAlertsService', () => {
       const alert = { id: 'a1', status: OutbreakAlertStatus.ACTIVE, resolvedAt: null };
       alertRepo.findOne.mockResolvedValue(alert);
 
-      const result = await service.resolveAlert('a1');
+      const result = await service.resolveAlert('a1', 'tenant-a');
 
       expect(result.status).toBe(OutbreakAlertStatus.RESOLVED);
       expect(result.resolvedAt).toBeInstanceOf(Date);
@@ -231,7 +237,7 @@ describe('OutbreakAlertsService', () => {
 
     it('throws NotFoundException when the alert does not exist', async () => {
       alertRepo.findOne.mockResolvedValue(null);
-      await expect(service.resolveAlert('missing')).rejects.toThrow(NotFoundException);
+      await expect(service.resolveAlert('missing', 'tenant-a')).rejects.toThrow(NotFoundException);
     });
   });
 });

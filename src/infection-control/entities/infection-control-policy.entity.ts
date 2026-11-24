@@ -3,6 +3,7 @@ import {
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
+  Index,
   UpdateDateColumn,
 } from 'typeorm';
 
@@ -25,6 +26,10 @@ export class InfectionControlPolicy {
 
   @Column({ default: true })
   isActive: boolean;
+
+  @Column({ type: 'varchar', nullable: true })
+  @Index()
+  tenantId: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

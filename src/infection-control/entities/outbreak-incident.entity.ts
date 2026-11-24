@@ -3,6 +3,7 @@ import {
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
+  Index,
   UpdateDateColumn,
 } from 'typeorm';
 
@@ -38,6 +39,10 @@ export class OutbreakIncident {
 
   @Column({ type: 'text', nullable: true })
   investigationNotes: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  @Index()
+  tenantId: string | null;
 
   @CreateDateColumn()
   createdAt: Date;
