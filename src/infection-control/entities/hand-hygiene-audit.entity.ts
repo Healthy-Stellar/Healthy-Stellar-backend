@@ -3,6 +3,7 @@ import {
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
+  Index,
   UpdateDateColumn,
 } from 'typeorm';
 
@@ -25,6 +26,10 @@ export class HandHygieneAudit {
 
   @Column({ type: 'text', nullable: true })
   observations: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  @Index()
+  tenantId: string | null;
 
   @CreateDateColumn()
   createdAt: Date;
