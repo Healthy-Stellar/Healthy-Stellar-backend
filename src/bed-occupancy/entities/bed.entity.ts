@@ -17,6 +17,10 @@ export class Bed {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index()
+  @Column({ name: 'tenant_id', type: 'varchar', nullable: true })
+  tenantId: string | null;
+
   @Column()
   bedNumber: string;
 
