@@ -28,6 +28,19 @@ import { UserRole } from '../../auth/entities/user.entity';
 export class TransferController {
   constructor(private readonly transferService: TransferService) {}
 
+  /**
+   * The actor's hospital is derived from the authenticated principal. The
+   * access token carries the caller's tenant as `organizationId`
+   * (see AuthTokenService.generateAccessToken); there is no `hospitalId` claim.
+   */
+  private actorHospitalId(req: any): string {
+    return req.user?.organizationId ?? null;
+  }
+
+  private actorId(req: any): string {
+    return req.user?.userId;
+  }
+
   @Post()
   @Roles(UserRole.ADMIN, UserRole.PHYSICIAN, UserRole.NURSE)
   @ApiOperation({ summary: 'Initiate a patient transfer request' })
@@ -36,9 +49,8 @@ export class TransferController {
   initiateTransfer(@Body() dto: CreateTransferDto, @Req() req: any) {
     return this.transferService.initiateTransfer(
       dto,
-      req.user.userId,
-      req.user.hospitalId,
-      req.user,
+      this.actorId(req),
+      this.actorHospitalId(req),
     );
   }
 
@@ -49,7 +61,12 @@ export class TransferController {
   @ApiResponse({ status: 400, description: 'Transfer is not in pending status' })
   @ApiResponse({ status: 404, description: 'Transfer not found' })
   acceptTransfer(@Param('id') id: string, @Body() dto: AcceptTransferDto, @Req() req: any) {
-    return this.transferService.acceptTransfer(id, dto, req.user);
+    return this.transferService.acceptTransfer(
+      id,
+      dto,
+      this.actorHospitalId(req),
+      this.actorId(req),
+    );
   }
 
   @Post(':id/reject')
@@ -59,7 +76,12 @@ export class TransferController {
   @ApiResponse({ status: 400, description: 'Transfer is not in pending status' })
   @ApiResponse({ status: 404, description: 'Transfer not found' })
   rejectTransfer(@Param('id') id: string, @Body() dto: RejectTransferDto, @Req() req: any) {
-    return this.transferService.rejectTransfer(id, dto, req.user);
+    return this.transferService.rejectTransfer(
+      id,
+      dto,
+      this.actorHospitalId(req),
+      this.actorId(req),
+    );
   }
 
   @Post(':id/cancel')
@@ -69,14 +91,19 @@ export class TransferController {
   @ApiResponse({ status: 400, description: 'Transfer is not in pending status' })
   @ApiResponse({ status: 404, description: 'Transfer not found' })
   cancelTransfer(@Param('id') id: string, @Body() dto: CancelTransferDto, @Req() req: any) {
-    return this.transferService.cancelTransfer(id, dto, req.user);
+    return this.transferService.cancelTransfer(
+      id,
+      dto,
+      this.actorHospitalId(req),
+      this.actorId(req),
+    );
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get transfer details' })
   @ApiResponse({ status: 200, description: 'Transfer details' })
   getTransfer(@Param('id') id: string, @Req() req: any) {
-    return this.transferService.getTransfer(id, req.user);
+    return this.transferService.getTransfer(id, this.actorHospitalId(req));
   }
 
   @Get()
@@ -89,14 +116,11 @@ export class TransferController {
     @Query('toHospitalId') toHospitalId?: string,
     @Query('status') status?: TransferStatus,
   ) {
-    return this.transferService.listTransfers(
-      {
-        patientId,
-        fromHospitalId,
-        toHospitalId,
-        status,
-      },
-      req.user,
-    );
+    return this.transferService.listTransfers(this.actorHospitalId(req), {
+      patientId,
+      fromHospitalId,
+      toHospitalId,
+      status,
+    });
   }
 }

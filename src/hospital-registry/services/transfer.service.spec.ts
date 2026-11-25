@@ -7,6 +7,7 @@ import { HospitalRegistry } from '../entities/hospital-registry.entity';
 import { MedicalRecordsService } from '../../medical-records/services/medical-records.service';
 import { AccessControlService } from '../../access-control/services/access-control.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { StellarService } from '../../stellar/services/stellar.service';
 
 describe('TransferService', () => {
   let service: TransferService;
@@ -59,6 +60,7 @@ describe('TransferService', () => {
           provide: NotificationsService,
           useValue: { emitRecordUploaded: jest.fn() },
         },
+        { provide: StellarService, useValue: { invokeContract: jest.fn() } },
         { provide: ConfigService, useValue: { get: jest.fn() } },
       ],
     }).compile();
@@ -72,7 +74,7 @@ describe('TransferService', () => {
     it('completes the transfer when sharing and revocation succeed', async () => {
       mockTransferRepository.findOne.mockResolvedValue(pendingTransfer());
 
-      const result = await service.acceptTransfer('transfer-1', { acceptedBy: 'user-1' });
+      const result = await service.acceptTransfer('transfer-1', { acceptedBy: 'user-1' }, 'hospital-to', 'user-1');
 
       expect(result.status).toBe(TransferStatus.COMPLETED);
       expect(medicalRecordsService.shareWithHospital).toHaveBeenCalledTimes(2);
@@ -90,7 +92,7 @@ describe('TransferService', () => {
       medicalRecordsService.shareWithHospital.mockRejectedValueOnce(new Error('IPFS unavailable'));
 
       await expect(
-        service.acceptTransfer('transfer-1', { acceptedBy: 'user-1' }),
+        service.acceptTransfer('transfer-1', { acceptedBy: 'user-1' }, 'hospital-to', 'user-1'),
       ).rejects.toThrow('IPFS unavailable');
 
       expect(accessControlService.revokeAccessByPatient).not.toHaveBeenCalled();
@@ -104,7 +106,7 @@ describe('TransferService', () => {
       );
 
       await expect(
-        service.acceptTransfer('transfer-1', { acceptedBy: 'user-1' }),
+        service.acceptTransfer('transfer-1', { acceptedBy: 'user-1' }, 'hospital-to', 'user-1'),
       ).rejects.toThrow('access-control unavailable');
 
       expect(mockManager.save).not.toHaveBeenCalled();

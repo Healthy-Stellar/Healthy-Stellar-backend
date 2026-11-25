@@ -37,6 +37,10 @@ export class TransferService {
   ) {}
 
   async initiateTransfer(dto: CreateTransferDto, initiatedBy: string, fromHospitalId: string): Promise<PatientTransfer> {
+    if (!fromHospitalId) {
+      throw new ForbiddenException('Caller is not associated with a hospital');
+    }
+
     const toHospital = await this.hospitalRepo.findOne({
       where: { id: dto.toHospitalId },
     });
@@ -155,13 +159,21 @@ export class TransferService {
     return saved;
   }
 
-  async getTransfer(transferId: string): Promise<PatientTransfer> {
+  async getTransfer(transferId: string, actorHospitalId: string): Promise<PatientTransfer> {
     const transfer = await this.transferRepo.findOne({
       where: { id: transferId },
       relations: ['fromHospital', 'toHospital'],
     });
     if (!transfer) {
       throw new NotFoundException('Transfer not found');
+    }
+
+    // Only the source or destination hospital may read a transfer.
+    if (
+      !actorHospitalId ||
+      (transfer.fromHospitalId !== actorHospitalId && transfer.toHospitalId !== actorHospitalId)
+    ) {
+      throw new ForbiddenException('Caller is not authorized to act on this transfer');
     }
     return transfer;
   }

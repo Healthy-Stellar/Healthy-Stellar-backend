@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, And, MoreThanOrEqual, LessThan } from 'typeorm';
 import { Queue } from 'bullmq';
 import * as PDFDocument from 'pdfkit';
 import * as fs from 'fs';
@@ -11,6 +11,8 @@ import { GenerateComplianceReportDto } from '../dto/compliance-report.dto';
 import { AuditLogEntity, AuditAction } from '../../common/audit/audit-log.entity';
 import { AuditService } from '../../common/audit/audit.service';
 import { QUEUE_NAMES } from '../../queues/queue.constants';
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 const STORAGE_DIR =
   process.env.COMPLIANCE_REPORT_STORAGE_DIR ?? path.join(process.cwd(), 'storage', 'compliance-reports');
@@ -93,7 +95,10 @@ export class ComplianceReportsService {
       job.status = ComplianceReportStatus.PROCESSING;
       await this.jobRepository.save(job);
 
-      const sections = await this.collectSections(job.startDate, job.endDate, job.tenantId);
+      const sections = await this.collectSections(
+        ComplianceReportsService.toDay(job.startDate),
+        ComplianceReportsService.toDay(job.endDate),
+      );
 
       const pdfBuffer = await this.buildPdf(job, sections);
       const csvBuffer = this.buildCsv(sections);
@@ -163,30 +168,40 @@ export class ComplianceReportsService {
     return fs.readFileSync(filePath);
   }
 
-  private async collectSections(
-    startDate: Date,
-    endDate: Date,
-    tenantId: string | null,
-  ): Promise<ComplianceReportSections> {
-    // Audit rows have no tenant column, so a tenant's rows are those whose actor belongs to its organization.
-    const rowsFor = (condition: string, params: Record<string, unknown>) => {
-      const qb = this.auditLogRepository
-        .createQueryBuilder('audit')
-        .where(condition, params)
-        .andWhere('audit.timestamp BETWEEN :start AND :end', { start: startDate, end: endDate });
-      if (tenantId) {
-        qb.andWhere('audit.userId IN (SELECT CAST(u.id AS text) FROM users u WHERE u."organizationId" = :tenantId)', {
-          tenantId,
-        });
-      }
-      return qb.getMany();
-    };
+  /**
+   * Normalise a `date` column value to a Date at UTC midnight of that day.
+   * TypeORM returns Postgres `date` columns as 'YYYY-MM-DD' strings, so the
+   * entity value cannot be assumed to be a Date.
+   */
+  static toDay(value: Date | string): Date {
+    const iso = value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+    return new Date(`${iso}T00:00:00.000Z`);
+  }
+
+  private static formatDay(value: Date | string): string {
+    return ComplianceReportsService.toDay(value).toISOString().slice(0, 10);
+  }
+
+  /**
+   * Collect audit entries for the inclusive day range [startDate, endDate]:
+   * `timestamp >= startDate 00:00` and `timestamp < endDate + 1 day`.
+   */
+  private async collectSections(startDate: Date, endDate: Date): Promise<ComplianceReportSections> {
+    const endExclusive = new Date(endDate.getTime() + ONE_DAY_MS);
+    const range = And(MoreThanOrEqual(startDate), LessThan(endExclusive));
 
     const [accessLogs, failedAuthAttempts, dataExports, roleChanges] = await Promise.all([
-      rowsFor('audit.action = :action', { action: AuditAction.DATA_ACCESS }),
-      rowsFor('audit.action = :action', { action: AuditAction.LOGIN_FAILED }),
-      rowsFor('audit.action = :action', { action: AuditAction.DATA_EXPORT }),
-      rowsFor('audit.action ILIKE :pattern', { pattern: '%ROLE%' }),
+      this.auditLogRepository.find({ where: { action: AuditAction.DATA_ACCESS, timestamp: range } }),
+      this.auditLogRepository.find({ where: { action: AuditAction.LOGIN_FAILED, timestamp: range } }),
+      this.auditLogRepository.find({ where: { action: AuditAction.DATA_EXPORT, timestamp: range } }),
+      this.auditLogRepository
+        .createQueryBuilder('audit')
+        .where('audit.action ILIKE :pattern', { pattern: '%ROLE%' })
+        .andWhere('audit.timestamp >= :start AND audit.timestamp < :end', {
+          start: startDate,
+          end: endExclusive,
+        })
+        .getMany(),
     ]);
 
     return { accessLogs, failedAuthAttempts, dataExports, roleChanges };
@@ -203,7 +218,9 @@ export class ComplianceReportsService {
       doc.fontSize(20).text(`${job.reportType} Compliance Report`, { align: 'center' });
       doc.moveDown();
       doc.fontSize(10);
-      doc.text(`Period: ${job.startDate.toISOString().slice(0, 10)} to ${job.endDate.toISOString().slice(0, 10)}`);
+      doc.text(
+        `Period: ${ComplianceReportsService.formatDay(job.startDate)} to ${ComplianceReportsService.formatDay(job.endDate)}`,
+      );
       doc.text(`Generated: ${new Date().toLocaleString()}`);
       doc.moveDown(1.5);
 

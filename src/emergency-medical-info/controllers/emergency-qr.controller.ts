@@ -1,7 +1,6 @@
 import {
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   Param,
   Post,
@@ -12,6 +11,7 @@ import {
 import { Response, Request } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { EmergencyQrService } from '../services/emergency-qr.service';
+import { EmergencyAccessService } from '../services/emergency-access.service';
 import { ApiTags } from '@nestjs/swagger';
 
 /** Authenticated endpoints for opt-in / PNG download */
@@ -19,36 +19,30 @@ import { ApiTags } from '@nestjs/swagger';
 @UseGuards(JwtAuthGuard)
 @Controller('emergency-medical-info/qr')
 export class EmergencyQrController {
-  constructor(private readonly qrService: EmergencyQrService) {}
+  constructor(
+    private readonly qrService: EmergencyQrService,
+    private readonly access: EmergencyAccessService,
+  ) {}
 
   /**
-   * Ensure the authenticated caller is allowed to act on the given patientId.
-   * The route patientId is never trusted on its own; the caller identity is
-   * derived from the JWT auth context populated by JwtAuthGuard.
+   * Resolve the authenticated caller (JWT `userId` claim) to their own patient
+   * record via `patients.userId`. The ownership check itself lives in
+   * EmergencyQrService; the route patientId is never trusted on its own.
    */
-  private assertOwnership(req: Request, patientId: string): void {
-    const user = (req as any).user;
-    const callerId =
-      user?.patientId ?? user?.patient_id ?? user?.id ?? user?.sub;
-    if (!callerId || String(callerId) !== String(patientId)) {
-      throw new ForbiddenException(
-        'You are not authorized to access this patient\'s emergency QR code',
-      );
-    }
+  private callerPatientId(req: Request): Promise<string | null> {
+    return this.access.resolveCallerPatientId((req as any).user);
   }
 
   /** POST /emergency-medical-info/qr/opt-in/:patientId — opt-in or rotate */
   @Post('opt-in/:patientId')
-  optIn(@Param('patientId') patientId: string, @Req() req: Request) {
-    this.assertOwnership(req, patientId);
-    return this.qrService.generateOptIn(patientId);
+  async optIn(@Param('patientId') patientId: string, @Req() req: Request) {
+    return this.qrService.generateOptIn(patientId, await this.callerPatientId(req));
   }
 
   /** DELETE /emergency-medical-info/qr/opt-in/:patientId — revoke */
   @Delete('opt-in/:patientId')
-  revoke(@Param('patientId') patientId: string, @Req() req: Request) {
-    this.assertOwnership(req, patientId);
-    return this.qrService.revokeOptIn(patientId);
+  async revoke(@Param('patientId') patientId: string, @Req() req: Request) {
+    return this.qrService.revokeOptIn(patientId, await this.callerPatientId(req));
   }
 
   /** GET /emergency-medical-info/qr/download/:patientId — download PNG */
@@ -58,8 +52,7 @@ export class EmergencyQrController {
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    this.assertOwnership(req, patientId);
-    const png = await this.qrService.downloadPng(patientId);
+    const png = await this.qrService.downloadPng(patientId, await this.callerPatientId(req));
     res.set({ 'Content-Type': 'image/png', 'Content-Disposition': 'attachment; filename="emergency-qr.png"' });
     res.send(png);
   }

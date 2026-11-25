@@ -29,11 +29,16 @@ export class ComplianceReportJob {
   @Column({ type: 'varchar' })
   reportType: ComplianceReportType;
 
+  /**
+   * Postgres `date` columns are hydrated by TypeORM as 'YYYY-MM-DD' strings,
+   * not Date objects, so readers must convert explicitly (see
+   * ComplianceReportsService.toDay()).
+   */
   @Column({ type: 'date' })
-  startDate: Date;
+  startDate: Date | string;
 
   @Column({ type: 'date' })
-  endDate: Date;
+  endDate: Date | string;
 
   @Column({ type: 'varchar', default: ComplianceReportStatus.PENDING })
   @Index()
