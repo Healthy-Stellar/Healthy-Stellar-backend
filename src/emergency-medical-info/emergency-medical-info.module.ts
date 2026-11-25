@@ -5,17 +5,19 @@ import { EmergencyMedicalInfo } from './entities/emergency-medical-info.entity';
 import { EmergencyMedicalInfoHistory } from './entities/emergency-medical-info-history.entity';
 import { EmergencyMedicalInfoService } from './services/emergency-medical-info.service';
 import { EmergencyQrService } from './services/emergency-qr.service';
+import { EmergencyAccessService } from './services/emergency-access.service';
+import { Patient } from '../users/entities/patient.entity';
 import { EmergencyMedicalInfoController } from './controllers/emergency-medical-info.controller';
 import { EmergencyQrController, EmergencyQrPublicController } from './controllers/emergency-qr.controller';
 
 @Module({
-  imports: [ConfigModule, TypeOrmModule.forFeature([EmergencyMedicalInfo, EmergencyMedicalInfoHistory])],
+  imports: [ConfigModule, TypeOrmModule.forFeature([EmergencyMedicalInfo, EmergencyMedicalInfoHistory, Patient])],
   controllers: [
     EmergencyMedicalInfoController,
     EmergencyQrController,
     EmergencyQrPublicController,
   ],
-  providers: [EmergencyMedicalInfoService, EmergencyQrService],
+  providers: [EmergencyMedicalInfoService, EmergencyQrService, EmergencyAccessService],
   exports: [EmergencyMedicalInfoService, EmergencyQrService],
 })
 export class EmergencyMedicalInfoModule {}

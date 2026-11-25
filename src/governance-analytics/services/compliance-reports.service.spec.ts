@@ -107,6 +107,36 @@ describe('ComplianceReportsService', () => {
       expect((job as any).summary.accessLogCount).toBe(1);
       expect(fs.writeFileSync).toHaveBeenCalledTimes(2);
     });
+
+    it('completes a job loaded from the repository with `date` columns hydrated as strings', async () => {
+      // TypeORM's Postgres driver returns `date` columns as 'YYYY-MM-DD' strings.
+      const job = {
+        id: 'job-2',
+        reportType: ComplianceReportType.HIPAA,
+        startDate: '2024-01-01',
+        endDate: '2024-01-31',
+        status: ComplianceReportStatus.PENDING,
+        requestedByUserId: 'user-1',
+      };
+      mockJobRepository.findOne.mockResolvedValue(job);
+      mockJobRepository.save.mockImplementation((j) => Promise.resolve(j));
+      mockAuditLogRepository.find.mockResolvedValue([]);
+      const queryBuilder = mockAuditLogRepository.createQueryBuilder();
+
+      await service.process('job-2');
+
+      expect((job as any).errorDetails).toBeUndefined();
+      expect(job.status).toBe(ComplianceReportStatus.COMPLETED);
+
+      // End of range is inclusive: entries are collected up to (but excluding) endDate + 1 day.
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'audit.timestamp >= :start AND audit.timestamp < :end',
+        {
+          start: new Date('2024-01-01T00:00:00.000Z'),
+          end: new Date('2024-02-01T00:00:00.000Z'),
+        },
+      );
+    });
   });
 
   describe('download', () => {

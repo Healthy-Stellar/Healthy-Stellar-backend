@@ -9,8 +9,12 @@ class EmergencyContactDto {
 }
 
 export class CreateEmergencyMedicalInfoDto {
-  @IsUUID()
-  patientId: string;
+  /**
+   * Only honoured for clinical staff. Patients always create their own record;
+   * the patient is taken from the authenticated principal.
+   */
+  @IsOptional() @IsUUID()
+  patientId?: string;
 
   @IsOptional() @IsEnum(BloodType)
   bloodType?: BloodType;

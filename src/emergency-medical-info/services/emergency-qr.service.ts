@@ -54,7 +54,7 @@ export class EmergencyQrService {
   }
 
   /** Opt a patient in (or rotate their token if overdue) and return the signed payload URL */
-  async generateOptIn(patientId: string, callerId?: string): Promise<{ verifyUrl: string; issuedAt: string }> {
+  async generateOptIn(patientId: string, callerId?: string | null): Promise<{ verifyUrl: string; issuedAt: string }> {
     this.assertOwnership(patientId, callerId);
     const record = await this.findRecord(patientId);
 
@@ -78,7 +78,7 @@ export class EmergencyQrService {
   }
 
   /** Opt a patient out and invalidate their token */
-  async revokeOptIn(patientId: string, callerId?: string): Promise<void> {
+  async revokeOptIn(patientId: string, callerId?: string | null): Promise<void> {
     this.assertOwnership(patientId, callerId);
     const record = await this.findRecord(patientId);
     record.qrOptIn = false;
@@ -88,7 +88,7 @@ export class EmergencyQrService {
   }
 
   /** Return a PNG buffer of the QR code for download */
-  async downloadPng(patientId: string, callerId?: string): Promise<Buffer> {
+  async downloadPng(patientId: string, callerId?: string | null): Promise<Buffer> {
     this.assertOwnership(patientId, callerId);
     const record = await this.findRecord(patientId);
 
@@ -155,7 +155,7 @@ export class EmergencyQrService {
    * emergency QR code. Without this check any authenticated user could rotate,
    * revoke, or download another patient's emergency QR (life-safety impact).
    */
-  private assertOwnership(patientId: string, callerId?: string): void {
+  private assertOwnership(patientId: string, callerId?: string | null): void {
     if (!callerId || callerId !== patientId) {
       throw new ForbiddenException(
         'You are not authorized to manage this patient\'s emergency QR code',
