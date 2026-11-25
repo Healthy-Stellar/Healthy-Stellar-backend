@@ -10,6 +10,8 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { ALLOW_MFA_PENDING_KEY } from '../decorators/allow-mfa-pending.decorator';
+import { isMfaPendingRejected } from '../services/auth-token.service';
 import { TenantContext } from '../../tenant/context/tenant.context';
 
 interface AuthenticatedUser {
@@ -19,6 +21,7 @@ interface AuthenticatedUser {
   tenantId?: string;
   role?: string;
   roles?: string[];
+  mfaPending?: boolean;
   [key: string]: unknown;
 }
 
@@ -53,6 +56,15 @@ export class JwtAuthGuard implements CanActivate {
       });
     } catch {
       throw new UnauthorizedException('Invalid or expired authentication token');
+    }
+
+    // Password-only token from POST /auth/login: usable only on MFA challenge routes.
+    const allowMfaPending = this.reflector.getAllAndOverride<boolean>(ALLOW_MFA_PENDING_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isMfaPendingRejected(payload, allowMfaPending)) {
+      throw new UnauthorizedException('MFA verification required');
     }
 
     (request as Request & { user?: AuthenticatedUser }).user = payload;

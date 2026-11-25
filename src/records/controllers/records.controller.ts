@@ -344,7 +344,7 @@ export class RecordsController {
     return this.relatedRecordsService.findRelated(id, this.requesterId(req));
   }
 
-  /** Authenticated caller id as populated by JwtStrategy (`req.user.userId`). */
+  /** Authenticated caller id as populated by JwtAuthGuard (`req.user.userId`). */
   private requesterId(req: any): string {
     const userId: string | undefined = req.user?.userId ?? req.user?.id;
     if (!userId) {
