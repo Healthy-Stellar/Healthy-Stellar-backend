@@ -253,6 +253,23 @@ When adding new service logic or API endpoints, include accompanying `.spec.ts` 
 
 ---
 
+## What not to commit
+
+Keep the repository tree clean. Do **not** commit:
+
+- **Personal scratch notes** (`Somzilla.md`, `notes.md`, `todo.txt`, etc.) — use a local notepad or a private Gist.
+- **PR draft bodies** (`PR_DESCRIPTION*.md`, `PR_DRAFT*.md`) — write them directly in GitHub's PR form. They are already covered by `.gitignore`.
+- **One-off investigation scripts** — if a shell script is worth keeping, move it to `scripts/`, add a short header comment explaining its purpose, and mention it in `docs/scripts.md`.
+- **Build artefacts, IDE configs (outside `.vscode/`), OS metadata** (`.DS_Store`, `Thumbs.db`).
+
+If you accidentally stage one of these, run:
+```bash
+git rm --cached <file>
+echo "<file>" >> .gitignore
+```
+
+---
+
 ## Pull Request Process
 
 1. **Rebase on Main**: Ensure your branch is up-to-date with `main`:

@@ -1,4 +1,13 @@
 #!/bin/bash
+# scripts/verify-api-key-implementation.sh
+#
+# Smoke-checks the API-key authentication feature (issue #680 / PR #726).
+# Verifies that all expected source files, entities, services, guards, and
+# test files exist. Run from the repository root:
+#
+#   bash scripts/verify-api-key-implementation.sh
+#
+# No running server required. Exit code 0 = all checks passed.
 
 # Verification script for API Key implementation
 # Run this script to verify the API key authentication system is working

@@ -117,3 +117,6 @@ skills-lock.json
 issue.md
 vrickish.md
 somzilla.md
+
+# PR draft files — keep these on GitHub, not in the tree
+PR_DESCRIPTION*.md
