@@ -40,6 +40,7 @@ export class MonthlyComplianceReportTask {
           endDate: endOfLastMonth.toISOString().slice(0, 10),
         },
         undefined,
+        null, // system-generated: platform-wide, SUPER_ADMIN only
       );
 
       this.logger.log(`Queued monthly ${reportType} compliance report: ${jobId}`);

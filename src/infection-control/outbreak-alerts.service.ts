@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, MoreThan, MoreThanOrEqual, Repository } from 'typeorm';
+import { In, IsNull, MoreThan, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import { NotificationsService } from '../notifications/services/notifications.service';
 import { InfectionCase, InfectionStatus } from './entities/infection-case.entity';
 import { OutbreakThreshold } from './entities/outbreak-threshold.entity';
@@ -39,9 +39,10 @@ export class OutbreakAlertsService {
 
   // ---- Threshold configuration ----
 
-  async createThreshold(dto: CreateOutbreakThresholdDto): Promise<OutbreakThreshold> {
+  async createThreshold(dto: CreateOutbreakThresholdDto, tenantId: string): Promise<OutbreakThreshold> {
     const threshold = this.thresholdRepository.create({
       ...dto,
+      tenantId,
       windowMinutes: dto.windowMinutes ?? 1440,
       isActive: dto.isActive ?? true,
       notifyEmails: dto.notifyEmails ?? null,
@@ -50,12 +51,12 @@ export class OutbreakAlertsService {
     return this.thresholdRepository.save(threshold);
   }
 
-  async findAllThresholds(): Promise<OutbreakThreshold[]> {
-    return this.thresholdRepository.find();
+  async findAllThresholds(tenantId: string): Promise<OutbreakThreshold[]> {
+    return this.thresholdRepository.find({ where: { tenantId } });
   }
 
-  async findOneThreshold(id: string): Promise<OutbreakThreshold> {
-    const threshold = await this.thresholdRepository.findOne({ where: { id } });
+  async findOneThreshold(id: string, tenantId: string): Promise<OutbreakThreshold> {
+    const threshold = await this.thresholdRepository.findOne({ where: { id, tenantId } });
     if (!threshold) {
       throw new NotFoundException(`Outbreak threshold with ID ${id} not found`);
     }
@@ -65,22 +66,23 @@ export class OutbreakAlertsService {
   async updateThreshold(
     id: string,
     dto: UpdateOutbreakThresholdDto,
+    tenantId: string,
   ): Promise<OutbreakThreshold> {
-    await this.thresholdRepository.update(id, dto);
-    return this.findOneThreshold(id);
+    await this.thresholdRepository.update({ id, tenantId }, dto);
+    return this.findOneThreshold(id, tenantId);
   }
 
   // ---- Alert dashboard ----
 
-  async findActiveAlerts(): Promise<OutbreakAlert[]> {
+  async findActiveAlerts(tenantId: string): Promise<OutbreakAlert[]> {
     return this.alertRepository.find({
-      where: { status: OutbreakAlertStatus.ACTIVE },
+      where: { status: OutbreakAlertStatus.ACTIVE, tenantId },
       order: { triggeredAt: 'DESC' },
     });
   }
 
-  async resolveAlert(id: string): Promise<OutbreakAlert> {
-    const alert = await this.alertRepository.findOne({ where: { id } });
+  async resolveAlert(id: string, tenantId: string): Promise<OutbreakAlert> {
+    const alert = await this.alertRepository.findOne({ where: { id, tenantId } });
     if (!alert) {
       throw new NotFoundException(`Outbreak alert with ID ${id} not found`);
     }
@@ -100,7 +102,10 @@ export class OutbreakAlertsService {
    * resolved alert's `resolvedAt`.
    */
   async evaluateAllThresholds(): Promise<ThresholdEvaluationResult[]> {
-    const thresholds = await this.thresholdRepository.find({ where: { isActive: true } });
+    // Legacy thresholds with no tenant are not evaluated: they cannot be attributed to a tenant.
+    const thresholds = await this.thresholdRepository.find({
+      where: { isActive: true, tenantId: Not(IsNull()) },
+    });
     const results: ThresholdEvaluationResult[] = [];
 
     for (const threshold of thresholds) {
@@ -116,6 +121,7 @@ export class OutbreakAlertsService {
 
     const observedCount = await this.infectionCaseRepository.count({
       where: {
+        tenantId: threshold.tenantId,
         pathogen: threshold.pathogen,
         location: threshold.location,
         status: In(COUNTED_CASE_STATUSES),
@@ -129,6 +135,7 @@ export class OutbreakAlertsService {
 
     const existingActiveAlert = await this.alertRepository.findOne({
       where: {
+        tenantId: threshold.tenantId,
         pathogen: threshold.pathogen,
         location: threshold.location,
         status: OutbreakAlertStatus.ACTIVE,
@@ -143,6 +150,7 @@ export class OutbreakAlertsService {
     // alert, so hold off until new cases are recorded after the resolution.
     const lastResolvedAlert = await this.alertRepository.findOne({
       where: {
+        tenantId: threshold.tenantId,
         pathogen: threshold.pathogen,
         location: threshold.location,
         status: OutbreakAlertStatus.RESOLVED,
@@ -153,6 +161,7 @@ export class OutbreakAlertsService {
     if (lastResolvedAlert?.resolvedAt) {
       const newCasesSinceResolution = await this.infectionCaseRepository.count({
         where: {
+          tenantId: threshold.tenantId,
           pathogen: threshold.pathogen,
           location: threshold.location,
           status: In(COUNTED_CASE_STATUSES),
@@ -172,6 +181,7 @@ export class OutbreakAlertsService {
 
     const alert = await this.alertRepository.save(
       this.alertRepository.create({
+        tenantId: threshold.tenantId,
         thresholdId: threshold.id,
         pathogen: threshold.pathogen,
         location: threshold.location,

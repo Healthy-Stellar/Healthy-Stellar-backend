@@ -47,6 +47,11 @@ export class ComplianceReportJob {
   @Column({ type: 'uuid', nullable: true })
   requestedByUserId: string;
 
+  /** Owning tenant. Null marks a platform-wide report, which only SUPER_ADMIN may read. */
+  @Column({ type: 'uuid', nullable: true })
+  @Index('IDX_compliance_report_jobs_tenantId')
+  tenantId: string | null;
+
   @Column({ type: 'varchar', nullable: true })
   pdfPath: string;
 

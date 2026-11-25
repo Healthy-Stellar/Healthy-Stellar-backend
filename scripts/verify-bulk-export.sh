@@ -1,4 +1,14 @@
 #!/bin/bash
+# scripts/verify-bulk-export.sh
+#
+# Smoke-checks the FHIR bulk-export feature (issue #681 / PR #727).
+# Verifies expected source files, queue config, test files, and optionally
+# exercises live API endpoints when AUTH_TOKEN is set. Run from the repo root:
+#
+#   bash scripts/verify-bulk-export.sh
+#   AUTH_TOKEN=<token> BASE_URL=http://localhost:3000 bash scripts/verify-bulk-export.sh
+#
+# Exit code 0 = all static checks passed (live checks are advisory).
 
 # FHIR Bulk Export - Verification Script
 # This script verifies the bulk export implementation

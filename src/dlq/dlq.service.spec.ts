@@ -152,6 +152,7 @@ describe('DlqService', () => {
       const { items, total } = await service.list({ limit: 10, offset: 0 });
       expect(items).toHaveLength(1);
       expect(total).toBe(1);
+      expect(items[0]).not.toHaveProperty('data');
     });
 
     it('defaults to limit=50 and offset=0', async () => {

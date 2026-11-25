@@ -96,18 +96,26 @@ export class DlqService {
 
   // ── Query ─────────────────────────────────────────────────────────────────
 
-  async list(opts: DlqListOptions = {}): Promise<{ items: DlqJobEntity[]; total: number }> {
+  async list(opts: DlqListOptions = {}): Promise<{
+    items: Omit<DlqJobEntity, 'data'>[];
+    total: number;
+  }> {
     const where: FindManyOptions<DlqJobEntity>['where'] = {};
     if (opts.queueName) (where as any).queueName = opts.queueName;
     if (opts.status) (where as any).status = opts.status;
 
-    const [items, total] = await this.repo.findAndCount({
+    const [entities, total] = await this.repo.findAndCount({
       where,
       order: { failedAt: 'DESC' },
       take: opts.limit ?? 50,
       skip: opts.offset ?? 0,
     });
 
+    const items = entities.map((entity) => {
+      const item = { ...entity };
+      delete item.data;
+      return item;
+    });
     return { items, total };
   }
 

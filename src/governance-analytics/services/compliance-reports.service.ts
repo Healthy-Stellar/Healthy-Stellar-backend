@@ -43,6 +43,7 @@ export class ComplianceReportsService {
   async requestReport(
     dto: GenerateComplianceReportDto,
     requestedByUserId: string,
+    tenantId: string | null,
   ): Promise<{ jobId: string; status: ComplianceReportStatus }> {
     if (new Date(dto.startDate) > new Date(dto.endDate)) {
       throw new BadRequestException('startDate must be before endDate');
@@ -55,6 +56,7 @@ export class ComplianceReportsService {
         endDate: new Date(dto.endDate),
         status: ComplianceReportStatus.PENDING,
         requestedByUserId,
+        tenantId,
       }),
     );
 
@@ -72,8 +74,10 @@ export class ComplianceReportsService {
     return { jobId: job.id, status: job.status };
   }
 
-  async getJob(jobId: string): Promise<ComplianceReportJob> {
-    const job = await this.jobRepository.findOne({ where: { id: jobId } });
+  async getJob(jobId: string, tenantId: string | null): Promise<ComplianceReportJob> {
+    const job = await this.jobRepository.findOne({
+      where: { id: jobId, tenantId: tenantId ?? IsNull() },
+    });
     if (!job) {
       throw new NotFoundException(`Compliance report job ${jobId} not found`);
     }
@@ -81,7 +85,11 @@ export class ComplianceReportsService {
   }
 
   async process(jobId: string): Promise<void> {
-    const job = await this.getJob(jobId);
+    // Internal worker lookup: the job's own tenantId drives the scope, not a caller.
+    const job = await this.jobRepository.findOne({ where: { id: jobId } });
+    if (!job) {
+      throw new NotFoundException(`Compliance report job ${jobId} not found`);
+    }
 
     try {
       job.status = ComplianceReportStatus.PROCESSING;
@@ -128,8 +136,13 @@ export class ComplianceReportsService {
     }
   }
 
-  async download(jobId: string, format: 'pdf' | 'csv', downloadedByUserId?: string): Promise<Buffer> {
-    const job = await this.getJob(jobId);
+  async download(
+    jobId: string,
+    format: 'pdf' | 'csv',
+    tenantId: string | null,
+    downloadedByUserId?: string,
+  ): Promise<Buffer> {
+    const job = await this.getJob(jobId, tenantId);
 
     if (job.status !== ComplianceReportStatus.COMPLETED) {
       throw new BadRequestException(`Report is not ready (status: ${job.status})`);

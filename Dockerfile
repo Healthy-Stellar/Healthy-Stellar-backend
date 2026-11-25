@@ -28,7 +28,7 @@ WORKDIR /app
 COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
 COPY --from=production-deps --chown=nestjs:nodejs /app/node_modules ./node_modules
 COPY --chown=nestjs:nodejs package.json ./
-COPY --chown=nestjs:nodejs .env.example ./
+COPY --chown=nestjs:nodejs .env.example.health ./.env.example
 
 USER nestjs
 

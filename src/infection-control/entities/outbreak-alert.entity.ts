@@ -70,6 +70,10 @@ export class OutbreakAlert {
   @Column({ default: false })
   emailNotified: boolean;
 
+  @Column({ type: 'varchar', nullable: true })
+  @Index()
+  tenantId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

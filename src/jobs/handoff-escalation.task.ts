@@ -12,10 +12,9 @@ export class HandoffEscalationTask {
   async handleStaleHandoffs(): Promise<void> {
     this.logger.debug('Running handoff escalation check');
     try {
-      // Escalation targets are resolved per tenant/department inside the
-      // service (department head or charge nurse). The service also claims
-      // each handoff atomically and only marks it ESCALATED after a
-      // notification is accepted, so no global DEPARTMENT_HEAD_ID is used.
+      // No escalation resolver is wired yet, so the service logs each stale
+      // handoff and leaves it unescalated. The service claims each handoff
+      // atomically and only marks it ESCALATED after a notification is accepted.
       await this.handoffService.escalateStaleHandoffs();
     } catch (err) {
       this.logger.error(

@@ -281,8 +281,6 @@ secrets:
     file: ./secrets/stellar_secret_key.txt
   encryption_key:
     file: ./secrets/encryption_key.txt
-  metrics_token:
-    file: ./secrets/metrics_token.txt
   queue_hmac_secret:
     file: ./secrets/queue_hmac_secret.txt
   grafana_password:

@@ -14,6 +14,7 @@ import { Response, Request } from 'express';
 import { randomBytes } from 'crypto';
 import { OidcService } from './oidc.service';
 import { OidcLoginDto, OidcExchangeDto } from './oidc.dto';
+import { Public } from '../common/decorators/public.decorator';
 
 const ONE_TIME_CODE_TTL_MS = 60 * 1000;
 
@@ -78,6 +79,7 @@ export class OidcController {
   }
 
   @Get(':provider')
+  @Public()
   async loginGet(
     @Param('provider') provider: string,
     @Query() query: OidcLoginDto,
@@ -89,6 +91,7 @@ export class OidcController {
   }
 
   @Get(':provider/callback')
+  @Public()
   async callbackGet(
     @Param('provider') provider: string,
     @Query('code') code: string,
@@ -108,6 +111,7 @@ export class OidcController {
   }
 
   @Post('exchange')
+  @Public()
   async exchangeCode(@Body() body: OidcExchangeDto) {
     const entry = this.pendingCodes.get(body.code);
     if (!entry) {

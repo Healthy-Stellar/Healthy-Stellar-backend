@@ -2,7 +2,7 @@ import { UnauthorizedException } from '@nestjs/common';
 
 /**
  * Returns the authenticated actor's id from `req.user`, as set by
- * JwtAuthGuard (`userId`) or the passport JwtStrategy (`id`). Never fall back
+ * JwtAuthGuard (`userId`) or a strategy payload (`id`). Never fall back
  * to a body field or a placeholder id: a missing user means the route was
  * reached without authentication.
  */

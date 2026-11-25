@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { Observable, of, firstValueFrom } from 'rxjs';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, QueryRunner, Repository } from 'typeorm';
 import { createHash } from 'crypto';
 import { HttpIdempotencyEntity } from './idempotency.entity';
 import { TenantContext } from '../tenant/context/tenant.context';
@@ -17,25 +17,12 @@ import { TenantContext } from '../tenant/context/tenant.context';
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const IDEMPOTENCY_HEADER = 'idempotency-key';
 const TTL_MS = 24 * 60 * 60 * 1000;
+// shortcut: a claim left behind by a crashed request is reclaimed after this; a handler slower than this could run twice
+const IN_PROGRESS_TTL_MS = 5 * 60 * 1000;
+// statusCode sentinel for a claimed-but-unfinished request (0 is never a valid HTTP status)
+const IN_PROGRESS = 0;
 const LOCK_TIMEOUT_MS = 5_000;
 const LOCK_RETRY_INTERVAL_MS = 50;
-
-/**
- * Convert the composite key string into a 64-bit bigint suitable for
- * pg_advisory_lock.  We use a deterministic hash so that every concurrent
- * request for the *same* idempotency key maps to the same lock id.
- */
-function keyToLockId(compositeKey: string): number {
-  // FNV-1a 64-bit hash (works in JS via 32-bit math + folding)
-  let hash = 0x811c9dc5; // FNV offset basis (32-bit)
-  for (let i = 0; i < compositeKey.length; i++) {
-    hash = (hash ^ compositeKey.charCodeAt(i)) >>> 0;
-    hash = (Math.imul(hash, 0x01000193)) >>> 0; // FNV prime
-  }
-  // Fold to a positive 32-bit integer (PostgreSQL advisory lock accepts int64,
-  // but a single 32-bit int is sufficient and simpler for our use-case)
-  return hash;
-}
 
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
@@ -61,7 +48,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
       throw new UnprocessableEntityException('Idempotency-Key must be 256 characters or fewer');
     }
 
-    // Principal is populated by JwtStrategy; tenant is the DB-validated one set by TenantInterceptor.
+    // Principal is populated by JwtAuthGuard; tenant is the DB-validated one set by TenantInterceptor.
     // Client-supplied headers are never used for namespacing. Anonymous requests are not cached.
     const userId: string | undefined = req.medicalUser?.id;
     const tenantId: string | undefined = TenantContext.getTenantId();
@@ -70,110 +57,129 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const compositeKey = `${tenantId}:${userId}:${clientKey}`;
     const bodyHash = createHash('sha256').update(JSON.stringify(req.body ?? null)).digest('hex');
     const fingerprint = `${req.method}:${req.path}:${bodyHash}`;
-    const cutoff = new Date(Date.now() - TTL_MS);
 
-    // Session-level advisory locks are bound to the connection that took them,
-    // so the lock, the work and the unlock must all run on one dedicated connection.
-    const lockRunner = this.dataSource.createQueryRunner();
-    await lockRunner.connect();
-
-    try {
-      await this.acquireLock(lockRunner, compositeKey, clientKey);
-
-      try {
-        const existing = await this.repo.findOne({
-          where: { key: compositeKey },
-        });
-
-        if (existing) {
-          if (existing.createdAt < cutoff) {
-            await this.repo.delete({ key: compositeKey });
-          } else if (existing.requestFingerprint !== fingerprint) {
-            throw new UnprocessableEntityException(
-              `Idempotency-Key '${clientKey}' was already used for ${existing.requestFingerprint}`,
-            );
-          } else {
-            this.logger.debug(`[Idempotency] Replaying cached response for key=${clientKey}`);
-
-            for (const [name, value] of Object.entries(existing.headers)) {
-              res.setHeader(name, value);
-            }
-            res.setHeader('Idempotent-Replayed', 'true');
-            res.status(existing.statusCode);
-
-            return of(existing.body);
-          }
-        }
-
-        const body = await firstValueFrom(next.handle());
-        const statusCode: number = res.statusCode ?? 200;
-        const headers: Record<string, string> = {};
-
-        try {
-          await this.repo.upsert(
-            {
-              key: compositeKey,
-              statusCode,
-              body: body ?? {},
-              headers,
-              requestFingerprint: fingerprint,
-            },
-            ['key'],
-          );
-        } catch (err) {
-          // Non-fatal — log and continue; the response has already been sent
-          this.logger.error(
-            `[Idempotency] Failed to persist key=${clientKey}: ${(err as Error).message}`,
-          );
-        }
-
-        return of(body);
-      } finally {
-        await this.releaseLock(lockRunner, compositeKey, clientKey);
-      }
-    } finally {
-      await lockRunner.release();
-    }
-  }
-
-  /**
-   * Polls pg_try_advisory_lock on the given connection until the lock is taken
-   * or LOCK_TIMEOUT_MS elapses, so a stuck holder can never hang the request.
-   */
-  private async acquireLock(
-    runner: QueryRunner,
-    compositeKey: string,
-    clientKey: string,
-  ): Promise<void> {
+    // No pooled connection is held while the handler runs: the claim is a short
+    // transaction, and the handler gets its own connections from the pool.
     const deadline = Date.now() + LOCK_TIMEOUT_MS;
+    let existing = await this.claim(compositeKey, fingerprint);
 
-    while (true) {
-      const [{ locked }] = await runner.query(
-        'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
-        [compositeKey],
-      );
-      if (locked) return;
-
+    while (existing?.statusCode === IN_PROGRESS) {
       if (Date.now() >= deadline) {
         throw new ConflictException(
           `A request with Idempotency-Key '${clientKey}' is already in progress`,
         );
       }
       await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_INTERVAL_MS));
+      existing = await this.claim(compositeKey, fingerprint);
+    }
+
+    if (existing) {
+      if (existing.requestFingerprint !== fingerprint) {
+        throw new UnprocessableEntityException(
+          `Idempotency-Key '${clientKey}' was already used for ${existing.requestFingerprint}`,
+        );
+      }
+
+      this.logger.debug(`[Idempotency] Replaying cached response for key=${clientKey}`);
+
+      for (const [name, value] of Object.entries(existing.headers)) {
+        res.setHeader(name, value);
+      }
+      res.setHeader('Idempotent-Replayed', 'true');
+      res.status(existing.statusCode);
+
+      return of(existing.body);
+    }
+
+    let body: any;
+    try {
+      body = await firstValueFrom(next.handle());
+    } catch (err) {
+      await this.releaseClaim(compositeKey, clientKey);
+      throw err;
+    }
+
+    const statusCode: number = res.statusCode ?? 200;
+    const location = res.getHeader('location');
+    const headers: Record<string, string> = location ? { location: String(location) } : {};
+
+    try {
+      await this.repo.upsert(
+        {
+          key: compositeKey,
+          statusCode,
+          body: body ?? {},
+          headers,
+          requestFingerprint: fingerprint,
+        },
+        ['key'],
+      );
+    } catch (err) {
+      // Non-fatal — the response has already been produced; free the claim so a retry can run
+      this.logger.error(
+        `[Idempotency] Failed to persist key=${clientKey}: ${(err as Error).message}`,
+      );
+      await this.releaseClaim(compositeKey, clientKey);
+    }
+
+    return of(body);
+  }
+
+  /**
+   * Runs in one short transaction. The transaction-scoped advisory lock serialises
+   * claimers for the same key. Returns the live row if one exists (in progress or
+   * completed), or null after inserting an in-progress row that this request now owns.
+   */
+  private async claim(
+    compositeKey: string,
+    fingerprint: string,
+  ): Promise<HttpIdempotencyEntity | null> {
+    const runner: QueryRunner = this.dataSource.createQueryRunner();
+    await runner.connect();
+
+    try {
+      await runner.startTransaction();
+      await runner.query('SELECT pg_advisory_xact_lock(hashtext($1))', [compositeKey]);
+
+      let existing = await runner.manager.findOne(HttpIdempotencyEntity, {
+        where: { key: compositeKey },
+      });
+
+      if (existing) {
+        const ttl = existing.statusCode === IN_PROGRESS ? IN_PROGRESS_TTL_MS : TTL_MS;
+        if (existing.createdAt < new Date(Date.now() - ttl)) {
+          await runner.manager.delete(HttpIdempotencyEntity, { key: compositeKey });
+          existing = null;
+        }
+      }
+
+      if (!existing) {
+        await runner.manager.insert(HttpIdempotencyEntity, {
+          key: compositeKey,
+          statusCode: IN_PROGRESS,
+          body: {},
+          headers: {},
+          requestFingerprint: fingerprint,
+        });
+      }
+
+      await runner.commitTransaction();
+      return existing;
+    } catch (err) {
+      if (runner.isTransactionActive) await runner.rollbackTransaction();
+      throw err;
+    } finally {
+      await runner.release();
     }
   }
 
-  private async releaseLock(
-    runner: QueryRunner,
-    compositeKey: string,
-    clientKey: string,
-  ): Promise<void> {
-    const [{ unlocked }] = await runner.query(
-      'SELECT pg_advisory_unlock(hashtext($1)) AS unlocked',
-      [compositeKey],
-    );
-    if (!unlocked) {
-      this.logger.error(`[Idempotency] Advisory lock was not held for key=${clientKey}`);
+  private async releaseClaim(compositeKey: string, clientKey: string): Promise<void> {
+    try {
+      await this.repo.delete({ key: compositeKey, statusCode: IN_PROGRESS });
+    } catch (err) {
+      this.logger.error(
+        `[Idempotency] Failed to release claim for key=${clientKey}: ${(err as Error).message}`,
+      );
     }
   }
 }

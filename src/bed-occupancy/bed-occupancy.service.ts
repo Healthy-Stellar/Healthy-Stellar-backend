@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
-  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, EntityManager } from 'typeorm';
+import { EntityManager, FindOptionsWhere, In, Repository } from 'typeorm';
 import { Bed } from './entities/bed.entity';
 import { Room } from './entities/room.entity';
 import { Ward } from './entities/ward.entity';
@@ -40,42 +41,71 @@ export class BedOccupancyService {
 
   // ── Wards ─────────────────────────────────────────────────────────────────
 
-  async createWard(dto: CreateWardDto): Promise<Ward> {
-    return this.wardRepo.save(this.wardRepo.create(dto));
+  async createWard(dto: CreateWardDto, tenantId: string): Promise<Ward> {
+    this.requireTenantId(tenantId);
+    return this.wardRepo.save(this.wardRepo.create({ ...dto, tenantId }));
   }
 
-  async getWards(): Promise<Ward[]> {
-    return this.wardRepo.find({ where: { isActive: true } });
+  async getWards(tenantId: string): Promise<Ward[]> {
+    this.requireTenantId(tenantId);
+    return this.wardRepo.find({ where: { tenantId, isActive: true } });
   }
 
   // ── Rooms ─────────────────────────────────────────────────────────────────
 
-  async createRoom(dto: CreateRoomDto): Promise<Room> {
-    await this.findWard(dto.wardId);
-    return this.roomRepo.save(this.roomRepo.create(dto));
+  async createRoom(dto: CreateRoomDto, tenantId: string): Promise<Room> {
+    this.requireTenantId(tenantId);
+    await this.findWard(dto.wardId, tenantId);
+    return this.roomRepo.save(this.roomRepo.create({ ...dto, tenantId }));
   }
 
-  async getRoomsByWard(wardId: string): Promise<Room[]> {
-    return this.roomRepo.find({ where: { wardId, isActive: true } });
+  async getRoomsByWard(wardId: string, tenantId: string): Promise<Room[]> {
+    this.requireTenantId(tenantId);
+    await this.findWard(wardId, tenantId);
+    return this.roomRepo.find({ where: { wardId, tenantId, isActive: true } });
   }
 
   // ── Beds ──────────────────────────────────────────────────────────────────
 
-  async createBed(dto: CreateBedDto): Promise<Bed> {
-    await this.findRoom(dto.roomId);
-    return this.bedRepo.save(this.bedRepo.create(dto));
+  async createBed(dto: CreateBedDto, tenantId: string): Promise<Bed> {
+    this.requireTenantId(tenantId);
+    const room = await this.findRoom(dto.roomId, tenantId);
+    await this.findWard(room.wardId, tenantId);
+    return this.bedRepo.save(this.bedRepo.create({ ...dto, tenantId }));
   }
 
-  async getBeds(query: BedOccupancyQueryDto): Promise<Bed[]> {
-    const where: Partial<Bed> = {};
-    if (query.roomId) where.roomId = query.roomId;
+  async getBeds(query: BedOccupancyQueryDto, tenantId: string): Promise<Bed[]> {
+    this.requireTenantId(tenantId);
+    const where: FindOptionsWhere<Bed> = { tenantId };
+
+    if (query.wardId) {
+      await this.findWard(query.wardId, tenantId);
+    }
+
+    if (query.roomId) {
+      const room = await this.findRoom(query.roomId, tenantId);
+      if (query.wardId && room.wardId !== query.wardId) {
+        return [];
+      }
+      where.roomId = query.roomId;
+    } else if (query.wardId) {
+      const wardRooms = await this.roomRepo.find({
+        where: { wardId: query.wardId, tenantId },
+      });
+      if (wardRooms.length === 0) {
+        return [];
+      }
+      where.roomId = In(wardRooms.map((r) => r.id));
+    }
+
     if (query.status) where.status = query.status;
     if (query.activeOnly !== false) where.isActive = true;
     return this.bedRepo.find({ where });
   }
 
-  async getBedById(id: string): Promise<Bed> {
-    const bed = await this.bedRepo.findOne({ where: { id } });
+  async getBedById(id: string, tenantId: string): Promise<Bed> {
+    this.requireTenantId(tenantId);
+    const bed = await this.bedRepo.findOne({ where: { id, tenantId } });
     if (!bed) throw new NotFoundException(`Bed ${id} not found`);
     return bed;
   }
@@ -131,7 +161,8 @@ export class BedOccupancyService {
     }
   }
 
-  async assignBed(dto: AssignBedDto): Promise<Bed> {
+  async assignBed(dto: AssignBedDto, tenantId: string): Promise<Bed> {
+    this.requireTenantId(tenantId);
     // Wrap in transaction with advisory locking to prevent concurrent double-booking
     return this.bedRepo.manager.transaction(
       async (transactionalEntityManager: EntityManager): Promise<Bed> => {
@@ -140,11 +171,12 @@ export class BedOccupancyService {
         // Acquire advisory lock to serialize concurrent assignments for this patient
         await this.acquirePatientLock(transactionalEntityManager, dto.patientId);
 
-        // Load bed within transaction with pessimistic lock
+        // Load bed within transaction with pessimistic lock, scoped to caller tenant
         const bed: Bed | null = await transactionalEntityManager
           .createQueryBuilder(Bed, 'bed')
-          .useLock('pessimistic_write')
+          .setLock('pessimistic_write')
           .where('bed.id = :id', { id: dto.bedId })
+          .andWhere('bed.tenantId = :tenantId', { tenantId })
           .getOne();
 
         if (!bed) {
@@ -155,11 +187,12 @@ export class BedOccupancyService {
           throw new BadRequestException(`Bed ${dto.bedId} is not available`);
         }
 
-        // Reject if the patient already occupies another bed
+        // Reject if the patient already occupies another bed in the same tenant
         const existingBed = await transactionalEntityManager
           .createQueryBuilder(Bed, 'bed')
-          .useLock('pessimistic_write')
+          .setLock('pessimistic_write')
           .where('bed.patientId = :patientId', { patientId: dto.patientId })
+          .andWhere('bed.tenantId = :tenantId', { tenantId })
           .andWhere('bed.status = :status', { status: BedStatus.OCCUPIED })
           .andWhere('bed.id != :bedId', { bedId: dto.bedId })
           .getOne();
@@ -180,8 +213,9 @@ export class BedOccupancyService {
     );
   }
 
-  async releaseBed(bedId: string): Promise<Bed> {
-    const bed = await this.getBedById(bedId);
+  async releaseBed(bedId: string, tenantId: string): Promise<Bed> {
+    this.requireTenantId(tenantId);
+    const bed = await this.getBedById(bedId, tenantId);
     if (bed.status !== BedStatus.OCCUPIED) {
       throw new BadRequestException(`Bed ${bedId} is not currently occupied`);
     }
@@ -191,15 +225,21 @@ export class BedOccupancyService {
     return this.bedRepo.save(bed);
   }
 
-  async updateBedStatus(bedId: string, dto: UpdateBedStatusDto): Promise<Bed> {
+  async updateBedStatus(
+    bedId: string,
+    dto: UpdateBedStatusDto,
+    tenantId: string,
+  ): Promise<Bed> {
+    this.requireTenantId(tenantId);
     return this.bedRepo.manager.transaction(
       async (transactionalEntityManager: EntityManager): Promise<Bed> => {
         await this.acquireBedLock(transactionalEntityManager, bedId);
 
         const bed: Bed | null = await transactionalEntityManager
           .createQueryBuilder(Bed, 'bed')
-          .useLock('pessimistic_write')
+          .setLock('pessimistic_write')
           .where('bed.id = :id', { id: bedId })
+          .andWhere('bed.tenantId = :tenantId', { tenantId })
           .getOne();
 
         if (!bed) {
@@ -232,16 +272,28 @@ export class BedOccupancyService {
   }
 
   async getOccupancySummary(
+    tenantId: string,
     wardId?: string,
   ): Promise<Record<BedStatus, number> & { total: number }> {
+    this.requireTenantId(tenantId);
+    if (wardId) {
+      await this.findWard(wardId, tenantId);
+    }
+
     const qb = this.bedRepo
       .createQueryBuilder('bed')
       .select('bed.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .where('bed.isActive = true');
+      .where('bed.isActive = true')
+      .andWhere('bed.tenantId = :tenantId', { tenantId });
 
     if (wardId) {
-      qb.innerJoin(Room, 'room', 'room.id = bed.roomId AND room.wardId = :wardId', { wardId });
+      qb.innerJoin(
+        Room,
+        'room',
+        'room.id = bed.roomId AND room.wardId = :wardId AND room.tenantId = :tenantId',
+        { wardId, tenantId },
+      );
     }
 
     const rows: Array<{ status: BedStatus; count: string }> = await qb
@@ -258,14 +310,21 @@ export class BedOccupancyService {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  private async findWard(id: string): Promise<Ward> {
-    const ward = await this.wardRepo.findOne({ where: { id } });
+  private requireTenantId(tenantId: string): string {
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context is required');
+    }
+    return tenantId;
+  }
+
+  private async findWard(id: string, tenantId: string): Promise<Ward> {
+    const ward = await this.wardRepo.findOne({ where: { id, tenantId } });
     if (!ward) throw new NotFoundException(`Ward ${id} not found`);
     return ward;
   }
 
-  private async findRoom(id: string): Promise<Room> {
-    const room = await this.roomRepo.findOne({ where: { id } });
+  private async findRoom(id: string, tenantId: string): Promise<Room> {
+    const room = await this.roomRepo.findOne({ where: { id, tenantId } });
     if (!room) throw new NotFoundException(`Room ${id} not found`);
     return room;
   }

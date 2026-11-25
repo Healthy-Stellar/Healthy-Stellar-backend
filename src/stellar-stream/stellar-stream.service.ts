@@ -7,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Counter } from 'prom-client';
 import Redis from 'ioredis';
@@ -21,6 +21,8 @@ const CURSOR_KEY = 'stellar:stream:cursor';
 const CURSOR_TS_KEY = 'stellar:stream:cursor:savedAt';
 const STALE_CURSOR_MS = 24 * 60 * 60 * 1000; // 24 hours
 const TX_DEDUP_TTL_S = 48 * 60 * 60; // 48-hour dedup window in seconds
+const MAX_TX_ATTEMPTS = 3; // in-process attempts per transaction before giving up
+const BASE_TX_RETRY_MS = 500;
 const MAX_BACKOFF_MS = 5 * 60 * 1000; // 5 minutes
 const BASE_BACKOFF_MS = 1_000;
 
@@ -32,7 +34,7 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
 
   private redis: Redis;
   private horizon: StellarSdk.Horizon.Server;
-  private contractAddress: string;
+  private platformAccount: string;
   private stopStream: (() => void) | null = null;
   private destroyed = false;
   private retryCount = 0;
@@ -55,7 +57,9 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
       isMainnet ? 'https://horizon.stellar.org' : 'https://horizon-testnet.stellar.org',
       { allowHttp: false },
     );
-    this.contractAddress = this.config.get<string>('STELLAR_CONTRACT_ID', '');
+    // Platform signer submits record anchors and grant txs; scoping the stream to it avoids reading the whole network
+    const secret = this.config.get<string>('STELLAR_SECRET_KEY', '');
+    this.platformAccount = secret ? StellarSdk.Keypair.fromSecret(secret).publicKey() : '';
     this.redis = new Redis({
       host: this.config.get('REDIS_HOST', 'localhost'),
       port: this.config.get<number>('REDIS_PORT', 6379),
@@ -63,7 +67,9 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
       lazyConnect: true,
     });
     this.redis.connect().catch(() => {
-      this.logger.warn('Redis unavailable — stream cursor will not be persisted');
+      this.logger.warn(
+        'Redis unavailable — cursor not persisted and tx dedup disabled (duplicates may be reprocessed)',
+      );
     });
     this._connect();
   }
@@ -79,6 +85,11 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
 
   async _connect(): Promise<void> {
     if (this.destroyed) return;
+    if (!this.platformAccount) {
+      this.status = 'failed';
+      this.logger.warn('STELLAR_SECRET_KEY not set — Stellar stream disabled');
+      return;
+    }
 
     const cursor = await this._getCursor();
     this.logger.log(`Connecting to Stellar SSE stream (cursor=${cursor})`);
@@ -86,6 +97,7 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
     try {
       const builder = this.horizon
         .transactions()
+        .forAccount(this.platformAccount)
         .cursor(cursor)
         .limit(200)
         .stream({
@@ -123,67 +135,99 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
   // ── Event handling ─────────────────────────────────────────────────────────
 
   async _handleTransaction(tx: StellarSdk.Horizon.ServerApi.TransactionRecord): Promise<void> {
-    try {
-      // Idempotency guard — skip already-processed transactions (e.g. replay after restart)
-      const dedupKey = `stellar:stream:processed:${tx.hash}`;
-      const isNew = await this.redis.set(dedupKey, '1', 'EX', TX_DEDUP_TTL_S, 'NX');
-      if (isNew === null) {
-        this.logger.debug(`[StellarStream] Duplicate tx skipped: ${tx.hash}`);
-        this.eventsCounter.inc({ result: 'skipped' });
-        return;
-      }
-
-      // Filter: only process txs involving our contract address
-      if (this.contractAddress && !this._involvesContract(tx)) {
-        this.eventsCounter.inc({ result: 'skipped' });
-        await this._saveCursor(tx.paging_token);
-        return;
-      }
+    // Idempotency guard — skip already-processed transactions (e.g. replay after restart)
+    const dedupKey = `stellar:stream:processed:${tx.hash}`;
+    if (!(await this._claimDedup(dedupKey))) {
+      this.logger.debug(`[StellarStream] Duplicate tx skipped: ${tx.hash}`);
+      this.eventsCounter.inc({ result: 'skipped' });
+      return;
+    }
 
       const isSuccess = tx.successful;
       const hash = tx.hash;
 
-      // Try record first, then access grant
-      const record = await this.recordRepo.findOne({ where: { stellarTxHash: hash } });
-      if (record) {
-        if (isSuccess) {
-          this.events.emit('record.anchored', { recordId: record.id, txHash: hash });
-        } else {
-          this.events.emit('record.anchor.failed', { recordId: record.id, txHash: hash });
-        }
-        this.eventsCounter.inc({ result: isSuccess ? 'confirmed' : 'failed' });
-        await this._saveCursor(tx.paging_token);
-        return;
-      }
-
-      const grant = await this.grantRepo.findOne({ where: { sorobanTxHash: hash } });
-      if (grant) {
-        if (isSuccess) {
-          this.events.emit('access.grant.confirmed', { grantId: grant.id, txHash: hash });
-        } else {
-          this.events.emit('access.grant.failed', { grantId: grant.id, txHash: hash });
-        }
-        this.eventsCounter.inc({ result: isSuccess ? 'confirmed' : 'failed' });
-        await this._saveCursor(tx.paging_token);
-        return;
-      }
-
-      // No matching record — still advance cursor
+  private async _processTransaction(tx: StellarSdk.Horizon.ServerApi.TransactionRecord): Promise<void> {
+    // Filter: only process txs involving our contract address
+    if (this.contractAddress && !this._involvesContract(tx)) {
       this.eventsCounter.inc({ result: 'skipped' });
       await this._saveCursor(tx.paging_token);
-    } catch (err) {
-      this.logger.error(`Error processing tx ${tx?.hash}: ${(err as Error).message}`);
-      this.eventsCounter.inc({ result: 'error' });
+      return;
+    }
+
+    const isSuccess = tx.successful;
+    const hash = tx.hash;
+
+    // Try record first, then access grant
+    const record = await this.recordRepo.findOne({ where: { stellarTxHash: hash } });
+    if (record) {
+      if (isSuccess) {
+        this.events.emit('record.anchored', { recordId: record.id, txHash: hash });
+      } else {
+        this.events.emit('record.anchor.failed', { recordId: record.id, txHash: hash });
+      }
+      this.eventsCounter.inc({ result: isSuccess ? 'confirmed' : 'failed' });
+      await this._saveCursor(tx.paging_token);
+      return;
+    }
+
+    const grant = await this.grantRepo.findOne({ where: { sorobanTxHash: hash } });
+    if (grant) {
+      if (isSuccess) {
+        this.events.emit('access.grant.confirmed', { grantId: grant.id, txHash: hash });
+      } else {
+        this.events.emit('access.grant.failed', { grantId: grant.id, txHash: hash });
+      }
+      this.eventsCounter.inc({ result: isSuccess ? 'confirmed' : 'failed' });
+      await this._saveCursor(tx.paging_token);
+      return;
+    }
+
+    // No matching record — still advance cursor
+    this.eventsCounter.inc({ result: 'skipped' });
+    await this._saveCursor(tx.paging_token);
+  }
+
+  // Returns false only for a confirmed duplicate. If Redis is down, process without dedup instead of dropping the tx.
+  private async _claimDedup(key: string): Promise<boolean> {
+    try {
+      return (await this.redis.set(key, '1', 'EX', TX_DEDUP_TTL_S, 'NX')) !== null;
+    } catch {
+      return true;
     }
   }
 
-  private _involvesContract(tx: StellarSdk.Horizon.ServerApi.TransactionRecord): boolean {
-    // The envelope_xdr contains the source account; for Soroban invocations the
-    // contract address appears in the operations. A lightweight check on the raw
-    // XDR string is sufficient to filter without full decode overhead.
-    return (
-      tx.source_account === this.contractAddress ||
-      (tx.envelope_xdr ?? '').includes(this.contractAddress)
+  private async _releaseDedup(key: string): Promise<void> {
+    try {
+      await this.redis.del(key);
+    } catch {
+      // Redis down: the marker expires after TX_DEDUP_TTL_S
+    }
+  }
+
+  get redisAvailable(): boolean {
+    return this.redis?.status === 'ready';
+  }
+
+  // ── Grant confirmation ─────────────────────────────────────────────────────
+
+  // Conditional updates so a late or replayed event cannot overwrite a grant that moved on
+  @OnEvent('access.grant.confirmed')
+  async onGrantConfirmed({ grantId }: { grantId: string; txHash: string }): Promise<void> {
+    await this.grantRepo.update(
+      { id: grantId, status: GrantStatus.PENDING_CHAIN },
+      { status: GrantStatus.ACTIVE },
+    );
+  }
+
+  @OnEvent('access.grant.failed')
+  async onGrantFailed({ grantId, txHash }: { grantId: string; txHash: string }): Promise<void> {
+    await this.grantRepo.update(
+      { id: grantId, status: GrantStatus.PENDING_CHAIN },
+      {
+        status: GrantStatus.REVOKED,
+        revokedAt: new Date(),
+        revocationReason: `Soroban transaction ${txHash} failed`,
+      },
     );
   }
 

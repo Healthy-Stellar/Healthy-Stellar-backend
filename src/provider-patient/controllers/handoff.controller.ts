@@ -38,25 +38,22 @@ export class HandoffController {
   @ApiResponse({ status: 201, description: 'Handoff created' })
   create(@Body() dto: CreateHandoffDto, @Req() req: Request) {
     const user = req.user as any;
-    const fromProvider = user?.id ?? user?.userId;
-    if (!fromProvider) {
+    const userId = user?.userId;
+    if (!userId) {
       throw new ForbiddenException('Unable to determine the calling provider');
     }
-    const tenantId = user?.tenantId;
+    const tenantId = user?.organizationId;
     if (!tenantId) {
       throw new ForbiddenException('Unable to determine the caller tenant');
     }
-    return this.service.create(
-      { ...dto, fromProvider },
-      { tenantId, fromProvider },
-    );
+    return this.service.create(dto, { tenantId, userId });
   }
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.PHYSICIAN, UserRole.NURSE)
   @ApiOperation({ summary: 'List handoffs with optional filters' })
   list(@Query() query: HandoffQueryDto, @Req() req: Request) {
-    const tenantId = (req.user as any)?.tenantId;
+    const tenantId = (req.user as any)?.organizationId;
     if (!tenantId) {
       throw new ForbiddenException('Unable to determine the caller tenant');
     }
@@ -72,7 +69,7 @@ export class HandoffController {
     if (user?.role === UserRole.PATIENT && user.userId !== patientId) {
       throw new ForbiddenException('You can only view your own handoff timeline');
     }
-    const tenantId = user?.tenantId;
+    const tenantId = user?.organizationId;
     if (!tenantId) {
       throw new ForbiddenException('Unable to determine the caller tenant');
     }
@@ -83,7 +80,7 @@ export class HandoffController {
   @Roles(UserRole.ADMIN, UserRole.PHYSICIAN, UserRole.NURSE)
   @ApiOperation({ summary: 'Get a single handoff' })
   findOne(@Param('id') id: string, @Req() req: Request) {
-    const tenantId = (req.user as any)?.tenantId;
+    const tenantId = (req.user as any)?.organizationId;
     if (!tenantId) {
       throw new ForbiddenException('Unable to determine the caller tenant');
     }
@@ -95,7 +92,15 @@ export class HandoffController {
   @ApiOperation({ summary: 'Receiving provider acknowledges the handoff' })
   @ApiResponse({ status: 200, description: 'Handoff acknowledged' })
   acknowledge(@Param('id') id: string, @Req() req: Request) {
-    const providerId = (req.user as any)?.id ?? 'unknown';
-    return this.service.acknowledge(id, providerId);
+    const user = req.user as any;
+    const providerId = user?.userId;
+    if (!providerId) {
+      throw new ForbiddenException('Unable to determine the calling provider');
+    }
+    const tenantId = user?.organizationId;
+    if (!tenantId) {
+      throw new ForbiddenException('Unable to determine the caller tenant');
+    }
+    return this.service.acknowledge(id, providerId, tenantId);
   }
 }
