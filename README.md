@@ -45,7 +45,7 @@ Modules are grouped below by domain. Each entry is a top-level directory under `
 |---|---|
 | `patients/` | Patient registry, demographics, geo-restrictions, notification preferences |
 | `medical-records/` | Core medical records with version control, consent, clinical notes, attachments |
-| `records/` | Versioned record storage with IPFS anchoring and Stellar event-sourcing |
+| `records/` | Versioned record storage with IPFS anchoring and Stellar event-sourcing — see [digital signature verification](docs/digital-signature-verification.md) |
 | `pharmacy/` | Drugs, prescriptions, drug interactions, recalls, inventory, controlled substances |
 | `laboratory/` | Lab orders, results, specimens, equipment, quality control |
 | `appointments/` | Scheduling, consultations, doctor availability |
@@ -92,7 +92,7 @@ Modules are grouped below by domain. Each entry is a top-level directory under `
 | `tenant-config/` | Per-tenant feature flags and configuration overrides |
 | `notifications/` | WebSocket gateway, transactional outbox, email, notification preferences |
 | `queues/` | BullMQ job queues, DLQ, queue dashboard |
-| `graphql/` | Apollo GraphQL server, subscriptions, dataloaders, cursor pagination |
+| `graphql/` | Apollo GraphQL server, subscriptions, dataloaders, cursor pagination — see [GraphQL persisted queries](docs/graphql-persisted-queries.md) |
 | `pubsub/` | GraphQL PubSub transport (Redis-backed) |
 | `subscriptions/` | GraphQL subscription lifecycle management |
 | `metrics/` | Prometheus metrics, Grafana dashboards, SLO tracking |
@@ -212,6 +212,14 @@ Run `npm run seed` only when you want to populate a development database with sa
 ## Scripts Reference
 
 The project has 66 npm scripts. A full reference — including descriptions, prerequisites, and safety warnings for destructive scripts — is in **[docs/scripts.md](docs/scripts.md)**.
+
+The following shell scripts in `scripts/` are available for ad-hoc feature verification:
+
+| Script | Purpose |
+|---|---|
+| `scripts/verify-access-grant-implementation.sh` | Checks all files and endpoints required by the access-grant feature |
+| `scripts/verify-api-key-implementation.sh` | Checks all files required by the API-key authentication feature |
+| `scripts/verify-bulk-export.sh` | Checks FHIR bulk-export files and optionally probes live endpoints |
 
 Quick-start summary:
 

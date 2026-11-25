@@ -1,4 +1,13 @@
 #!/bin/bash
+# scripts/verify-access-grant-implementation.sh
+#
+# Smoke-checks the access-grant feature (issue #858 / PR #725).
+# Verifies that all expected source files, endpoints, DTO fields, and E2E
+# tests exist in the working tree. Run from the repository root:
+#
+#   bash scripts/verify-access-grant-implementation.sh
+#
+# No running server required. Exit code 0 = all checks passed.
 
 echo "==================================="
 echo "Access Grant Lifecycle Verification"
