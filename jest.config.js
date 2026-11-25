@@ -3,7 +3,15 @@ module.exports = {
   projects: [
     {
       displayName: 'unit',
-      testMatch: ['<rootDir>/src/**/*.spec.ts'],
+      testMatch: [
+        '<rootDir>/src/**/*.spec.ts',
+        '<rootDir>/test/unit/**/*.spec.ts',
+        '<rootDir>/test/security/**/*.spec.ts',
+        '<rootDir>/test/auth/**/*.spec.ts',
+        '<rootDir>/test/envelope-encryption.service.spec.ts',
+        '<rootDir>/test/kek-rotation.service.spec.ts',
+        '<rootDir>/test/rate-limiting.spec.ts',
+      ],
       moduleFileExtensions: ['ts', 'js', 'json'],
       rootDir: '.',
       transform: {
@@ -44,6 +52,57 @@ module.exports = {
           isolatedModules: true,
         },
       },
+    },
+    {
+      displayName: 'integration',
+      testMatch: [
+        '<rootDir>/test/integration/**/*.spec.ts',
+        '<rootDir>/test/stellar.integration.spec.ts',
+      ],
+      moduleFileExtensions: ['ts', 'js', 'json'],
+      rootDir: '.',
+      transform: {
+        '^.+\\.(t|j)s$': 'ts-jest',
+      },
+      testEnvironment: 'node',
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+        '^@test/(.*)$': '<rootDir>/test/$1',
+        '^uuid$': 'uuid',
+        '^@nestjs/bullmq$': '<rootDir>/test/__mocks__/@nestjs/bullmq.js',
+        '^ipfs-http-client$': '<rootDir>/test/__mocks__/ipfs-http-client.js',
+        '^bull$': '<rootDir>/test/__mocks__/bull.js',
+        '^@nestjs-modules/mailer$': '<rootDir>/test/__mocks__/@nestjs-modules/mailer.js',
+      },
+      setupFilesAfterEnv: ['<rootDir>/test/setup-unit.ts'],
+      globals: {
+        'ts-jest': {
+          isolatedModules: true,
+        },
+      },
+    },
+    {
+      displayName: 'database',
+      testMatch: [
+        '<rootDir>/test/migrations/**/*.spec.ts',
+        '<rootDir>/test/performance/**/*.spec.ts',
+      ],
+      moduleFileExtensions: ['ts', 'js', 'json'],
+      rootDir: '.',
+      transform: {
+        '^.+\\.(t|j)s$': 'ts-jest',
+      },
+      testEnvironment: 'node',
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+        '^@test/(.*)$': '<rootDir>/test/$1',
+      },
+      globals: {
+        'ts-jest': {
+          isolatedModules: true,
+        },
+      },
+      testTimeout: 60000,
     },
     {
       displayName: 'compliance',
