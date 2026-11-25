@@ -7,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Counter } from 'prom-client';
 import Redis from 'ioredis';
@@ -34,7 +34,7 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
 
   private redis: Redis;
   private horizon: StellarSdk.Horizon.Server;
-  private contractAddress: string;
+  private platformAccount: string;
   private stopStream: (() => void) | null = null;
   private destroyed = false;
   private retryCount = 0;
@@ -57,7 +57,9 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
       isMainnet ? 'https://horizon.stellar.org' : 'https://horizon-testnet.stellar.org',
       { allowHttp: false },
     );
-    this.contractAddress = this.config.get<string>('STELLAR_CONTRACT_ID', '');
+    // Platform signer submits record anchors and grant txs; scoping the stream to it avoids reading the whole network
+    const secret = this.config.get<string>('STELLAR_SECRET_KEY', '');
+    this.platformAccount = secret ? StellarSdk.Keypair.fromSecret(secret).publicKey() : '';
     this.redis = new Redis({
       host: this.config.get('REDIS_HOST', 'localhost'),
       port: this.config.get<number>('REDIS_PORT', 6379),
@@ -83,6 +85,11 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
 
   async _connect(): Promise<void> {
     if (this.destroyed) return;
+    if (!this.platformAccount) {
+      this.status = 'failed';
+      this.logger.warn('STELLAR_SECRET_KEY not set — Stellar stream disabled');
+      return;
+    }
 
     const cursor = await this._getCursor();
     this.logger.log(`Connecting to Stellar SSE stream (cursor=${cursor})`);
@@ -90,6 +97,7 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
     try {
       const builder = this.horizon
         .transactions()
+        .forAccount(this.platformAccount)
         .cursor(cursor)
         .limit(200)
         .stream({
@@ -135,22 +143,8 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    for (let attempt = 1; attempt <= MAX_TX_ATTEMPTS; attempt++) {
-      try {
-        await this._processTransaction(tx);
-        return;
-      } catch (err) {
-        this.logger.error(
-          `Error processing tx ${tx?.hash} (attempt ${attempt}/${MAX_TX_ATTEMPTS}): ${(err as Error).message}`,
-        );
-        if (attempt < MAX_TX_ATTEMPTS) await new Promise((r) => setTimeout(r, BASE_TX_RETRY_MS * attempt));
-      }
-    }
-
-    // Retries exhausted: clear the marker so a replay of this tx is processed, not skipped
-    await this._releaseDedup(dedupKey);
-    this.eventsCounter.inc({ result: 'error' });
-  }
+      const isSuccess = tx.successful;
+      const hash = tx.hash;
 
   private async _processTransaction(tx: StellarSdk.Horizon.ServerApi.TransactionRecord): Promise<void> {
     // Filter: only process txs involving our contract address
@@ -214,13 +208,26 @@ export class StellarStreamService implements OnModuleInit, OnModuleDestroy {
     return this.redis?.status === 'ready';
   }
 
-  private _involvesContract(tx: StellarSdk.Horizon.ServerApi.TransactionRecord): boolean {
-    // The envelope_xdr contains the source account; for Soroban invocations the
-    // contract address appears in the operations. A lightweight check on the raw
-    // XDR string is sufficient to filter without full decode overhead.
-    return (
-      tx.source_account === this.contractAddress ||
-      (tx.envelope_xdr ?? '').includes(this.contractAddress)
+  // ── Grant confirmation ─────────────────────────────────────────────────────
+
+  // Conditional updates so a late or replayed event cannot overwrite a grant that moved on
+  @OnEvent('access.grant.confirmed')
+  async onGrantConfirmed({ grantId }: { grantId: string; txHash: string }): Promise<void> {
+    await this.grantRepo.update(
+      { id: grantId, status: GrantStatus.PENDING_CHAIN },
+      { status: GrantStatus.ACTIVE },
+    );
+  }
+
+  @OnEvent('access.grant.failed')
+  async onGrantFailed({ grantId, txHash }: { grantId: string; txHash: string }): Promise<void> {
+    await this.grantRepo.update(
+      { id: grantId, status: GrantStatus.PENDING_CHAIN },
+      {
+        status: GrantStatus.REVOKED,
+        revokedAt: new Date(),
+        revocationReason: `Soroban transaction ${txHash} failed`,
+      },
     );
   }
 
