@@ -29,7 +29,7 @@ export class DataResidencyGuard implements CanActivate {
     this.trustedProxies = new Set(
       proxies
         .split(',')
-        .map((ip) => ip.trim())
+        .map((ip) => normalizeIp(ip.trim()))
         .filter(Boolean),
     );
   }
@@ -109,28 +109,36 @@ export class DataResidencyGuard implements CanActivate {
 
   /**
    * Extract client IP from request, handling proxies.
-   * Only trusts proxy headers (X-Forwarded-For, X-Client-IP) if the immediate
-   * connection is from a whitelisted trusted proxy IP.
+   * X-Forwarded-For is only read when the immediate connection is a trusted proxy.
+   * Each proxy appends the peer it received from, so the walk starts at the right
+   * and stops at the first untrusted hop. The leftmost entry is client-controlled.
    */
   private getClientIp(request: Request): string {
-    const directIp = request.socket.remoteAddress || '0.0.0.0';
+    const directIp = normalizeIp(request.socket.remoteAddress || '0.0.0.0');
 
-    // Only trust proxy headers if request comes from a trusted proxy
-    if (this.trustedProxies.size > 0 && this.trustedProxies.has(directIp)) {
-      const forwarded = request.headers['x-forwarded-for'];
-      if (forwarded) {
-        return typeof forwarded === 'string'
-          ? forwarded.split(',')[0].trim()
-          : forwarded[0];
-      }
+    if (!this.trustedProxies.has(directIp)) {
+      return directIp;
+    }
 
-      const clientIp = request.headers['x-client-ip'];
-      if (clientIp) {
-        return typeof clientIp === 'string' ? clientIp : clientIp[0];
+    const forwarded = request.headers['x-forwarded-for'];
+    const chain = Array.isArray(forwarded) ? forwarded.join(',') : (forwarded ?? '');
+    const hops = chain
+      .split(',')
+      .map((hop) => normalizeIp(hop.trim()))
+      .filter(Boolean);
+
+    for (let i = hops.length - 1; i >= 0; i--) {
+      if (!this.trustedProxies.has(hops[i])) {
+        return hops[i];
       }
     }
 
-    // Use direct connection IP if no trusted proxies configured or direct IP not in allowlist
+    // Every hop is a trusted proxy: no client address can be attributed, so fail closed
     return directIp;
   }
+}
+
+/** Maps IPv4-mapped IPv6 (`::ffff:10.0.0.5`) to its IPv4 form so comparisons match. */
+function normalizeIp(ip: string): string {
+  return ip.replace(/^::ffff:(?=\d{1,3}(\.\d{1,3}){3}$)/i, '');
 }
