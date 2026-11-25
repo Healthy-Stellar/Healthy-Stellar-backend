@@ -434,6 +434,8 @@ The API applies the shared Helmet configuration once through `applySecurityHeade
 
 The complete route reference is available in the [Swagger UI](/api) when the
 application is running and in the generated [OpenAPI specification](docs/openapi.json).
+See the [API versioning guide](docs/api-versioning.md) for URI versioning,
+compatibility aliases, lifecycle states, and deprecation headers.
 The prefixes below summarize the API by domain; URI-versioned endpoints are
 normally served under `/v1` (version-neutral routes are not).
 
