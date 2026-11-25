@@ -60,6 +60,7 @@ describe('ComplianceReportsService', () => {
       const result = await service.requestReport(
         { startDate: '2024-01-01', endDate: '2024-01-31', reportType: ComplianceReportType.HIPAA },
         'user-1',
+        'tenant-a',
       );
 
       expect(result).toEqual({ jobId: 'job-1', status: ComplianceReportStatus.PENDING });
@@ -72,6 +73,7 @@ describe('ComplianceReportsService', () => {
         service.requestReport(
           { startDate: '2024-02-01', endDate: '2024-01-01', reportType: ComplianceReportType.GDPR },
           'user-1',
+          'tenant-a',
         ),
       ).rejects.toThrow(BadRequestException);
     });
@@ -80,7 +82,7 @@ describe('ComplianceReportsService', () => {
   describe('getJob', () => {
     it('throws NotFoundException when missing', async () => {
       mockJobRepository.findOne.mockResolvedValue(null);
-      await expect(service.getJob('missing')).rejects.toThrow(NotFoundException);
+      await expect(service.getJob('missing', 'tenant-a')).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -96,7 +98,7 @@ describe('ComplianceReportsService', () => {
       };
       mockJobRepository.findOne.mockResolvedValue(job);
       mockJobRepository.save.mockImplementation((j) => Promise.resolve(j));
-      mockAuditLogRepository.find
+      mockAuditLogRepository.createQueryBuilder().getMany
         .mockResolvedValueOnce([{ action: AuditAction.DATA_ACCESS, timestamp: new Date(), userId: 'u1' }])
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]);
@@ -112,7 +114,7 @@ describe('ComplianceReportsService', () => {
   describe('download', () => {
     it('rejects when the report is not completed yet', async () => {
       mockJobRepository.findOne.mockResolvedValue({ id: 'job-1', status: ComplianceReportStatus.PROCESSING });
-      await expect(service.download('job-1', 'pdf')).rejects.toThrow(BadRequestException);
+      await expect(service.download('job-1', 'pdf', 'tenant-a')).rejects.toThrow(BadRequestException);
     });
 
     it('returns the file buffer and increments downloadCount', async () => {
@@ -125,7 +127,7 @@ describe('ComplianceReportsService', () => {
       mockJobRepository.findOne.mockResolvedValue(job);
       mockJobRepository.save.mockImplementation((j) => Promise.resolve(j));
 
-      const buffer = await service.download('job-1', 'pdf', 'user-1');
+      const buffer = await service.download('job-1', 'pdf', 'tenant-a', 'user-1');
 
       expect(buffer.toString()).toBe('file-contents');
       expect(job.downloadCount).toBe(1);

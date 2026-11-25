@@ -12,6 +12,13 @@ import {
 } from '../entities/care-plan-handoff.entity';
 import { CreateHandoffDto, HandoffQueryDto } from '../dto/handoff.dto';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { UserRole } from '../../auth/entities/user.entity';
+
+/** Authenticated caller, built by the controller from the JWT (`userId`, `organizationId`). */
+export interface HandoffActor {
+  tenantId: string;
+  userId: string;
+}
 
 /**
  * Resolves the escalation target for a handoff's tenant/department.
@@ -23,6 +30,9 @@ export type EscalationTargetResolver = (
   tenantId: string | null | undefined,
   departmentId: string | null | undefined,
 ) => Promise<string | null>;
+
+// shortcut: no escalation resolver is wired yet, so stale handoffs are logged and left unescalated; wire a real resolver (department head / charge nurse) before relying on escalation.
+const noEscalationTarget: EscalationTargetResolver = async () => null;
 
 @Injectable()
 export class HandoffService {
@@ -39,13 +49,14 @@ export class HandoffService {
       throw new ForbiddenException('Caller is not associated with a tenant');
     }
 
-    const target = await this.repo.manager
-      .getRepository(CarePlanHandoff)
-      .manager.query(
-        `SELECT id FROM providers WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
-        [dto.toProvider, actor.tenantId],
-      )
-      .catch(() => [] as Array<{ id: string }>);
+    const target: Array<{ id: string }> = await this.repo.manager.query(
+      `SELECT id FROM users WHERE id = $1 AND "organizationId" = $2 AND role = ANY($3) AND status = 'ACTIVE' LIMIT 1`,
+      [
+        dto.toProvider,
+        actor.tenantId,
+        [UserRole.PHYSICIAN, UserRole.NURSE, UserRole.SURGEON],
+      ],
+    );
 
     if (!Array.isArray(target) || target.length === 0) {
       throw new ForbiddenException(
@@ -137,7 +148,7 @@ export class HandoffService {
    * untouched and an error is logged so the misconfiguration is visible.
    */
   async escalateStaleHandoffs(
-    resolveTarget: EscalationTargetResolver,
+    resolveTarget: EscalationTargetResolver = noEscalationTarget,
   ): Promise<void> {
     const cutoff = new Date(Date.now() - 30 * 60 * 1000);
 
@@ -223,12 +234,6 @@ export class HandoffService {
 
       this.logger.warn(
         `[handoff] Escalated id=${candidate.id} patient=${candidate.patientId} to=${target}`,
-      await this.notificationsService.sendProviderEmailNotification(
-        departmentHeadId,
-        'Unacknowledged patient handoff requires escalation',
-        `Handoff ${handoff.id} for patient ${handoff.patientId} has not been acknowledged ` +
-          `within 30 minutes. Receiving provider: ${handoff.toProvider}. ` +
-          `Review at /provider-patient/handoffs/${handoff.id}.`,
       );
     }
   }

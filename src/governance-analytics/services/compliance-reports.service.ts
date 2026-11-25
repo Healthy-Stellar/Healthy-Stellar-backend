@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
-import { Repository, Between } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { Queue } from 'bullmq';
 import * as PDFDocument from 'pdfkit';
 import * as fs from 'fs';
@@ -41,6 +41,7 @@ export class ComplianceReportsService {
   async requestReport(
     dto: GenerateComplianceReportDto,
     requestedByUserId: string,
+    tenantId: string | null,
   ): Promise<{ jobId: string; status: ComplianceReportStatus }> {
     if (new Date(dto.startDate) > new Date(dto.endDate)) {
       throw new BadRequestException('startDate must be before endDate');
@@ -53,6 +54,7 @@ export class ComplianceReportsService {
         endDate: new Date(dto.endDate),
         status: ComplianceReportStatus.PENDING,
         requestedByUserId,
+        tenantId,
       }),
     );
 
@@ -70,8 +72,10 @@ export class ComplianceReportsService {
     return { jobId: job.id, status: job.status };
   }
 
-  async getJob(jobId: string): Promise<ComplianceReportJob> {
-    const job = await this.jobRepository.findOne({ where: { id: jobId } });
+  async getJob(jobId: string, tenantId: string | null): Promise<ComplianceReportJob> {
+    const job = await this.jobRepository.findOne({
+      where: { id: jobId, tenantId: tenantId ?? IsNull() },
+    });
     if (!job) {
       throw new NotFoundException(`Compliance report job ${jobId} not found`);
     }
@@ -79,13 +83,17 @@ export class ComplianceReportsService {
   }
 
   async process(jobId: string): Promise<void> {
-    const job = await this.getJob(jobId);
+    // Internal worker lookup: the job's own tenantId drives the scope, not a caller.
+    const job = await this.jobRepository.findOne({ where: { id: jobId } });
+    if (!job) {
+      throw new NotFoundException(`Compliance report job ${jobId} not found`);
+    }
 
     try {
       job.status = ComplianceReportStatus.PROCESSING;
       await this.jobRepository.save(job);
 
-      const sections = await this.collectSections(job.startDate, job.endDate);
+      const sections = await this.collectSections(job.startDate, job.endDate, job.tenantId);
 
       const pdfBuffer = await this.buildPdf(job, sections);
       const csvBuffer = this.buildCsv(sections);
@@ -123,8 +131,13 @@ export class ComplianceReportsService {
     }
   }
 
-  async download(jobId: string, format: 'pdf' | 'csv', downloadedByUserId?: string): Promise<Buffer> {
-    const job = await this.getJob(jobId);
+  async download(
+    jobId: string,
+    format: 'pdf' | 'csv',
+    tenantId: string | null,
+    downloadedByUserId?: string,
+  ): Promise<Buffer> {
+    const job = await this.getJob(jobId, tenantId);
 
     if (job.status !== ComplianceReportStatus.COMPLETED) {
       throw new BadRequestException(`Report is not ready (status: ${job.status})`);
@@ -150,18 +163,30 @@ export class ComplianceReportsService {
     return fs.readFileSync(filePath);
   }
 
-  private async collectSections(startDate: Date, endDate: Date): Promise<ComplianceReportSections> {
-    const range = Between(startDate, endDate);
+  private async collectSections(
+    startDate: Date,
+    endDate: Date,
+    tenantId: string | null,
+  ): Promise<ComplianceReportSections> {
+    // Audit rows have no tenant column, so a tenant's rows are those whose actor belongs to its organization.
+    const rowsFor = (condition: string, params: Record<string, unknown>) => {
+      const qb = this.auditLogRepository
+        .createQueryBuilder('audit')
+        .where(condition, params)
+        .andWhere('audit.timestamp BETWEEN :start AND :end', { start: startDate, end: endDate });
+      if (tenantId) {
+        qb.andWhere('audit.userId IN (SELECT CAST(u.id AS text) FROM users u WHERE u."organizationId" = :tenantId)', {
+          tenantId,
+        });
+      }
+      return qb.getMany();
+    };
 
     const [accessLogs, failedAuthAttempts, dataExports, roleChanges] = await Promise.all([
-      this.auditLogRepository.find({ where: { action: AuditAction.DATA_ACCESS, timestamp: range } }),
-      this.auditLogRepository.find({ where: { action: AuditAction.LOGIN_FAILED, timestamp: range } }),
-      this.auditLogRepository.find({ where: { action: AuditAction.DATA_EXPORT, timestamp: range } }),
-      this.auditLogRepository
-        .createQueryBuilder('audit')
-        .where('audit.action ILIKE :pattern', { pattern: '%ROLE%' })
-        .andWhere('audit.timestamp BETWEEN :start AND :end', { start: startDate, end: endDate })
-        .getMany(),
+      rowsFor('audit.action = :action', { action: AuditAction.DATA_ACCESS }),
+      rowsFor('audit.action = :action', { action: AuditAction.LOGIN_FAILED }),
+      rowsFor('audit.action = :action', { action: AuditAction.DATA_EXPORT }),
+      rowsFor('audit.action ILIKE :pattern', { pattern: '%ROLE%' }),
     ]);
 
     return { accessLogs, failedAuthAttempts, dataExports, roleChanges };

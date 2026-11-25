@@ -10,8 +10,12 @@ export class StellarStreamHealthIndicator extends HealthIndicator {
 
   check(key: string): HealthIndicatorResult {
     const status = this.stream.status;
-    const isHealthy = status === 'connected';
-    const result = this.getStatus(key, isHealthy, { stellarStream: status });
+    const redisUp = this.stream.redisAvailable;
+    const isHealthy = status === 'connected' && redisUp;
+    const result = this.getStatus(key, isHealthy, {
+      stellarStream: status,
+      redis: redisUp ? 'up' : 'down',
+    });
     if (!isHealthy) {
       throw new HealthCheckError('Stellar stream not connected', result);
     }

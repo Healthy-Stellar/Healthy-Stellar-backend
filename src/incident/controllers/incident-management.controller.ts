@@ -6,7 +6,6 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -16,8 +15,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { API_BEARER_AUTH_SCHEME } from '../../common/constants/swagger.constants';
-import { Request } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
+import { JwtPayload } from '../../auth/services/auth-token.service';
 import { IncidentManagementService } from '../services/incident-management.service';
 import {
   AcknowledgeIncidentDto,
@@ -30,7 +33,8 @@ import {
 
 @ApiTags('incidents')
 @ApiBearerAuth(API_BEARER_AUTH_SCHEME)
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.COMPLIANCE_OFFICER)
 @Controller('incidents')
 export class IncidentManagementController {
   constructor(private readonly service: IncidentManagementService) {}
@@ -66,10 +70,9 @@ export class IncidentManagementController {
   acknowledge(
     @Param('id') id: string,
     @Body() dto: AcknowledgeIncidentDto,
-    @Req() req: Request,
+    @CurrentUser() user: JwtPayload,
   ) {
-    const responderId = (req.user as any)?.id ?? 'unknown';
-    return this.service.acknowledge(id, dto, responderId);
+    return this.service.acknowledge(id, dto, user.userId);
   }
 
   @Patch(':id/resolve')
@@ -78,10 +81,9 @@ export class IncidentManagementController {
   resolve(
     @Param('id') id: string,
     @Body() dto: ResolveIncidentManagementDto,
-    @Req() req: Request,
+    @CurrentUser() user: JwtPayload,
   ) {
-    const responderId = (req.user as any)?.id ?? 'unknown';
-    return this.service.resolve(id, dto, responderId);
+    return this.service.resolve(id, dto, user.userId);
   }
 
   @Patch(':id/reopen')
@@ -90,9 +92,8 @@ export class IncidentManagementController {
   reopen(
     @Param('id') id: string,
     @Body() dto: ReopenIncidentDto,
-    @Req() req: Request,
+    @CurrentUser() user: JwtPayload,
   ) {
-    const responderId = (req.user as any)?.id ?? 'unknown';
-    return this.service.reopen(id, dto, responderId);
+    return this.service.reopen(id, dto, user.userId);
   }
 }
